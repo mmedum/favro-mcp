@@ -8,7 +8,7 @@ A Model Context Protocol (MCP) server for [Favro](https://favro.com), written in
 
 Pre-release. See [CHANGELOG.md](./CHANGELOG.md) for what's shipped.
 
-Active phase: **Phase 0** — repo bootstrap & CI skeleton.
+Active phase: **Phase 1** — auth subsystem & stdio handshake.
 
 ## Authentication
 
@@ -64,7 +64,13 @@ For headless / CI environments, supply env vars instead:
 
 ## Tools
 
-Coming soon. The full tool index will land at v1.0 (Phase 8).
+Phase 1 ships one tool — the rest follow in subsequent phases.
+
+| Tool | Phase | What it does |
+| --- | --- | --- |
+| `favro_ping` | 1 | Read-only liveness check. Returns server version, the bound Favro organization id, and the active credential source (`env` or `keyring`). Does **not** contact Favro — it's a local diagnostic. |
+
+The full tool index will land at v1.0 (Phase 8).
 
 ## Development
 

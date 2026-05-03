@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added (Phase 1 — auth + stdio handshake)
+- `internal/auth` package: `Token` with HTTP Basic Auth + `organizationId` header `Apply`, `Source` interface, `EnvSource` (FAVRO_USER_EMAIL / FAVRO_API_TOKEN / FAVRO_ORGANIZATION_ID), `KeyringSource` (OS keyring with active-account pointer), `ResolveToken` (env → keyring), `Validator` (live `GET /organizations` with 5s timeout).
+- `internal/server` package: `New(ResolvedToken, version)` builds an `*mcp.Server`, registers `favro_ping` tool. Output never carries email or API token; pinned by a regression test.
+- `cmd/favro-mcp`: stdio MCP server entry point, plus `auth login` (masked token via `golang.org/x/term`), `auth status`, `auth logout`, `auth which`, `--version`, `--help`, `--dry-run` (no-op until Phase 5).
+- Stderr-only logging via `log/slog`; level controllable via `FAVRO_LOG_LEVEL`.
+- Startup live-validation hits `GET /organizations` and exits non-zero on 401/403; `FAVRO_MCP_SKIP_VALIDATE=1` bypasses it for test harnesses.
+- Tests: 87% coverage on auth, 100% on server, in-memory MCP transport assertions for `tools/list` and `tools/call favro_ping`.
+
 ## [0.0.1] — 2026-05-03
 
 ### Added
