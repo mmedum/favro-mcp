@@ -25,7 +25,7 @@ jobs:
       - name: golangci-lint
         # @v8 defaults to golangci-lint v2.x. @v6 / @v7 ship binaries built
         # with Go 1.24, which can't read a config targeting Go 1.26+.
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           args: --timeout=5m
