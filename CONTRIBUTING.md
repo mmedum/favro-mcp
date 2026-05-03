@@ -17,7 +17,7 @@ Go 1.26+ required. The `toolchain` directive auto-bumps you to the matching tool
 
 - Work on feature branches; `main` is protected.
 - Open a PR — direct pushes to `main` are blocked.
-- CI must be green before merge: `lint`, `test-unit` on ubuntu/macos/windows, `test-go-prev` (Go N-1), `test-mcp`, `vulncheck`, `build`.
+- CI must be green before merge: `lint`, `test-unit` on ubuntu/macos/windows, `test-mcp`, `vulncheck`, `build`.
 - Squash or rebase merges only (linear history).
 - Before pushing: `make fmt && make lint && make test`.
 
@@ -29,7 +29,7 @@ On `main`:
 - Required approvals: 0 if solo maintainer; 1 once a co-maintainer exists.
 - Required status checks (must be green and up-to-date with `main`):
   `lint`, `test-unit (ubuntu-latest)`, `test-unit (macos-latest)`, `test-unit (windows-latest)`,
-  `test-go-prev`, `test-mcp`, `vulncheck`, `build`.
+  `test-mcp`, `vulncheck`, `build`.
 - Require conversation resolution before merging.
 - Require linear history.
 - Lock force-push.

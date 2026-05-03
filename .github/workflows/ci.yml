@@ -50,18 +50,6 @@ jobs:
           name: coverage
           path: coverage.out
 
-  test-go-prev:
-    name: test-go-prev
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.x"
-      - name: go test (Go N-1)
-        # Skip if go.mod's minimum is newer than Go N-1; this is just a safety net.
-        run: go test -race ./... || echo "::warning::Go N-1 build failed; module may now require a newer toolchain."
-
   test-mcp:
     name: test-mcp
     runs-on: ubuntu-latest
