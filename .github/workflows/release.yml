@@ -42,7 +42,7 @@ jobs:
           go-version-file: go.mod
           check-latest: true
       - name: install goreleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           install-only: true
       - name: goreleaser release

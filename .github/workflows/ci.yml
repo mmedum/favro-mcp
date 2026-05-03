@@ -125,7 +125,7 @@ jobs:
       - name: go mod tidy diff
         run: go mod tidy -diff
       - name: install goreleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           install-only: true
       - name: snapshot build
