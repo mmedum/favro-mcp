@@ -1,0 +1,90 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - bodyclose
+    - nilerr
+    - errorlint
+    - contextcheck
+    # Style & quality
+    - revive
+    - gocritic
+    - gocyclo
+    - unconvert
+    - misspell
+    - godot
+    # Modernization
+    - exptostd
+    # Security
+    - gosec
+    # Test hygiene
+    - testifylint
+    - tparallel
+    # Import discipline
+    - depguard
+
+  settings:
+    gocyclo:
+      min-complexity: 10
+
+    revive:
+      rules:
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+          arguments:
+            - "checkPrivateReceivers"
+            - "disableStutteringCheck"
+        - name: package-comments
+        - name: var-naming
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    depguard:
+      rules:
+        no-testify-assert:
+          list-mode: lax
+          deny:
+            - pkg: "github.com/stretchr/testify/assert"
+              desc: "use github.com/stretchr/testify/require instead — assert lets tests continue past failures and produces confusing diagnostics"
+        no-default-http-client:
+          list-mode: lax
+          deny:
+            - pkg: "net/http.DefaultClient"
+              desc: "always pass an explicit *http.Client with a configured timeout"
+
+    gosec:
+      excludes:
+        # G104: errcheck already covers unhandled errors with better diagnostics
+        - G104
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - gosec
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/mmedum/favro-mcp
