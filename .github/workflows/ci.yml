@@ -119,14 +119,17 @@ jobs:
           go-version-file: go.mod
           check-latest: true
       - name: go mod verify
-        run: go mod verify
-      - name: go mod tidy diff
+        # Skip when there are no dependencies yet (no go.sum). go mod verify
+        # exits non-zero with "missing go.sum" in that case, which is noise
+        # during early phases.
         run: |
-          go mod tidy
-          if ! git diff --exit-code go.mod go.sum; then
-            echo "::error::go.mod / go.sum are not minimal — run 'go mod tidy' and commit."
-            exit 1
+          if [ -f go.sum ]; then
+            go mod verify
+          else
+            echo "::notice::no go.sum yet — skipping go mod verify"
           fi
+      - name: go mod tidy diff
+        run: go mod tidy -diff
       - name: install goreleaser
         uses: goreleaser/goreleaser-action@v6
         with:
