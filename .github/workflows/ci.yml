@@ -18,14 +18,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: true
       - name: golangci-lint
-        # @v8 defaults to golangci-lint v2.x. @v6 / @v7 ship binaries built
-        # with Go 1.24, which can't read a config targeting Go 1.26+.
-        uses: golangci/golangci-lint-action@v8
+        # @v8+ ships golangci-lint v2.x; @v6 / @v7 bundle a v1.x binary
+        # built with Go 1.24, which can't read a config targeting Go 1.26+.
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           args: --timeout=5m
@@ -39,7 +39,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: true
@@ -51,7 +51,7 @@ jobs:
         run: go test -race -coverprofile=coverage.out ./...
       - name: upload coverage
         if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: true
@@ -82,7 +82,7 @@ jobs:
       FAVRO_ORGANIZATION_ID: ${{ secrets.FAVRO_ORGANIZATION_ID }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: true
@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: true
@@ -108,7 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: true
@@ -125,7 +125,7 @@ jobs:
       - name: go mod tidy diff
         run: go mod tidy -diff
       - name: install goreleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           install-only: true
       - name: snapshot build
@@ -148,11 +148,11 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: coverage
       - name: codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: coverage.out
           fail_ci_if_error: false
