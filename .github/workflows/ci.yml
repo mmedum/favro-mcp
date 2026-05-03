@@ -23,7 +23,9 @@ jobs:
           go-version-file: go.mod
           check-latest: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        # @v8 defaults to golangci-lint v2.x. @v6 / @v7 ship binaries built
+        # with Go 1.24, which can't read a config targeting Go 1.26+.
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
           args: --timeout=5m
@@ -42,6 +44,10 @@ jobs:
           go-version-file: go.mod
           check-latest: true
       - name: go test
+        # Force bash on every OS — PowerShell (the Windows default) tokenizes
+        # the `coverage.out` value strangely and Go ends up seeing `.out` as
+        # an extra package argument. bash is available on all GH runners.
+        shell: bash
         run: go test -race -coverprofile=coverage.out ./...
       - name: upload coverage
         if: matrix.os == 'ubuntu-latest'
