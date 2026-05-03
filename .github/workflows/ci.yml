@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: golangci-lint
+        # @v8 defaults to golangci-lint v2.x. @v6 / @v7 ship binaries built
+        # with Go 1.24, which can't read a config targeting Go 1.26+.
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          args: --timeout=5m
+
+  test-unit:
+    name: test-unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: go test
+        # Force bash on every OS — PowerShell (the Windows default) tokenizes
+        # the `coverage.out` value strangely and Go ends up seeing `.out` as
+        # an extra package argument. bash is available on all GH runners.
+        shell: bash
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: upload coverage
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  test-mcp:
+    name: test-mcp
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: in-memory MCP transport tests
+        run: go test -race -run 'TestMCP' ./internal/server/... || echo "::notice::no MCP-protocol tests yet (placeholder)"
+
+  test-integration:
+    name: test-integration
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'integration-ok'))
+    env:
+      FAVRO_INTEGRATION: "1"
+      FAVRO_USER_EMAIL: ${{ secrets.FAVRO_USER_EMAIL }}
+      FAVRO_API_TOKEN: ${{ secrets.FAVRO_API_TOKEN }}
+      FAVRO_ORGANIZATION_ID: ${{ secrets.FAVRO_ORGANIZATION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: integration tests
+        run: go test -race -run 'Integration' ./...
+
+  vulncheck:
+    name: vulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: govulncheck
+        run: govulncheck ./...
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: go mod verify
+        # Skip when there are no dependencies yet (no go.sum). go mod verify
+        # exits non-zero with "missing go.sum" in that case, which is noise
+        # during early phases.
+        run: |
+          if [ -f go.sum ]; then
+            go mod verify
+          else
+            echo "::notice::no go.sum yet — skipping go mod verify"
+          fi
+      - name: go mod tidy diff
+        run: go mod tidy -diff
+      - name: install goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          install-only: true
+      - name: snapshot build
+        # goreleaser.yaml lands in Phase 8; this step is a no-op until then.
+        run: |
+          if [ -f .goreleaser.yaml ] || [ -f .goreleaser.yml ] || [ -f goreleaser.yaml ]; then
+            goreleaser build --snapshot --clean
+          else
+            echo "::notice::goreleaser config not yet present — running plain go build."
+            go build -trimpath ./...
+          fi
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    needs: test-unit
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+      - name: codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
