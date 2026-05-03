@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+      - name: unit tests
+        run: go test -race ./...
+
+  goreleaser:
+    name: goreleaser
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: install goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          install-only: true
+      - name: goreleaser release
+        # goreleaser.yaml lands in Phase 8. Until then, we exit cleanly so an
+        # accidental tag push during early phases doesn't fail the workflow.
+        run: |
+          if [ -f .goreleaser.yaml ] || [ -f .goreleaser.yml ] || [ -f goreleaser.yaml ]; then
+            goreleaser release --clean
+          else
+            echo "::notice::goreleaser config not yet present — release pipeline is a no-op until Phase 8."
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  package-plugin:
+    name: package-plugin
+    runs-on: ubuntu-latest
+    needs: goreleaser
+    if: ${{ !contains(github.ref, '-') }} # skip pre-releases
+    steps:
+      - uses: actions/checkout@v4
+      - name: assemble .plugin (placeholder until Phase 8)
+        run: |
+          if [ -x scripts/package-plugin.sh ]; then
+            scripts/package-plugin.sh
+          else
+            echo "::notice::scripts/package-plugin.sh not present yet — skipping plugin packaging."
+          fi

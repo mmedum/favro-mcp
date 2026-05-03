@@ -1,0 +1,37 @@
+# Binaries
+/bin/
+/dist/
+/build/
+*.exe
+*.test
+*.out
+*.prof
+
+# Coverage
+coverage.out
+coverage.html
+
+# Plugin packaging
+*.plugin
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local-only config (never commit secrets)
+.env
+.env.local
+.mcp.local.json
+
+# Local agent / tooling state
+.claude/
+.entire/
+
+# Go module cache (handled by setup-go in CI)
+go.work
+go.work.sum

@@ -1,0 +1,75 @@
+.DEFAULT_GOAL := help
+
+GO              ?= go
+GOLANGCI_LINT   ?= golangci-lint
+GOVULNCHECK     ?= govulncheck
+
+MODULE          := github.com/mmedum/favro-mcp
+BIN_DIR         := bin
+BIN_NAME        := favro-mcp
+BIN             := $(BIN_DIR)/$(BIN_NAME)
+
+VERSION         ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT          ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+LDFLAGS         := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
+BUILD_FLAGS     := -trimpath -ldflags "$(LDFLAGS)"
+
+.PHONY: help
+help: ## show this help
+	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*?##/ { printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+.PHONY: build
+build: ## build the favro-mcp binary into ./bin
+	@mkdir -p $(BIN_DIR)
+	$(GO) build $(BUILD_FLAGS) -o $(BIN) ./cmd/favro-mcp
+
+.PHONY: test
+test: ## run unit tests with the race detector
+	$(GO) test -race -coverprofile=coverage.out ./...
+
+.PHONY: test-integration
+test-integration: ## run integration tests (requires FAVRO_INTEGRATION=1 and FAVRO_* creds)
+	FAVRO_INTEGRATION=1 $(GO) test -race -tags=integration ./...
+
+.PHONY: vet
+vet: ## go vet
+	$(GO) vet ./...
+
+.PHONY: lint
+lint: ## golangci-lint + gofumpt + goimports check
+	$(GOLANGCI_LINT) run ./...
+
+.PHONY: fmt
+fmt: ## format with gofumpt + goimports (via golangci-lint v2)
+	$(GOLANGCI_LINT) fmt
+
+.PHONY: fmt-check
+fmt-check: ## fail if formatting is not clean
+	@$(GOLANGCI_LINT) fmt --diff > /tmp/favro-mcp-fmt.diff || true
+	@if [ -s /tmp/favro-mcp-fmt.diff ]; then \
+		echo "Formatting changes detected — run 'make fmt' and commit:"; \
+		cat /tmp/favro-mcp-fmt.diff; \
+		rm -f /tmp/favro-mcp-fmt.diff; \
+		exit 1; \
+	fi
+	@rm -f /tmp/favro-mcp-fmt.diff
+
+.PHONY: tidy
+tidy: ## go mod tidy
+	$(GO) mod tidy
+	$(GO) mod verify
+
+.PHONY: tidy-check
+tidy-check: ## fail if go.mod / go.sum need updating
+	$(GO) mod tidy -diff
+
+.PHONY: vulncheck
+vulncheck: ## govulncheck
+	$(GOVULNCHECK) ./...
+
+.PHONY: ci
+ci: lint vet test vulncheck ## run lint + vet + test + vulncheck (mirrors CI)
+
+.PHONY: clean
+clean: ## remove build artifacts
+	rm -rf $(BIN_DIR) dist coverage.out coverage.html *.plugin
