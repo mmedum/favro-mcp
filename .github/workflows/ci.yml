@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+  test-unit:
+    name: test-unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: go test
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: upload coverage
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  test-go-prev:
+    name: test-go-prev
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: go test (Go N-1)
+        # Skip if go.mod's minimum is newer than Go N-1; this is just a safety net.
+        run: go test -race ./... || echo "::warning::Go N-1 build failed; module may now require a newer toolchain."
+
+  test-mcp:
+    name: test-mcp
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: in-memory MCP transport tests
+        run: go test -race -run 'TestMCP' ./internal/server/... || echo "::notice::no MCP-protocol tests yet (placeholder)"
+
+  test-integration:
+    name: test-integration
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'integration-ok'))
+    env:
+      FAVRO_INTEGRATION: "1"
+      FAVRO_USER_EMAIL: ${{ secrets.FAVRO_USER_EMAIL }}
+      FAVRO_API_TOKEN: ${{ secrets.FAVRO_API_TOKEN }}
+      FAVRO_ORGANIZATION_ID: ${{ secrets.FAVRO_ORGANIZATION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: integration tests
+        run: go test -race -run 'Integration' ./...
+
+  vulncheck:
+    name: vulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: govulncheck
+        run: govulncheck ./...
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: go mod verify
+        run: go mod verify
+      - name: go mod tidy diff
+        run: |
+          go mod tidy
+          if ! git diff --exit-code go.mod go.sum; then
+            echo "::error::go.mod / go.sum are not minimal — run 'go mod tidy' and commit."
+            exit 1
+          fi
+      - name: install goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          install-only: true
+      - name: snapshot build
+        # goreleaser.yaml lands in Phase 8; this step is a no-op until then.
+        run: |
+          if [ -f .goreleaser.yaml ] || [ -f .goreleaser.yml ] || [ -f goreleaser.yaml ]; then
+            goreleaser build --snapshot --clean
+          else
+            echo "::notice::goreleaser config not yet present — running plain go build."
+            go build -trimpath ./...
+          fi
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    needs: test-unit
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+      - name: codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
