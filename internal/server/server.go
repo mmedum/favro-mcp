@@ -26,6 +26,7 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerPing(srv, client, source, version)
 	registerRateLimitStatus(srv, client)
 	registerOrganizations(srv, client)
+	registerUsers(srv, client)
 
 	return srv
 }
