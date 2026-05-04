@@ -155,6 +155,7 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 		resolveColumnToolName,
 		resolveCustomFieldToolName,
 		resolveGroupToolName,
+		searchCardsToolName,
 	}, "tools/list must advertise every registered tool; got %v", names)
 }
 

@@ -38,11 +38,15 @@ type Card struct {
 	DetailedDescription string `json:"detailedDescription,omitempty"`
 	SequentialID        int    `json:"sequentialId,omitempty"`
 	SequentialIDPrefix  string `json:"sequentialIdPrefix,omitempty"`
-	Position            int    `json:"position,omitempty"`
-	ListPosition        int    `json:"listPosition,omitempty"`
-	IsArchived          bool   `json:"archived,omitempty"`
-	StartDate           string `json:"startDate,omitempty"`
-	DueDate             string `json:"dueDate,omitempty"`
+	// Position / ListPosition are fractional — Favro uses
+	// subdivisions like 3.125 to slot a card between two siblings
+	// without renumbering everything around it. Decoding as int 400s
+	// the JSON unmarshal on any non-integer value.
+	Position     float64 `json:"position,omitempty"`
+	ListPosition float64 `json:"listPosition,omitempty"`
+	IsArchived   bool    `json:"archived,omitempty"`
+	StartDate    string  `json:"startDate,omitempty"`
+	DueDate      string  `json:"dueDate,omitempty"`
 	// Tag IDs only — resolution to tag names lives in Phase 4.
 	Tags []string `json:"tags,omitempty"`
 	// Assignments are {userId, completed} pairs; kept as raw maps
