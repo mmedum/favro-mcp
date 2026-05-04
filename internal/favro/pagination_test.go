@@ -59,7 +59,7 @@ func TestPaginate_SinglePage_VisitsOnce(t *testing.T) {
 	c := newTestClient(srv)
 
 	var visits []string
-	err := Paginate[testEntity](context.Background(), c, http.MethodGet, "/cards", nil, nil,
+	err := Paginate[testEntity](context.Background(), c, "/cards", nil,
 		func(env PageEnvelope[testEntity]) error {
 			for _, e := range env.Entities {
 				visits = append(visits, e.ID)
@@ -81,7 +81,7 @@ func TestPaginate_MultiplePages_EchoesRequestID(t *testing.T) {
 	c := newTestClient(srv)
 
 	var visits []string
-	err := Paginate[testEntity](context.Background(), c, http.MethodGet, "/cards", nil, nil,
+	err := Paginate[testEntity](context.Background(), c, "/cards", nil,
 		func(env PageEnvelope[testEntity]) error {
 			for _, e := range env.Entities {
 				visits = append(visits, e.ID)
@@ -104,7 +104,7 @@ func TestPaginate_VisitErrorStopsIteration(t *testing.T) {
 
 	stop := fmt.Errorf("stop")
 	visited := 0
-	err := Paginate[testEntity](context.Background(), c, http.MethodGet, "/cards", nil, nil,
+	err := Paginate[testEntity](context.Background(), c, "/cards", nil,
 		func(env PageEnvelope[testEntity]) error {
 			visited++
 			if visited == 2 {
@@ -122,14 +122,14 @@ func TestPaginate_NilCallback_Errors(t *testing.T) {
 	t.Parallel()
 
 	c := NewClient(fixtureToken())
-	err := Paginate[testEntity](context.Background(), c, http.MethodGet, "/cards", nil, nil, nil)
+	err := Paginate[testEntity](context.Background(), c, "/cards", nil, nil)
 	require.Error(t, err)
 }
 
 func TestPaginate_NilClient_Errors(t *testing.T) {
 	t.Parallel()
 
-	err := Paginate[testEntity](context.Background(), nil, http.MethodGet, "/cards", nil, nil, func(_ PageEnvelope[testEntity]) error { return nil })
+	err := Paginate[testEntity](context.Background(), nil, "/cards", nil, func(_ PageEnvelope[testEntity]) error { return nil })
 	require.Error(t, err)
 }
 

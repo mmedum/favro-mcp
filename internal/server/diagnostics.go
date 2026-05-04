@@ -41,10 +41,7 @@ func registerRateLimitStatus(srv *mcp.Server, client *favro.Client) {
 			"(X-RateLimit-Limit / Remaining / Reset, plus Retry-After on 429). " +
 			"Read-only and does NOT contact Favro — it surfaces what the client " +
 			"already saw on prior requests so the caller can decide whether to slow down.",
-		Annotations: &mcp.ToolAnnotations{
-			ReadOnlyHint: true,
-			Title:        "Favro rate-limit status",
-		},
+		Annotations: readOnly("Favro rate-limit status"),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, _ rateLimitInput) (*mcp.CallToolResult, RateLimitOutput, error) {
 		snap, ok := client.LatestRateLimit()
 		if !ok {
