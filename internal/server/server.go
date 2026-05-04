@@ -17,11 +17,18 @@ const serverName = "favro-mcp"
 // client is plumbed into handlers that need it; source is the
 // credential-source name ("env" / "keyring") surfaced by favro_ping;
 // version is embedded as MCP Implementation.Version.
+//
+// A single Resolver is constructed here and shared across every
+// resolver tool so the cache state is process-wide; ad-hoc
+// resolvers per-tool would each maintain their own cache and burn
+// the rate-limit budget on parallel cold-start fetches.
 func New(client *favro.Client, source, version string) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    serverName,
 		Version: version,
 	}, nil)
+
+	resolver := NewResolver(client)
 
 	registerPing(srv, client, source, version)
 	registerRateLimitStatus(srv, client)
@@ -35,6 +42,7 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerTags(srv, client)
 	registerCustomFields(srv, client)
 	registerGroups(srv, client)
+	registerResolveTag(srv, resolver)
 
 	return srv
 }

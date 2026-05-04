@@ -125,5 +125,5 @@ func TestMCP_GetOrganization_HappyPath(t *testing.T) {
 
 func TestMCP_GetOrganization_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, getOrgToolName, "organization_id")
+	assertMissingRequiredFieldFails(t, getOrgToolName, "organization_id")
 }
