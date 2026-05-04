@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added (Phase 4 — NL workflow read layer)
+- `internal/server`: `Resolver` struct holds a `*favro.Client` plus per-resource `cache.TTL[…]` caches (`tagCache` first; the other six follow in Phase 4.2). Constructed once per `mcp.Server` so cache state is process-wide. Cache TTLs follow plan §7 (5 minutes for slow-changing org metadata: tags, users, custom fields, groups; 60 seconds for collection-scoped lists in later sub-phases).
+- `internal/server`: `Resolver.ResolveTag(ctx, name, limit, forceRefresh)` returns ranked `ResolvedTag` candidates (`{tagId, name, color, score}`). Score scale: exact match 1.0, prefix 0.7, substring 0.4, no match filtered. Tie-break by name ascending so ordering is deterministic. `limit <= 0` defaults to 10; `limit > 50` is capped at 50 per plan §6a.
+- `internal/server`: `Resolver.invalidateTagCache()` for Phase 6 mutating tools to call after successful tag create / update / delete.
+- MCP tool: `favro_resolve_tag` (name required; optional `limit` and `force_refresh`). Output is always a candidate list (possibly empty) so the LLM can disambiguate when more than one tag matches; an exact match scores 1.0 and sorts first. `cached: bool` in the output tells callers whether the tag list was served from the in-memory cache so they know whether a `force_refresh` follow-up might surface newly-created tags.
+
 ### Fixed
 - `internal/favro`: split HTTP 403 out of `AuthError` into a new typed `ForbiddenError` (`Status`, `Path`). Previously both 401 and 403 mapped to `AuthError`, surfacing as `"Favro authentication failed — check FAVRO_USER_EMAIL and FAVRO_API_TOKEN"` even when the credentials were fine and the resource was simply not visible to the token (Favro returns 403 instead of 404 for permission-restricted or non-existent resources, intentionally avoiding existence leakage). The new `ForbiddenError` says `"Favro denied access at <path> (HTTP 403): the resource may not exist or the token lacks permission for it"` and is documented to be functionally equivalent to a not-found from the caller's perspective. Phase 4 workflow tools (search → fetch chains) would have amplified the misleading auth message into LLM dead-ends. `internal/auth/validate.go`'s startup credential check still maps 401||403 to auth-failed because at boot the broadest possible scope (`/organizations`) is unambiguously authentication.
 

@@ -83,5 +83,5 @@ func TestMCP_GetGroup_HappyPath(t *testing.T) {
 
 func TestMCP_GetGroup_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, getGroupToolName, "group_id")
+	assertMissingRequiredFieldFails(t, getGroupToolName, "group_id")
 }

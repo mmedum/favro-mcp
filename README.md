@@ -90,6 +90,7 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | `favro_get_custom_field` | 3 | Read-only. Returns a single Favro custom field by its customFieldId. |
 | `favro_list_groups` | 3 | Read-only. Lists all groups (named user collections) in the active organization. Each entry includes the group's `members` list (`{userId, role}` pairs). Accepts `page` + `request_id`. |
 | `favro_get_group` | 3 | Read-only. Returns a single Favro group by its groupId. |
+| `favro_resolve_tag` | 4 | Read-only. Resolves a tag name (or fragment) to ranked tagId candidates. Case-insensitive: exact match scores 1.0, prefix 0.7, substring 0.4. Default `limit` 10, max 50. Tag list is cached for 5 minutes; pass `force_refresh: true` to bypass. |
 
 The full tool index will land at v1.0 (Phase 8).
 

@@ -87,5 +87,5 @@ func TestMCP_GetCustomField_HappyPath(t *testing.T) {
 
 func TestMCP_GetCustomField_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, getCustomFieldToolName, "custom_field_id")
+	assertMissingRequiredFieldFails(t, getCustomFieldToolName, "custom_field_id")
 }

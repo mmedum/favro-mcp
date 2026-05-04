@@ -98,5 +98,5 @@ func TestMCP_GetUser_HappyPath(t *testing.T) {
 
 func TestMCP_GetUser_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, getUserToolName, "user_id")
+	assertMissingRequiredFieldFails(t, getUserToolName, "user_id")
 }
