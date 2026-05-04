@@ -84,6 +84,8 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | `favro_get_card` | 3 | Read-only. Returns a single Favro card by its per-widget `cardId`. Favro's GET endpoint 403s on a `cardCommonId` — to fetch by cross-widget id, use `favro_list_cards` with the `card_common_id` filter. |
 | `favro_list_comments` | 3 | Read-only. Lists comments on a single Favro card. `card_common_id` is required (Favro scopes /comments by the cross-widget cardCommonId); also accepts `page` + `request_id`. |
 | `favro_get_comment` | 3 | Read-only. Returns a single Favro comment by its commentId. |
+| `favro_list_tags` | 3 | Read-only. Lists all tags in the active organization (tags are org-global; no widget or card scope). Accepts `page` + `request_id`. |
+| `favro_get_tag` | 3 | Read-only. Returns a single Favro tag by its tagId. |
 
 The full tool index will land at v1.0 (Phase 8).
 
