@@ -146,6 +146,35 @@ func WithHeader(name, value string) RequestOption {
 	}
 }
 
+// GetJSON sends an authenticated GET to path (with optional query)
+// and decodes the response body into out. Wraps Do's retry/rate-limit
+// machinery for the common "fetch and unmarshal" pattern used by
+// every read-only resource method. RequestOptions (e.g. WithHeader)
+// flow through to Do — the typical user is paginated reads injecting
+// X-Favro-Backend-Identifier on subsequent pages.
+//
+// Errors:
+//   - Same typed kinds as Do (AuthError / NotFoundError /
+//     RateLimitError / TransientError / APIError).
+//   - A wrapped decode error if the response isn't valid JSON or
+//     contains trailing data (the latter would silently mask a
+//     malformed server response).
+func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, out any, opts ...RequestOption) error {
+	resp, err := c.Do(ctx, http.MethodGet, path, query, nil, opts...)
+	if err != nil {
+		return err
+	}
+	defer drainAndClose(resp)
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(out); err != nil {
+		return fmt.Errorf("favro: decode response from %s: %w", redactPath(path), err)
+	}
+	if dec.More() {
+		return fmt.Errorf("favro: unexpected trailing data in response from %s", redactPath(path))
+	}
+	return nil
+}
+
 // Do executes an authenticated request with retry and rate-limit
 // observation. body may be nil; if not nil it is JSON-encoded.
 //
