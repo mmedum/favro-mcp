@@ -6,10 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added (Phase 3 — Read CRUD: organizations, users)
+### Added (Phase 3 — Read CRUD: organizations, users, collections)
 - `internal/favro`: `Organization` / `OrgMember` types, `(*Client).GetJSON` helper, `ListOrganizations(ctx, page, requestID)`, `GetOrganization(ctx, id)`.
 - `internal/favro`: `User` type, `ListUsers(ctx, page, requestID)`, `GetUser(ctx, userID)`.
-- MCP tools: `favro_list_organizations` and `favro_list_users` (read-only; shared `listInput`/`listOutput[T]` shape — surfaces `next_page` and `request_id` for explicit pagination, never auto-aggregates), `favro_get_organization`, `favro_get_user` (read-only).
+- `internal/favro`: `Collection` type, `ListCollections(ctx, page, requestID)`, `GetCollection(ctx, collectionID)`.
+- MCP tools: `favro_list_*` and `favro_get_*` for organizations/users/collections (all read-only; shared `listInput`/`listOutput[T]` shape — surfaces `next_page` and `request_id` for explicit pagination, never auto-aggregates).
 
 ### Added (Phase 2 — Favro client foundation)
 - `internal/favro` package: `Client` with HTTP Basic Auth, retry (single 429 retry honoring `Retry-After` ≤ 30s; 5xx exponential backoff 250ms/1s/4s × 3), typed errors (`AuthError` / `RateLimitError` / `NotFoundError` / `ValidationError` / `TransientError` / `APIError`), per-request `WithDryRun`/process-wide `ForceDryRun` gates that short-circuit POST/PUT/DELETE/PATCH and return a redacted `*DryRunRecord`, `Authorization`-header redaction in slog debug output and dry-run records.
