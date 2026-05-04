@@ -1,7 +1,9 @@
 package server
 
 import (
+	"cmp"
 	"context"
+	"slices"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -32,6 +34,8 @@ func registerColumns(srv *mcp.Server, client *favro.Client) {
 		Name: listColumnsToolName,
 		Description: "List Favro columns (status lanes) on a single widget. " +
 			"`widget_common_id` is REQUIRED — Favro rejects unfiltered listings with 400. " +
+			"Items are sorted by `position` ascending (left-to-right board order); Favro " +
+			"itself returns them in columnId order, which is meaningless to humans. " +
 			"Returns one page; pass `page` (1-indexed) plus the `request_id` from the prior " +
 			"response (and `widget_common_id` again) to retrieve subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro columns"),
@@ -40,6 +44,9 @@ func registerColumns(srv *mcp.Server, client *favro.Client) {
 		if err != nil {
 			return nil, listOutput[favro.Column]{}, err
 		}
+		slices.SortStableFunc(env.Entities, func(a, b favro.Column) int {
+			return cmp.Compare(a.Position, b.Position)
+		})
 		return nil, newListOutput(env), nil
 	})
 
