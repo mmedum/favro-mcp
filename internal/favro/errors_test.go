@@ -12,15 +12,33 @@ import (
 func TestAuthError_Message_NeverIncludesCredentialsOrValues(t *testing.T) {
 	t.Parallel()
 
-	for _, status := range []int{401, 403} {
-		err := &AuthError{Status: status}
-		msg := err.Error()
-		require.Contains(t, msg, "FAVRO_USER_EMAIL", "should name the env var, not its value")
-		require.Contains(t, msg, "FAVRO_API_TOKEN", "should name the env var, not its value")
-		require.Contains(t, msg, fmt.Sprintf("%d", status))
-		// Spot-check that nothing email-shaped slipped in.
-		require.NotContains(t, msg, "@", "AuthError must not embed any email")
-	}
+	// AuthError is only for 401 (genuine auth-layer rejection).
+	// 403 is *ForbiddenError so the LLM doesn't get a misleading
+	// "check your env vars" message for resources it just can't see.
+	err := &AuthError{Status: 401}
+	msg := err.Error()
+	require.Contains(t, msg, "FAVRO_USER_EMAIL", "should name the env var, not its value")
+	require.Contains(t, msg, "FAVRO_API_TOKEN", "should name the env var, not its value")
+	require.Contains(t, msg, fmt.Sprintf("%d", 401))
+	require.NotContains(t, msg, "@", "AuthError must not embed any email")
+}
+
+func TestForbiddenError_MessageVariants(t *testing.T) {
+	t.Parallel()
+
+	withPath := &ForbiddenError{Status: 403, Path: "/cards/missing-or-private"}
+	msg := withPath.Error()
+	require.Contains(t, msg, "/cards/missing-or-private")
+	require.Contains(t, msg, "403")
+	// Must NOT direct the caller at the auth env-vars — that's the
+	// misleading message we replaced (Phase 3.10 follow-up).
+	require.NotContains(t, msg, "FAVRO_USER_EMAIL")
+	require.NotContains(t, msg, "FAVRO_API_TOKEN")
+	require.NotContains(t, msg, "@")
+
+	noPath := &ForbiddenError{Status: 403}
+	require.Contains(t, noPath.Error(), "403")
+	require.NotContains(t, noPath.Error(), "FAVRO_USER_EMAIL")
 }
 
 func TestRateLimitError_Message(t *testing.T) {

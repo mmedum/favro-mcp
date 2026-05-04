@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- `internal/favro`: split HTTP 403 out of `AuthError` into a new typed `ForbiddenError` (`Status`, `Path`). Previously both 401 and 403 mapped to `AuthError`, surfacing as `"Favro authentication failed — check FAVRO_USER_EMAIL and FAVRO_API_TOKEN"` even when the credentials were fine and the resource was simply not visible to the token (Favro returns 403 instead of 404 for permission-restricted or non-existent resources, intentionally avoiding existence leakage). The new `ForbiddenError` says `"Favro denied access at <path> (HTTP 403): the resource may not exist or the token lacks permission for it"` and is documented to be functionally equivalent to a not-found from the caller's perspective. Phase 4 workflow tools (search → fetch chains) would have amplified the misleading auth message into LLM dead-ends. `internal/auth/validate.go`'s startup credential check still maps 401||403 to auth-failed because at boot the broadest possible scope (`/organizations`) is unambiguously authentication.
+
 ### Changed
 - CI: removed the `test-integration` job. It was gated to push-to-main / `integration-ok`-labeled PRs and ran zero tests anyway (no `*_integration_test.go` fixtures exist), so it was cruft. Wire-format coverage is currently done via the maintainer's pre-commit live MCP test; a recorded-fixture replay path can revive a real CI integration job later without ever calling Favro from CI. Repo secrets `FAVRO_USER_EMAIL` / `FAVRO_API_TOKEN` / `FAVRO_ORGANIZATION_ID` referenced by the removed job are no longer used in CI; rotate or delete them in GitHub Settings if you want.
 
