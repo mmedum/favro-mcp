@@ -34,15 +34,16 @@ func connectInMemory(t *testing.T) *mcp.ClientSession {
 	return connectInMemoryWith(t, favro.NewClient(fixtureToken()))
 }
 
-// assertGetMissingIDFails drives a Get<Resource> tool with no
-// arguments and asserts (a) the SDK surfaces a tool-level error,
-// (b) the LLM-visible error names the missing required field, and
-// (c) the call short-circuits before any Favro request is made.
+// assertMissingRequiredFieldFails drives a tool with no arguments
+// and asserts (a) the SDK surfaces a tool-level error, (b) the
+// LLM-visible error names the missing required field, and (c) the
+// call short-circuits before any Favro request is made.
 //
-// Centralizes the contract every favro_get_<resource> tool must
-// uphold so we get one place to update if the SDK's required-field
-// error format changes.
-func assertGetMissingIDFails(t *testing.T, toolName, fieldName string) {
+// Centralizes the contract every required-field tool must uphold —
+// originally just the favro_get_<resource> tools, now also resolvers
+// and any future tool with a required input. One place to update if
+// the SDK's required-field error format ever changes.
+func assertMissingRequiredFieldFails(t *testing.T, toolName, fieldName string) {
 	t.Helper()
 
 	calls := 0
@@ -147,6 +148,7 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 		getCustomFieldToolName,
 		listGroupsToolName,
 		getGroupToolName,
+		resolveTagToolName,
 	}, "tools/list must advertise every registered tool; got %v", names)
 }
 

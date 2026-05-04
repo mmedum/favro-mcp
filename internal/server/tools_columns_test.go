@@ -47,7 +47,7 @@ func TestMCP_ListColumns_HappyPath(t *testing.T) {
 
 func TestMCP_ListColumns_MissingWidget_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, listColumnsToolName, "widget_common_id")
+	assertMissingRequiredFieldFails(t, listColumnsToolName, "widget_common_id")
 }
 
 // TestMCP_ListColumns_SortsByPosition pins the human-friendly contract:
@@ -147,5 +147,5 @@ func TestMCP_GetColumn_HappyPath(t *testing.T) {
 
 func TestMCP_GetColumn_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, getColumnToolName, "column_id")
+	assertMissingRequiredFieldFails(t, getColumnToolName, "column_id")
 }

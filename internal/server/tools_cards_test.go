@@ -113,5 +113,5 @@ func TestMCP_GetCard_HappyPath(t *testing.T) {
 
 func TestMCP_GetCard_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, getCardToolName, "card_id")
+	assertMissingRequiredFieldFails(t, getCardToolName, "card_id")
 }

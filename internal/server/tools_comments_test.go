@@ -68,7 +68,7 @@ func TestMCP_ListComments_FilterForwarded(t *testing.T) {
 
 func TestMCP_ListComments_MissingCard_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, listCommentsToolName, "card_common_id")
+	assertMissingRequiredFieldFails(t, listCommentsToolName, "card_common_id")
 }
 
 func TestMCP_GetComment_HappyPath(t *testing.T) {
@@ -104,5 +104,5 @@ func TestMCP_GetComment_HappyPath(t *testing.T) {
 
 func TestMCP_GetComment_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, getCommentToolName, "comment_id")
+	assertMissingRequiredFieldFails(t, getCommentToolName, "comment_id")
 }
