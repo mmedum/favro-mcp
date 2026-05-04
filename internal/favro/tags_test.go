@@ -40,8 +40,7 @@ func TestListTags_HappyPath(t *testing.T) {
 	rec := h.seen()
 	require.Len(t, rec, 1)
 	require.Equal(t, "/tags", rec[0].Path)
-	require.Empty(t, rec[0].Query.Get("page"), "page=0 must NOT add ?page=")
-	require.Empty(t, rec[0].Query.Encode(), "tags is org-global; no filter query expected")
+	require.Empty(t, rec[0].Query.Encode(), "no filter or page query expected on first-page list")
 }
 
 func TestListTags_WithPageForwardsRequestID(t *testing.T) {
