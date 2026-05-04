@@ -34,6 +34,35 @@ func connectInMemory(t *testing.T) *mcp.ClientSession {
 	return connectInMemoryWith(t, favro.NewClient(fixtureToken()))
 }
 
+// assertGetMissingIDFails drives a Get<Resource> tool with no
+// arguments and asserts (a) the SDK surfaces a tool-level error,
+// (b) the LLM-visible error names the missing required field, and
+// (c) the call short-circuits before any Favro request is made.
+//
+// Centralizes the contract every favro_get_<resource> tool must
+// uphold so we get one place to update if the SDK's required-field
+// error format changes.
+func assertGetMissingIDFails(t *testing.T, toolName, fieldName string) {
+	t.Helper()
+
+	calls := 0
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      toolName,
+		Arguments: map[string]any{},
+	})
+	require.NoError(t, err)
+	require.True(t, res.IsError, "missing %s must surface as a tool error", fieldName)
+	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), fieldName,
+		"the LLM-visible error must name the missing field")
+	require.Equal(t, 0, calls, "missing %s must short-circuit before any Favro call", fieldName)
+}
+
 // favroFixture wires a *favro.Client to an httptest.Server backed by
 // the supplied handler. Returns the client; the server is auto-closed
 // at test end. Used by every server-package test that needs to drive
@@ -102,6 +131,8 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 		getOrgToolName,
 		listUsersToolName,
 		getUserToolName,
+		listCollectionsToolName,
+		getCollectionToolName,
 	}, "tools/list must advertise every registered tool; got %v", names)
 }
 

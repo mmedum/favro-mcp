@@ -7,15 +7,16 @@ import (
 // Organization is a Favro organization. Fields outside this struct in
 // the API response are ignored on decode (forward-compatible).
 type Organization struct {
-	OrganizationID string      `json:"organizationId"`
-	Name           string      `json:"name"`
-	SharedToUsers  []OrgMember `json:"sharedToUsers,omitempty"`
+	OrganizationID string       `json:"organizationId"`
+	Name           string       `json:"name"`
+	SharedToUsers  []SharedUser `json:"sharedToUsers,omitempty"`
 }
 
-// OrgMember is a single user-role mapping inside an Organization. The
-// org-wide membership map lives here; an individual User dto carries
-// only its own OrganizationRole.
-type OrgMember struct {
+// SharedUser is a (userId, role) mapping that appears inside any
+// Favro resource carrying access control — Organizations, Collections,
+// and (later) Widgets / Cards. Favro returns the same shape on every
+// such resource.
+type SharedUser struct {
 	UserID string `json:"userId"`
 	Role   string `json:"role,omitempty"`
 }

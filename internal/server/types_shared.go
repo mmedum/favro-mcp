@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
@@ -53,5 +55,22 @@ func readOnly(title string) *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
 		ReadOnlyHint: true,
 		Title:        title,
+	}
+}
+
+// listFn is the shape every Favro list method exposes:
+// (ctx, page, requestID) → typed PageEnvelope.
+type listFn[T any] func(ctx context.Context, page int, requestID string) (favro.PageEnvelope[T], error)
+
+// wrapList adapts a Favro list method into the MCP tool handler the
+// SDK expects. Centralizes the err-bridge + envelope projection so
+// every favro_list_<resource> tool reduces to one line.
+func wrapList[T any](fn listFn[T]) func(context.Context, *mcp.CallToolRequest, listInput) (*mcp.CallToolResult, listOutput[T], error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in listInput) (*mcp.CallToolResult, listOutput[T], error) {
+		env, err := fn(ctx, in.Page, in.RequestID)
+		if err != nil {
+			return nil, listOutput[T]{}, err
+		}
+		return nil, newListOutput(env), nil
 	}
 }
