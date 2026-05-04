@@ -97,5 +97,5 @@ func TestMCP_GetWidget_HappyPath(t *testing.T) {
 
 func TestMCP_GetWidget_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, getWidgetToolName, "widget_common_id")
+	assertMissingRequiredFieldFails(t, getWidgetToolName, "widget_common_id")
 }

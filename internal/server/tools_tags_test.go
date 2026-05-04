@@ -76,5 +76,5 @@ func TestMCP_GetTag_HappyPath(t *testing.T) {
 
 func TestMCP_GetTag_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, getTagToolName, "tag_id")
+	assertMissingRequiredFieldFails(t, getTagToolName, "tag_id")
 }

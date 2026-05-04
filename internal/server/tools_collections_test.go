@@ -75,5 +75,5 @@ func TestMCP_GetCollection_HappyPath(t *testing.T) {
 
 func TestMCP_GetCollection_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-	assertGetMissingIDFails(t, getCollectionToolName, "collection_id")
+	assertMissingRequiredFieldFails(t, getCollectionToolName, "collection_id")
 }
