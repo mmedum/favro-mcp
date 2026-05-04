@@ -78,6 +78,8 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | `favro_get_collection` | 3 | Read-only. Returns a single Favro collection by id. |
 | `favro_list_widgets` | 3 | Read-only. Lists widgets (boards). Optional `collection_id` filter, plus `page` + `request_id`. |
 | `favro_get_widget` | 3 | Read-only. Returns a single Favro widget by its widgetCommonId. |
+| `favro_list_columns` | 3 | Read-only. Lists columns (status lanes) on a single widget. `widget_common_id` is required (Favro rejects unfiltered listings with 400); also accepts `page` + `request_id`. |
+| `favro_get_column` | 3 | Read-only. Returns a single Favro column by its columnId. |
 
 The full tool index will land at v1.0 (Phase 8).
 
