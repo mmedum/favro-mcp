@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -99,21 +98,5 @@ func TestMCP_GetUser_HappyPath(t *testing.T) {
 
 func TestMCP_GetUser_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-
-	calls := 0
-	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls++
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	cs := connectInMemoryWith(t, c)
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name:      getUserToolName,
-		Arguments: map[string]any{}, // no user_id
-	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "user_id",
-		"the LLM-visible error must name the missing field")
-	require.Equal(t, 0, calls, "missing id must short-circuit before any Favro call")
+	assertGetMissingIDFails(t, getUserToolName, "user_id")
 }
