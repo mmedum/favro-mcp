@@ -2,6 +2,7 @@ package favro
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
 	"strconv"
 )
@@ -53,11 +54,39 @@ type Card struct {
 	// to stay forward-compatible while the phase plan defers
 	// assignee resolution to Phase 4.
 	Assignments []CardAssignment `json:"assignments,omitempty"`
-	// CustomFieldsValues land in Phase 4 long-tail; left out of the
-	// typed projection deliberately so the field set stays small
-	// and obvious for LLM consumption.
-	NumComments           int `json:"numComments,omitempty"`
-	TotalAttachmentsCount int `json:"totalAttachmentsCount,omitempty"`
+	// CustomFieldsValues holds the per-card values for the org's
+	// custom fields. Each entry references the field by ID; the
+	// caller dereferences against the org-global custom-field list to
+	// get name + type + (for select-flavored fields) the option name.
+	// Value is kept as json.RawMessage because the shape varies by
+	// field type; CustomFieldItemIDs / Total carry the typed flavors
+	// callers commonly need without requiring a parse.
+	CustomFieldsValues    []CardCustomFieldValue `json:"customFieldsValues,omitempty"`
+	NumComments           int                    `json:"numComments,omitempty"`
+	TotalAttachmentsCount int                    `json:"totalAttachmentsCount,omitempty"`
+}
+
+// CardCustomFieldValue is one per-card custom-field value entry.
+// Favro returns different shapes per field type; the type-discriminated
+// fields below cover the common kinds:
+//
+//   - Text/Link: Value is a JSON string.
+//   - Number/Rating: Value is a JSON number.
+//   - Date/Date created: Value is an ISO-8601 string.
+//   - Checkbox/Voting: Value is a JSON bool.
+//   - Single select: CustomFieldItemIDs holds one ID referencing
+//     CustomField.CustomFieldItems.
+//   - Multiple select: CustomFieldItemIDs holds N IDs.
+//   - Members: Value or a separate field carries user IDs.
+//   - Timeline: Value carries {startDate, dueDate}.
+//
+// Total is the running sum surfaced for Rating-style fields. Fields
+// outside this struct are ignored on decode (forward-compatible).
+type CardCustomFieldValue struct {
+	CustomFieldID      string          `json:"customFieldId"`
+	Value              json.RawMessage `json:"value,omitempty"`
+	CustomFieldItemIDs []string        `json:"customFieldItemIds,omitempty"`
+	Total              float64         `json:"total,omitempty"`
 }
 
 // CardAssignment is one entry in Card.Assignments.
