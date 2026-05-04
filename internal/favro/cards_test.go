@@ -57,6 +57,31 @@ func TestListCards_NoFilters(t *testing.T) {
 	require.Empty(t, rec[0].Query.Encode(), "empty filter must produce empty query")
 }
 
+// TestListCards_FractionalPosition pins the contract that
+// Card.Position / ListPosition decode from Favro's fractional
+// values (e.g. 3.125 — Favro slots cards between siblings via
+// arbitrary subdivision rather than re-numbering). int decoding
+// would 400 the JSON unmarshal on any non-integer position.
+func TestListCards_FractionalPosition(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"page":0,"pages":1,"requestId":"r","entities":[
+			{"cardId":"c1","cardCommonId":"cc1","name":"x","position":3.125,"listPosition":7.5}
+		]}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	env, err := c.ListCards(context.Background(), 0, "", ListCardsFilter{})
+	require.NoError(t, err)
+	require.Len(t, env.Entities, 1)
+	require.InDelta(t, 3.125, env.Entities[0].Position, 0.0001)
+	require.InDelta(t, 7.5, env.Entities[0].ListPosition, 0.0001)
+}
+
 func TestListCards_AllFiltersForwarded(t *testing.T) {
 	t.Parallel()
 
