@@ -28,6 +28,7 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerOrganizations(srv, client)
 	registerUsers(srv, client)
 	registerCollections(srv, client)
+	registerWidgets(srv, client)
 
 	return srv
 }
