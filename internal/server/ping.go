@@ -46,10 +46,7 @@ func registerPing(srv *mcp.Server, client *favro.Client, source, version string)
 		Description: "Liveness check. Returns the server version, the bound Favro " +
 			"organization id, and which credential source is active. Does NOT " +
 			"contact Favro — this is a local diagnostic, not a connectivity test.",
-		Annotations: &mcp.ToolAnnotations{
-			ReadOnlyHint: true,
-			Title:        "Server liveness check",
-		},
+		Annotations: readOnly("Server liveness check"),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, _ pingInput) (*mcp.CallToolResult, PingOutput, error) {
 		return nil, out, nil
 	})

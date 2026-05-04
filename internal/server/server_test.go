@@ -34,6 +34,21 @@ func connectInMemory(t *testing.T) *mcp.ClientSession {
 	return connectInMemoryWith(t, favro.NewClient(fixtureToken()))
 }
 
+// favroFixture wires a *favro.Client to an httptest.Server backed by
+// the supplied handler. Returns the client; the server is auto-closed
+// at test end. Used by every server-package test that needs to drive
+// real HTTP responses through the Favro client (rate-limit tool,
+// resource tools).
+func favroFixture(t *testing.T, handler http.Handler) *favro.Client {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	c := favro.NewClient(fixtureToken())
+	c.BaseURL = srv.URL
+	c.HTTPClient = srv.Client()
+	return c
+}
+
 // connectInMemoryWith mirrors connectInMemory but uses the supplied
 // Favro client — so tests can wire it to an httptest server first.
 //
@@ -80,10 +95,12 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 	for _, tool := range res.Tools {
 		names = append(names, tool.Name)
 	}
-	require.Contains(t, names, pingToolName,
-		"tools/list must advertise %s; got %v", pingToolName, names)
-	require.Contains(t, names, rateLimitToolName,
-		"tools/list must advertise %s; got %v", rateLimitToolName, names)
+	require.Subset(t, names, []string{
+		pingToolName,
+		rateLimitToolName,
+		listOrgsToolName,
+		getOrgToolName,
+	}, "tools/list must advertise every registered tool; got %v", names)
 }
 
 func TestMCP_FavroPing_ReturnsExpectedFields(t *testing.T) {
@@ -151,17 +168,12 @@ func TestMCP_RateLimitStatus_NoObservationsYet(t *testing.T) {
 func TestMCP_RateLimitStatus_AfterObservation(t *testing.T) {
 	t.Parallel()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	favroClient := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-RateLimit-Limit", "1000")
 		w.Header().Set("X-RateLimit-Remaining", "987")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{}`))
 	}))
-	t.Cleanup(srv.Close)
-
-	favroClient := favro.NewClient(fixtureToken())
-	favroClient.BaseURL = srv.URL
-	favroClient.HTTPClient = srv.Client()
 
 	// Drive a single request so the client records a snapshot.
 	resp, err := favroClient.Do(context.Background(), http.MethodGet, "/anything", nil, nil)

@@ -2,7 +2,6 @@ package favro
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -14,23 +13,20 @@ import (
 // X-Favro-Backend-Identifier header alongside ?page=N.
 //
 // The visit callback runs once per response page with the parsed
-// envelope. Returning a non-nil error stops the iteration and
-// surfaces the error to the caller. A non-nil envelope with no
-// entities is a valid empty page and still triggers visit.
+// envelope. Returning a non-nil error stops the iteration. An empty
+// page is still a valid page and triggers visit.
 //
-// The starting query (initial filters) is sent on every page; only
-// the page index and X-Favro-Backend-Identifier header change between
-// requests.
+// GET-only by construction: every Favro paginated endpoint is a GET.
 //
 // Pagination is a top-level helper rather than an auto-collector
 // because silently iterating every page is the fastest way to burn
-// the per-organization rate-limit budget.
+// the per-organization rate-limit budget — call sites must opt in
+// explicitly.
 func Paginate[T any](
 	ctx context.Context,
 	c *Client,
-	method, path string,
+	path string,
 	query url.Values,
-	body any,
 	visit func(PageEnvelope[T]) error,
 ) error {
 	if c == nil {
@@ -50,7 +46,7 @@ func Paginate[T any](
 			q.Del("page")
 		}
 
-		env, err := fetchOne[T](ctx, c, method, path, q, body, requestID)
+		env, err := fetchOne[T](ctx, c, path, q, requestID)
 		if err != nil {
 			return err
 		}
@@ -67,30 +63,23 @@ func Paginate[T any](
 	}
 }
 
-// fetchOne sends one request and decodes the page envelope. The
-// requestID, if non-empty, is sent as X-Favro-Backend-Identifier so
-// Favro routes the call to the same backend that holds the cursor.
+// fetchOne sends one page request via GetJSON. The requestID, if
+// non-empty, rides as X-Favro-Backend-Identifier so Favro routes the
+// call to the backend that holds the cursor.
 func fetchOne[T any](
 	ctx context.Context,
 	c *Client,
-	method, path string,
+	path string,
 	query url.Values,
-	body any,
 	requestID string,
 ) (PageEnvelope[T], error) {
 	var opts []RequestOption
 	if requestID != "" {
 		opts = append(opts, WithHeader(headerRequestID, requestID))
 	}
-	resp, err := c.Do(ctx, method, path, query, body, opts...)
-	if err != nil {
-		return PageEnvelope[T]{}, err
-	}
-	defer drainAndClose(resp)
-
 	var env PageEnvelope[T]
-	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-		return PageEnvelope[T]{}, fmt.Errorf("favro: decode page envelope: %w", err)
+	if err := c.GetJSON(ctx, path, query, &env, opts...); err != nil {
+		return PageEnvelope[T]{}, err
 	}
 	return env, nil
 }
