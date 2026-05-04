@@ -6,13 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added (Phase 3 — Read CRUD: organizations, users, collections, widgets, columns)
+### Added (Phase 3 — Read CRUD: organizations, users, collections, widgets, columns, cards)
 - `internal/favro`: `Organization` / `SharedUser` types, `(*Client).GetJSON` helper, `ListOrganizations(ctx, page, requestID)`, `GetOrganization(ctx, id)`.
 - `internal/favro`: `User` type, `ListUsers(ctx, page, requestID)`, `GetUser(ctx, userID)`.
 - `internal/favro`: `Collection` type, `ListCollections(ctx, page, requestID)`, `GetCollection(ctx, collectionID)`.
 - `internal/favro`: `Widget` type, `ListWidgets(ctx, page, requestID, collectionID)` (first resource with a filter), `GetWidget(ctx, widgetCommonID)`.
 - `internal/favro`: `Column` type (incl. `CardCount`/`TimeSum`/`EstimationSum` aggregates), `ListColumns(ctx, page, requestID, widgetCommonID)`, `GetColumn(ctx, columnID)`. `widgetCommonID` is mandatory — Favro's /columns endpoint rejects unfiltered listings with HTTP 400; the client short-circuits empty input with `errMissingWidgetCommonID` to surface the requirement before any HTTP call.
-- MCP tools: `favro_list_*` and `favro_get_*` for organizations/users/collections/widgets/columns (all read-only; shared `listInput`/`listOutput[T]` shape — surfaces `next_page` and `request_id` for explicit pagination, never auto-aggregates). `favro_list_widgets` accepts optional `collection_id`; `favro_list_columns` requires `widget_common_id`.
+- `internal/favro`: `Card` type (cardCommonId, cardId, sequentialId+prefix, name, description, parent/widget/column ids, position, archived, dates, tag ids, assignment {userId, completed} pairs), `CardAssignment`, `ListCardsFilter` struct (widgetCommonID/collectionID/cardCommonID/sequentialID/unique), `ListCards(ctx, page, requestID, filter)`, `GetCard(ctx, cardID)`. CustomFieldsValues and full assignment/tag resolution are deferred to Phase 4 workflow tools. `GetCard` accepts the per-widget cardId — Favro's GET /cards/{id} 403s on a cardCommonId (verified live); callers must use the list endpoint with `cardCommonId` filter for cross-widget lookup.
+- MCP tools: `favro_list_*` and `favro_get_*` for organizations/users/collections/widgets/columns/cards (all read-only; shared `listInput`/`listOutput[T]` shape — surfaces `next_page` and `request_id` for explicit pagination, never auto-aggregates). `favro_list_widgets` accepts optional `collection_id`; `favro_list_columns` requires `widget_common_id`; `favro_list_cards` accepts widget/collection/cardCommon/sequential filters plus `unique` for cross-widget dedup.
 
 ### Added (Phase 2 — Favro client foundation)
 - `internal/favro` package: `Client` with HTTP Basic Auth, retry (single 429 retry honoring `Retry-After` ≤ 30s; 5xx exponential backoff 250ms/1s/4s × 3), typed errors (`AuthError` / `RateLimitError` / `NotFoundError` / `ValidationError` / `TransientError` / `APIError`), per-request `WithDryRun`/process-wide `ForceDryRun` gates that short-circuit POST/PUT/DELETE/PATCH and return a redacted `*DryRunRecord`, `Authorization`-header redaction in slog debug output and dry-run records.
