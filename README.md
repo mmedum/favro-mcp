@@ -91,6 +91,12 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | `favro_list_groups` | 3 | Read-only. Lists all groups (named user collections) in the active organization. Each entry includes the group's `members` list (`{userId, role}` pairs). Accepts `page` + `request_id`. |
 | `favro_get_group` | 3 | Read-only. Returns a single Favro group by its groupId. |
 | `favro_resolve_tag` | 4 | Read-only. Resolves a tag name (or fragment) to ranked tagId candidates. Case-insensitive: exact match scores 1.0, prefix 0.7, substring 0.4. Default `limit` 10, max 50. Tag list is cached for 5 minutes; pass `force_refresh: true` to bypass. |
+| `favro_resolve_user` | 4 | Read-only. Resolves a user name OR email (the better-of-the-two score) to ranked userId candidates. Email is included in each candidate so an LLM can disambiguate. 5-minute cache; same score scale as `favro_resolve_tag`. |
+| `favro_resolve_collection` | 4 | Read-only. Resolves a collection name to ranked collectionId candidates. 60-second cache (collections are added/renamed mid-session). |
+| `favro_resolve_widget` | 4 | Read-only. Resolves a widget name to ranked widgetCommonId candidates. Optional `collection_id` restricts results to widgets in that collection (applied client-side after the org-wide list is fetched). 60-second cache. |
+| `favro_resolve_column` | 4 | Read-only. Resolves a column name to ranked columnId candidates **on a given widget** — `widget_common_id` is required because column names ('Doing', 'Done') repeat across widgets. Position is included in each candidate. 60-second per-widget cache. |
+| `favro_resolve_custom_field` | 4 | Read-only. Resolves a custom field name to ranked customFieldId candidates. Each candidate includes the field's `type` ('Single select', 'Date', 'Members', etc.) for disambiguation. 5-minute cache. |
+| `favro_resolve_group` | 4 | Read-only. Resolves a group name to ranked groupId candidates. 5-minute cache. |
 
 The full tool index will land at v1.0 (Phase 8).
 
