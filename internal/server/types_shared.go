@@ -48,6 +48,24 @@ func newListOutput[T any](env favro.PageEnvelope[T]) listOutput[T] {
 	return out
 }
 
+// resolveOutput is the shared output shape for every favro_resolve_*
+// tool. T is the per-resource Resolved<X> projection. Cached signals
+// whether the underlying resource list came from the in-memory
+// cache so callers know whether a `force_refresh` follow-up might
+// surface newly-created items.
+type resolveOutput[T any] struct {
+	Candidates []T  `json:"candidates" jsonschema:"ranked candidates; empty when nothing matches"`
+	Cached     bool `json:"cached" jsonschema:"true when results came from the in-memory cache rather than a fresh Favro fetch"`
+}
+
+// resolveScoreScaleDoc is the canonical score-scale sentence
+// embedded in every favro_resolve_* tool description. Centralized
+// so the four magic numbers (1.0 / 0.7 / 0.4 / 0) live in exactly
+// one place that's reachable from every tool description and from
+// the Resolver layer's scoreLowered helper docstring. Update both
+// together if the score scale ever changes.
+const resolveScoreScaleDoc = "Score scale: exact match 1.0, prefix 0.7, substring 0.4. "
+
 // readOnly returns the canonical ToolAnnotations for a read-only tool
 // with the given title. Centralizing the ReadOnlyHint policy here
 // lets a future audit confirm "every read tool actually sets this".
