@@ -88,6 +88,8 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | `favro_get_tag` | 3 | Read-only. Returns a single Favro tag by its tagId. |
 | `favro_list_custom_fields` | 3 | Read-only. Lists all custom fields in the active organization (org-global). Each entry includes the field's `type` and, for select-flavored types, a `customFieldItems` list of legal options. Accepts `page` + `request_id`. |
 | `favro_get_custom_field` | 3 | Read-only. Returns a single Favro custom field by its customFieldId. |
+| `favro_list_groups` | 3 | Read-only. Lists all groups (named user collections) in the active organization. Each entry includes the group's `members` list (`{userId, role}` pairs). Accepts `page` + `request_id`. |
+| `favro_get_group` | 3 | Read-only. Returns a single Favro group by its groupId. |
 
 The full tool index will land at v1.0 (Phase 8).
 
