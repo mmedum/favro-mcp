@@ -37,10 +37,10 @@ On `main`:
 
 ## Tests
 
-- Unit tests run on every PR (`*_test.go`).
-- Integration tests are gated by both a `*_integration_test.go` filename suffix and a `FAVRO_INTEGRATION=1` env var. They run on push to `main` and on same-repo PRs labeled `integration-ok`. Never on fork PRs.
+- Unit tests run on every PR (`*_test.go`). The favro-package tests use `httptest.NewServer` to exercise URL building, retry, pagination, and JSON decode through the real HTTP transport.
 - MCP-protocol tests use the SDK in-memory transport — no subprocess.
 - Race detector (`-race`) is on by default.
+- Wire-format coverage against the live Favro API is currently done by the maintainer's pre-commit live MCP test, not in CI. A recorded-fixture replay path (`*_integration_test.go`) may land later.
 
 ## Dry-run for mutating tools
 
