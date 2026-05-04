@@ -154,8 +154,8 @@ func WithHeader(name, value string) RequestOption {
 // X-Favro-Backend-Identifier on subsequent pages.
 //
 // Errors:
-//   - Same typed kinds as Do (AuthError / NotFoundError /
-//     RateLimitError / TransientError / APIError).
+//   - Same typed kinds as Do (AuthError / ForbiddenError /
+//     NotFoundError / RateLimitError / TransientError / APIError).
 //   - A wrapped decode error if the response isn't valid JSON or
 //     contains trailing data (the latter would silently mask a
 //     malformed server response).
@@ -180,9 +180,9 @@ func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, out
 //
 // The returned *http.Response, when non-nil, has its body still open;
 // callers must close it. On error the response is nil and one of the
-// typed error kinds (AuthError / RateLimitError / NotFoundError /
-// ValidationError / TransientError / APIError / *DryRunRecord) is
-// returned.
+// typed error kinds (AuthError / ForbiddenError / RateLimitError /
+// NotFoundError / ValidationError / TransientError / APIError /
+// *DryRunRecord) is returned.
 //
 // Retry policy (per plan §7):
 //   - 429: single retry honoring Retry-After capped at 30s, then
@@ -346,8 +346,10 @@ func classifyClientError(resp *http.Response) error {
 		path = resp.Request.URL.Path
 	}
 	switch resp.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
+	case http.StatusUnauthorized:
 		return &AuthError{Status: resp.StatusCode}
+	case http.StatusForbidden:
+		return &ForbiddenError{Status: resp.StatusCode, Path: path}
 	case http.StatusNotFound:
 		return &NotFoundError{Path: path}
 	case http.StatusBadRequest, http.StatusUnprocessableEntity:

@@ -194,6 +194,38 @@ func TestDo_401_ReturnsAuthErrorNoRetry(t *testing.T) {
 	require.EqualValues(t, 1, calls.Load(), "401 must never be retried")
 }
 
+// TestDo_403_ReturnsForbiddenErrorNotAuthError pins the contract
+// that 403 is mapped to *ForbiddenError, not *AuthError. Favro
+// answers 403 for resources the token can't see (intentionally
+// avoiding 404 to not leak existence); reporting that as
+// "check FAVRO_USER_EMAIL" was misleading. Phase 3.10 follow-up.
+func TestDo_403_ReturnsForbiddenErrorNotAuthError(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusForbidden)
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	resp, err := c.Do(context.Background(), http.MethodGet, "/cards/some-id", nil, nil)
+	drainAndClose(resp)
+
+	var fe *ForbiddenError
+	require.ErrorAs(t, err, &fe)
+	require.Equal(t, http.StatusForbidden, fe.Status)
+	require.Contains(t, fe.Path, "/cards/some-id")
+
+	// Must NOT also satisfy AuthError — the whole point of the split.
+	var ae *AuthError
+	require.NotErrorAs(t, err, &ae, "403 must not be classified as AuthError")
+
+	require.EqualValues(t, 1, calls.Load(), "403 must never be retried")
+}
+
 func TestDo_404_ReturnsNotFoundErrorNoRetry(t *testing.T) {
 	t.Parallel()
 

@@ -5,14 +5,41 @@ import (
 	"time"
 )
 
-// AuthError indicates Favro rejected the credentials (HTTP 401 or 403).
-// Never embeds the email or token in its message.
+// AuthError indicates Favro rejected the credentials at the auth
+// layer (HTTP 401). Never embeds the email or token in its message.
+//
+// HTTP 403 is NOT mapped here: 403 means the token authenticated but
+// the specific resource is not accessible (it may not exist, or the
+// token may lack permission). That case is *ForbiddenError so the
+// LLM doesn't get a misleading "check your env vars" message when
+// it asks for a card / user / collection that's simply not visible
+// to its scope.
 type AuthError struct {
 	Status int
 }
 
 func (e *AuthError) Error() string {
 	return fmt.Sprintf("Favro authentication failed (HTTP %d) — check FAVRO_USER_EMAIL and FAVRO_API_TOKEN", e.Status)
+}
+
+// ForbiddenError is returned for HTTP 403 — the credentials are
+// valid (otherwise Favro would have answered 401), but the request
+// can't proceed against this specific resource. In practice Favro
+// uses 403 both for permission denials and for resources the token
+// can't see (Favro chooses 403 over 404 to avoid leaking existence);
+// from a caller's perspective these are functionally equivalent
+// "you can't get this" outcomes that are distinct from "your auth
+// is broken".
+type ForbiddenError struct {
+	Status int
+	Path   string
+}
+
+func (e *ForbiddenError) Error() string {
+	if e.Path == "" {
+		return fmt.Sprintf("Favro denied access (HTTP %d): the resource may not exist or the token lacks permission for it", e.Status)
+	}
+	return fmt.Sprintf("Favro denied access at %s (HTTP %d): the resource may not exist or the token lacks permission for it", e.Path, e.Status)
 }
 
 // RateLimitError is returned when Favro responds with HTTP 429.
