@@ -31,6 +31,7 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerWidgets(srv, client)
 	registerColumns(srv, client)
 	registerCards(srv, client)
+	registerComments(srv, client)
 
 	return srv
 }
