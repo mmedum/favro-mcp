@@ -34,6 +34,7 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerComments(srv, client)
 	registerTags(srv, client)
 	registerCustomFields(srv, client)
+	registerGroups(srv, client)
 
 	return srv
 }
