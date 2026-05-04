@@ -28,10 +28,6 @@ build: ## build the favro-mcp binary into ./bin
 test: ## run unit tests with the race detector
 	$(GO) test -race -coverprofile=coverage.out ./...
 
-.PHONY: test-integration
-test-integration: ## run integration tests (requires FAVRO_INTEGRATION=1 and FAVRO_* creds)
-	FAVRO_INTEGRATION=1 $(GO) test -race -tags=integration ./...
-
 .PHONY: vet
 vet: ## go vet
 	$(GO) vet ./...

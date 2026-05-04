@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- CI: removed the `test-integration` job. It was gated to push-to-main / `integration-ok`-labeled PRs and ran zero tests anyway (no `*_integration_test.go` fixtures exist), so it was cruft. Wire-format coverage is currently done via the maintainer's pre-commit live MCP test; a recorded-fixture replay path can revive a real CI integration job later without ever calling Favro from CI. Repo secrets `FAVRO_USER_EMAIL` / `FAVRO_API_TOKEN` / `FAVRO_ORGANIZATION_ID` referenced by the removed job are no longer used in CI; rotate or delete them in GitHub Settings if you want.
+
 ### Added (Phase 3 — Read CRUD: organizations, users, collections, widgets, columns, cards, comments)
 - `internal/favro`: `Organization` / `SharedUser` types, `(*Client).GetJSON` helper, `ListOrganizations(ctx, page, requestID)`, `GetOrganization(ctx, id)`.
 - `internal/favro`: `User` type, `ListUsers(ctx, page, requestID)`, `GetUser(ctx, userID)`.
