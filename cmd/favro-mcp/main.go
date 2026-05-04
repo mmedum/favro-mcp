@@ -28,6 +28,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/internal/favro"
 	"github.com/mmedum/favro-mcp/internal/server"
 	"github.com/mmedum/favro-mcp/internal/version"
 )
@@ -123,9 +124,11 @@ func runServer(args []string) error {
 	}
 
 	if *dryRun {
-		// Hooked into runServer for surface stability; no mutating tools
-		// exist yet so the flag is currently a stub.
-		slog.Info("--dry-run set; mutating tools will short-circuit when added")
+		// Wired through Client.ForceDryRun below — every POST/PUT/
+		// DELETE/PATCH issued via the Favro client short-circuits and
+		// returns a *favro.DryRunRecord. Phase 5 adds the high-level
+		// mutating tools that exercise this gate.
+		slog.Info("--dry-run set; all mutating Favro requests will short-circuit and return a DryRunRecord")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -155,7 +158,10 @@ func runServer(args []string) error {
 		slog.Warn("FAVRO_MCP_SKIP_VALIDATE is set — startup live validation disabled")
 	}
 
-	srv := server.New(rt, version.String())
+	client := favro.NewClient(rt.Token)
+	client.ForceDryRun = *dryRun
+
+	srv := server.New(client, rt.Source, version.String())
 	if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("MCP server exited with error", "error", err)
 		return err

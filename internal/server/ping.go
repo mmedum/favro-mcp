@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/internal/favro"
 )
 
 // pingToolName is the tool name advertised on the MCP protocol and
@@ -33,12 +33,12 @@ type PingOutput struct {
 // registerPing wires the favro_ping tool into srv. The output is
 // captured at registration time because nothing in it changes during
 // the server's lifetime — credentials are resolved once at startup.
-func registerPing(srv *mcp.Server, rt auth.ResolvedToken, version string) {
+func registerPing(srv *mcp.Server, client *favro.Client, source, version string) {
 	out := PingOutput{
 		Server:           serverName,
 		Version:          version,
-		OrganizationID:   rt.Token.OrganizationID,
-		CredentialSource: rt.Source,
+		OrganizationID:   client.Token.OrganizationID,
+		CredentialSource: source,
 	}
 
 	mcp.AddTool(srv, &mcp.Tool{
