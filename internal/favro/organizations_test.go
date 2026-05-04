@@ -85,7 +85,7 @@ func TestGetOrganization_HappyPath(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(Organization{
 			OrganizationID: "org-xyz",
 			Name:           "Test Org",
-			SharedToUsers: []OrgMember{
+			SharedToUsers: []SharedUser{
 				{UserID: "u-1", Role: "admin"},
 			},
 		})

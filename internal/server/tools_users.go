@@ -25,13 +25,7 @@ func registerUsers(srv *mcp.Server, client *favro.Client) {
 			"Returns one page; pass `page` (1-indexed) plus the `request_id` from the " +
 			"prior response to retrieve subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro users"),
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listInput) (*mcp.CallToolResult, listOutput[favro.User], error) {
-		env, err := client.ListUsers(ctx, in.Page, in.RequestID)
-		if err != nil {
-			return nil, listOutput[favro.User]{}, err
-		}
-		return nil, newListOutput(env), nil
-	})
+	}, wrapList(client.ListUsers))
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        getUserToolName,

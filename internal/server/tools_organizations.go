@@ -25,13 +25,7 @@ func registerOrganizations(srv *mcp.Server, client *favro.Client) {
 			"page; pass `page` (1-indexed) plus the `request_id` from the prior " +
 			"response to retrieve subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro organizations"),
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listInput) (*mcp.CallToolResult, listOutput[favro.Organization], error) {
-		env, err := client.ListOrganizations(ctx, in.Page, in.RequestID)
-		if err != nil {
-			return nil, listOutput[favro.Organization]{}, err
-		}
-		return nil, newListOutput(env), nil
-	})
+	}, wrapList(client.ListOrganizations))
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        getOrgToolName,

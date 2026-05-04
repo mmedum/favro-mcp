@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -126,27 +125,5 @@ func TestMCP_GetOrganization_HappyPath(t *testing.T) {
 
 func TestMCP_GetOrganization_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
-
-	calls := 0
-	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls++
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	cs := connectInMemoryWith(t, c)
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name:      getOrgToolName,
-		Arguments: map[string]any{}, // no organization_id
-	})
-	// CallTool itself doesn't return a transport error; the handler
-	// error surfaces as a tool-level error result.
-	require.NoError(t, err)
-	require.True(t, res.IsError, "missing organization_id must surface as a tool error")
-	// The MCP SDK validates the input schema before our handler runs
-	// and emits a "missing properties: [\"organization_id\"]" message.
-	// That's exactly what the LLM needs to see — pin it so a future
-	// change doesn't drop the field name from the error.
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "organization_id",
-		"the LLM-visible error must name the missing field")
-	require.Equal(t, 0, calls, "missing id must short-circuit before any Favro call")
+	assertGetMissingIDFails(t, getOrgToolName, "organization_id")
 }
