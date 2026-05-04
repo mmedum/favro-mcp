@@ -30,7 +30,7 @@ type Widget struct {
 
 // ListWidgets returns one page of widgets in the active organization.
 // If collectionID is non-empty the result is scoped to widgets in
-// that collection (Favro's `collection` query parameter).
+// that collection (Favro's `collectionId` query parameter).
 //
 // Callers that paginate must pass collectionID on every page —
 // dropping the filter mid-pagination silently switches the result
@@ -38,7 +38,7 @@ type Widget struct {
 func (c *Client) ListWidgets(ctx context.Context, page int, requestID, collectionID string) (PageEnvelope[Widget], error) {
 	q := url.Values{}
 	if collectionID != "" {
-		q.Set("collection", collectionID)
+		q.Set("collectionId", collectionID)
 	}
 	return listPageQ[Widget](ctx, c, "/widgets", q, page, requestID)
 }

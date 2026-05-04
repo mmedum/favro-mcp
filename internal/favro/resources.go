@@ -27,7 +27,7 @@ func listPage[T any](ctx context.Context, c *Client, path string, page int, requ
 }
 
 // listPageQ is listPage with a caller-supplied query. Use this when
-// the endpoint accepts filters (e.g. /widgets?collection=…). q may
+// the endpoint accepts filters (e.g. /widgets?collectionId=…). q may
 // be nil or empty; the helper will add ?page=N when page > 0. The
 // caller must NOT pre-set "page" — listPageQ owns that key.
 func listPageQ[T any](ctx context.Context, c *Client, path string, q url.Values, page int, requestID string) (PageEnvelope[T], error) {

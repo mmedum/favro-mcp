@@ -48,7 +48,7 @@ func TestMCP_ListWidgets_FiltersByCollection(t *testing.T) {
 
 	var sawCollection string
 	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawCollection = r.URL.Query().Get("collection")
+		sawCollection = r.URL.Query().Get("collectionId")
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(favro.PageEnvelope[favro.Widget]{Page: 0, Pages: 1})
 	}))
@@ -62,7 +62,7 @@ func TestMCP_ListWidgets_FiltersByCollection(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, "c-xyz", sawCollection,
-		"collection_id input must reach Favro as ?collection=")
+		"collection_id input must reach Favro as ?collectionId=")
 }
 
 func TestMCP_GetWidget_HappyPath(t *testing.T) {

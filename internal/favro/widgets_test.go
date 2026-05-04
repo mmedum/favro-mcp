@@ -60,8 +60,8 @@ func TestListWidgets_FiltersByCollection(t *testing.T) {
 	require.NoError(t, err)
 
 	rec := h.seen()
-	require.Equal(t, "c-xyz", rec[0].Query.Get("collection"),
-		"non-empty collectionID must be sent as ?collection=")
+	require.Equal(t, "c-xyz", rec[0].Query.Get("collectionId"),
+		"non-empty collectionID must be sent as ?collectionId= (Favro's actual filter parameter, verified live)")
 }
 
 func TestListWidgets_WithPageForwardsRequestID(t *testing.T) {
