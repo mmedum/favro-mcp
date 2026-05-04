@@ -43,6 +43,13 @@ type Resolver struct {
 	columnCache      cache.TTL[[]favro.Column]
 	customFieldCache cache.TTL[[]favro.CustomField]
 	groupCache       cache.TTL[[]favro.Group]
+	// searchCardCache stores the pre-stripped, pre-lowercased corpus
+	// per (scope, scopeID, includeArchived) so repeated
+	// favro_search_cards queries against the same scope skip both the
+	// HTTP fetch and the per-card markdown sweep + ToLower. Plan §7's
+	// 60s scoped TTL. Keys are namespaced under "search:" so a single
+	// InvalidatePrefix call drops them all on a card mutation.
+	searchCardCache cache.TTL[scopedCorpus]
 }
 
 // Cache keys + TTLs. Per-resource sentinels (rather than a single

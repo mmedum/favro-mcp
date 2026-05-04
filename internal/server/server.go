@@ -49,6 +49,7 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerResolveColumn(srv, resolver)
 	registerResolveCustomField(srv, resolver)
 	registerResolveGroup(srv, resolver)
+	registerSearchCards(srv, resolver)
 
 	return srv
 }

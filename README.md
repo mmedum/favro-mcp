@@ -97,6 +97,7 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | `favro_resolve_column` | 4 | Read-only. Resolves a column name to ranked columnId candidates **on a given widget** — `widget_common_id` is required because column names ('Doing', 'Done') repeat across widgets. Position is included in each candidate. 60-second per-widget cache. |
 | `favro_resolve_custom_field` | 4 | Read-only. Resolves a custom field name to ranked customFieldId candidates. Each candidate includes the field's `type` ('Single select', 'Date', 'Members', etc.) for disambiguation. 5-minute cache. |
 | `favro_resolve_group` | 4 | Read-only. Resolves a group name to ranked groupId candidates. 5-minute cache. |
+| `favro_search_cards` | 4 | Read-only. Local full-text search over card name + description (Favro has no native FT search). Exactly one of `widget_common_id` / `collection_id` is required — Favro's `/cards` endpoint rejects unfiltered listings, so org-wide search isn't supported; resolve a widget or collection first if you don't know one. Markdown is stripped before matching. Score scale: name phrase +1.0, name token overlap up to +0.6, body phrase +0.5, body token overlap up to +0.5 (additive). 60-second per-(scope, include_archived) cache; pass `force_refresh: true` to bypass. `column_name` is intentionally omitted from each hit — chain to `favro_get_card_full` (Phase 4.4) for per-card metadata. |
 
 The full tool index will land at v1.0 (Phase 8).
 
