@@ -36,18 +36,13 @@ func TestMCP_ResolveTag_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, res.IsError)
 
-	out := decodeStructured[resolveTagOutput](t, res)
+	out := decodeStructured[resolveOutput[ResolvedTag]](t, res)
 	require.Len(t, out.Candidates, 1)
 	require.Equal(t, "t-1", out.Candidates[0].TagID)
 	require.Equal(t, "frontend", out.Candidates[0].Name)
 	require.Equal(t, "blue", out.Candidates[0].Color)
-	require.InDelta(t, 0.7, out.Candidates[0].Score, 0.001)
+	require.InDelta(t, 0.7, out.Candidates[0].Score, scoreEpsilon)
 	require.False(t, out.Cached, "first call must report uncached")
-}
-
-func TestMCP_ResolveTag_MissingName_ReturnsToolError(t *testing.T) {
-	t.Parallel()
-	assertMissingRequiredFieldFails(t, resolveTagToolName, "name")
 }
 
 func TestMCP_ResolveTag_NoMatchReturnsEmptyList(t *testing.T) {
@@ -72,6 +67,6 @@ func TestMCP_ResolveTag_NoMatchReturnsEmptyList(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, res.IsError, "no match must NOT surface as a tool error — empty candidate list is the contract")
 
-	out := decodeStructured[resolveTagOutput](t, res)
+	out := decodeStructured[resolveOutput[ResolvedTag]](t, res)
 	require.Empty(t, out.Candidates)
 }
