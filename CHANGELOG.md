@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added (Phase 3 — Read CRUD: organizations)
+- `internal/favro`: `Organization` / `OrgMember` types, `(*Client).GetJSON` helper, `ListOrganizations(ctx, page)` (returns `PageEnvelope[Organization]`), `GetOrganization(ctx, id)`.
+- MCP tools: `favro_list_organizations` (read-only; optional `page`; surfaces `next_page` and `request_id` for explicit pagination — never auto-aggregates), `favro_get_organization` (read-only; takes `organization_id`).
+
 ### Added (Phase 2 — Favro client foundation)
 - `internal/favro` package: `Client` with HTTP Basic Auth, retry (single 429 retry honoring `Retry-After` ≤ 30s; 5xx exponential backoff 250ms/1s/4s × 3), typed errors (`AuthError` / `RateLimitError` / `NotFoundError` / `ValidationError` / `TransientError` / `APIError`), per-request `WithDryRun`/process-wide `ForceDryRun` gates that short-circuit POST/PUT/DELETE/PATCH and return a redacted `*DryRunRecord`, `Authorization`-header redaction in slog debug output and dry-run records.
 - `Paginate[T]` generic helper drives Favro's two-step pagination protocol (sets `X-Favro-Backend-Identifier` from the prior response's `requestId`).
