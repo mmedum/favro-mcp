@@ -76,6 +76,8 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | `favro_get_user` | 3 | Read-only. Returns a single Favro user by id. |
 | `favro_list_collections` | 3 | Read-only. Lists collections in the bound Favro organization. Optional `page` + `request_id`. |
 | `favro_get_collection` | 3 | Read-only. Returns a single Favro collection by id. |
+| `favro_list_widgets` | 3 | Read-only. Lists widgets (boards). Optional `collection_id` filter, plus `page` + `request_id`. |
+| `favro_get_widget` | 3 | Read-only. Returns a single Favro widget by its widgetCommonId. |
 
 The full tool index will land at v1.0 (Phase 8).
 
