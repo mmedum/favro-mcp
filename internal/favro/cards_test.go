@@ -82,6 +82,55 @@ func TestListCards_FractionalPosition(t *testing.T) {
 	require.InDelta(t, 7.5, env.Entities[0].ListPosition, 0.0001)
 }
 
+// TestListCards_CustomFieldsValuesDecoding pins the JSON contract
+// for Card.CustomFieldsValues across the field shapes Phase 4.4
+// dereferences. Value is json.RawMessage so each Favro type (text,
+// number, date, checkbox, link) survives decode without committing
+// the projection to a single Go type; CustomFieldItemIDs carries
+// the option references for select-flavored fields.
+func TestListCards_CustomFieldsValuesDecoding(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"page":0,"pages":1,"requestId":"r","entities":[{
+			"cardId":"c1","cardCommonId":"cc1","name":"x",
+			"customFieldsValues":[
+				{"customFieldId":"cf-text","value":"hello"},
+				{"customFieldId":"cf-num","value":42},
+				{"customFieldId":"cf-bool","value":true},
+				{"customFieldId":"cf-date","value":"2026-05-04T00:00:00Z"},
+				{"customFieldId":"cf-select","customFieldItemIds":["item-1"]},
+				{"customFieldId":"cf-multi","customFieldItemIds":["item-1","item-2"]},
+				{"customFieldId":"cf-rating","value":3,"total":7}
+			]
+		}]}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	env, err := c.ListCards(context.Background(), 0, "", ListCardsFilter{})
+	require.NoError(t, err)
+	require.Len(t, env.Entities, 1)
+	cfvs := env.Entities[0].CustomFieldsValues
+	require.Len(t, cfvs, 7)
+
+	// Lookup helper — order is preserved but tests don't depend on it.
+	byID := map[string]CardCustomFieldValue{}
+	for _, v := range cfvs {
+		byID[v.CustomFieldID] = v
+	}
+
+	require.JSONEq(t, `"hello"`, string(byID["cf-text"].Value))
+	require.JSONEq(t, `42`, string(byID["cf-num"].Value))
+	require.JSONEq(t, `true`, string(byID["cf-bool"].Value))
+	require.JSONEq(t, `"2026-05-04T00:00:00Z"`, string(byID["cf-date"].Value))
+	require.Equal(t, []string{"item-1"}, byID["cf-select"].CustomFieldItemIDs)
+	require.Equal(t, []string{"item-1", "item-2"}, byID["cf-multi"].CustomFieldItemIDs)
+	require.InDelta(t, 7.0, byID["cf-rating"].Total, 0.0001)
+}
+
 func TestListCards_AllFiltersForwarded(t *testing.T) {
 	t.Parallel()
 
