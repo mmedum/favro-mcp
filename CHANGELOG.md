@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added (Phase 2 — Favro client foundation)
+- `internal/favro` package: `Client` with HTTP Basic Auth, retry (single 429 retry honoring `Retry-After` ≤ 30s; 5xx exponential backoff 250ms/1s/4s × 3), typed errors (`AuthError` / `RateLimitError` / `NotFoundError` / `ValidationError` / `TransientError` / `APIError`), per-request `WithDryRun`/process-wide `ForceDryRun` gates that short-circuit POST/PUT/DELETE/PATCH and return a redacted `*DryRunRecord`, `Authorization`-header redaction in slog debug output and dry-run records.
+- `Paginate[T]` generic helper drives Favro's two-step pagination protocol (sets `X-Favro-Backend-Identifier` from the prior response's `requestId`).
+- `RateLimitSnapshot` observation: every Favro response feeds a goroutine-safe tracker; surfaced via the new `favro_rate_limit_status` MCP tool.
+- `internal/cache` package: generic `TTL[V]` cache — goroutine-safe, lazy expiry on Get, `Invalidate` / `InvalidatePrefix` / `Clear` / `Sweep`. Foundation for Phase 4+ resolver caches.
+- `internal/server`: `New` now takes a `*favro.Client`; `favro_rate_limit_status` registered alongside `favro_ping`.
+- Tests: 90.9% coverage on `internal/favro`, 100% on `internal/cache`. New regression: `TestMCP_RateLimitStatus_AfterObservation` proves the rate-limit tool reports observed Favro headers correctly.
+
 ### Added (Phase 1 — auth + stdio handshake)
 - `internal/auth` package: `Token` with HTTP Basic Auth + `organizationId` header `Apply`, `Source` interface, `EnvSource` (FAVRO_USER_EMAIL / FAVRO_API_TOKEN / FAVRO_ORGANIZATION_ID), `KeyringSource` (OS keyring with active-account pointer), `ResolveToken` (env → keyring), `Validator` (live `GET /organizations` with 5s timeout).
 - `internal/server` package: `New(ResolvedToken, version)` builds an `*mcp.Server`, registers `favro_ping` tool. Output never carries email or API token; pinned by a regression test.

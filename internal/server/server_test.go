@@ -1,7 +1,10 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -9,19 +12,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/internal/favro"
 )
 
-// fixtureToken is a deterministic resolved token for tests. The values
-// are obviously fake — they do not match any real Favro account — and
-// no test should be allowed to send them over the network.
-func fixtureToken() auth.ResolvedToken {
-	return auth.ResolvedToken{
-		Token: auth.Token{
-			Email:          "fixture@example.invalid",
-			APIToken:       "fixture-api-token-do-not-use",
-			OrganizationID: "fixture-org-1",
-		},
-		Source: "env",
+// fixtureToken is a deterministic token for tests. The values are
+// obviously fake — they do not match any real Favro account — and no
+// test should be allowed to send them over the network.
+func fixtureToken() auth.Token {
+	return auth.Token{
+		Email:          "fixture@example.invalid",
+		APIToken:       "fixture-api-token-do-not-use",
+		OrganizationID: "fixture-org-1",
 	}
 }
 
@@ -30,14 +31,29 @@ func fixtureToken() auth.ResolvedToken {
 // to drive tools/list and tools/call without a subprocess.
 func connectInMemory(t *testing.T) *mcp.ClientSession {
 	t.Helper()
+	return connectInMemoryWith(t, favro.NewClient(fixtureToken()))
+}
+
+// connectInMemoryWith mirrors connectInMemory but uses the supplied
+// Favro client — so tests can wire it to an httptest server first.
+//
+// The server goroutine and the test are tied together via a `done`
+// channel: t.Cleanup waits for the goroutine to exit before the test
+// completes, so a stray t.Errorf can't fire after the test has ended
+// (the testing framework panics on "Log in goroutine after the test
+// has completed" otherwise).
+func connectInMemoryWith(t *testing.T, favroClient *favro.Client) *mcp.ClientSession {
+	t.Helper()
 	ctx := t.Context()
 
-	srv := New(fixtureToken(), "v0.1.0-test")
+	srv := New(favroClient, "env", "v0.1.0-test")
 	client := mcp.NewClient(&mcp.Implementation{Name: "favro-mcp-test", Version: "v0.0.0"}, nil)
 
 	clientT, serverT := mcp.NewInMemoryTransports()
 
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		if err := srv.Run(ctx, serverT); err != nil && ctx.Err() == nil {
 			t.Errorf("server.Run returned error: %v", err)
 		}
@@ -45,7 +61,10 @@ func connectInMemory(t *testing.T) *mcp.ClientSession {
 
 	cs, err := client.Connect(ctx, clientT, nil)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = cs.Close() })
+	t.Cleanup(func() {
+		_ = cs.Close()
+		<-done
+	})
 	return cs
 }
 
@@ -63,6 +82,8 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 	}
 	require.Contains(t, names, pingToolName,
 		"tools/list must advertise %s; got %v", pingToolName, names)
+	require.Contains(t, names, rateLimitToolName,
+		"tools/list must advertise %s; got %v", rateLimitToolName, names)
 }
 
 func TestMCP_FavroPing_ReturnsExpectedFields(t *testing.T) {
@@ -99,7 +120,7 @@ func TestMCP_FavroPing_OutputContainsNoSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	tok := fixtureToken().Token
+	tok := fixtureToken()
 	full := serializedResponseString(t, res)
 
 	require.NotContains(t, full, tok.Email,
@@ -108,6 +129,65 @@ func TestMCP_FavroPing_OutputContainsNoSecrets(t *testing.T) {
 		"ping response leaked API token: %q", full)
 	require.NotContains(t, strings.ToLower(full), "authorization",
 		"ping response includes the word 'authorization', which suggests a header leaked: %q", full)
+}
+
+func TestMCP_RateLimitStatus_NoObservationsYet(t *testing.T) {
+	t.Parallel()
+
+	cs := connectInMemory(t)
+
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      rateLimitToolName,
+		Arguments: map[string]any{},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+
+	out := decodeStructured[RateLimitOutput](t, res)
+	require.False(t, out.HaveSeen)
+	require.Equal(t, -1, out.Remaining, "Remaining must distinguish 'not seen' from 'zero'")
+}
+
+func TestMCP_RateLimitStatus_AfterObservation(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Limit", "1000")
+		w.Header().Set("X-RateLimit-Remaining", "987")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	favroClient := favro.NewClient(fixtureToken())
+	favroClient.BaseURL = srv.URL
+	favroClient.HTTPClient = srv.Client()
+
+	// Drive a single request so the client records a snapshot.
+	resp, err := favroClient.Do(context.Background(), http.MethodGet, "/anything", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+	})
+
+	cs := connectInMemoryWith(t, favroClient)
+	callRes, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      rateLimitToolName,
+		Arguments: map[string]any{},
+	})
+	require.NoError(t, err)
+	require.False(t, callRes.IsError)
+
+	out := decodeStructured[RateLimitOutput](t, callRes)
+	require.True(t, out.HaveSeen)
+	require.Equal(t, 1000, out.Limit)
+	require.Equal(t, 987, out.Remaining)
+	require.Equal(t, "/anything", out.LastPath)
+	require.Equal(t, http.StatusOK, out.LastStatus)
+	require.NotZero(t, out.LastObservedUnix)
+	require.NotEmpty(t, out.LastObservedAgo)
 }
 
 // decodeStructured pulls the typed Output out of a CallToolResult.
