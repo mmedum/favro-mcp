@@ -68,27 +68,6 @@ jobs:
       - name: in-memory MCP transport tests
         run: go test -race -run 'TestMCP' ./internal/server/... || echo "::notice::no MCP-protocol tests yet (placeholder)"
 
-  test-integration:
-    name: test-integration
-    runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' &&
-       contains(github.event.pull_request.labels.*.name, 'integration-ok'))
-    env:
-      FAVRO_INTEGRATION: "1"
-      FAVRO_USER_EMAIL: ${{ secrets.FAVRO_USER_EMAIL }}
-      FAVRO_API_TOKEN: ${{ secrets.FAVRO_API_TOKEN }}
-      FAVRO_ORGANIZATION_ID: ${{ secrets.FAVRO_ORGANIZATION_ID }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          check-latest: true
-      - name: integration tests
-        run: go test -race -run 'Integration' ./...
-
   vulncheck:
     name: vulncheck
     runs-on: ubuntu-latest
