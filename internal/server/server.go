@@ -5,7 +5,7 @@ package server
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/internal/favro"
 )
 
 // serverName is the MCP Implementation name advertised on the protocol
@@ -13,16 +13,18 @@ import (
 // stable across versions.
 const serverName = "favro-mcp"
 
-// New returns an *mcp.Server with every registered tool. The resolved
-// token is plumbed into handlers; version is embedded as the MCP
-// Implementation.Version (set at link time via -ldflags).
-func New(rt auth.ResolvedToken, version string) *mcp.Server {
+// New returns an *mcp.Server with every registered tool. The Favro
+// client is plumbed into handlers that need it; source is the
+// credential-source name ("env" / "keyring") surfaced by favro_ping;
+// version is embedded as MCP Implementation.Version.
+func New(client *favro.Client, source, version string) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    serverName,
 		Version: version,
 	}, nil)
 
-	registerPing(srv, rt, version)
+	registerPing(srv, client, source, version)
+	registerRateLimitStatus(srv, client)
 
 	return srv
 }

@@ -8,7 +8,7 @@ A Model Context Protocol (MCP) server for [Favro](https://favro.com), written in
 
 Pre-release. See [CHANGELOG.md](./CHANGELOG.md) for what's shipped.
 
-Active phase: **Phase 1** — auth subsystem & stdio handshake.
+Active phase: **Phase 2** — Favro client foundation (HTTP client, retry, pagination, cache, rate-limit observation).
 
 ## Authentication
 
@@ -69,6 +69,7 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | Tool | Phase | What it does |
 | --- | --- | --- |
 | `favro_ping` | 1 | Read-only liveness check. Returns server version, the bound Favro organization id, and the active credential source (`env` or `keyring`). Does **not** contact Favro — it's a local diagnostic. |
+| `favro_rate_limit_status` | 2 | Read-only. Reports the most recently observed Favro rate-limit headers (`X-RateLimit-Limit/Remaining/Reset`, plus `Retry-After` on 429). Does **not** contact Favro — surfaces what the client already saw on prior requests so the caller can decide whether to slow down. |
 
 The full tool index will land at v1.0 (Phase 8).
 
