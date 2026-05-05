@@ -30,7 +30,7 @@ func TestListTags_HappyPath(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListTags(context.Background(), 0, "")
+	env, err := c.ListTags(context.Background(), 0, "", ListTagsFilter{})
 	require.NoError(t, err)
 	require.Equal(t, "req-tags", env.RequestID)
 	require.Len(t, env.Entities, 2)
@@ -54,7 +54,7 @@ func TestListTags_WithPageForwardsRequestID(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListTags(context.Background(), 2, "req-prior")
+	_, err := c.ListTags(context.Background(), 2, "req-prior", ListTagsFilter{})
 	require.NoError(t, err)
 
 	rec := h.seen()
@@ -115,4 +115,22 @@ func TestGetTag_NotFound(t *testing.T) {
 	_, err := c.GetTag(context.Background(), "missing")
 	var nf *NotFoundError
 	require.ErrorAs(t, err, &nf)
+}
+
+// TestListTags_NameFilterForwarded pins ListTagsFilter.Name → ?name=
+// (Favro's documented exact-match server-side filter).
+func TestListTags_NameFilterForwarded(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PageEnvelope[Tag]{Page: 0, Pages: 1})
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.ListTags(context.Background(), 0, "", ListTagsFilter{Name: "blocker"})
+	require.NoError(t, err)
+	require.Equal(t, "blocker", h.seen()[0].Query.Get("name"))
 }

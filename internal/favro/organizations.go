@@ -9,16 +9,20 @@ import (
 type Organization struct {
 	OrganizationID string       `json:"organizationId"`
 	Name           string       `json:"name"`
+	Thumbnail      string       `json:"thumbnail,omitempty"`
 	SharedToUsers  []SharedUser `json:"sharedToUsers,omitempty"`
 }
 
 // SharedUser is a (userId, role) mapping that appears inside any
 // Favro resource carrying access control — Organizations, Collections,
 // and (later) Widgets / Cards. Favro returns the same shape on every
-// such resource.
+// such resource. JoinDate is documented only on org members but is
+// included here because the type is reused; absent fields decode as
+// the zero string and are dropped from re-serialization by omitempty.
 type SharedUser struct {
-	UserID string `json:"userId"`
-	Role   string `json:"role,omitempty"`
+	UserID   string `json:"userId"`
+	Role     string `json:"role,omitempty"`
+	JoinDate string `json:"joinDate,omitempty"`
 }
 
 // ListOrganizations returns one page of organizations the API token

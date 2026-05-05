@@ -261,11 +261,19 @@ func (r *Resolver) dereferenceWidgetContext(ctx context.Context, full *FullCard)
 	}
 
 	if full.ColumnID != "" {
-		columns, _, err := r.listColumnsForWidget(ctx, full.WidgetCommonID, false)
-		if err != nil {
-			return err
+		// Prefer the embedded Widget.Columns summary (id+name+color)
+		// when populated — saves a /columns round-trip on cold cache.
+		// Fall back to the standalone /columns endpoint when the
+		// widget object didn't carry the summary.
+		if name := findColumnNameInWidget(w.Columns, full.ColumnID); name != "" {
+			full.ColumnName = name
+		} else {
+			columns, _, err := r.listColumnsForWidget(ctx, full.WidgetCommonID, false)
+			if err != nil {
+				return err
+			}
+			full.ColumnName = findColumnName(columns, full.ColumnID)
 		}
-		full.ColumnName = findColumnName(columns, full.ColumnID)
 	}
 	return nil
 }
@@ -300,6 +308,19 @@ func findWidget(widgets []favro.Widget, widgetCommonID string) *favro.Widget {
 }
 
 func findColumnName(columns []favro.Column, columnID string) string {
+	for _, c := range columns {
+		if c.ColumnID == columnID {
+			return c.Name
+		}
+	}
+	return ""
+}
+
+// findColumnNameInWidget looks up columnID against the widget's
+// embedded denormalized columns summary. Returns "" when the widget
+// object didn't carry the summary, so the caller can fall back to a
+// /columns fetch.
+func findColumnNameInWidget(columns []favro.WidgetColumn, columnID string) string {
 	for _, c := range columns {
 		if c.ColumnID == columnID {
 			return c.Name

@@ -339,12 +339,25 @@ func newSearchFixture(t *testing.T, pages [][]favro.Card) (*Resolver, *atomic.In
 			t.Errorf("test fixture asked for page %d but only %d pages defined", page, totalPages)
 			return
 		}
+		// Mirror Favro's documented server-side `archived` filter:
+		// when archived=true the response includes archived cards;
+		// when absent (or false) archived cards are filtered out.
+		entities := pages[page]
+		if r.URL.Query().Get("archived") != "true" {
+			filtered := entities[:0:0]
+			for _, c := range entities {
+				if !c.IsArchived {
+					filtered = append(filtered, c)
+				}
+			}
+			entities = filtered
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(favro.PageEnvelope[favro.Card]{
 			Page:      page,
 			Pages:     totalPages,
 			RequestID: "req-search",
-			Entities:  pages[page],
+			Entities:  entities,
 		})
 	})
 
