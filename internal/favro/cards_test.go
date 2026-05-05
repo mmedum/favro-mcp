@@ -323,3 +323,335 @@ func TestGetCard_NotFound(t *testing.T) {
 	var nf *NotFoundError
 	require.ErrorAs(t, err, &nf)
 }
+
+// TestCreateCard_HappyPath pins POST /cards: name + widget +
+// optional knobs in the body, decoded Card response back.
+func TestCreateCard_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPost, rec.Method)
+		require.Equal(t, "/cards", rec.Path)
+		require.JSONEq(t, `{
+			"name":"new card",
+			"widgetCommonId":"w-1",
+			"columnId":"col-1",
+			"tagIds":["t-1","t-2"],
+			"assignmentIds":["u-1"]
+		}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-new","cardCommonId":"cc-new","name":"new card","widgetCommonId":"w-1","columnId":"col-1"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.CreateCard(context.Background(), CreateCardRequest{
+		Name:           "new card",
+		WidgetCommonID: "w-1",
+		ColumnID:       "col-1",
+		TagIDs:         []string{"t-1", "t-2"},
+		AssignmentIDs:  []string{"u-1"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "ci-new", got.CardID)
+	require.Equal(t, "cc-new", got.CardCommonID)
+}
+
+// TestCreateCard_EmptyName_NoNetworkCall pins that an empty name
+// short-circuits before any HTTP call.
+func TestCreateCard_EmptyName_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {
+		// Should never be called.
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.CreateCard(context.Background(), CreateCardRequest{Name: ""})
+	require.Error(t, err)
+	require.Empty(t, h.seen())
+}
+
+// TestCreateCard_DryRun_ReturnsRecord pins the dry-run contract for
+// the create path: returns *DryRunRecord wrapped in ErrDryRun and
+// the network is never touched.
+func TestCreateCard_DryRun_ReturnsRecord(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	_, err := c.CreateCard(WithDryRun(context.Background()), CreateCardRequest{Name: "preview"})
+	require.ErrorIs(t, err, ErrDryRun)
+	var rec *DryRunRecord
+	require.ErrorAs(t, err, &rec)
+	require.Equal(t, http.MethodPost, rec.Method)
+	require.Contains(t, rec.URL, "/cards")
+}
+
+// TestUpdateCard_HappyPath pins PUT /cards/{cardId}: body carries
+// the updateable fields, response decodes into Card.
+func TestUpdateCard_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPut, rec.Method)
+		require.Equal(t, "/cards/ci-1", rec.Path)
+		require.JSONEq(t, `{"name":"renamed","columnId":"col-2","addTagIds":["t-3"]}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","cardCommonId":"cc-1","name":"renamed","columnId":"col-2"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.UpdateCard(context.Background(), "ci-1", UpdateCardRequest{
+		Name:      "renamed",
+		ColumnID:  "col-2",
+		AddTagIDs: []string{"t-3"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "renamed", got.Name)
+	require.Equal(t, "col-2", got.ColumnID)
+}
+
+// TestUpdateCard_EmptyID_NoNetworkCall pins that an empty cardID
+// short-circuits before any HTTP call.
+func TestUpdateCard_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {
+		// Should never be called.
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UpdateCard(context.Background(), "", UpdateCardRequest{Name: "x"})
+	require.ErrorIs(t, err, errMissingID)
+	require.Empty(t, h.seen())
+}
+
+// TestUpdateCard_DryRun_ReturnsRecord pins the dry-run contract.
+func TestUpdateCard_DryRun_ReturnsRecord(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	_, err := c.UpdateCard(WithDryRun(context.Background()), "ci-1", UpdateCardRequest{Name: "x"})
+	require.ErrorIs(t, err, ErrDryRun)
+	var rec *DryRunRecord
+	require.ErrorAs(t, err, &rec)
+	require.Equal(t, http.MethodPut, rec.Method)
+	require.Contains(t, rec.URL, "/cards/ci-1")
+}
+
+// TestArchiveCard_SendsArchiveTrue pins that ArchiveCard's body is
+// `{"archive":true}` — and not omitted by an unfortunate
+// pointer-elision pass.
+func TestArchiveCard_SendsArchiveTrue(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.JSONEq(t, `{"archive":true}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","archived":true}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.ArchiveCard(context.Background(), "ci-1")
+	require.NoError(t, err)
+	require.True(t, got.IsArchived)
+}
+
+// TestUnarchiveCard_SendsArchiveFalse pins that UnarchiveCard sends
+// the explicit false (Archive is *bool so omitempty doesn't strip
+// &false; if the field were a plain bool the body would be empty).
+func TestUnarchiveCard_SendsArchiveFalse(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.JSONEq(t, `{"archive":false}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","archived":false}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.UnarchiveCard(context.Background(), "ci-1")
+	require.NoError(t, err)
+	require.False(t, got.IsArchived)
+}
+
+// TestUpdateCard_ListPositionIsJSONNumber pins the wire-contract
+// gotcha caught live in Phase 5.3: Favro rejects string-valued
+// listPosition with HTTP 400 ("Unexpected value of listPosition").
+// The field must marshal as a JSON number; pointer typing also
+// preserves an explicit 0 (top-of-column) which omitempty would
+// strip if the field were a plain float64.
+func TestUpdateCard_ListPositionIsJSONNumber(t *testing.T) {
+	t.Parallel()
+
+	pos := 0.0
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.JSONEq(t, `{"columnId":"col-2","listPosition":0}`, rec.Body,
+			"listPosition must marshal as a JSON number, NOT a string")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","columnId":"col-2","listPosition":0}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UpdateCard(context.Background(), "ci-1", UpdateCardRequest{
+		ColumnID:     "col-2",
+		ListPosition: &pos,
+	})
+	require.NoError(t, err)
+}
+
+// TestMoveCard_HappyPath pins that MoveCard sends only the move
+// fields (not name / archive / etc), and PUTs to /cards/{id}.
+func TestMoveCard_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, "/cards/ci-1", rec.Path)
+		require.JSONEq(t, `{"widgetCommonId":"w-2","columnId":"col-3"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","widgetCommonId":"w-2","columnId":"col-3"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.MoveCard(context.Background(), "ci-1", MoveCardRequest{
+		WidgetCommonID: "w-2",
+		ColumnID:       "col-3",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "w-2", got.WidgetCommonID)
+}
+
+// TestMoveCard_EmptyMove_NoNetworkCall pins that a fully-empty
+// MoveCardRequest short-circuits — silently PUT-ing a no-op would
+// mask a caller bug.
+func TestMoveCard_EmptyMove_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {
+		// Should never be called.
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.MoveCard(context.Background(), "ci-1", MoveCardRequest{})
+	require.Error(t, err)
+	require.Empty(t, h.seen())
+}
+
+// TestDeleteCard_HappyPath_DefaultEverywhere pins the default-case
+// (everywhere=false) wire shape: DELETE /cards/{id} with no
+// `everywhere=` param, response decodes into DeleteCardResponse —
+// verified live Phase 5.3, Favro returns a BARE JSON array, NOT
+// the object form the docs hint at.
+func TestDeleteCard_HappyPath_DefaultEverywhere(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodDelete, rec.Method)
+		require.Equal(t, "/cards/ci-1", rec.Path)
+		require.Empty(t, rec.Query.Get("everywhere"),
+			"everywhere=false must omit the param entirely so older Favro behavior is preserved")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`["ci-1"]`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.DeleteCard(context.Background(), "ci-1", false)
+	require.NoError(t, err)
+	require.Equal(t, DeleteCardResponse{"ci-1"}, got)
+}
+
+// TestDeleteCard_Everywhere_QueryForwarded pins everywhere=true →
+// ?everywhere=true on the URL. Mis-encoding would have Favro silently
+// fall back to per-widget delete and surprise the caller.
+func TestDeleteCard_Everywhere_QueryForwarded(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, "true", rec.Query.Get("everywhere"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`["ci-1","ci-2","ci-3"]`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.DeleteCard(context.Background(), "ci-1", true)
+	require.NoError(t, err)
+	require.Len(t, got, 3)
+}
+
+// TestDeleteCard_EmptyID_NoNetworkCall pins that an empty cardID
+// short-circuits before any HTTP call.
+func TestDeleteCard_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {
+		// Should never be called.
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.DeleteCard(context.Background(), "", false)
+	require.ErrorIs(t, err, errMissingID)
+	require.Empty(t, h.seen())
+}
+
+// TestDeleteCard_NotFound surfaces a 404 from Favro as *NotFoundError.
+func TestDeleteCard_NotFound(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.WriteHeader(http.StatusNotFound)
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.DeleteCard(context.Background(), "missing", false)
+	var nf *NotFoundError
+	require.ErrorAs(t, err, &nf)
+}
+
+// TestDeleteCard_DryRun_ReturnsRecord pins the dry-run contract for
+// delete: never hits the network.
+func TestDeleteCard_DryRun_ReturnsRecord(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	_, err := c.DeleteCard(WithDryRun(context.Background()), "ci-1", true)
+	require.ErrorIs(t, err, ErrDryRun)
+	var rec *DryRunRecord
+	require.ErrorAs(t, err, &rec)
+	require.Equal(t, http.MethodDelete, rec.Method)
+	require.Contains(t, rec.URL, "/cards/ci-1")
+	require.Contains(t, rec.URL, "everywhere=true")
+}
