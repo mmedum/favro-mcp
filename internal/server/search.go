@@ -3,7 +3,6 @@ package server
 import (
 	"cmp"
 	"context"
-	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -113,20 +112,18 @@ func (r *Resolver) SearchCards(
 
 	lq := strings.ToLower(query)
 	tokens := tokenize(lq)
-	picks := scoreAndRank(corpus, lq, tokens, includeArchived, minScore, limit)
+	picks := scoreAndRank(corpus, lq, tokens, minScore, limit)
 	return projectSearchedCards(picks, lq), cached, nil
 }
 
-// scoreAndRank filters cards by archived-flag, scores each survivor,
-// drops zero / sub-minScore hits, sorts (score desc, name asc), and
-// caps at limit. Pulled out of SearchCards to keep the entry point
-// under the cyclomatic-complexity budget.
-func scoreAndRank(corpus scopedCorpus, lowerQuery string, tokens []string, includeArchived bool, minScore float64, limit int) []scoredCard {
+// scoreAndRank scores each card, drops zero / sub-minScore hits,
+// sorts (score desc, name asc), and caps at limit. Pulled out of
+// SearchCards to keep the entry point under the gocyclo budget.
+// Archived filtering happens server-side via the includeArchived
+// flag on fetchScopedCards; no client-side filter needed here.
+func scoreAndRank(corpus scopedCorpus, lowerQuery string, tokens []string, minScore float64, limit int) []scoredCard {
 	picks := make([]scoredCard, 0, len(corpus.cards))
 	for i, c := range corpus.cards {
-		if c.IsArchived && !includeArchived {
-			continue
-		}
 		s := scoreCard(corpus.lowerNames[i], corpus.lowerBodies[i], lowerQuery, tokens)
 		if s == 0 {
 			continue
@@ -194,16 +191,19 @@ func (r *Resolver) fetchScopedCards(
 		}
 	}
 
-	q := url.Values{}
 	// descriptionFormat=markdown keeps the body in the format the
 	// markdown stripper expects; without it Favro defaults are
 	// HTML-flavored which would defeat the strip rules below.
-	q.Set("descriptionFormat", "markdown")
+	// includeArchived flows into the server-side `archived` filter.
+	filter := favro.ListCardsFilter{
+		DescriptionFormat: "markdown",
+		Archived:          includeArchived,
+	}
 	switch scope {
 	case SearchScopeWidget:
-		q.Set("widgetCommonId", scopeID)
+		filter.WidgetCommonID = scopeID
 	case SearchScopeCollection:
-		q.Set("collectionId", scopeID)
+		filter.CollectionID = scopeID
 	}
 
 	var all []favro.Card
@@ -211,7 +211,7 @@ func (r *Resolver) fetchScopedCards(
 		all = append(all, env.Entities...)
 		return nil
 	}
-	if err := favro.Paginate(ctx, r.client, "/cards", q, visit); err != nil {
+	if err := favro.Paginate(ctx, r.client, "/cards", filter.Values(), visit); err != nil {
 		return scopedCorpus{}, false, err
 	}
 	corpus := buildCorpus(all)

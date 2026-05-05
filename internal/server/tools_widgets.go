@@ -21,6 +21,7 @@ const (
 type listWidgetsInput struct {
 	listInput
 	CollectionID string `json:"collection_id,omitempty" jsonschema:"optional Favro collection id to scope the listing to widgets in that collection; pass it on EVERY page when paginating, not just the first"`
+	Archived     bool   `json:"archived,omitempty" jsonschema:"if true, include archived widgets in the result; default (false) hides them server-side"`
 }
 
 // getWidgetInput is the input for favro_get_widget.
@@ -32,12 +33,16 @@ func registerWidgets(srv *mcp.Server, client *favro.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: listWidgetsToolName,
 		Description: "List Favro widgets (boards) in the organization the API token is scoped to. " +
-			"Pass `collection_id` to scope the result to a single collection. Returns one " +
-			"page; pass `page` (1-indexed) plus the `request_id` from the prior response to " +
-			"retrieve subsequent pages. Read-only.",
+			"Pass `collection_id` to scope the result to a single collection. Pass " +
+			"`archived: true` to include archived widgets. Returns one page; pass `page` " +
+			"(1-indexed) plus the `request_id` from the prior response to retrieve " +
+			"subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro widgets"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listWidgetsInput) (*mcp.CallToolResult, listOutput[favro.Widget], error) {
-		env, err := client.ListWidgets(ctx, in.Page, in.RequestID, in.CollectionID)
+		env, err := client.ListWidgets(ctx, in.Page, in.RequestID, favro.ListWidgetsFilter{
+			CollectionID: in.CollectionID,
+			Archived:     in.Archived,
+		})
 		if err != nil {
 			return nil, listOutput[favro.Widget]{}, err
 		}
