@@ -159,6 +159,10 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 		getCardFullToolName,
 		createTagToolName,
 		deleteTagToolName,
+		updateTagToolName,
+		createCommentToolName,
+		updateCommentToolName,
+		deleteCommentToolName,
 	}, "tools/list must advertise every registered tool; got %v", names)
 }
 

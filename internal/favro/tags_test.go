@@ -209,6 +209,61 @@ func TestDeleteTag_NotFound(t *testing.T) {
 	require.ErrorAs(t, err, &nf)
 }
 
+// TestUpdateTag_HappyPath pins PUT /tags/{tagId} → updated Tag.
+func TestUpdateTag_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPut, rec.Method)
+		require.Equal(t, "/tags/abc123", rec.Path)
+		require.JSONEq(t, `{"name":"renamed","color":"red"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tagId":"abc123","name":"renamed","color":"red"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.UpdateTag(context.Background(), "abc123", UpdateTagRequest{Name: "renamed", Color: "red"})
+	require.NoError(t, err)
+	require.Equal(t, "renamed", got.Name)
+	require.Equal(t, "red", got.Color)
+}
+
+// TestUpdateTag_EmptyID_NoNetworkCall pins that an empty tagID
+// short-circuits.
+func TestUpdateTag_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {
+		// Should never be called.
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UpdateTag(context.Background(), "", UpdateTagRequest{Name: "x"})
+	require.ErrorIs(t, err, errMissingID)
+	require.Empty(t, h.seen())
+}
+
+// TestUpdateTag_DryRun_ReturnsRecord pins the dry-run contract for
+// the update path.
+func TestUpdateTag_DryRun_ReturnsRecord(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	_, err := c.UpdateTag(WithDryRun(context.Background()), "abc", UpdateTagRequest{Name: "x"})
+	require.ErrorIs(t, err, ErrDryRun)
+	var rec *DryRunRecord
+	require.ErrorAs(t, err, &rec)
+	require.Equal(t, http.MethodPut, rec.Method)
+	require.Contains(t, rec.URL, "/tags/abc")
+}
+
 // TestDeleteTag_DryRun_ReturnsRecord pins the dry-run contract for
 // the delete path: returns *DryRunRecord wrapped in ErrDryRun and
 // the network is never touched.

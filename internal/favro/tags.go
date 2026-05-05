@@ -85,3 +85,27 @@ func (c *Client) CreateTag(ctx context.Context, req CreateTagRequest) (Tag, erro
 func (c *Client) DeleteTag(ctx context.Context, tagID string) error {
 	return deleteByID(ctx, c, "/tags", tagID)
 }
+
+// UpdateTagRequest is the body for PUT /tags/{tagId}. Both Name and
+// Color are optional — Favro accepts updating either, both, or
+// neither (per the API docs); the caller is responsible for sending
+// at least one if they expect a change.
+type UpdateTagRequest struct {
+	Name  string `json:"name,omitempty"`
+	Color string `json:"color,omitempty"`
+}
+
+// UpdateTag updates an existing tag's name and/or color. Returns
+// the updated Tag. Empty tagID short-circuits with errMissingID;
+// other Favro errors propagate via the wrapped PutJSON, including
+// *DryRunRecord wrapping ErrDryRun while dry-run is in effect.
+func (c *Client) UpdateTag(ctx context.Context, tagID string, req UpdateTagRequest) (Tag, error) {
+	if tagID == "" {
+		return Tag{}, errMissingID
+	}
+	var out Tag
+	if err := c.PutJSON(ctx, "/tags/"+url.PathEscape(tagID), req, &out); err != nil {
+		return Tag{}, err
+	}
+	return out, nil
+}
