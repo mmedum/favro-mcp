@@ -143,11 +143,15 @@ func TestListCards_AllFiltersForwarded(t *testing.T) {
 	c := newTestClient(srv)
 
 	_, err := c.ListCards(context.Background(), 0, "", ListCardsFilter{
-		WidgetCommonID: "w-1",
-		CollectionID:   "col-1",
-		CardCommonID:   "card-c-7",
-		SequentialID:   123,
-		Unique:         true,
+		WidgetCommonID:    "w-1",
+		CollectionID:      "col-1",
+		CardCommonID:      "card-c-7",
+		SequentialID:      123,
+		ColumnID:          "col-x",
+		TodoList:          true,
+		Archived:          true,
+		Unique:            true,
+		DescriptionFormat: "markdown",
 	})
 	require.NoError(t, err)
 
@@ -156,7 +160,65 @@ func TestListCards_AllFiltersForwarded(t *testing.T) {
 	require.Equal(t, "col-1", rec[0].Query.Get("collectionId"))
 	require.Equal(t, "card-c-7", rec[0].Query.Get("cardCommonId"))
 	require.Equal(t, "123", rec[0].Query.Get("cardSequentialId"))
+	require.Equal(t, "col-x", rec[0].Query.Get("columnId"))
+	require.Equal(t, "true", rec[0].Query.Get("todoList"))
+	require.Equal(t, "true", rec[0].Query.Get("archived"))
 	require.Equal(t, "true", rec[0].Query.Get("unique"))
+	require.Equal(t, "markdown", rec[0].Query.Get("descriptionFormat"))
+}
+
+// TestListCards_NewResponseFieldsDecoding pins decode for the
+// extended Card response surface: isLane, tasksTotal, tasksDone,
+// createdByUserId, createdAt, attachments, favroAttachments,
+// timeOnBoard, timeOnColumns.
+func TestListCards_NewResponseFieldsDecoding(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"page":0,"pages":1,"requestId":"r","entities":[{
+			"cardId":"c1","cardCommonId":"cc1","name":"x",
+			"isLane":true,
+			"tasksTotal":7,
+			"tasksDone":3,
+			"createdByUserId":"u-1",
+			"createdAt":"2026-05-04T12:00:00Z",
+			"attachments":[
+				{"name":"spec.pdf","fileURL":"https://favro.invalid/a/spec.pdf"}
+			],
+			"favroAttachments":[
+				{"type":"card","itemCommonId":"cc-other"}
+			],
+			"timeOnBoard":{"time":3600000,"isStopped":false},
+			"timeOnColumns":{
+				"col-doing":1800000,
+				"col-done":1800000
+			}
+		}]}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	env, err := c.ListCards(context.Background(), 0, "", ListCardsFilter{})
+	require.NoError(t, err)
+	require.Len(t, env.Entities, 1)
+
+	got := env.Entities[0]
+	require.True(t, got.IsLane)
+	require.Equal(t, 7, got.TasksTotal)
+	require.Equal(t, 3, got.TasksDone)
+	require.Equal(t, "u-1", got.CreatedByUserID)
+	require.Equal(t, "2026-05-04T12:00:00Z", got.CreatedAt)
+	require.Len(t, got.Attachments, 1)
+	require.Equal(t, "spec.pdf", got.Attachments[0].Name)
+	require.Len(t, got.FavroAttachments, 1)
+	require.Equal(t, "card", got.FavroAttachments[0].Type)
+	require.Equal(t, "cc-other", got.FavroAttachments[0].ItemCommonID)
+	require.Equal(t, int64(3600000), got.TimeOnBoard.Time)
+	require.Len(t, got.TimeOnColumns, 2)
+	require.Equal(t, int64(1800000), got.TimeOnColumns["col-doing"])
+	require.Equal(t, int64(1800000), got.TimeOnColumns["col-done"])
 }
 
 func TestListCards_SequentialIDZero_OmitsParam(t *testing.T) {

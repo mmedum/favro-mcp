@@ -1,6 +1,9 @@
 package favro
 
-import "context"
+import (
+	"context"
+	"net/url"
+)
 
 // Tag is a Favro tag — org-global metadata applied to cards. Tags
 // are not scoped to a widget or collection; one tag can appear on
@@ -20,10 +23,27 @@ type Tag struct {
 	Color          string `json:"color,omitempty"`
 }
 
+// ListTagsFilter bundles the documented query parameters for /tags.
+// Name is Favro's server-side exact-match filter — useful for
+// "add tag by name, hard-fail if missing" workflows without paying
+// for a full tag-list scan.
+type ListTagsFilter struct {
+	Name string
+}
+
+// Values returns the filter as url.Values; empty fields are omitted.
+func (f ListTagsFilter) Values() url.Values {
+	q := url.Values{}
+	if f.Name != "" {
+		q.Set("name", f.Name)
+	}
+	return q
+}
+
 // ListTags returns one page of tags in the active organization. Tags
-// are org-global; there is no widget or card filter.
-func (c *Client) ListTags(ctx context.Context, page int, requestID string) (PageEnvelope[Tag], error) {
-	return listPage[Tag](ctx, c, "/tags", page, requestID)
+// are org-global; only `name` is filterable server-side.
+func (c *Client) ListTags(ctx context.Context, page int, requestID string, filter ListTagsFilter) (PageEnvelope[Tag], error) {
+	return listPageQ[Tag](ctx, c, "/tags", filter.Values(), page, requestID)
 }
 
 // GetTag returns a single tag by its tagId. Returns *NotFoundError

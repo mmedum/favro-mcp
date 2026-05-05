@@ -23,11 +23,15 @@ const (
 // carry filter state across pages.
 type listCardsInput struct {
 	listInput
-	WidgetCommonID string `json:"widget_common_id,omitempty" jsonschema:"optional Favro widget id (widgetCommonId) to scope the listing to a single widget; pass it on EVERY page when paginating"`
-	CollectionID   string `json:"collection_id,omitempty" jsonschema:"optional Favro collection id to scope the listing to a single collection"`
-	CardCommonID   string `json:"card_common_id,omitempty" jsonschema:"optional Favro cardCommonId to fetch every instance of a single card across the widgets it lives on"`
-	SequentialID   int    `json:"sequential_id,omitempty" jsonschema:"optional Favro card sequential id (the integer part of human-readable refs like 'BSC-123' — pass 123 here)"`
-	Unique         bool   `json:"unique,omitempty" jsonschema:"if true, return one row per cardCommonId rather than one row per widget instance — useful when searching by name and cross-widget duplicates are noise"`
+	WidgetCommonID    string `json:"widget_common_id,omitempty" jsonschema:"optional Favro widget id (widgetCommonId) to scope the listing to a single widget; pass it on EVERY page when paginating"`
+	CollectionID      string `json:"collection_id,omitempty" jsonschema:"optional Favro collection id to scope the listing to a single collection"`
+	CardCommonID      string `json:"card_common_id,omitempty" jsonschema:"optional Favro cardCommonId to fetch every instance of a single card across the widgets it lives on"`
+	SequentialID      int    `json:"sequential_id,omitempty" jsonschema:"optional Favro card sequential id (the integer part of human-readable refs like 'BSC-123' — pass 123 here)"`
+	ColumnID          string `json:"column_id,omitempty" jsonschema:"optional Favro columnId to scope the listing to a single column inside the widget/collection"`
+	TodoList          bool   `json:"todo_list,omitempty" jsonschema:"if true, restrict the listing to the authenticated user's personal todo list"`
+	Archived          bool   `json:"archived,omitempty" jsonschema:"if true, include archived cards in the result; default (false) hides them server-side"`
+	Unique            bool   `json:"unique,omitempty" jsonschema:"if true, return one row per cardCommonId rather than one row per widget instance — useful when searching by name and cross-widget duplicates are noise"`
+	DescriptionFormat string `json:"description_format,omitempty" jsonschema:"'plaintext' (default) or 'markdown' for the detailedDescription body"`
 }
 
 // getCardInput is the input for favro_get_card.
@@ -47,11 +51,15 @@ func registerCards(srv *mcp.Server, client *favro.Client) {
 		Annotations: readOnly("List Favro cards"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listCardsInput) (*mcp.CallToolResult, listOutput[favro.Card], error) {
 		env, err := client.ListCards(ctx, in.Page, in.RequestID, favro.ListCardsFilter{
-			WidgetCommonID: in.WidgetCommonID,
-			CollectionID:   in.CollectionID,
-			CardCommonID:   in.CardCommonID,
-			SequentialID:   in.SequentialID,
-			Unique:         in.Unique,
+			WidgetCommonID:    in.WidgetCommonID,
+			CollectionID:      in.CollectionID,
+			CardCommonID:      in.CardCommonID,
+			SequentialID:      in.SequentialID,
+			ColumnID:          in.ColumnID,
+			TodoList:          in.TodoList,
+			Archived:          in.Archived,
+			Unique:            in.Unique,
+			DescriptionFormat: in.DescriptionFormat,
 		})
 		if err != nil {
 			return nil, listOutput[favro.Card]{}, err

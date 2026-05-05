@@ -28,6 +28,10 @@ type Comment struct {
 	Body           string `json:"comment"`
 	Created        string `json:"created,omitempty"`
 	LastUpdated    string `json:"lastUpdated,omitempty"`
+	// Attachments is the list of files on the comment. The shape
+	// matches CardAttachment — Favro reuses one attachment object
+	// shape across cards and comments.
+	Attachments []CardAttachment `json:"attachments,omitempty"`
 }
 
 // ListComments returns one page of comments on the card identified

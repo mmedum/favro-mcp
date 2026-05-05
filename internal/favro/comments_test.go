@@ -148,3 +148,28 @@ func TestGetComment_NotFound(t *testing.T) {
 	var nf *NotFoundError
 	require.ErrorAs(t, err, &nf)
 }
+
+// TestListComments_AttachmentsDecoding pins decode for the
+// Phase 4.5 addition of Comment.Attachments.
+func TestListComments_AttachmentsDecoding(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"page":0,"pages":1,"requestId":"r","entities":[{
+			"commentId":"cm-1","cardCommonId":"cc-1","userId":"u-1","comment":"x",
+			"attachments":[
+				{"name":"diagram.png","fileURL":"https://favro.invalid/c/diagram.png"}
+			]
+		}]}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	env, err := c.ListComments(context.Background(), 0, "", "cc-1")
+	require.NoError(t, err)
+	require.Len(t, env.Entities, 1)
+	require.Len(t, env.Entities[0].Attachments, 1)
+	require.Equal(t, "diagram.png", env.Entities[0].Attachments[0].Name)
+}
