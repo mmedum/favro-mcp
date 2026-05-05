@@ -3,6 +3,8 @@ package favro
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 )
@@ -238,4 +240,213 @@ func (c *Client) ListCards(ctx context.Context, page int, requestID string, filt
 // organization.
 func (c *Client) GetCard(ctx context.Context, cardID string) (Card, error) {
 	return getByID[Card](ctx, c, "/cards", cardID)
+}
+
+// CreateCardRequest is the body for POST /cards. Name is the only
+// required field; widgetCommonId pins the card to a board (omit and
+// the card lands on the authenticated user's todo list). The full
+// API surface includes tasklists / customFields / dependencies /
+// favroAttachments — Phase 5.3 omits them; Phase 5.5 adds simple
+// custom fields, Phase 7 covers tasklists + attachments.
+//
+// Tags and TagIDs are both accepted by Favro: Tags are tag *names*
+// (Favro auto-creates missing ones) and TagIDs are existing tagIds.
+// The MCP create_card tool exposes only tag_ids — auto-create from
+// name is the kind of typo amplifier the plan §6 design avoids; the
+// "add tag by name with hard-fail on unknown" UX lives in Phase 6's
+// favro_add_tag_to_card.
+// ListPosition / SheetPosition (on this and UpdateCardRequest) are
+// JSON numbers — verified live Phase 5.3: string values, even numeric
+// ones, return HTTP 400 "Unexpected value of listPosition". 0 is the
+// top of the column; a value larger than the current max bumps to
+// the bottom; a fractional value (e.g. 3.5) slots between two
+// siblings without renumbering. Pointer typing distinguishes
+// "absent" from "0".
+type CreateCardRequest struct {
+	Name                string   `json:"name"`
+	WidgetCommonID      string   `json:"widgetCommonId,omitempty"`
+	ColumnID            string   `json:"columnId,omitempty"`
+	LaneID              string   `json:"laneId,omitempty"`
+	ParentCardID        string   `json:"parentCardId,omitempty"`
+	DetailedDescription string   `json:"detailedDescription,omitempty"`
+	ListPosition        *float64 `json:"listPosition,omitempty"`
+	SheetPosition       *float64 `json:"sheetPosition,omitempty"`
+	AssignmentIDs       []string `json:"assignmentIds,omitempty"`
+	Tags                []string `json:"tags,omitempty"`
+	TagIDs              []string `json:"tagIds,omitempty"`
+	StartDate           string   `json:"startDate,omitempty"`
+	DueDate             string   `json:"dueDate,omitempty"`
+}
+
+// CreateCard creates a new card. Returns the created Card (Favro
+// echoes the row back with cardId / cardCommonId / sequentialId /
+// position assigned). Honors per-context WithDryRun and process-wide
+// ForceDryRun via the wrapped PostJSON; in either case the call
+// returns *DryRunRecord wrapped in ErrDryRun without touching the
+// network.
+func (c *Client) CreateCard(ctx context.Context, req CreateCardRequest) (Card, error) {
+	if req.Name == "" {
+		return Card{}, fmt.Errorf("favro: card name is required")
+	}
+	var out Card
+	if err := c.PostJSON(ctx, "/cards", req, &out); err != nil {
+		return Card{}, err
+	}
+	return out, nil
+}
+
+// UpdateCardRequest is the body for PUT /cards/{cardId}. Every field
+// is optional; absent ones are left untouched. Pointer types appear
+// where "absent" must be distinguishable from a zero value:
+//
+//   - Archive: nil = don't touch, &true = archive, &false = unarchive.
+//   - CompleteAssignments: nil = don't touch, &true/&false = mark
+//     all assignments accordingly.
+//
+// Tag mutations come in two flavors: AddTags / RemoveTags (by name,
+// auto-create on add) and AddTagIDs / RemoveTagIDs (by tagId,
+// strict). The MCP update_card tool exposes only the *_tag_ids
+// flavors — Phase 6's favro_add_tag_to_card handles the by-name path
+// with hard-fail-on-unknown semantics.
+//
+// DragMode is "commit" (default — Favro re-positions cards around
+// the moved one and updates listPosition) or "move" (no
+// repositioning). Only relevant when ListPosition / ColumnID is set.
+//
+// ListPosition / SheetPosition are JSON numbers — see CreateCardRequest
+// for the wire contract. A column move that omits listPosition is a
+// silent 200-empty-body no-op (verified live Phase 5.3); MoveCard
+// surfaces this in its method docs.
+//
+// Tasklists / custom fields / attachment removal are deferred to
+// later phases; this struct intentionally omits them so the v0.5.0
+// surface stays scoped.
+type UpdateCardRequest struct {
+	Name                string   `json:"name,omitempty"`
+	DetailedDescription string   `json:"detailedDescription,omitempty"`
+	WidgetCommonID      string   `json:"widgetCommonId,omitempty"`
+	ColumnID            string   `json:"columnId,omitempty"`
+	LaneID              string   `json:"laneId,omitempty"`
+	ParentCardID        string   `json:"parentCardId,omitempty"`
+	DragMode            string   `json:"dragMode,omitempty"`
+	ListPosition        *float64 `json:"listPosition,omitempty"`
+	SheetPosition       *float64 `json:"sheetPosition,omitempty"`
+	AddAssignmentIDs    []string `json:"addAssignmentIds,omitempty"`
+	RemoveAssignmentIDs []string `json:"removeAssignmentIds,omitempty"`
+	CompleteAssignments *bool    `json:"completeAssignments,omitempty"`
+	AddTags             []string `json:"addTags,omitempty"`
+	RemoveTags          []string `json:"removeTags,omitempty"`
+	AddTagIDs           []string `json:"addTagIds,omitempty"`
+	RemoveTagIDs        []string `json:"removeTagIds,omitempty"`
+	StartDate           string   `json:"startDate,omitempty"`
+	DueDate             string   `json:"dueDate,omitempty"`
+	Archive             *bool    `json:"archive,omitempty"`
+}
+
+// UpdateCard updates a card by its per-widget cardId. Returns the
+// updated Card. Empty cardID short-circuits with errMissingID;
+// Favro errors propagate via the wrapped PutJSON, including
+// *DryRunRecord-wrapping-ErrDryRun under dry-run.
+func (c *Client) UpdateCard(ctx context.Context, cardID string, req UpdateCardRequest) (Card, error) {
+	if cardID == "" {
+		return Card{}, errMissingID
+	}
+	var out Card
+	if err := c.PutJSON(ctx, "/cards/"+url.PathEscape(cardID), req, &out); err != nil {
+		return Card{}, err
+	}
+	return out, nil
+}
+
+// ArchiveCard is a thin wrapper over UpdateCard that flips the
+// archive flag on. Surfaces a dedicated favro_archive_card MCP
+// tool — common LLM workflow worth its own one-shot entry point.
+func (c *Client) ArchiveCard(ctx context.Context, cardID string) (Card, error) {
+	t := true
+	return c.UpdateCard(ctx, cardID, UpdateCardRequest{Archive: &t})
+}
+
+// UnarchiveCard is the symmetric wrapper that restores an archived
+// card. Sends `archive: false` explicitly (not omitempty-elided)
+// because Archive is a *bool so &false survives JSON encoding.
+func (c *Client) UnarchiveCard(ctx context.Context, cardID string) (Card, error) {
+	f := false
+	return c.UpdateCard(ctx, cardID, UpdateCardRequest{Archive: &f})
+}
+
+// MoveCardRequest captures the move-card knobs. At least one of
+// WidgetCommonID / ColumnID / LaneID must be set; an empty request
+// would PUT a no-op and silently succeed.
+//
+// **Wire-contract gotcha (verified live in Phase 5.3):** a column
+// move (ColumnID set) that omits ListPosition silently no-ops —
+// Favro returns HTTP 200 with an empty body and the card stays put.
+// Callers that move between columns must set ListPosition. 0 is the
+// top; a number larger than the column's current max sends the card
+// to the bottom; fractional values slot between siblings.
+//
+// DragMode defaults to Favro's "commit" when empty (cards around
+// the destination position re-shuffle); pass "move" to leave
+// surrounding listPositions untouched.
+type MoveCardRequest struct {
+	WidgetCommonID string
+	ColumnID       string
+	LaneID         string
+	ListPosition   *float64
+	SheetPosition  *float64
+	DragMode       string
+}
+
+// MoveCard relocates a card via UpdateCard. Empty cardID
+// short-circuits with errMissingID; an empty MoveCardRequest
+// short-circuits with a typed error (silently succeeding on a
+// nothing-to-do request would mask a caller bug).
+func (c *Client) MoveCard(ctx context.Context, cardID string, req MoveCardRequest) (Card, error) {
+	if cardID == "" {
+		return Card{}, errMissingID
+	}
+	if req.WidgetCommonID == "" && req.ColumnID == "" && req.LaneID == "" {
+		return Card{}, fmt.Errorf("favro: move requires at least one of widget_common_id, column_id, or lane_id")
+	}
+	return c.UpdateCard(ctx, cardID, UpdateCardRequest{
+		WidgetCommonID: req.WidgetCommonID,
+		ColumnID:       req.ColumnID,
+		LaneID:         req.LaneID,
+		ListPosition:   req.ListPosition,
+		SheetPosition:  req.SheetPosition,
+		DragMode:       req.DragMode,
+	})
+}
+
+// DeleteCardResponse is the body Favro returns from DELETE /cards/{id}:
+// a bare JSON array of the per-widget cardIds that were removed
+// (verified live in Phase 5.3 — the docs hint at `{"cardIds":[...]}`
+// but the wire shape is the bare array). With everywhere=false this
+// is a single-element slice (the targeted instance); with
+// everywhere=true it carries every widget instance the cardCommonId
+// had.
+type DeleteCardResponse []string
+
+// DeleteCard deletes a card. With everywhere=false (the common case)
+// only the per-widget instance referenced by cardID is removed;
+// other widgets sharing the same cardCommonId keep their copies.
+// With everywhere=true the cardCommonId is purged across every
+// widget — an irreversible op.
+//
+// Empty cardID short-circuits with errMissingID; *NotFoundError /
+// other typed errors propagate via doJSON; *DryRunRecord wraps
+// ErrDryRun under dry-run.
+func (c *Client) DeleteCard(ctx context.Context, cardID string, everywhere bool) (DeleteCardResponse, error) {
+	if cardID == "" {
+		return nil, errMissingID
+	}
+	q := url.Values{}
+	if everywhere {
+		q.Set("everywhere", "true")
+	}
+	var out DeleteCardResponse
+	if err := c.doJSON(ctx, http.MethodDelete, "/cards/"+url.PathEscape(cardID), q, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

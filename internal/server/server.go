@@ -57,6 +57,12 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerCreateComment(srv, resolver)
 	registerUpdateComment(srv, resolver)
 	registerDeleteComment(srv, resolver)
+	registerCreateCard(srv, resolver)
+	registerUpdateCard(srv, resolver)
+	registerArchiveCard(srv, resolver)
+	registerUnarchiveCard(srv, resolver)
+	registerMoveCard(srv, resolver)
+	registerDeleteCard(srv, resolver)
 
 	return srv
 }
