@@ -30,7 +30,7 @@ func TestListWidgets_DefaultPage(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListWidgets(context.Background(), 0, "", "")
+	env, err := c.ListWidgets(context.Background(), 0, "", ListWidgetsFilter{})
 	require.NoError(t, err)
 	require.Equal(t, "req-w", env.RequestID)
 	require.Len(t, env.Entities, 2)
@@ -56,7 +56,7 @@ func TestListWidgets_FiltersByCollection(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListWidgets(context.Background(), 0, "", "c-xyz")
+	_, err := c.ListWidgets(context.Background(), 0, "", ListWidgetsFilter{CollectionID: "c-xyz"})
 	require.NoError(t, err)
 
 	rec := h.seen()
@@ -75,7 +75,7 @@ func TestListWidgets_WithPageForwardsRequestID(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListWidgets(context.Background(), 2, "req-prior", "")
+	_, err := c.ListWidgets(context.Background(), 2, "req-prior", ListWidgetsFilter{})
 	require.NoError(t, err)
 
 	rec := h.seen()
@@ -121,6 +121,42 @@ func TestGetWidget_EmptyID_NoNetworkCall(t *testing.T) {
 	_, err := c.GetWidget(context.Background(), "")
 	require.ErrorIs(t, err, errMissingID)
 	require.Empty(t, h.seen())
+}
+
+// TestListWidgets_ArchivedFilterForwarded pins that ListWidgetsFilter.Archived
+// becomes ?archived=true on the wire, and that the new response
+// fields (organizationId, archived, lanes, columns summary) decode.
+func TestListWidgets_ArchivedAndNewFields(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"page":0,"pages":1,"requestId":"r","entities":[{
+			"widgetCommonId":"w-1","name":"Sprint",
+			"organizationId":"org-1","archived":true,
+			"lanes":[{"laneId":"lane-1","name":"Frontend"}],
+			"columns":[
+				{"columnId":"col-1","name":"To do","color":"gray"},
+				{"columnId":"col-2","name":"Done","color":"green"}
+			]
+		}]}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	env, err := c.ListWidgets(context.Background(), 0, "", ListWidgetsFilter{Archived: true})
+	require.NoError(t, err)
+	require.Equal(t, "true", h.seen()[0].Query.Get("archived"))
+	require.Len(t, env.Entities, 1)
+	w := env.Entities[0]
+	require.Equal(t, "org-1", w.OrganizationID)
+	require.True(t, w.Archived)
+	require.Len(t, w.Lanes, 1)
+	require.Equal(t, "Frontend", w.Lanes[0].Name)
+	require.Len(t, w.Columns, 2)
+	require.Equal(t, "Done", w.Columns[1].Name)
+	require.Equal(t, "green", w.Columns[1].Color)
 }
 
 func TestGetWidget_NotFound(t *testing.T) {

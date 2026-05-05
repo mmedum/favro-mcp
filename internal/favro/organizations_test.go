@@ -158,3 +158,31 @@ func TestGetOrganization_PathEscapesID(t *testing.T) {
 	// the way to the server, which is exactly what we want.
 	require.Equal(t, "/organizations/a%2Fb", rec[0].Path)
 }
+
+// TestListOrganizations_NewFieldsDecoding pins decode for the
+// Phase 4.5 additions: Organization.Thumbnail and
+// SharedUser.JoinDate.
+func TestListOrganizations_NewFieldsDecoding(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"page":0,"pages":1,"requestId":"r","entities":[{
+			"organizationId":"org-1","name":"Acme",
+			"thumbnail":"https://favro.invalid/t/org-1.png",
+			"sharedToUsers":[
+				{"userId":"u-1","role":"administrator","joinDate":"2025-01-15T00:00:00Z"}
+			]
+		}]}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	env, err := c.ListOrganizations(context.Background(), 0, "")
+	require.NoError(t, err)
+	require.Len(t, env.Entities, 1)
+	require.Equal(t, "https://favro.invalid/t/org-1.png", env.Entities[0].Thumbnail)
+	require.Len(t, env.Entities[0].SharedToUsers, 1)
+	require.Equal(t, "2025-01-15T00:00:00Z", env.Entities[0].SharedToUsers[0].JoinDate)
+}

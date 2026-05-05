@@ -30,7 +30,7 @@ func TestListCollections_DefaultPage(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListCollections(context.Background(), 0, "")
+	env, err := c.ListCollections(context.Background(), 0, "", ListCollectionsFilter{})
 	require.NoError(t, err)
 	require.Equal(t, "req-cols", env.RequestID)
 	require.Len(t, env.Entities, 2)
@@ -57,7 +57,7 @@ func TestListCollections_WithPageForwardsRequestID(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListCollections(context.Background(), 2, "req-prior")
+	_, err := c.ListCollections(context.Background(), 2, "req-prior", ListCollectionsFilter{})
 	require.NoError(t, err)
 
 	rec := h.seen()
@@ -105,6 +105,32 @@ func TestGetCollection_EmptyID_NoNetworkCall(t *testing.T) {
 	_, err := c.GetCollection(context.Background(), "")
 	require.ErrorIs(t, err, errMissingID)
 	require.Empty(t, h.seen())
+}
+
+// TestListCollections_ArchivedAndNewFields pins ListCollectionsFilter.Archived
+// → ?archived=true and that the new Collection response fields
+// (organizationId, background) decode without dropping data.
+func TestListCollections_ArchivedAndNewFields(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"page":0,"pages":1,"requestId":"r","entities":[{
+			"collectionId":"c-1","name":"Engineering",
+			"organizationId":"org-1",
+			"background":"forest"
+		}]}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	env, err := c.ListCollections(context.Background(), 0, "", ListCollectionsFilter{Archived: true})
+	require.NoError(t, err)
+	require.Equal(t, "true", h.seen()[0].Query.Get("archived"))
+	require.Len(t, env.Entities, 1)
+	require.Equal(t, "org-1", env.Entities[0].OrganizationID)
+	require.Equal(t, "forest", env.Entities[0].Background)
 }
 
 func TestGetCollection_NotFound(t *testing.T) {
