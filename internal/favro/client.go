@@ -160,13 +160,66 @@ func WithHeader(name, value string) RequestOption {
 //     contains trailing data (the latter would silently mask a
 //     malformed server response).
 func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, out any, opts ...RequestOption) error {
-	resp, err := c.Do(ctx, http.MethodGet, path, query, nil, opts...)
+	return c.doJSON(ctx, http.MethodGet, path, query, nil, out, opts...)
+}
+
+// PostJSON sends an authenticated POST with a JSON body and decodes
+// the response into out. out may be nil if the caller doesn't need
+// the response payload. Dry-run propagates: when in effect the call
+// returns *DryRunRecord wrapped in ErrDryRun, and out is left
+// untouched. Same error kinds as Do.
+func (c *Client) PostJSON(ctx context.Context, path string, body, out any, opts ...RequestOption) error {
+	return c.doJSON(ctx, http.MethodPost, path, nil, body, out, opts...)
+}
+
+// PutJSON sends an authenticated PUT with a JSON body and decodes
+// the response into out (out may be nil). Same dry-run + error
+// semantics as PostJSON.
+func (c *Client) PutJSON(ctx context.Context, path string, body, out any, opts ...RequestOption) error {
+	return c.doJSON(ctx, http.MethodPut, path, nil, body, out, opts...)
+}
+
+// PatchJSON sends an authenticated PATCH with a JSON body and
+// decodes the response into out (out may be nil). Same dry-run +
+// error semantics as PostJSON.
+func (c *Client) PatchJSON(ctx context.Context, path string, body, out any, opts ...RequestOption) error {
+	return c.doJSON(ctx, http.MethodPatch, path, nil, body, out, opts...)
+}
+
+// DeleteJSON sends an authenticated DELETE and decodes the response
+// into out (out may be nil — DELETE responses are commonly empty,
+// in which case pass nil to skip decoding). Same dry-run + error
+// semantics as PostJSON.
+func (c *Client) DeleteJSON(ctx context.Context, path string, out any, opts ...RequestOption) error {
+	return c.doJSON(ctx, http.MethodDelete, path, nil, nil, out, opts...)
+}
+
+// doJSON is the shared body of GetJSON / PostJSON / PutJSON /
+// PatchJSON / DeleteJSON: build + send the request via Do, decode
+// the response into out (skip if out is nil or the body is empty).
+// Errors propagate Do's typed error kinds, including the
+// *DryRunRecord-wrapping-ErrDryRun returned for mutating methods
+// while dry-run is in effect — the caller's encodedBody is
+// preserved on the record for inspection.
+func (c *Client) doJSON(ctx context.Context, method, path string, query url.Values, body, out any, opts ...RequestOption) error {
+	resp, err := c.Do(ctx, method, path, query, body, opts...)
 	if err != nil {
 		return err
 	}
 	defer drainAndClose(resp)
+	if out == nil {
+		return nil
+	}
 	dec := json.NewDecoder(resp.Body)
 	if err := dec.Decode(out); err != nil {
+		// Allow a genuinely empty body (some 204 / DELETE responses)
+		// to pass through cleanly when the caller asked for output —
+		// a missing body for a write where we expected a result is
+		// surfacing-worthy, but `EOF` on an empty stream is the same
+		// case and matches the behavior we want for DELETE.
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		return fmt.Errorf("favro: decode response from %s: %w", redactPath(path), err)
 	}
 	if dec.More() {

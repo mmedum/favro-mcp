@@ -55,3 +55,16 @@ func getByID[T any](ctx context.Context, c *Client, basePath, id string) (T, err
 	}
 	return out, nil
 }
+
+// deleteByID issues a DELETE on basePath/{id}. id is URL-path-escaped.
+// Returns errMissingID for empty id (no network call), *NotFoundError
+// on 404, and the same typed errors as Do (including the
+// *DryRunRecord-wrapping-ErrDryRun returned when the dry-run gate is
+// in effect). Most Favro DELETE endpoints return 204 No Content; we
+// pass nil as the decode target.
+func deleteByID(ctx context.Context, c *Client, basePath, id string) error {
+	if id == "" {
+		return errMissingID
+	}
+	return c.DeleteJSON(ctx, basePath+"/"+url.PathEscape(id), nil)
+}
