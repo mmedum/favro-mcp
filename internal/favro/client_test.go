@@ -448,3 +448,92 @@ func parseBasic(v string) (user, pass string, ok bool) {
 	req := &http.Request{Header: http.Header{"Authorization": []string{v}}}
 	return req.BasicAuth()
 }
+
+// failingRoundTripper fails the test the moment any HTTP request is
+// dispatched. Used as a strict regression for "dry-run never hits
+// the network" — counter-based tests can drift if the dry-run gate
+// is moved; a RoundTripper that errors on entry catches every
+// future regression.
+type failingRoundTripper struct {
+	t *testing.T
+}
+
+func (f *failingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	f.t.Errorf("dry-run regression: transport.RoundTrip called for %s %s", r.Method, r.URL.Path)
+	return nil, fmt.Errorf("RoundTrip must not be called in dry-run mode")
+}
+
+// TestDryRun_WriteHelpers_NoRoundTrip pins the contract for every
+// mutating helper introduced in Phase 5.1: when the call is in
+// dry-run mode, the transport's RoundTrip is never invoked.
+//
+// failingRoundTripper makes the test fail the moment any HTTP
+// request is dispatched. Each helper drives a different mutating
+// method (POST / PUT / PATCH / DELETE) so a regression in any one
+// of them surfaces independently.
+func TestDryRun_WriteHelpers_NoRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		run  func(c *Client) error
+	}{
+		{
+			name: "PostJSON",
+			run: func(c *Client) error {
+				return c.PostJSON(WithDryRun(context.Background()), "/tags", map[string]any{"name": "x"}, nil)
+			},
+		},
+		{
+			name: "PutJSON",
+			run: func(c *Client) error {
+				return c.PutJSON(WithDryRun(context.Background()), "/cards/abc", map[string]any{"name": "y"}, nil)
+			},
+		},
+		{
+			name: "PatchJSON",
+			run: func(c *Client) error {
+				return c.PatchJSON(WithDryRun(context.Background()), "/cards/abc", map[string]any{"name": "z"}, nil)
+			},
+		},
+		{
+			name: "DeleteJSON",
+			run: func(c *Client) error {
+				return c.DeleteJSON(WithDryRun(context.Background()), "/cards/abc", nil)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := NewClient(fixtureToken())
+			c.BaseURL = "https://favro.invalid"
+			c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+			err := tc.run(c)
+			require.ErrorIs(t, err, ErrDryRun, "every mutating helper must short-circuit to ErrDryRun in dry-run mode")
+			var rec *DryRunRecord
+			require.ErrorAs(t, err, &rec, "ErrDryRun must wrap a *DryRunRecord")
+			require.NotEmpty(t, rec.Method)
+			require.Contains(t, rec.URL, "favro.invalid")
+			require.Equal(t, "[REDACTED]", rec.Headers.Get("Authorization"),
+				"DryRunRecord must redact the Authorization header so secrets cannot leak via tool output")
+		})
+	}
+}
+
+// TestDryRun_ForceDryRunOnClient_NoRoundTrip mirrors the test above
+// but exercises the process-wide ForceDryRun gate (rather than the
+// per-context WithDryRun). Same contract: no RoundTrip dispatched.
+func TestDryRun_ForceDryRunOnClient_NoRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+	c.ForceDryRun = true
+
+	err := c.PostJSON(context.Background(), "/tags", map[string]any{"name": "x"}, nil)
+	require.ErrorIs(t, err, ErrDryRun)
+}

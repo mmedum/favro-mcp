@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -74,6 +76,101 @@ func readOnly(title string) *mcp.ToolAnnotations {
 		ReadOnlyHint: true,
 		Title:        title,
 	}
+}
+
+// mutating returns the canonical ToolAnnotations for a non-read-only
+// (mutating) tool. destructive controls Favro's destructiveHint —
+// true for delete-style tools so MCP hosts can warn users before
+// auto-confirming the call.
+//
+// The MCP SDK's `DestructiveHint` defaults to true when nil, so we
+// always pass an explicit pointer (even for non-destructive tools)
+// — letting a future refactor drop the pointer would silently flip
+// every `mutating(..., false)` tool into "destructive" semantics.
+func mutating(title string, destructive bool) *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{
+		ReadOnlyHint:    false,
+		DestructiveHint: &destructive,
+		Title:           title,
+	}
+}
+
+// dryRunInput is embedded in every mutating tool's input so the
+// caller can opt into dry-run on a per-call basis. The binary's
+// --dry-run flag forces dry-run process-wide (independent of this
+// field).
+type dryRunInput struct {
+	DryRun bool `json:"dry_run,omitempty" jsonschema:"if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing."`
+}
+
+// writeOutput is the standard output shape for every mutating tool.
+// Either Result (live mode) OR WouldCall+RequestBody+StateDiff
+// (dry-run) is populated; DryRun is true exactly when the latter
+// branch fires.
+//
+// T is the resource type returned by the underlying favro write
+// (favro.Tag for create_tag, favro.Card for create/update/delete,
+// etc.). For deletes that return no payload, callers can use
+// writeOutput[struct{}].
+type writeOutput[T any] struct {
+	DryRun bool `json:"dry_run" jsonschema:"true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request."`
+
+	Result *T `json:"result,omitempty" jsonschema:"the resource returned by Favro (populated when dry_run is false)"`
+
+	WouldCall          *DryRunCall `json:"would_call,omitempty" jsonschema:"the HTTP request that would have been sent (populated when dry_run is true)"`
+	RequestBody        any         `json:"request_body,omitempty" jsonschema:"the JSON body that would have been sent, decoded into a structured object (populated when dry_run is true)"`
+	PredictedStateDiff string      `json:"predicted_state_diff,omitempty" jsonschema:"a human-readable description of the change that would happen (populated when dry_run is true)"`
+}
+
+// DryRunCall describes the request a mutating tool would have sent.
+// The Authorization header is redacted upstream in
+// favro.DryRunRecord; this projection only carries the method and
+// URL the LLM needs to reason about scope.
+type DryRunCall struct {
+	Method string `json:"method"`
+	URL    string `json:"url"`
+}
+
+// runWrite executes a favro write `run` and projects the result
+// into the unified writeOutput shape:
+//   - On success → {DryRun:false, Result: &result}.
+//   - On *favro.DryRunRecord (the dry-run gate fired) →
+//     {DryRun:true, WouldCall, RequestBody, PredictedStateDiff}.
+//   - On any other error → propagate.
+//
+// stateDiff is provided by the caller because the natural-language
+// "what would happen" phrasing is per-tool ("would create tag X",
+// "would archive card Y", etc).
+func runWrite[T any](
+	run func() (T, error),
+	stateDiff func() string,
+) (writeOutput[T], error) {
+	result, err := run()
+	if err == nil {
+		return writeOutput[T]{Result: &result}, nil
+	}
+	var rec *favro.DryRunRecord
+	if errors.As(err, &rec) {
+		// Decode the captured body into a structured Go value so the
+		// MCP output carries a typed JSON object, not opaque bytes.
+		// Empty body → nil (DELETEs and similar carry no payload).
+		var body any
+		if len(rec.Body) > 0 {
+			if jerr := json.Unmarshal(rec.Body, &body); jerr != nil {
+				// Fall back to the raw string — Favro requests are
+				// always JSON in this codebase, but propagating an
+				// unmarshal error here would mask the dry-run signal.
+				body = string(rec.Body)
+			}
+		}
+		return writeOutput[T]{
+			DryRun:             true,
+			WouldCall:          &DryRunCall{Method: rec.Method, URL: rec.URL},
+			RequestBody:        body,
+			PredictedStateDiff: stateDiff(),
+		}, nil
+	}
+	return writeOutput[T]{}, err
 }
 
 // listFn is the shape every Favro list method exposes:
