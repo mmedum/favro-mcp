@@ -449,28 +449,11 @@ func parseBasic(v string) (user, pass string, ok bool) {
 	return req.BasicAuth()
 }
 
-// failingRoundTripper fails the test the moment any HTTP request is
-// dispatched. Used as a strict regression for "dry-run never hits
-// the network" — counter-based tests can drift if the dry-run gate
-// is moved; a RoundTripper that errors on entry catches every
-// future regression.
-type failingRoundTripper struct {
-	t *testing.T
-}
-
-func (f *failingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	f.t.Errorf("dry-run regression: transport.RoundTrip called for %s %s", r.Method, r.URL.Path)
-	return nil, fmt.Errorf("RoundTrip must not be called in dry-run mode")
-}
-
 // TestDryRun_WriteHelpers_NoRoundTrip pins the contract for every
-// mutating helper introduced in Phase 5.1: when the call is in
-// dry-run mode, the transport's RoundTrip is never invoked.
-//
-// failingRoundTripper makes the test fail the moment any HTTP
-// request is dispatched. Each helper drives a different mutating
-// method (POST / PUT / PATCH / DELETE) so a regression in any one
-// of them surfaces independently.
+// mutating helper: when the call is in dry-run mode, the
+// transport's RoundTrip is never invoked. Each helper drives a
+// different mutating method (POST / PUT / PATCH / DELETE) so a
+// regression in any one of them surfaces independently.
 func TestDryRun_WriteHelpers_NoRoundTrip(t *testing.T) {
 	t.Parallel()
 
