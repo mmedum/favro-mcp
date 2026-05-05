@@ -2,6 +2,7 @@ package favro
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 )
 
@@ -13,9 +14,9 @@ import (
 //
 // Color is one of Favro's named palette values ("blue", "red",
 // "green", "lime", "purple", "cyan", "brown", "orange", "gray",
-// "pink", "yellow") — kept as a plain string because Favro extends
-// the palette without notice and a typed alias would silently mask
-// new values.
+// "pink", "yellow", "slategray") — kept as a plain string because
+// Favro extends the palette without notice and a typed alias would
+// silently mask new values.
 type Tag struct {
 	TagID          string `json:"tagId"`
 	OrganizationID string `json:"organizationId,omitempty"`
@@ -50,4 +51,37 @@ func (c *Client) ListTags(ctx context.Context, page int, requestID string, filte
 // if no such tag exists in the active organization.
 func (c *Client) GetTag(ctx context.Context, tagID string) (Tag, error) {
 	return getByID[Tag](ctx, c, "/tags", tagID)
+}
+
+// CreateTagRequest is the body for POST /tags. Name is required;
+// Color is optional (Favro picks a random palette color when
+// omitted, per the API docs).
+type CreateTagRequest struct {
+	Name  string `json:"name"`
+	Color string `json:"color,omitempty"`
+}
+
+// CreateTag creates a new tag in the active organization. Returns
+// the created Tag (Favro echoes the row back with its assigned
+// tagId). Honors per-context WithDryRun and process-wide
+// ForceDryRun via the wrapped PostJSON; in either case the call
+// returns *DryRunRecord wrapped in ErrDryRun without touching the
+// network.
+func (c *Client) CreateTag(ctx context.Context, req CreateTagRequest) (Tag, error) {
+	if req.Name == "" {
+		return Tag{}, fmt.Errorf("favro: tag name is required")
+	}
+	var out Tag
+	if err := c.PostJSON(ctx, "/tags", req, &out); err != nil {
+		return Tag{}, err
+	}
+	return out, nil
+}
+
+// DeleteTag deletes a tag by its tagId. Returns errMissingID for an
+// empty id (no network call), *NotFoundError on a Favro 404, and the
+// same typed errors as Do for other failures. Honors WithDryRun /
+// ForceDryRun via the wrapped DeleteJSON.
+func (c *Client) DeleteTag(ctx context.Context, tagID string) error {
+	return deleteByID(ctx, c, "/tags", tagID)
 }

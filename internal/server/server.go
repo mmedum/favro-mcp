@@ -51,6 +51,8 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerResolveGroup(srv, resolver)
 	registerSearchCards(srv, resolver)
 	registerGetCardFull(srv, resolver)
+	registerCreateTag(srv, resolver)
+	registerDeleteTag(srv, resolver)
 
 	return srv
 }
