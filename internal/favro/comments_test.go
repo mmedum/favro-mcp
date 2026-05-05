@@ -173,3 +173,131 @@ func TestListComments_AttachmentsDecoding(t *testing.T) {
 	require.Len(t, env.Entities[0].Attachments, 1)
 	require.Equal(t, "diagram.png", env.Entities[0].Attachments[0].Name)
 }
+
+// TestCreateComment_HappyPath pins POST /comments → Comment back.
+func TestCreateComment_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPost, rec.Method)
+		require.Equal(t, "/comments", rec.Path)
+		require.JSONEq(t, `{"cardCommonId":"cc-1","comment":"first"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"commentId":"cm-1","cardCommonId":"cc-1","userId":"u-1","comment":"first"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.CreateComment(context.Background(), CreateCommentRequest{CardCommonID: "cc-1", Comment: "first"})
+	require.NoError(t, err)
+	require.Equal(t, "cm-1", got.CommentID)
+}
+
+// TestCreateComment_RequiredFields short-circuits before any HTTP
+// call when cardCommonId or comment is empty.
+func TestCreateComment_RequiredFields(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		req  CreateCommentRequest
+	}{
+		{"empty card_common_id", CreateCommentRequest{Comment: "x"}},
+		{"empty comment", CreateCommentRequest{CardCommonID: "cc-1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+			srv := httptest.NewServer(h)
+			t.Cleanup(srv.Close)
+			c := newTestClient(srv)
+
+			_, err := c.CreateComment(context.Background(), tc.req)
+			require.Error(t, err)
+			require.Empty(t, h.seen())
+		})
+	}
+}
+
+// TestCreateComment_DryRun_ReturnsRecord pins the dry-run contract.
+func TestCreateComment_DryRun_ReturnsRecord(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	_, err := c.CreateComment(WithDryRun(context.Background()), CreateCommentRequest{CardCommonID: "cc-1", Comment: "x"})
+	require.ErrorIs(t, err, ErrDryRun)
+	var rec *DryRunRecord
+	require.ErrorAs(t, err, &rec)
+	require.Equal(t, http.MethodPost, rec.Method)
+	require.Contains(t, rec.URL, "/comments")
+}
+
+// TestUpdateComment_HappyPath pins PUT /comments/{id}.
+func TestUpdateComment_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPut, rec.Method)
+		require.Equal(t, "/comments/cm-1", rec.Path)
+		require.JSONEq(t, `{"comment":"edited"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"commentId":"cm-1","cardCommonId":"cc-1","userId":"u-1","comment":"edited","lastUpdated":"2026-05-05T10:00:00Z"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.UpdateComment(context.Background(), "cm-1", UpdateCommentRequest{Comment: "edited"})
+	require.NoError(t, err)
+	require.Equal(t, "edited", got.Body)
+	require.NotEmpty(t, got.LastUpdated)
+}
+
+// TestUpdateComment_EmptyID_NoNetworkCall pins the empty-id guard.
+func TestUpdateComment_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UpdateComment(context.Background(), "", UpdateCommentRequest{Comment: "x"})
+	require.ErrorIs(t, err, errMissingID)
+	require.Empty(t, h.seen())
+}
+
+// TestDeleteComment_HappyPath pins DELETE /comments/{id} → 204.
+func TestDeleteComment_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodDelete, rec.Method)
+		require.Equal(t, "/comments/cm-1", rec.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.NoError(t, c.DeleteComment(context.Background(), "cm-1"))
+}
+
+// TestDeleteComment_EmptyID_NoNetworkCall pins the empty-id guard.
+func TestDeleteComment_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.ErrorIs(t, c.DeleteComment(context.Background(), ""), errMissingID)
+	require.Empty(t, h.seen())
+}
