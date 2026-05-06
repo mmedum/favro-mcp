@@ -72,6 +72,10 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerCreateColumn(srv, resolver)
 	registerUpdateColumn(srv, resolver)
 	registerDeleteColumn(srv, resolver)
+	registerCreateGroup(srv, resolver)
+	registerUpdateGroup(srv, resolver)
+	registerDeleteGroup(srv, resolver)
+	registerSetCardCustomField(srv, resolver)
 
 	return srv
 }
