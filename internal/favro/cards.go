@@ -377,12 +377,15 @@ type UpdateCardRequest struct {
 // Mirrors the read-shape CardCustomFieldValue but for writes. Value
 // is `any` because the Favro wire shape is type-discriminated:
 //
-//   - Text / Link: JSON string.
-//   - Number / Rating: JSON number.
+//   - Text / Link: JSON string (Link also takes optional LinkText).
+//   - Number / Rating: JSON number (Rating also requires Total — the
+//     max stars).
 //   - Date: ISO-8601 string.
 //   - Checkbox / Voting: JSON bool.
-//   - Single select / Multiple select: omit Value; set
-//     CustomFieldItemIDs (a single-element slice for single-select).
+//   - Members: JSON array of userIds.
+//   - Single select / Multiple select / Status: omit Value; set
+//     CustomFieldItemIDs (a single-element slice for single-select
+//     and Status; multi-element for Multiple select).
 //
 // The MCP `favro_set_card_custom_field` convenience tool resolves
 // the field type via the resolver cache and builds the right
@@ -391,6 +394,8 @@ type CardCustomFieldUpdate struct {
 	CustomFieldID      string   `json:"customFieldId"`
 	Value              any      `json:"value,omitempty"`
 	CustomFieldItemIDs []string `json:"customFieldItemIds,omitempty"`
+	Total              *int     `json:"total,omitempty"`
+	LinkText           string   `json:"linkText,omitempty"`
 }
 
 // UpdateCard updates a card by its per-widget cardId. Returns the
