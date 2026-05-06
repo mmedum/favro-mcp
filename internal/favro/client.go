@@ -210,19 +210,31 @@ func (c *Client) doJSON(ctx context.Context, method, path string, query url.Valu
 	if out == nil {
 		return nil
 	}
+	return decodeJSONLenient(resp, out)
+}
+
+// decodeJSONLenient decodes resp.Body into out and tolerates a
+// genuinely empty body (some 204 / DELETE responses) by returning
+// nil. Trailing JSON tokens after the first value surface as a
+// typed error — silently dropping them would mask a malformed
+// server response. Caller is responsible for closing the body.
+func decodeJSONLenient(resp *http.Response, out any) error {
 	dec := json.NewDecoder(resp.Body)
 	if err := dec.Decode(out); err != nil {
-		// Allow a genuinely empty body (some 204 / DELETE responses)
-		// to pass through cleanly when the caller asked for output —
-		// a missing body for a write where we expected a result is
-		// surfacing-worthy, but `EOF` on an empty stream is the same
-		// case and matches the behavior we want for DELETE.
 		if errors.Is(err, io.EOF) {
 			return nil
+		}
+		path := ""
+		if resp.Request != nil && resp.Request.URL != nil {
+			path = resp.Request.URL.Path
 		}
 		return fmt.Errorf("favro: decode response from %s: %w", redactPath(path), err)
 	}
 	if dec.More() {
+		path := ""
+		if resp.Request != nil && resp.Request.URL != nil {
+			path = resp.Request.URL.Path
+		}
 		return fmt.Errorf("favro: unexpected trailing data in response from %s", redactPath(path))
 	}
 	return nil
@@ -362,9 +374,12 @@ func (c *Client) handle5xx(ctx context.Context, resp *http.Response, attempt int
 }
 
 // buildRequest composes a fresh *http.Request for one attempt. The body
-// is wrapped in bytes.NewReader so retries see the full payload. extra
-// headers (e.g. X-Favro-Backend-Identifier on paginated calls) are
-// applied last and override any default we set above.
+// is wrapped in bytes.NewReader so retries see the full payload.
+// extra headers (e.g. X-Favro-Backend-Identifier on paginated calls,
+// or a Content-Type override for raw-bytes attachment uploads) are
+// applied last; for single-valued headers (Content-Type) extra
+// fully overrides via Set so the JSON default doesn't leak through
+// for binary payloads.
 func (c *Client) buildRequest(ctx context.Context, method, fullURL string, encodedBody []byte, extra http.Header) (*http.Request, error) {
 	var bodyReader io.Reader = http.NoBody
 	if len(encodedBody) > 0 {
@@ -376,13 +391,20 @@ func (c *Client) buildRequest(ctx context.Context, method, fullURL string, encod
 	}
 	c.Token.Apply(req)
 	req.Header.Set("Accept", "application/json")
-	if len(encodedBody) > 0 {
+	if len(encodedBody) > 0 && extra.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if ua := c.UserAgent; ua != "" {
 		req.Header.Set("User-Agent", ua)
 	}
 	for k, vs := range extra {
+		// Content-Type is single-valued; Set so the caller's value
+		// wins instead of producing a comma-joined "json, octet"
+		// pair.
+		if http.CanonicalHeaderKey(k) == "Content-Type" {
+			req.Header.Set(k, vs[len(vs)-1])
+			continue
+		}
 		for _, v := range vs {
 			req.Header.Add(k, v)
 		}
@@ -436,10 +458,14 @@ func (c *Client) buildDryRunRecord(method, fullURL string, body []byte, extra ht
 		hdr.Set("organizationId", c.Token.OrganizationID)
 	}
 	hdr.Set("Authorization", redactedValue)
-	if len(body) > 0 {
+	if len(body) > 0 && extra.Get("Content-Type") == "" {
 		hdr.Set("Content-Type", "application/json")
 	}
 	for k, vs := range extra {
+		if http.CanonicalHeaderKey(k) == "Content-Type" {
+			hdr.Set(k, vs[len(vs)-1])
+			continue
+		}
 		for _, v := range vs {
 			hdr.Add(k, v)
 		}
