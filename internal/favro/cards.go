@@ -242,6 +242,28 @@ func (c *Client) GetCard(ctx context.Context, cardID string) (Card, error) {
 	return getByID[Card](ctx, c, "/cards", cardID)
 }
 
+// GetCardWithDescriptionFormat fetches one card with the response's
+// `detailedDescription` rendered in the requested format. Favro's
+// default is "plaintext"; pass "markdown" for the form Phase 6's
+// description editor tools require so the markdown stays
+// edit-correct round-trip. Empty cardID short-circuits with
+// errMissingID; *NotFoundError on 404. Empty format falls through
+// to Favro's default (no `descriptionFormat` query param sent).
+func (c *Client) GetCardWithDescriptionFormat(ctx context.Context, cardID, format string) (Card, error) {
+	if cardID == "" {
+		return Card{}, errMissingID
+	}
+	q := url.Values{}
+	if format != "" {
+		q.Set("descriptionFormat", format)
+	}
+	var out Card
+	if err := c.GetJSON(ctx, "/cards/"+url.PathEscape(cardID), q, &out); err != nil {
+		return Card{}, err
+	}
+	return out, nil
+}
+
 // CreateCardRequest is the body for POST /cards. Name is the only
 // required field; widgetCommonId pins the card to a board (omit and
 // the card lands on the authenticated user's todo list). The full
