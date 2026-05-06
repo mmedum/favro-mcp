@@ -130,6 +130,7 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | `favro_add_comment_to_card` | 6 | Mutating. Adds a comment to a card identified by one of `card_common_id` / `card_id` / `sequential_id` / `search_query`. With `search_query`, also pass `widget_common_id` OR `collection_id` for scope; the tool refuses ambiguous matches (top-2 search scores within 0.2) by returning the candidate list so the LLM can re-run with an explicit `card_common_id`. Comments aren't cached at the resolver layer. |
 | `favro_add_tag_to_card` | 6 | Mutating. Adds an existing tag to a card by tag NAME. **Hard-fails on unknown names** — typo prevention is the whole point. To add a brand-new tag, call `favro_create_tag` first. To bypass the exact-match guard (or to use a tagId directly), use `favro_update_card` with `add_tag_ids`. |
 | `favro_remove_tag_from_card` | 6 | Mutating. Removes a tag from a card by tag NAME. Same hard-fail semantics as add. |
+| `favro_upload_attachment` | 7 | Mutating. Uploads a local file as an attachment on a card via raw-bytes POST. Inputs: `card_id`, `file_path` (absolute), optional `filename` (defaults to the file's basename). v0.1 supports local file paths only — base64-inline body is deferred. 8 MiB upload cap enforced locally. Returns the created attachment object `{name, fileURL}` (Favro echoes the attachment, not the updated Card — verified live). Live success invalidates the search-cards cache. Pass `dry_run: true` to preview. |
 
 The full tool index will land at v1.0 (Phase 8).
 
