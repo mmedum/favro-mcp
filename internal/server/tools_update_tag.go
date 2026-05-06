@@ -50,19 +50,28 @@ func registerUpdateTag(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-// updateTagStateDiff renders the per-tool dry-run state-diff phrase.
-// Pulled out of the closure so the empty-name / empty-color branches
-// don't bloat the registration flow.
+// updateTagStateDiff renders the single-tool dry-run state-diff phrase.
 func updateTagStateDiff(in updateTagInput) string {
-	var changes []string
-	if in.Name != "" {
-		changes = append(changes, fmt.Sprintf("name → %q", in.Name))
+	frag := tagChangeFragment(in.TagID, in.Name, in.Color)
+	if strings.HasSuffix(frag, "no-op") {
+		return fmt.Sprintf("would PUT %s (no changed fields)", frag)
 	}
-	if in.Color != "" {
-		changes = append(changes, fmt.Sprintf("color → %q", in.Color))
+	return fmt.Sprintf("would update %s", frag)
+}
+
+// tagChangeFragment renders one "tag {id}: name → \"x\", color → \"y\""
+// (or `no-op`) phrase. Shared by favro_update_tag's single-tag diff and
+// favro_update_tags' per-entry diff so the formatting stays in lockstep.
+func tagChangeFragment(tagID, name, color string) string {
+	var changes []string
+	if name != "" {
+		changes = append(changes, fmt.Sprintf("name → %q", name))
+	}
+	if color != "" {
+		changes = append(changes, fmt.Sprintf("color → %q", color))
 	}
 	if len(changes) == 0 {
-		return fmt.Sprintf("would PUT tag %q with no changed fields (no-op)", in.TagID)
+		return fmt.Sprintf("tag %q: no-op", tagID)
 	}
-	return fmt.Sprintf("would update tag %q: %s", in.TagID, strings.Join(changes, ", "))
+	return fmt.Sprintf("tag %q: %s", tagID, strings.Join(changes, ", "))
 }

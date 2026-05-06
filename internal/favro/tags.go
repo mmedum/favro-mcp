@@ -2,9 +2,19 @@ package favro
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
+
+	"golang.org/x/sync/errgroup"
 )
+
+// updateTagsConcurrency caps the parallel PUT /tags/{tagId} calls
+// UpdateTags issues. Bounded so a wide bulk doesn't burn the
+// rate-limit budget all at once; Favro has no real bulk-tag
+// endpoint so the bulk surface is a client-side fan-out.
+const updateTagsConcurrency = 4
 
 // Tag is a Favro tag — org-global metadata applied to cards. Tags
 // are not scoped to a widget or collection; one tag can appear on
@@ -108,4 +118,80 @@ func (c *Client) UpdateTag(ctx context.Context, tagID string, req UpdateTagReque
 		return Tag{}, err
 	}
 	return out, nil
+}
+
+// BulkTagUpdate is one entry in an UpdateTags bulk-write request.
+// TagID identifies the tag to update; Name and Color are optional —
+// at least one should be set on each entry to make a meaningful
+// change. The wire shape mirrors the single-tag UpdateTagRequest
+// (plus a tagId) so callers can compose bulk requests by pairing a
+// resolved id with the same field set they'd pass to UpdateTag.
+type BulkTagUpdate struct {
+	TagID string `json:"tagId"`
+	Name  string `json:"name,omitempty"`
+	Color string `json:"color,omitempty"`
+}
+
+// UpdateTags applies multiple tag updates concurrently. Favro does
+// not expose a true bulk endpoint — `PUT /tags` (no tagId) returns
+// the SPA fallback HTML page — so this is a client-side fan-out:
+// one `PUT /tags/{tagId}` per entry, dispatched in parallel via
+// errgroup with a small concurrency cap.
+//
+// Returned `[]Tag` is in input order. Validation short-circuits
+// before any HTTP work: empty updates returns an error, and any
+// entry missing TagID names the offending index. On the first
+// per-entry error errgroup cancels the rest; partial successes may
+// have already landed on Favro — the wrapped error names the
+// offending tagId and index so callers can recover.
+//
+// Honors per-context WithDryRun and process-wide ForceDryRun by
+// synthesizing a single conceptual *DryRunRecord and returning it
+// wrapped in ErrDryRun without dispatching any HTTP work.
+func (c *Client) UpdateTags(ctx context.Context, updates []BulkTagUpdate) ([]Tag, error) {
+	if len(updates) == 0 {
+		return nil, fmt.Errorf("favro: at least one tag update is required")
+	}
+	for i, u := range updates {
+		if u.TagID == "" {
+			return nil, fmt.Errorf("favro: bulk tag update at index %d missing tagId", i)
+		}
+	}
+	if shouldDryRun(c, ctx, http.MethodPut) {
+		return nil, c.buildBulkTagUpdateDryRun(updates)
+	}
+	out := make([]Tag, len(updates))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(updateTagsConcurrency)
+	for i, u := range updates {
+		g.Go(func() error {
+			t, err := c.UpdateTag(gctx, u.TagID, UpdateTagRequest{Name: u.Name, Color: u.Color})
+			if err != nil {
+				return fmt.Errorf("favro: bulk update tag %q (index %d): %w", u.TagID, i, err)
+			}
+			out[i] = t
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// buildBulkTagUpdateDryRun synthesizes a single *DryRunRecord
+// representing the whole bulk as one conceptual PUT. The URL names
+// the per-tag fan-out and parallel count so the LLM sees the real
+// wire pattern; body is the input array (informational — there is
+// no literal bulk-request payload because Favro has no bulk endpoint).
+// Header composition is delegated to buildDryRunRecord so the
+// redaction + Content-Type rules stay in one place.
+func (c *Client) buildBulkTagUpdateDryRun(updates []BulkTagUpdate) *DryRunRecord {
+	body, _ := json.Marshal(updates)
+	base := c.BaseURL
+	if base == "" {
+		base = DefaultBaseURL
+	}
+	url := fmt.Sprintf("%s/tags/{tagId} × %d (client-side parallel fan-out)", base, len(updates))
+	return c.buildDryRunRecord(http.MethodPut, url, body, nil)
 }
