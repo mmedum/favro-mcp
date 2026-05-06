@@ -452,6 +452,14 @@ func (r *Resolver) invalidateColumnCache(widgetCommonID string) {
 	r.columnCache.Invalidate(columnCacheKeyPrefix + widgetCommonID)
 }
 
+// invalidateAllColumnCaches drops every per-widget column cache
+// entry in one prefix sweep. Used by widget delete (which cascades
+// into all of the widget's columns) and by column delete tools that
+// don't know the parent widgetCommonID upfront.
+func (r *Resolver) invalidateAllColumnCaches() {
+	r.columnCache.InvalidatePrefix(columnCacheKeyPrefix)
+}
+
 // ResolveColumn matches name against columns scoped to a single
 // widget. widgetCommonID is mandatory — column names repeat across
 // widgets and an org-wide match would be meaningless ambiguity.

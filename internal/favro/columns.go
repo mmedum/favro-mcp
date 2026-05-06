@@ -3,6 +3,7 @@ package favro
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 )
 
@@ -52,4 +53,61 @@ func (c *Client) ListColumns(ctx context.Context, page int, requestID, widgetCom
 // *NotFoundError if no such column exists in the active organization.
 func (c *Client) GetColumn(ctx context.Context, columnID string) (Column, error) {
 	return getByID[Column](ctx, c, "/columns", columnID)
+}
+
+// CreateColumnRequest is the body for POST /columns. Both
+// widgetCommonId and name are required. Position is optional —
+// Favro appends to the end when omitted. Pointer typing on Position
+// distinguishes "absent" from explicit 0 (top of the column list).
+type CreateColumnRequest struct {
+	WidgetCommonID string `json:"widgetCommonId"`
+	Name           string `json:"name"`
+	Color          string `json:"color,omitempty"`
+	Position       *int   `json:"position,omitempty"`
+}
+
+// CreateColumn creates a new column on the given widget.
+func (c *Client) CreateColumn(ctx context.Context, req CreateColumnRequest) (Column, error) {
+	if req.WidgetCommonID == "" {
+		return Column{}, errMissingWidgetCommonID
+	}
+	if req.Name == "" {
+		return Column{}, fmt.Errorf("favro: column name is required")
+	}
+	var out Column
+	if err := c.PostJSON(ctx, "/columns", req, &out); err != nil {
+		return Column{}, err
+	}
+	return out, nil
+}
+
+// UpdateColumnRequest is the body for PUT /columns/{columnId}. All
+// fields are optional.
+type UpdateColumnRequest struct {
+	Name     string `json:"name,omitempty"`
+	Color    string `json:"color,omitempty"`
+	Position *int   `json:"position,omitempty"`
+}
+
+// UpdateColumn updates a column by its columnId.
+func (c *Client) UpdateColumn(ctx context.Context, columnID string, req UpdateColumnRequest) (Column, error) {
+	if columnID == "" {
+		return Column{}, errMissingID
+	}
+	var out Column
+	if err := c.PutJSON(ctx, "/columns/"+url.PathEscape(columnID), req, &out); err != nil {
+		return Column{}, err
+	}
+	return out, nil
+}
+
+// DeleteColumn deletes a column by its columnId. Empty columnID
+// short-circuits with errMissingID; *NotFoundError on 404. Honors
+// WithDryRun / ForceDryRun via the wrapped DeleteJSON.
+//
+// Favro forbids deleting a column that contains cards (returns 400).
+// Callers must move/archive the cards out first; this helper does
+// NOT cascade.
+func (c *Client) DeleteColumn(ctx context.Context, columnID string) error {
+	return deleteByID(ctx, c, "/columns", columnID)
 }

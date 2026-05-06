@@ -2,6 +2,7 @@ package favro
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 )
 
@@ -87,4 +88,66 @@ func (c *Client) ListWidgets(ctx context.Context, page int, requestID string, fi
 // *NotFoundError if no such widget exists in the active organization.
 func (c *Client) GetWidget(ctx context.Context, widgetCommonID string) (Widget, error) {
 	return getByID[Widget](ctx, c, "/widgets", widgetCommonID)
+}
+
+// CreateWidgetRequest is the body for POST /widgets. CollectionID
+// pins the widget to a primary collection; Name is required.
+//
+// Type is one of "backlog" / "board" / "calendar" / "table" /
+// "matrix" — left as a plain string because Favro extends the value
+// set without notice. Empty Type lets Favro pick the default.
+type CreateWidgetRequest struct {
+	CollectionID          string `json:"collectionId"`
+	Name                  string `json:"name"`
+	Type                  string `json:"type,omitempty"`
+	Color                 string `json:"color,omitempty"`
+	BreakdownCardCommonID string `json:"breakdownCardCommonId,omitempty"`
+	OwnerRole             string `json:"ownerRole,omitempty"`
+	EditRole              string `json:"editRole,omitempty"`
+}
+
+// CreateWidget creates a new widget in the given collection.
+func (c *Client) CreateWidget(ctx context.Context, req CreateWidgetRequest) (Widget, error) {
+	if req.CollectionID == "" {
+		return Widget{}, fmt.Errorf("favro: collection_id is required")
+	}
+	if req.Name == "" {
+		return Widget{}, fmt.Errorf("favro: widget name is required")
+	}
+	var out Widget
+	if err := c.PostJSON(ctx, "/widgets", req, &out); err != nil {
+		return Widget{}, err
+	}
+	return out, nil
+}
+
+// UpdateWidgetRequest is the body for PUT /widgets/{widgetCommonId}.
+// Every field is optional; absent ones are left untouched. Archive
+// is *bool so &false (unarchive) is distinguishable from "don't touch".
+type UpdateWidgetRequest struct {
+	Name                  string `json:"name,omitempty"`
+	Type                  string `json:"type,omitempty"`
+	Color                 string `json:"color,omitempty"`
+	BreakdownCardCommonID string `json:"breakdownCardCommonId,omitempty"`
+	OwnerRole             string `json:"ownerRole,omitempty"`
+	EditRole              string `json:"editRole,omitempty"`
+	Archive               *bool  `json:"archive,omitempty"`
+}
+
+// UpdateWidget updates a widget by its widgetCommonId.
+func (c *Client) UpdateWidget(ctx context.Context, widgetCommonID string, req UpdateWidgetRequest) (Widget, error) {
+	if widgetCommonID == "" {
+		return Widget{}, errMissingID
+	}
+	var out Widget
+	if err := c.PutJSON(ctx, "/widgets/"+url.PathEscape(widgetCommonID), req, &out); err != nil {
+		return Widget{}, err
+	}
+	return out, nil
+}
+
+// DeleteWidget deletes a widget by its widgetCommonId. Honors
+// WithDryRun / ForceDryRun via the wrapped DeleteJSON.
+func (c *Client) DeleteWidget(ctx context.Context, widgetCommonID string) error {
+	return deleteByID(ctx, c, "/widgets", widgetCommonID)
 }

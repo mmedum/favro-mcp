@@ -147,3 +147,131 @@ func TestGetCollection_NotFound(t *testing.T) {
 	var nf *NotFoundError
 	require.ErrorAs(t, err, &nf)
 }
+
+// TestCreateCollection_HappyPath pins POST /collections — name +
+// optional sharing + color, response decoded back as Collection.
+func TestCreateCollection_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPost, rec.Method)
+		require.Equal(t, "/collections", rec.Path)
+		require.JSONEq(t, `{"name":"Eng","color":"blue","publicSharing":"organization"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"collectionId":"c-new","name":"Eng","color":"blue","publicSharing":"organization"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.CreateCollection(context.Background(), CreateCollectionRequest{
+		Name:          "Eng",
+		Color:         "blue",
+		PublicSharing: "organization",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "c-new", got.CollectionID)
+}
+
+// TestCreateCollection_EmptyName_NoNetworkCall pins the empty-name
+// short-circuit.
+func TestCreateCollection_EmptyName_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.CreateCollection(context.Background(), CreateCollectionRequest{Name: ""})
+	require.Error(t, err)
+	require.Empty(t, h.seen())
+}
+
+// TestCreateCollection_DryRun_ReturnsRecord pins the dry-run contract.
+func TestCreateCollection_DryRun_ReturnsRecord(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	_, err := c.CreateCollection(WithDryRun(context.Background()), CreateCollectionRequest{Name: "x"})
+	require.ErrorIs(t, err, ErrDryRun)
+	var rec *DryRunRecord
+	require.ErrorAs(t, err, &rec)
+	require.Equal(t, http.MethodPost, rec.Method)
+}
+
+func TestUpdateCollection_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPut, rec.Method)
+		require.Equal(t, "/collections/c-1", rec.Path)
+		require.JSONEq(t, `{"name":"renamed"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"collectionId":"c-1","name":"renamed"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.UpdateCollection(context.Background(), "c-1", UpdateCollectionRequest{Name: "renamed"})
+	require.NoError(t, err)
+	require.Equal(t, "renamed", got.Name)
+}
+
+func TestUpdateCollection_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UpdateCollection(context.Background(), "", UpdateCollectionRequest{Name: "x"})
+	require.ErrorIs(t, err, errMissingID)
+	require.Empty(t, h.seen())
+}
+
+func TestDeleteCollection_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodDelete, rec.Method)
+		require.Equal(t, "/collections/c-1", rec.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.NoError(t, c.DeleteCollection(context.Background(), "c-1"))
+}
+
+func TestDeleteCollection_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.ErrorIs(t, c.DeleteCollection(context.Background(), ""), errMissingID)
+	require.Empty(t, h.seen())
+}
+
+func TestDeleteCollection_DryRun_ReturnsRecord(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	err := c.DeleteCollection(WithDryRun(context.Background()), "c-1")
+	require.ErrorIs(t, err, ErrDryRun)
+	var rec *DryRunRecord
+	require.ErrorAs(t, err, &rec)
+	require.Equal(t, http.MethodDelete, rec.Method)
+}
