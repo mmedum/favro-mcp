@@ -366,6 +366,11 @@ type UpdateCardRequest struct {
 	DueDate             string                  `json:"dueDate,omitempty"`
 	Archive             *bool                   `json:"archive,omitempty"`
 	CustomFields        []CardCustomFieldUpdate `json:"customFields,omitempty"`
+	// RemoveAttachments is a list of attachment names (matching
+	// CardAttachment.Name on the read side) to remove from the card.
+	// Favro has no per-attachment DELETE — removal goes through this
+	// field on PUT /cards/{cardId}.
+	RemoveAttachments []string `json:"removeAttachments,omitempty"`
 }
 
 // CardCustomFieldUpdate is one entry in UpdateCardRequest.CustomFields.
