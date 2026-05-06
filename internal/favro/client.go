@@ -218,26 +218,68 @@ func (c *Client) doJSON(ctx context.Context, method, path string, query url.Valu
 // nil. Trailing JSON tokens after the first value surface as a
 // typed error — silently dropping them would mask a malformed
 // server response. Caller is responsible for closing the body.
+//
+// On decode failure the error includes the response status,
+// content-type, and a length-capped body prefix so wire-contract
+// gaps (e.g. Favro returning HTML where JSON was expected) can be
+// diagnosed from the MCP tool error alone. The diagnostic buffer
+// is bounded at bodyPrefixCap bytes via a TeeReader, so the
+// success path stays streaming and memory-bounded.
 func decodeJSONLenient(resp *http.Response, out any) error {
-	dec := json.NewDecoder(resp.Body)
+	prefix := &boundedBuffer{cap: bodyPrefixCap}
+	dec := json.NewDecoder(io.TeeReader(resp.Body, prefix))
 	if err := dec.Decode(out); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
-		path := ""
-		if resp.Request != nil && resp.Request.URL != nil {
-			path = resp.Request.URL.Path
-		}
-		return fmt.Errorf("favro: decode response from %s: %w", redactPath(path), err)
+		return fmt.Errorf("favro: decode response from %s (status=%d, content-type=%q, body-prefix=%q): %w",
+			redactPath(requestPath(resp)), resp.StatusCode, resp.Header.Get("Content-Type"), prefix.escapedString(), err)
 	}
 	if dec.More() {
-		path := ""
-		if resp.Request != nil && resp.Request.URL != nil {
-			path = resp.Request.URL.Path
-		}
-		return fmt.Errorf("favro: unexpected trailing data in response from %s", redactPath(path))
+		return fmt.Errorf("favro: unexpected trailing data in response from %s", redactPath(requestPath(resp)))
 	}
 	return nil
+}
+
+// requestPath returns the path of the request that produced resp,
+// or "" if it can't be determined.
+func requestPath(resp *http.Response) string {
+	if resp == nil || resp.Request == nil || resp.Request.URL == nil {
+		return ""
+	}
+	return resp.Request.URL.Path
+}
+
+// bodyPrefixCap caps the response-body excerpt embedded in
+// decode-error messages. 256 bytes is enough to identify HTML
+// fallbacks ("<!DOCTYPE", "<p>") and typical error JSONs without
+// bloating the LLM-visible error.
+const bodyPrefixCap = 256
+
+// boundedBuffer accumulates up to cap bytes; further writes are
+// silently dropped. Used as a TeeReader sink so decodeJSONLenient's
+// success path doesn't pay full-body memory just to surface a
+// prefix on the error path.
+type boundedBuffer struct {
+	buf []byte
+	cap int
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	if room := b.cap - len(b.buf); room > 0 {
+		if len(p) < room {
+			b.buf = append(b.buf, p...)
+		} else {
+			b.buf = append(b.buf, p[:room]...)
+		}
+	}
+	return len(p), nil
+}
+
+// escapedString returns the buffered prefix with newlines escaped
+// so multi-line HTML responses don't fragment downstream log lines.
+func (b *boundedBuffer) escapedString() string {
+	return strings.ReplaceAll(string(b.buf), "\n", "\\n")
 }
 
 // Do executes an authenticated request with retry and rate-limit
