@@ -160,6 +160,7 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 		createTagToolName,
 		deleteTagToolName,
 		updateTagToolName,
+		updateTagsToolName,
 		createCommentToolName,
 		updateCommentToolName,
 		deleteCommentToolName,
