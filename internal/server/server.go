@@ -76,6 +76,12 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerUpdateGroup(srv, resolver)
 	registerDeleteGroup(srv, resolver)
 	registerSetCardCustomField(srv, resolver)
+	registerAppendCardDescription(srv, resolver)
+	registerPrependCardDescription(srv, resolver)
+	registerReplaceInCardDescription(srv, resolver)
+	registerAddCommentToCard(srv, resolver)
+	registerAddTagToCard(srv, resolver)
+	registerRemoveTagFromCard(srv, resolver)
 
 	return srv
 }
