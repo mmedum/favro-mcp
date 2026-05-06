@@ -13,14 +13,20 @@ type Organization struct {
 	SharedToUsers  []SharedUser `json:"sharedToUsers,omitempty"`
 }
 
-// SharedUser is a (userId, role) mapping that appears inside any
-// Favro resource carrying access control — Organizations, Collections,
-// and (later) Widgets / Cards. Favro returns the same shape on every
-// such resource. JoinDate is documented only on org members but is
-// included here because the type is reused; absent fields decode as
-// the zero string and are dropped from re-serialization by omitempty.
+// SharedUser is a (user, role) mapping that appears inside any Favro
+// resource carrying access control — Organizations, Collections, and
+// (later) Widgets / Cards. Favro returns the same shape on read; for
+// writes (e.g. collection create / update) Favro accepts EITHER
+// `email` OR `userId` to identify the user, so both are present and
+// both `omitempty` so a caller passing only `Email` doesn't send an
+// empty `userId` (Favro 400s on `{"userId":"","role":"..."}`).
+//
+// JoinDate is documented only on org members but is included here
+// because the type is reused; absent fields decode as the zero
+// string and are dropped on re-serialization by omitempty.
 type SharedUser struct {
-	UserID   string `json:"userId"`
+	Email    string `json:"email,omitempty"`
+	UserID   string `json:"userId,omitempty"`
 	Role     string `json:"role,omitempty"`
 	JoinDate string `json:"joinDate,omitempty"`
 }

@@ -173,3 +173,147 @@ func TestGetWidget_NotFound(t *testing.T) {
 	var nf *NotFoundError
 	require.ErrorAs(t, err, &nf)
 }
+
+// TestCreateWidget_HappyPath pins POST /widgets — collectionId +
+// name + type + color, response decoded back as Widget.
+func TestCreateWidget_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPost, rec.Method)
+		require.Equal(t, "/widgets", rec.Path)
+		require.JSONEq(t, `{"collectionId":"c-1","name":"Sprint","type":"backlog","color":"blue"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"widgetCommonId":"w-new","name":"Sprint","type":"backlog","color":"blue","collectionIds":["c-1"]}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.CreateWidget(context.Background(), CreateWidgetRequest{
+		CollectionID: "c-1",
+		Name:         "Sprint",
+		Type:         "backlog",
+		Color:        "blue",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "w-new", got.WidgetCommonID)
+}
+
+func TestCreateWidget_RequiredFields(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		req  CreateWidgetRequest
+	}{
+		{"missing collection_id", CreateWidgetRequest{Name: "x"}},
+		{"missing name", CreateWidgetRequest{CollectionID: "c-1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+			srv := httptest.NewServer(h)
+			t.Cleanup(srv.Close)
+			c := newTestClient(srv)
+
+			_, err := c.CreateWidget(context.Background(), tc.req)
+			require.Error(t, err)
+			require.Empty(t, h.seen())
+		})
+	}
+}
+
+func TestCreateWidget_DryRun_ReturnsRecord(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	_, err := c.CreateWidget(WithDryRun(context.Background()), CreateWidgetRequest{CollectionID: "c-1", Name: "x"})
+	require.ErrorIs(t, err, ErrDryRun)
+	var rec *DryRunRecord
+	require.ErrorAs(t, err, &rec)
+	require.Equal(t, http.MethodPost, rec.Method)
+}
+
+func TestUpdateWidget_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPut, rec.Method)
+		require.Equal(t, "/widgets/w-1", rec.Path)
+		require.JSONEq(t, `{"name":"renamed"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"widgetCommonId":"w-1","name":"renamed"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.UpdateWidget(context.Background(), "w-1", UpdateWidgetRequest{Name: "renamed"})
+	require.NoError(t, err)
+	require.Equal(t, "renamed", got.Name)
+}
+
+func TestUpdateWidget_ArchiveTrue(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.JSONEq(t, `{"archive":true}`, rec.Body,
+			"&true must marshal as archive:true; *bool keeps the explicit boolean from being omitempty-elided")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"widgetCommonId":"w-1","archived":true}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	archive := true
+	got, err := c.UpdateWidget(context.Background(), "w-1", UpdateWidgetRequest{Archive: &archive})
+	require.NoError(t, err)
+	require.True(t, got.Archived)
+}
+
+func TestUpdateWidget_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UpdateWidget(context.Background(), "", UpdateWidgetRequest{Name: "x"})
+	require.ErrorIs(t, err, errMissingID)
+	require.Empty(t, h.seen())
+}
+
+func TestDeleteWidget_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodDelete, rec.Method)
+		require.Equal(t, "/widgets/w-1", rec.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.NoError(t, c.DeleteWidget(context.Background(), "w-1"))
+}
+
+func TestDeleteWidget_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.ErrorIs(t, c.DeleteWidget(context.Background(), ""), errMissingID)
+	require.Empty(t, h.seen())
+}

@@ -63,6 +63,15 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerUnarchiveCard(srv, resolver)
 	registerMoveCard(srv, resolver)
 	registerDeleteCard(srv, resolver)
+	registerCreateCollection(srv, resolver)
+	registerUpdateCollection(srv, resolver)
+	registerDeleteCollection(srv, resolver)
+	registerCreateWidget(srv, resolver)
+	registerUpdateWidget(srv, resolver)
+	registerDeleteWidget(srv, resolver)
+	registerCreateColumn(srv, resolver)
+	registerUpdateColumn(srv, resolver)
+	registerDeleteColumn(srv, resolver)
 
 	return srv
 }
