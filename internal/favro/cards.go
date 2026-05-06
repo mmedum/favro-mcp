@@ -318,29 +318,52 @@ func (c *Client) CreateCard(ctx context.Context, req CreateCardRequest) (Card, e
 // silent 200-empty-body no-op (verified live Phase 5.3); MoveCard
 // surfaces this in its method docs.
 //
-// Tasklists / custom fields / attachment removal are deferred to
-// later phases; this struct intentionally omits them so the v0.5.0
-// surface stays scoped.
+// CustomFields carries per-card custom-field updates (Phase 5.5
+// added). The MCP `favro_set_card_custom_field` convenience tool
+// builds a single-element slice for simple-type fields; long-tail
+// types (Members, Status, Multi-select, Rating, Link) ship in
+// Phase 7. Tasklists / attachment removal stay deferred.
 type UpdateCardRequest struct {
-	Name                string   `json:"name,omitempty"`
-	DetailedDescription string   `json:"detailedDescription,omitempty"`
-	WidgetCommonID      string   `json:"widgetCommonId,omitempty"`
-	ColumnID            string   `json:"columnId,omitempty"`
-	LaneID              string   `json:"laneId,omitempty"`
-	ParentCardID        string   `json:"parentCardId,omitempty"`
-	DragMode            string   `json:"dragMode,omitempty"`
-	ListPosition        *float64 `json:"listPosition,omitempty"`
-	SheetPosition       *float64 `json:"sheetPosition,omitempty"`
-	AddAssignmentIDs    []string `json:"addAssignmentIds,omitempty"`
-	RemoveAssignmentIDs []string `json:"removeAssignmentIds,omitempty"`
-	CompleteAssignments *bool    `json:"completeAssignments,omitempty"`
-	AddTags             []string `json:"addTags,omitempty"`
-	RemoveTags          []string `json:"removeTags,omitempty"`
-	AddTagIDs           []string `json:"addTagIds,omitempty"`
-	RemoveTagIDs        []string `json:"removeTagIds,omitempty"`
-	StartDate           string   `json:"startDate,omitempty"`
-	DueDate             string   `json:"dueDate,omitempty"`
-	Archive             *bool    `json:"archive,omitempty"`
+	Name                string                  `json:"name,omitempty"`
+	DetailedDescription string                  `json:"detailedDescription,omitempty"`
+	WidgetCommonID      string                  `json:"widgetCommonId,omitempty"`
+	ColumnID            string                  `json:"columnId,omitempty"`
+	LaneID              string                  `json:"laneId,omitempty"`
+	ParentCardID        string                  `json:"parentCardId,omitempty"`
+	DragMode            string                  `json:"dragMode,omitempty"`
+	ListPosition        *float64                `json:"listPosition,omitempty"`
+	SheetPosition       *float64                `json:"sheetPosition,omitempty"`
+	AddAssignmentIDs    []string                `json:"addAssignmentIds,omitempty"`
+	RemoveAssignmentIDs []string                `json:"removeAssignmentIds,omitempty"`
+	CompleteAssignments *bool                   `json:"completeAssignments,omitempty"`
+	AddTags             []string                `json:"addTags,omitempty"`
+	RemoveTags          []string                `json:"removeTags,omitempty"`
+	AddTagIDs           []string                `json:"addTagIds,omitempty"`
+	RemoveTagIDs        []string                `json:"removeTagIds,omitempty"`
+	StartDate           string                  `json:"startDate,omitempty"`
+	DueDate             string                  `json:"dueDate,omitempty"`
+	Archive             *bool                   `json:"archive,omitempty"`
+	CustomFields        []CardCustomFieldUpdate `json:"customFields,omitempty"`
+}
+
+// CardCustomFieldUpdate is one entry in UpdateCardRequest.CustomFields.
+// Mirrors the read-shape CardCustomFieldValue but for writes. Value
+// is `any` because the Favro wire shape is type-discriminated:
+//
+//   - Text / Link: JSON string.
+//   - Number / Rating: JSON number.
+//   - Date: ISO-8601 string.
+//   - Checkbox / Voting: JSON bool.
+//   - Single select / Multiple select: omit Value; set
+//     CustomFieldItemIDs (a single-element slice for single-select).
+//
+// The MCP `favro_set_card_custom_field` convenience tool resolves
+// the field type via the resolver cache and builds the right
+// entry; direct callers can also build it manually.
+type CardCustomFieldUpdate struct {
+	CustomFieldID      string   `json:"customFieldId"`
+	Value              any      `json:"value,omitempty"`
+	CustomFieldItemIDs []string `json:"customFieldItemIds,omitempty"`
 }
 
 // UpdateCard updates a card by its per-widget cardId. Returns the
