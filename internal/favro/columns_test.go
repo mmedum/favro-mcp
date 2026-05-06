@@ -156,3 +156,149 @@ func TestGetColumn_NotFound(t *testing.T) {
 	var nf *NotFoundError
 	require.ErrorAs(t, err, &nf)
 }
+
+// TestCreateColumn_HappyPath pins POST /columns — widgetCommonId +
+// name + optional position.
+func TestCreateColumn_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPost, rec.Method)
+		require.Equal(t, "/columns", rec.Path)
+		require.JSONEq(t, `{"widgetCommonId":"w-1","name":"In review","color":"yellow"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"columnId":"col-new","widgetCommonId":"w-1","name":"In review","position":2}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.CreateColumn(context.Background(), CreateColumnRequest{
+		WidgetCommonID: "w-1",
+		Name:           "In review",
+		Color:          "yellow",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "col-new", got.ColumnID)
+}
+
+func TestCreateColumn_PositionZero_PreservedExplicitly(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.JSONEq(t, `{"widgetCommonId":"w-1","name":"x","position":0}`, rec.Body,
+			"&0 must marshal as position:0; *int keeps the explicit zero from being omitempty-elided")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"columnId":"c1","widgetCommonId":"w-1","name":"x","position":0}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	pos := 0
+	_, err := c.CreateColumn(context.Background(), CreateColumnRequest{
+		WidgetCommonID: "w-1",
+		Name:           "x",
+		Position:       &pos,
+	})
+	require.NoError(t, err)
+}
+
+func TestCreateColumn_RequiredFields(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		req  CreateColumnRequest
+	}{
+		{"missing widget_common_id", CreateColumnRequest{Name: "x"}},
+		{"missing name", CreateColumnRequest{WidgetCommonID: "w-1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+			srv := httptest.NewServer(h)
+			t.Cleanup(srv.Close)
+			c := newTestClient(srv)
+
+			_, err := c.CreateColumn(context.Background(), tc.req)
+			require.Error(t, err)
+			require.Empty(t, h.seen())
+		})
+	}
+}
+
+func TestCreateColumn_DryRun_ReturnsRecord(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	_, err := c.CreateColumn(WithDryRun(context.Background()), CreateColumnRequest{WidgetCommonID: "w-1", Name: "x"})
+	require.ErrorIs(t, err, ErrDryRun)
+	var rec *DryRunRecord
+	require.ErrorAs(t, err, &rec)
+	require.Equal(t, http.MethodPost, rec.Method)
+}
+
+func TestUpdateColumn_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPut, rec.Method)
+		require.Equal(t, "/columns/col-1", rec.Path)
+		require.JSONEq(t, `{"name":"renamed"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"columnId":"col-1","name":"renamed"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.UpdateColumn(context.Background(), "col-1", UpdateColumnRequest{Name: "renamed"})
+	require.NoError(t, err)
+	require.Equal(t, "renamed", got.Name)
+}
+
+func TestUpdateColumn_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UpdateColumn(context.Background(), "", UpdateColumnRequest{Name: "x"})
+	require.ErrorIs(t, err, errMissingID)
+	require.Empty(t, h.seen())
+}
+
+func TestDeleteColumn_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodDelete, rec.Method)
+		require.Equal(t, "/columns/col-1", rec.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.NoError(t, c.DeleteColumn(context.Background(), "col-1"))
+}
+
+func TestDeleteColumn_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.ErrorIs(t, c.DeleteColumn(context.Background(), ""), errMissingID)
+	require.Empty(t, h.seen())
+}
