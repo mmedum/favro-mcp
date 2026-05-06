@@ -133,3 +133,145 @@ func TestGetGroup_NotFound(t *testing.T) {
 	var nf *NotFoundError
 	require.ErrorAs(t, err, &nf)
 }
+
+// TestCreateGroup_HappyPath pins POST /groups — name + members,
+// response decoded as Group.
+func TestCreateGroup_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPost, rec.Method)
+		require.Equal(t, "/groups", rec.Path)
+		require.JSONEq(t, `{"name":"Eng","members":[{"userId":"u-1","role":"administrator"}]}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"groupId":"g-new","name":"Eng","members":[{"userId":"u-1","role":"administrator"}]}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.CreateGroup(context.Background(), CreateGroupRequest{
+		Name:    "Eng",
+		Members: []GroupMember{{UserID: "u-1", Role: "administrator"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "g-new", got.GroupID)
+}
+
+func TestCreateGroup_EmptyName_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.CreateGroup(context.Background(), CreateGroupRequest{Name: ""})
+	require.Error(t, err)
+	require.Empty(t, h.seen())
+}
+
+func TestCreateGroup_DryRun_ReturnsRecord(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	_, err := c.CreateGroup(WithDryRun(context.Background()), CreateGroupRequest{Name: "x"})
+	require.ErrorIs(t, err, ErrDryRun)
+	var rec *DryRunRecord
+	require.ErrorAs(t, err, &rec)
+	require.Equal(t, http.MethodPost, rec.Method)
+}
+
+func TestUpdateGroup_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPut, rec.Method)
+		require.Equal(t, "/groups/g-1", rec.Path)
+		require.JSONEq(t, `{"name":"renamed"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"groupId":"g-1","name":"renamed"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.UpdateGroup(context.Background(), "g-1", UpdateGroupRequest{Name: "renamed"})
+	require.NoError(t, err)
+	require.Equal(t, "renamed", got.Name)
+}
+
+func TestUpdateGroup_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UpdateGroup(context.Background(), "", UpdateGroupRequest{Name: "x"})
+	require.ErrorIs(t, err, errMissingID)
+	require.Empty(t, h.seen())
+}
+
+func TestDeleteGroup_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodDelete, rec.Method)
+		require.Equal(t, "/groups/g-1", rec.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.NoError(t, c.DeleteGroup(context.Background(), "g-1"))
+}
+
+func TestDeleteGroup_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.ErrorIs(t, c.DeleteGroup(context.Background(), ""), errMissingID)
+	require.Empty(t, h.seen())
+}
+
+// TestUpdateCard_CustomFieldsValuePassthrough pins that
+// UpdateCardRequest.CustomFields marshals onto the wire as a
+// type-discriminated object. Phase 5.5 added the field; the
+// favro_set_card_custom_field convenience tool builds these.
+func TestUpdateCard_CustomFieldsValuePassthrough(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.JSONEq(t, `{"customFields":[
+			{"customFieldId":"cf-text","value":"hello"},
+			{"customFieldId":"cf-num","value":42},
+			{"customFieldId":"cf-bool","value":true},
+			{"customFieldId":"cf-select","customFieldItemIds":["item-1"]}
+		]}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UpdateCard(context.Background(), "ci-1", UpdateCardRequest{
+		CustomFields: []CardCustomFieldUpdate{
+			{CustomFieldID: "cf-text", Value: "hello"},
+			{CustomFieldID: "cf-num", Value: 42},
+			{CustomFieldID: "cf-bool", Value: true},
+			{CustomFieldID: "cf-select", CustomFieldItemIDs: []string{"item-1"}},
+		},
+	})
+	require.NoError(t, err)
+}
