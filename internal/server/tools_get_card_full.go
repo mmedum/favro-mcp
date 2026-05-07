@@ -26,14 +26,18 @@ func registerGetCardFull(srv *mcp.Server, r *Resolver) {
 			"human-readable name: tag IDs → tag names, assignee userIds → user names + " +
 			"emails, widgetCommonId → widget name, columnId → column name, " +
 			"collectionIds (from the parent widget) → collection names, customFieldId → " +
-			"custom field name + display value (for simple types: Text, Number, Date, " +
-			"Checkbox, Link, Single select, Multiple select; long-tail types pass " +
-			"through with the raw value attached). Saves 4–7 follow-up calls in the " +
-			"typical 'fetch card → resolve everything' flow. Pass exactly one of " +
-			"`card_id` (per-widget), `card_common_id` (cross-widget), or `sequential_id` " +
-			"(integer of a 'BSC-123' ref). Comments are off by default — set " +
-			"`include_comments: true` to fetch the first page (cap with `comment_limit`, " +
-			"default 20). Read-only.",
+			"custom field name + display value. Custom-field display values cover Text, " +
+			"Number, Date, Date created, Checkbox, Link, Single select, Multiple select, " +
+			"Status (name + color), Members (resolved to user names), Rating " +
+			"('value / total'), Timeline ('start → due'), Voting (yes/no), Progress " +
+			"(percent), Tags (resolved to tag names), Sequential ID (the auto-counter " +
+			"value), and Relations (a count summary; raw IDs available via the entry's " +
+			"`raw` field). Unknown future Types pass through with `dereferenced: false` " +
+			"and the raw JSON attached. Saves 4–7 follow-up calls in the typical 'fetch " +
+			"card → resolve everything' flow. Pass exactly one of `card_id` (per-widget), " +
+			"`card_common_id` (cross-widget), or `sequential_id` (integer of a 'BSC-123' " +
+			"ref). Comments are off by default — set `include_comments: true` to fetch " +
+			"the first page (cap with `comment_limit`, default 20). Read-only.",
 		Annotations: readOnly("Get a Favro card with names dereferenced"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in getCardFullInput) (*mcp.CallToolResult, FullCard, error) {
 		full, err := r.GetFullCard(ctx, FullCardIdentity{

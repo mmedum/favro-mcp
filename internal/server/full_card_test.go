@@ -96,6 +96,8 @@ func TestFormatCustomFieldValue(t *testing.T) {
 		name   string
 		field  favro.CustomField
 		value  favro.CardCustomFieldValue
+		users  []favro.User
+		tags   []favro.Tag
 		want   string
 		wantOK bool
 	}{
@@ -193,19 +195,144 @@ func TestFormatCustomFieldValue(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			// Long-tail type — pass-through, not formatted.
-			name:   "members not yet dereferenced",
+			name:   "members dereferenced via user list",
 			field:  favro.CustomField{Type: "Members"},
 			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`["u-1","u-2"]`)},
+			users:  []favro.User{{UserID: "u-1", Name: "Alice"}, {UserID: "u-2", Name: "Bob"}, {UserID: "u-3", Name: "Carol"}},
+			want:   "Alice, Bob",
+			wantOK: true,
+		},
+		{
+			name:   "members empty array reports unset",
+			field:  favro.CustomField{Type: "Members"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`[]`)},
+			users:  []favro.User{{UserID: "u-1", Name: "Alice"}},
 			want:   "",
 			wantOK: false,
 		},
 		{
-			name:   "rating not yet dereferenced",
+			name:   "members partial unknown id falls through known names",
+			field:  favro.CustomField{Type: "Members"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`["u-1","u-missing"]`)},
+			users:  []favro.User{{UserID: "u-1", Name: "Alice"}},
+			want:   "Alice",
+			wantOK: true,
+		},
+		{
+			name: "status with color",
+			field: favro.CustomField{
+				Type: "Status",
+				CustomFieldItems: []favro.CustomFieldItem{
+					{CustomFieldItemID: "st-1", Name: "Doing", Color: "blue"},
+				},
+			},
+			value:  favro.CardCustomFieldValue{CustomFieldItemIDs: []string{"st-1"}},
+			want:   "Doing (blue)",
+			wantOK: true,
+		},
+		{
+			name: "status without color falls back to plain name",
+			field: favro.CustomField{
+				Type: "Status",
+				CustomFieldItems: []favro.CustomFieldItem{
+					{CustomFieldItemID: "st-1", Name: "Doing"},
+				},
+			},
+			value:  favro.CardCustomFieldValue{CustomFieldItemIDs: []string{"st-1"}},
+			want:   "Doing",
+			wantOK: true,
+		},
+		{
+			name:   "rating with total",
 			field:  favro.CustomField{Type: "Rating"},
-			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`3`)},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`3`), Total: 5},
+			want:   "3 / 5",
+			wantOK: true,
+		},
+		{
+			name:   "rating without total falls back to bare value",
+			field:  favro.CustomField{Type: "Rating"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`4`)},
+			want:   "4",
+			wantOK: true,
+		},
+		{
+			name:   "timeline both bounds",
+			field:  favro.CustomField{Type: "Timeline"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`{"startDate":"2026-01-01T00:00:00Z","dueDate":"2026-02-01T00:00:00Z"}`)},
+			want:   "2026-01-01T00:00:00Z → 2026-02-01T00:00:00Z",
+			wantOK: true,
+		},
+		{
+			name:   "timeline due only",
+			field:  favro.CustomField{Type: "Timeline"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`{"dueDate":"2026-02-01T00:00:00Z"}`)},
+			want:   "due 2026-02-01T00:00:00Z",
+			wantOK: true,
+		},
+		{
+			name:   "timeline start only",
+			field:  favro.CustomField{Type: "Timeline"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`{"startDate":"2026-01-01T00:00:00Z"}`)},
+			want:   "from 2026-01-01T00:00:00Z",
+			wantOK: true,
+		},
+		{
+			name:   "timeline empty object reports unset",
+			field:  favro.CustomField{Type: "Timeline"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`{}`)},
 			want:   "",
 			wantOK: false,
+		},
+		{
+			name:   "voting bool",
+			field:  favro.CustomField{Type: "Voting"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`true`)},
+			want:   "true",
+			wantOK: true,
+		},
+		{
+			name:   "progress",
+			field:  favro.CustomField{Type: "Progress"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`75`)},
+			want:   "75%",
+			wantOK: true,
+		},
+		{
+			name:   "tags dereferenced via tag list",
+			field:  favro.CustomField{Type: "Tags"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`["t-1","t-2"]`)},
+			tags:   []favro.Tag{{TagID: "t-1", Name: "frontend"}, {TagID: "t-2", Name: "blocker"}},
+			want:   "frontend, blocker",
+			wantOK: true,
+		},
+		{
+			name:   "sequential id number",
+			field:  favro.CustomField{Type: "Sequential ID"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`123`)},
+			want:   "123",
+			wantOK: true,
+		},
+		{
+			name:   "sequential id string",
+			field:  favro.CustomField{Type: "Sequential ID"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`"BSC-42"`)},
+			want:   "BSC-42",
+			wantOK: true,
+		},
+		{
+			name:   "relations count single",
+			field:  favro.CustomField{Type: "Relations"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`["cc-1"]`)},
+			want:   "1 related card",
+			wantOK: true,
+		},
+		{
+			name:   "relations count plural",
+			field:  favro.CustomField{Type: "Relations"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`["cc-1","cc-2","cc-3"]`)},
+			want:   "3 related cards",
+			wantOK: true,
 		},
 		{
 			name:   "unknown type",
@@ -218,7 +345,7 @@ func TestFormatCustomFieldValue(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, ok := formatCustomFieldValue(tc.value, tc.field)
+			got, ok := formatCustomFieldValue(tc.value, tc.field, tc.users, tc.tags)
 			require.Equal(t, tc.wantOK, ok)
 			require.Equal(t, tc.want, got)
 		})

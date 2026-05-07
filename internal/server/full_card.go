@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -55,12 +56,11 @@ type ResolvedCardAssignment struct {
 
 // ResolvedCardCustomField is one custom-field value, dereferenced
 // against the org-global custom-field list. DisplayValue is a
-// human-readable string for the formatted types (Text, Number,
-// Date, Date created, Checkbox, Link, Single select, Multiple
-// select). For the long-tail types (Members, Status, Rating,
-// Timeline, Voting, Progress, Relations, Sequential ID, Tags) it
-// is empty and Dereferenced is false. Raw always carries the
-// original Favro value so callers can fall back when they need to.
+// human-readable string when the kind has a clear rendering;
+// Dereferenced is true when DisplayValue was produced from a
+// known-shape value, false when the kind isn't supported or the
+// raw value couldn't be decoded. Raw always carries the original
+// Favro value so callers can fall back when they need to.
 type ResolvedCardCustomField struct {
 	CustomFieldID string          `json:"custom_field_id"`
 	Name          string          `json:"name,omitempty"`
@@ -183,8 +183,48 @@ func (r *Resolver) dereferenceCustomFields(ctx context.Context, full *FullCard) 
 	if err != nil {
 		return err
 	}
-	full.ResolvedCustomFields = projectCustomFieldValues(full.CustomFieldsValues, fields)
+	// Build the field-byID lookup once and share it with both the
+	// kind-presence check and the per-value projection — the
+	// reads-side hot path scans the same map up to three times
+	// otherwise (once per cardHasFieldType call, once again inside
+	// projectCustomFieldValues).
+	fieldsByID := indexByID(fields, func(f favro.CustomField) string { return f.CustomFieldID })
+	present := presentFieldTypes(full.CustomFieldsValues, fieldsByID)
+
+	// Members + Tags formatters need the org-global user / tag list
+	// to dereference IDs into names. Fetch only when the card
+	// actually has a value of that kind so the typical card
+	// (no Members or Tags custom field) still pays one
+	// listAllCustomFields call.
+	var users []favro.User
+	var tags []favro.Tag
+	if present[cfTypeMembers] {
+		users, _, err = r.listAllUsers(ctx, false)
+		if err != nil {
+			return err
+		}
+	}
+	if present[cfTypeTags] {
+		tags, _, err = r.listAllTags(ctx, false)
+		if err != nil {
+			return err
+		}
+	}
+	full.ResolvedCustomFields = projectCustomFieldValues(full.CustomFieldsValues, fieldsByID, users, tags)
 	return nil
+}
+
+// presentFieldTypes returns the set of CustomField.Type values
+// represented on the card. Built from the precomputed fieldsByID
+// so callers don't pay the indexByID cost twice.
+func presentFieldTypes(values []favro.CardCustomFieldValue, fieldsByID map[string]favro.CustomField) map[string]bool {
+	present := map[string]bool{}
+	for _, v := range values {
+		if f, ok := fieldsByID[v.CustomFieldID]; ok {
+			present[f.Type] = true
+		}
+	}
+	return present
 }
 
 func (r *Resolver) dereferenceComments(ctx context.Context, full *FullCard, commentLimit int) error {
@@ -379,37 +419,103 @@ func projectCollectionNames(collectionIDs []string, collections []favro.Collecti
 	return out
 }
 
-func projectCustomFieldValues(values []favro.CardCustomFieldValue, fields []favro.CustomField) []ResolvedCardCustomField {
-	byID := indexByID(fields, func(f favro.CustomField) string { return f.CustomFieldID })
+// projectCustomFieldValues projects each per-card value into a
+// ResolvedCardCustomField by name + Type + display value. The
+// caller supplies a precomputed fields-by-id map so the same map
+// can serve the kind-presence check and this projection without
+// rebuilding (the reads-side hot path scans the same map otherwise).
+func projectCustomFieldValues(values []favro.CardCustomFieldValue, fieldsByID map[string]favro.CustomField, users []favro.User, tags []favro.Tag) []ResolvedCardCustomField {
 	out := make([]ResolvedCardCustomField, 0, len(values))
 	for _, v := range values {
 		rc := ResolvedCardCustomField{CustomFieldID: v.CustomFieldID, Raw: v.Value}
-		if f, ok := byID[v.CustomFieldID]; ok {
+		if f, ok := fieldsByID[v.CustomFieldID]; ok {
 			rc.Name = f.Name
 			rc.Type = f.Type
-			rc.DisplayValue, rc.Dereferenced = formatCustomFieldValue(v, f)
+			rc.DisplayValue, rc.Dereferenced = formatCustomFieldValue(v, f, users, tags)
 		}
 		out = append(out, rc)
 	}
 	return out
 }
 
-// formatCustomFieldValue projects a raw Favro custom-field value
-// into a human-readable string. Returns ("", false) for the
-// long-tail types this layer does not yet dereference (Members,
-// Status, Rating, Timeline, Voting, Progress, Relations, Sequential
-// ID, Tags). The caller still gets the raw JSON via
-// ResolvedCardCustomField.Raw.
-func formatCustomFieldValue(v favro.CardCustomFieldValue, f favro.CustomField) (string, bool) {
-	switch f.Type {
-	case "Text", "Link", "Date", "Date created":
+// cfValueFormatter is the uniform signature every per-kind
+// formatter is wrapped to so the dispatch in
+// formatCustomFieldValue stays a single map lookup. Each entry in
+// customFieldFormatters consumes whichever subset of (v, f, users,
+// tags) it needs and returns the (display, dereferenced) tuple.
+type cfValueFormatter func(v favro.CardCustomFieldValue, f favro.CustomField, users []favro.User, tags []favro.Tag) (string, bool)
+
+// customFieldFormatters maps the Favro custom-field Type to the
+// formatter that renders one per-card value. Multiple Types may
+// map to the same formatter (Checkbox/Voting share the JSON-bool
+// decode; Date/Date created share the string decode). Adding a
+// new kind is one row.
+var customFieldFormatters = map[string]cfValueFormatter{
+	cfTypeText: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
 		return decodeJSONString(v.Value)
-	case "Number":
+	},
+	cfTypeLink: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return decodeJSONString(v.Value)
+	},
+	cfTypeDate: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return decodeJSONString(v.Value)
+	},
+	cfTypeDateCreated: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return decodeJSONString(v.Value)
+	},
+	cfTypeNumber: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
 		return decodeJSONNumber(v.Value)
-	case "Checkbox":
+	},
+	cfTypeCheckbox: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
 		return decodeJSONBool(v.Value)
-	case "Single select", "Multiple select":
+	},
+	cfTypeVoting: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return decodeJSONBool(v.Value)
+	},
+	cfTypeSingleSelect: func(v favro.CardCustomFieldValue, f favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
 		return formatSelectValue(v.CustomFieldItemIDs, f.CustomFieldItems)
+	},
+	cfTypeMultipleSelect: func(v favro.CardCustomFieldValue, f favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return formatSelectValue(v.CustomFieldItemIDs, f.CustomFieldItems)
+	},
+	cfTypeStatus: func(v favro.CardCustomFieldValue, f favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return formatStatusValue(v.CustomFieldItemIDs, f.CustomFieldItems)
+	},
+	cfTypeMembers: func(v favro.CardCustomFieldValue, _ favro.CustomField, users []favro.User, _ []favro.Tag) (string, bool) {
+		return formatMembersValue(v.Value, users)
+	},
+	cfTypeRating: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return formatRatingValue(v.Value, v.Total)
+	},
+	cfTypeTimeline: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return formatTimelineValue(v.Value)
+	},
+	cfTypeProgress: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return formatProgressValue(v.Value)
+	},
+	cfTypeTags: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, tags []favro.Tag) (string, bool) {
+		return formatTagsValue(v.Value, tags)
+	},
+	cfTypeSequentialID: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return formatSequentialIDValue(v.Value)
+	},
+	cfTypeRelations: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return formatRelationsValue(v.Value)
+	},
+}
+
+// formatCustomFieldValue projects a raw Favro custom-field value
+// into a human-readable string. Returns ("", false) when no clear
+// human-readable rendering exists for the kind or its raw value
+// can't be decoded — the caller still receives the raw JSON via
+// ResolvedCardCustomField.Raw.
+//
+// users and tags are the org-global lists the Members and Tags
+// formatters dereference IDs against. Pass nil when neither kind
+// is present on the card.
+func formatCustomFieldValue(v favro.CardCustomFieldValue, f favro.CustomField, users []favro.User, tags []favro.Tag) (string, bool) {
+	if fn, ok := customFieldFormatters[f.Type]; ok {
+		return fn(v, f, users, tags)
 	}
 	return "", false
 }
@@ -461,4 +567,149 @@ func formatSelectValue(itemIDs []string, items []favro.CustomFieldItem) (string,
 		return "", false
 	}
 	return strings.Join(names, ", "), true
+}
+
+// formatStatusValue renders a Status field's single CustomFieldItemID
+// as "<name> (<color>)" — the per-item color is the disambiguator
+// users actually see in the Favro UI. Falls back to plain name when
+// the item has no color set.
+func formatStatusValue(itemIDs []string, items []favro.CustomFieldItem) (string, bool) {
+	if len(itemIDs) == 0 {
+		return "", false
+	}
+	byID := indexByID(items, func(it favro.CustomFieldItem) string { return it.CustomFieldItemID })
+	it, ok := byID[itemIDs[0]]
+	if !ok {
+		return "", false
+	}
+	if it.Color != "" {
+		return fmt.Sprintf("%s (%s)", it.Name, it.Color), true
+	}
+	return it.Name, true
+}
+
+// formatMembersValue dereferences the JSON-array-of-userIds against
+// the org-global user list, joining display names with ", ". Empty
+// list reports the field as not-set (dereferenced=false).
+func formatMembersValue(raw json.RawMessage, users []favro.User) (string, bool) {
+	return formatIDListValue(raw, users,
+		func(u favro.User) string { return u.UserID },
+		func(u favro.User) string { return u.Name })
+}
+
+// formatIDListValue is the shared "JSON array of IDs → resolve
+// against an org-global list → join names" projection. Underpins
+// formatMembersValue (users) and formatTagsValue (tags) — same
+// shape, only the index/name accessors differ. Returns ("", false)
+// for empty arrays, decode failures, or all-IDs-unknown.
+func formatIDListValue[T any](raw json.RawMessage, items []T, getID, getName func(T) string) (string, bool) {
+	var ids []string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return "", false
+	}
+	if len(ids) == 0 {
+		return "", false
+	}
+	byID := indexByID(items, getID)
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if it, ok := byID[id]; ok {
+			names = append(names, getName(it))
+		}
+	}
+	if len(names) == 0 {
+		return "", false
+	}
+	return strings.Join(names, ", "), true
+}
+
+// formatRatingValue renders a Rating field as "<value> / <total>"
+// when total is known, falling back to the bare number otherwise.
+// Both parts use the same shortest-form float-or-int formatting as
+// the Number kind so star integers don't render with trailing
+// zeros.
+func formatRatingValue(raw json.RawMessage, total float64) (string, bool) {
+	var v float64
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return "", false
+	}
+	value := strconv.FormatFloat(v, 'f', -1, 64)
+	if total > 0 {
+		return fmt.Sprintf("%s / %s", value, strconv.FormatFloat(total, 'f', -1, 64)), true
+	}
+	return value, true
+}
+
+// formatTimelineValue renders a Timeline field's {startDate, dueDate}
+// pair as "<start> → <due>", or "due <due>" / "from <start>" when
+// only one bound is set. Returns ("", false) when neither bound is
+// present (Favro emits an empty object on a cleared timeline).
+func formatTimelineValue(raw json.RawMessage) (string, bool) {
+	var t struct {
+		StartDate string `json:"startDate"`
+		DueDate   string `json:"dueDate"`
+	}
+	if err := json.Unmarshal(raw, &t); err != nil {
+		return "", false
+	}
+	switch {
+	case t.StartDate != "" && t.DueDate != "":
+		return fmt.Sprintf("%s → %s", t.StartDate, t.DueDate), true
+	case t.DueDate != "":
+		return "due " + t.DueDate, true
+	case t.StartDate != "":
+		return "from " + t.StartDate, true
+	}
+	return "", false
+}
+
+// formatProgressValue renders a Progress field's percentage with a
+// trailing "%" — Favro stores progress as a 0–100 number.
+func formatProgressValue(raw json.RawMessage) (string, bool) {
+	var n float64
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return "", false
+	}
+	return strconv.FormatFloat(n, 'f', -1, 64) + "%", true
+}
+
+// formatTagsValue dereferences the JSON-array-of-tagIds against the
+// org-global tag list. This is the custom-field "Tags" type,
+// distinct from the top-level Card.Tags list dereferenced by
+// dereferenceTags.
+func formatTagsValue(raw json.RawMessage, tags []favro.Tag) (string, bool) {
+	return formatIDListValue(raw, tags,
+		func(t favro.Tag) string { return t.TagID },
+		func(t favro.Tag) string { return t.Name })
+}
+
+// formatSequentialIDValue renders the per-card auto-counter value.
+// Favro emits this as a JSON number (or sometimes a quoted string);
+// the field's display prefix (e.g. "BSC-") is field-defined and
+// not echoed in the per-card value. Callers who need the prefix
+// chain to favro_get_custom_field on the field id.
+func formatSequentialIDValue(raw json.RawMessage) (string, bool) {
+	if s, ok := decodeJSONString(raw); ok && s != "" {
+		return s, true
+	}
+	return decodeJSONNumber(raw)
+}
+
+// formatRelationsValue renders a Relations field as a count summary
+// rather than dereferencing each related-card id to a name —
+// per-relation card lookups would burn the rate-limit budget on
+// what is typically context-rich field. The raw IDs remain
+// available via ResolvedCardCustomField.Raw for callers who want them.
+func formatRelationsValue(raw json.RawMessage) (string, bool) {
+	var ids []string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return "", false
+	}
+	if len(ids) == 0 {
+		return "", false
+	}
+	if len(ids) == 1 {
+		return "1 related card", true
+	}
+	return fmt.Sprintf("%d related cards", len(ids)), true
 }
