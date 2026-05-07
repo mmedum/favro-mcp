@@ -13,23 +13,6 @@ import (
 
 const setCardCustomFieldToolName = "favro_set_card_custom_field"
 
-// Custom-field type strings as Favro returns them on CustomField.Type.
-// Centralized so the dispatch in setCardCustomField uses one source
-// of truth and mismatches surface at compile-time when the resolver
-// cache normalizes a new value.
-const (
-	cfTypeText           = "Text"
-	cfTypeNumber         = "Number"
-	cfTypeDate           = "Date"
-	cfTypeCheckbox       = "Checkbox"
-	cfTypeSingleSelect   = "Single select"
-	cfTypeMembers        = "Members"
-	cfTypeStatus         = "Status"
-	cfTypeMultipleSelect = "Multiple select"
-	cfTypeRating         = "Rating"
-	cfTypeLink           = "Link"
-)
-
 // errLongTailCustomFieldType is returned when a caller targets a
 // custom-field type the dispatch table doesn't handle. Still
 // deferred: Tags, Timeline, Voting, Progress, Relations,
