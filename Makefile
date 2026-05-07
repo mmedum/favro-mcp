@@ -67,6 +67,11 @@ vulncheck: ## govulncheck
 .PHONY: ci
 ci: lint vet test vulncheck ## run lint + vet + test + vulncheck (mirrors CI)
 
+.PHONY: package-plugin
+package-plugin: ## build a snapshot favro-mcp.plugin (requires goreleaser)
+	goreleaser release --snapshot --clean --skip=publish
+	scripts/package-plugin.sh
+
 .PHONY: clean
 clean: ## remove build artifacts
 	rm -rf $(BIN_DIR) dist coverage.out coverage.html *.plugin
