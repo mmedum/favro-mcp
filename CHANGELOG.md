@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added (Phase 8.1 — Goreleaser cross-build)
+- `.goreleaser.yaml`: cross-build matrix for darwin amd64/arm64, linux amd64/arm64, windows amd64. CGO disabled, `-trimpath` + `-s -w` strip flags, ldflags wire `{{.Tag}}` → `internal/version.Tag` and `{{.ShortCommit}}` → `internal/version.Commit` so the released binary's `--version` reports the correct release tag rather than the Makefile's `git describe` fallback.
+- Archive layout: `tar.gz` for Unix, `zip` for Windows; each archive bundles the binary plus `LICENSE`, `NOTICE`, `README.md`, `CHANGELOG.md` so the installable artifact is self-contained. `checksums.txt` (SHA-256) covers all five archives.
+- Snapshot template: `{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}` so untagged builds are unambiguously distinguishable from real releases. Goreleaser config validates clean (`goreleaser check`) and `goreleaser release --snapshot --clean --skip=publish` produces the expected 5 archives + `checksums.txt`.
+- Release config: `prerelease: auto` so `vX.Y.Z-rc.N` / `-alpha.N` tags become GitHub pre-releases automatically; `mode: replace` so re-running the release on the same tag overwrites prior artifacts; `changelog.use: github-native` defers commit-history rendering to GitHub's release-notes generator. The `release.yml` workflow's existing `goreleaser release --clean` shell-guard now succeeds (it was a no-op until this config landed).
+
 ### Added (Phase 7.4 — Long-tail custom-field reads)
 - `internal/server`: extended `formatCustomFieldValue` to dereference the long-tail custom-field kinds previously passed through with `dereferenced: false`. New per-kind formatters: **Status** (`<name> (<color>)` from the field's `customFieldItems`), **Members** (resolved to user display names), **Rating** (`<value> / <total>` when `total` known), **Timeline** (`<start> → <due>` with bound-only fallbacks), **Voting** (JSON bool), **Progress** (`<n>%`), **Tags** (resolved to tag names — distinct from the top-level Card.Tags surface), **Sequential ID** (auto-counter value, string-or-number defensive), **Relations** (count summary; raw IDs remain in `raw`). Closes the Phase 4.4 deferred surface.
 - `internal/server`: replaced the type switch with a `customFieldFormatters map[string]cfValueFormatter` dispatch — adding a future kind is one row. The uniform formatter signature consumes `(v, f, users, tags)` so kind-specific cache needs (Members → users, Tags → tags) stay typed at the call site.
