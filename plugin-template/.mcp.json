@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "favro": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "favro-mcp",
+  "version": "0.0.0-placeholder",
+  "description": "Favro project management MCP server (Go) — read/write cards, collections, widgets, comments, custom fields, attachments. Search and name resolution included so LLMs can act by name instead of by ID.",
+  "author": {
+    "name": "Mark Medum Bundgaard"
+  },
+  "homepage": "https://github.com/mmedum/favro-mcp",
+  "repository": "https://github.com/mmedum/favro-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "favro",
+    "project-management",
+    "mcp"
+  ]
+}
