@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server for [Favro](https://favro.com), written in
 
 ## Status
 
-Pre-1.0. See [CHANGELOG.md](./CHANGELOG.md) for what's shipped phase by phase. Phase 8 (Cowork plugin packaging) is in flight; v1.0 lands when 8.4 cuts the tag.
+**v1.0** — first stable release. See [CHANGELOG.md](./CHANGELOG.md) for the full history phase by phase. 64 MCP tools registered covering every Favro REST resource plus workflow tools (search, name resolution, surgical description edits) for natural-language use.
 
 ## Installation
 

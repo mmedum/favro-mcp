@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-05-07
+
+First stable release. The Phase 0 → 8 build sequence is complete: full CRUD coverage of every Favro REST resource (collections, widgets, columns, cards, comments, tags, custom fields, groups, organizations, users), workflow tools for natural-language use (search, name resolution, surgical description edits, comment-by-card-name, tag-by-name), dry-run on every mutating tool, and a single multi-arch `favro-mcp.plugin` zip that registers the binary as an MCP server in a Claude Code or Cowork profile. 64 MCP tools registered.
+
 ### Changed (Phase 8.3 — README + docs polish for v1.0)
 - `README.md`: rewritten for v1.0 readiness. New **Installation** section covers three install paths (Cowork plugin from GitHub Release as recommended, standalone binary download, build from source) — replaces the bare `make build` + `Running locally` snippets. **Authentication** expanded with the full `auth` subcommand walkthrough (`login`/`status`/`logout`/`which`), explicit credential-resolution order, and a separate **MCP host configuration** subsection that covers both the keyring path (zero secrets in config) and the headless / CI env-var variant. New **Dry-run** section documents the per-tool `dry_run: true` parameter and the process-wide `--dry-run` binary flag. New **Troubleshooting** table covers the most common failure modes: missing credentials, missing `FAVRO_ORGANIZATION_ID`, HTTP 429 with `Retry-After`, paginated-read pitfalls, the SPA-fallback HTML response Favro returns for non-endpoints (with the `decodeJSONLenient` diagnostic shape), cache-invalidation `force_refresh` escape hatch, and the Windows / Linux non-bash launcher fallback (point `.mcp.json` directly at `bin/<os>-<arch>/favro-mcp[.exe]`). **Status** line updated from "Phase 3" to current — points at CHANGELOG and v1.0. The "tool index will land at v1.0" stub line removed; the table already documents all 64 registered tools.
 
