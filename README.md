@@ -6,36 +6,71 @@ A Model Context Protocol (MCP) server for [Favro](https://favro.com), written in
 
 ## Status
 
-Pre-release. See [CHANGELOG.md](./CHANGELOG.md) for what's shipped.
+Pre-1.0. See [CHANGELOG.md](./CHANGELOG.md) for what's shipped phase by phase. Phase 8 (Cowork plugin packaging) is in flight; v1.0 lands when 8.4 cuts the tag.
 
-Active phase: **Phase 3** — Read CRUD surface (one Favro resource per commit).
+## Installation
+
+### Cowork plugin (recommended)
+
+Each tagged release publishes a single multi-arch `favro-mcp.plugin` zip on the [GitHub Releases page](https://github.com/mmedum/favro-mcp/releases). The bundle contains binaries for darwin amd64/arm64 and linux amd64/arm64, plus a launcher shim that picks the right one at runtime.
+
+1. Download `favro-mcp.plugin` from the release.
+2. Install it into your Cowork profile (drag-and-drop, or follow Cowork's plugin install flow).
+3. Authenticate (see [Authentication](#authentication) below).
+4. Restart Cowork — the `favro` MCP server will appear with all tools registered.
+
+The bundled `.mcp.json` points at `${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp` so the install is relocatable; no host paths to edit.
+
+### Standalone binary
+
+For non-Cowork hosts (Claude Code via raw `.mcp.json`, MCP Inspector, custom integrations):
+
+1. Download the matching `favro-mcp_<version>_<os>_<arch>.tar.gz` (or `.zip` on Windows) from the release.
+2. Extract and place the `favro-mcp` binary somewhere on `$PATH` (or note its absolute path).
+3. Authenticate.
+4. Point your MCP host's config at the binary — see [MCP host configuration](#mcp-host-configuration) below.
+
+### From source
+
+```
+git clone https://github.com/mmedum/favro-mcp
+cd favro-mcp
+make build       # → bin/favro-mcp
+```
+
+Requires Go 1.26+. The `toolchain` directive in `go.mod` auto-bumps collaborators to the matching minor.
 
 ## Authentication
 
-The server uses Favro's HTTP Basic Auth (user email + API token). Two credential sources are supported, checked in this order:
-
-1. **Environment variables** — `FAVRO_USER_EMAIL`, `FAVRO_API_TOKEN`, `FAVRO_ORGANIZATION_ID`. Win if set.
-2. **OS keyring** — populated once via `favro-mcp auth login` (cross-platform: macOS Keychain, Windows Credential Manager, Linux Secret Service).
-
-The server is locked to one organization at startup. Tools never accept `organization_id`.
+The server uses Favro's HTTP Basic Auth (user email + API token), scoped to one Favro organization at startup. Tools never accept `organization_id` — pass it once via env var or keyring and forget about it.
 
 API tokens are user-scoped — for team installs, generate the token from a dedicated service-style Favro user with the minimum permissions you need, not from a personal account.
 
-## Rate limits
+### Credential resolution
 
-Favro enforces tier-based rate limits **per organization** (Lite ~100/hr, Standard ~1000/hr, Enterprise ~10000/hr). A misbehaving agent can exhaust the quota for everyone in your org. The server caches resolution lookups (tags, users, widgets, columns) in-memory and supports `force_refresh` on every list/resolve tool to bust the cache when needed.
+Two sources, checked in order; the first one that produces a complete `(email, token, organization_id)` triple wins:
 
-## Building
+1. **Environment variables** — `FAVRO_USER_EMAIL`, `FAVRO_API_TOKEN`, `FAVRO_ORGANIZATION_ID`.
+2. **OS keyring** — populated once via `favro-mcp auth login` (cross-platform: macOS Keychain, Windows Credential Manager, Linux Secret Service).
+
+### `auth` subcommands
 
 ```
-make build
+favro-mcp auth login       # interactive: masked token input, writes to keyring
+favro-mcp auth status      # show user/org (token never printed)
+favro-mcp auth logout      # delete keyring entries
+favro-mcp auth which       # print active credential source: env or keyring
+favro-mcp --version        # print version + commit
+favro-mcp --dry-run        # process-wide override: forces all writes into dry-run
 ```
 
-Requires Go 1.26+. The `toolchain` directive in `go.mod` will auto-bump collaborators to the matching minor.
+`favro-mcp auth login` is the one-shot setup for the keyring path. Re-run it to rotate the token.
 
-## Running locally
+### MCP host configuration
 
-After `favro-mcp auth login`:
+After the binary or plugin is in place and credentials are stored, register the server in your MCP host config.
+
+**Default (keyring path, zero secrets in config)**:
 
 ```json
 {
@@ -45,7 +80,7 @@ After `favro-mcp auth login`:
 }
 ```
 
-For headless / CI environments, supply env vars instead:
+**Headless / CI (env vars)** — passes secrets through from the shell, never literal:
 
 ```json
 {
@@ -61,6 +96,18 @@ For headless / CI environments, supply env vars instead:
   }
 }
 ```
+
+The Cowork plugin ships its own `.mcp.json` pointing at `${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp`, so for that install path no manual config is needed.
+
+## Rate limits
+
+Favro enforces tier-based rate limits **per organization** (Lite ~100/hr, Standard ~1000/hr, Enterprise ~10000/hr). A misbehaving agent can exhaust the quota for everyone in your org. The server caches resolution lookups (tags, users, widgets, columns) in-memory and supports `force_refresh` on every list/resolve tool to bust the cache when needed. List tools never auto-aggregate pages — each `next_page` requires an explicit follow-up call so the LLM can stop early.
+
+## Dry-run
+
+Every mutating tool accepts `dry_run: true` and returns the would-be HTTP request (method, URL, body) plus a state-diff prediction without contacting Favro. Read tools never accept `dry_run`.
+
+For sandboxed or pre-autonomy testing, `--dry-run` on the binary forces dry-run mode process-wide regardless of per-call input.
 
 ## Tools
 
@@ -133,7 +180,18 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | `favro_remove_tag_from_card` | 6 | Mutating. Removes a tag from a card by tag NAME. Same hard-fail semantics as add. |
 | `favro_upload_attachment` | 7 | Mutating. Uploads a local file as an attachment on a card via raw-bytes POST. Inputs: `card_id`, `file_path` (absolute), optional `filename` (defaults to the file's basename). v0.1 supports local file paths only — base64-inline body is deferred. 8 MiB upload cap enforced locally. Returns the created attachment object `{name, fileURL}` (Favro echoes the attachment, not the updated Card — verified live). Live success invalidates the search-cards cache. Pass `dry_run: true` to preview. |
 
-The full tool index will land at v1.0 (Phase 8).
+## Troubleshooting
+
+| Symptom | Diagnosis & fix |
+| --- | --- |
+| `authentication failed — check FAVRO_USER_EMAIL and FAVRO_API_TOKEN env vars` on startup | Either no credentials configured, or the token was revoked / rotated. Run `favro-mcp auth which` to confirm which source the server is reading, then re-run `favro-mcp auth login` (keyring path) or update the env vars. |
+| `FAVRO_ORGANIZATION_ID is required` on startup | The server is single-org by design — it needs to know which org to scope every request to before it can start. Set `FAVRO_ORGANIZATION_ID` (or include it in `auth login`) and restart. |
+| HTTP 429 / `rate limit exceeded` | Hit the per-org Favro rate limit. The client retries once honoring `Retry-After` (capped at 30s) and then surfaces a typed error with `retry_after_seconds`. Use `favro_rate_limit_status` to inspect the most recent `X-RateLimit-*` headers without spending another call. |
+| `next_page` keeps coming back non-null | List tools never auto-aggregate. Each follow-up call must include `page` plus the same `request_id` (Favro routes paginated reads via `X-Favro-Backend-Identifier`); some tools also require resending the original filters. |
+| `decodeJSONLenient` errors with `content-type: text/html, body-prefix: "<p>It looks like…"` | You hit a Favro endpoint that doesn't exist on the documented surface — Favro returns the SPA fallback page instead of a 404. The error includes status + content-type + body-prefix so you can diagnose in one round-trip. |
+| Tool descriptions have stale data after a successful write | All cache invalidations are per-org-scoped and per-resource-type; if a write succeeds but the next read still shows old data, pass `force_refresh: true` to the list/resolve tool. |
+| Linux launcher doesn't run from the plugin | The launcher is a bash script. If your shell can't exec it, point your `.mcp.json` directly at `${CLAUDE_PLUGIN_ROOT}/bin/linux-amd64/favro-mcp` (or `linux-arm64`) instead. |
+| Windows | The bash launcher exits with `unsupported platform` on Windows. Point your `.mcp.json` directly at `${CLAUDE_PLUGIN_ROOT}/bin/windows-amd64/favro-mcp.exe` for now; cross-platform launcher polish lands post-v1.0. |
 
 ## Development
 
