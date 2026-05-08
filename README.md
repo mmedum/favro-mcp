@@ -191,7 +191,7 @@ Phase 1 ships one tool — the rest follow in subsequent phases.
 | `decodeJSONLenient` errors with `content-type: text/html, body-prefix: "<p>It looks like…"` | You hit a Favro endpoint that doesn't exist on the documented surface — Favro returns the SPA fallback page instead of a 404. The error includes status + content-type + body-prefix so you can diagnose in one round-trip. |
 | Tool descriptions have stale data after a successful write | All cache invalidations are per-org-scoped and per-resource-type; if a write succeeds but the next read still shows old data, pass `force_refresh: true` to the list/resolve tool. |
 | Linux launcher doesn't run from the plugin | The launcher is a bash script. If your shell can't exec it, point your `.mcp.json` directly at `${CLAUDE_PLUGIN_ROOT}/bin/linux-amd64/favro-mcp` (or `linux-arm64`) instead. |
-| Windows | The bash launcher exits with `unsupported platform` on Windows. Point your `.mcp.json` directly at `${CLAUDE_PLUGIN_ROOT}/bin/windows-amd64/favro-mcp.exe` for now; cross-platform launcher polish lands post-v1.0. |
+| Windows | The bundled `bin/favro-mcp.cmd` shim exec's `bin\windows-amd64\favro-mcp.exe`. Windows hosts resolve `${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp` to the `.cmd` automatically via PATHEXT, so the standard `.mcp.json` config in [MCP host configuration](#mcp-host-configuration) works as-is. If your host doesn't honor PATHEXT, point `command` at `${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp.cmd` (or directly at `bin/windows-amd64/favro-mcp.exe`). |
 
 ## Development
 
