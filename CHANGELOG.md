@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added (Phase 9.2 — Windows launcher shim)
+- `scripts/package-plugin.sh`: generates `bin/favro-mcp.cmd` alongside the existing bash `bin/favro-mcp`. The `.cmd` is a 2-line `cmd.exe` batch shim that exec's `bin\windows-amd64\favro-mcp.exe` via `%~dp0` (resolves to the .cmd's own directory with trailing backslash, keeps the shim relocatable like the bash version) and `%*` (forwards all args). No arch detection needed — only one Windows arch ships in the bundle (`windows-arm64` is `ignored:` in `.goreleaser.yaml`). Written with explicit CRLF line endings via `printf '\r\n'` so `cmd.exe` parses it correctly even when the `.plugin` zip is extracted on a Unix host first. Adds ~50 bytes to the bundled plugin.
+- Windows hosts resolve `${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp` to `bin/favro-mcp.cmd` automatically via PATHEXT, so `plugin-template/.mcp.json` doesn't need to change — the same MCP-host config works on macOS, Linux, and Windows.
+- `README.md`: Troubleshooting "Windows" row updated. Was "point `.mcp.json` directly at `bin/windows-amd64/favro-mcp.exe`", now describes the bundled `.cmd` shim with an explicit fallback for hosts that don't honor PATHEXT. The bash launcher's error message updated from "on Windows, point .mcp.json at bin/windows-amd64/favro-mcp.exe directly" to "on Windows the .cmd shim should run instead" — the bash launcher should never reach the unsupported-platform path on a real Windows install now.
+
 ### Security (Phase 9.1)
 - `go.mod`: bump `toolchain` from `go1.26.2` to `go1.26.3` to pick up the stdlib fixes for [GO-2026-4971](https://pkg.go.dev/vuln/GO-2026-4971) (panic in `net.Dial` / `net.LookupPort` on Windows when handling NUL bytes — reachable through `auth.KeyringSource.Delete` and `auth.Validator.Validate`) and [GO-2026-4918](https://pkg.go.dev/vuln/GO-2026-4918) (infinite loop in HTTP/2 transport on a malformed `SETTINGS_MAX_FRAME_SIZE` — reachable through `auth.Validator.Validate`'s startup ping). All CI workflows resolve via `go-version-file: go.mod`, so the toolchain bump in `go.mod` is the only change needed. `govulncheck ./...` reports clean against 1.26.3.
 
