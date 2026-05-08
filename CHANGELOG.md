@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security (Phase 9.1)
+- `go.mod`: bump `toolchain` from `go1.26.2` to `go1.26.3` to pick up the stdlib fixes for [GO-2026-4971](https://pkg.go.dev/vuln/GO-2026-4971) (panic in `net.Dial` / `net.LookupPort` on Windows when handling NUL bytes — reachable through `auth.KeyringSource.Delete` and `auth.Validator.Validate`) and [GO-2026-4918](https://pkg.go.dev/vuln/GO-2026-4918) (infinite loop in HTTP/2 transport on a malformed `SETTINGS_MAX_FRAME_SIZE` — reachable through `auth.Validator.Validate`'s startup ping). All CI workflows resolve via `go-version-file: go.mod`, so the toolchain bump in `go.mod` is the only change needed. `govulncheck ./...` reports clean against 1.26.3.
+
 ### Added (Phase 9.1 — Broader markdown corpus)
 - `internal/server/testdata/markdown/`: 6 new fixtures exercising markdown shapes Phase 6 didn't cover. `nested_lists.md` walks bullet + numbered lists 2 levels deep with `find this` mid-list-item; `blockquotes.md` covers single-level + `> >` nested quotes; `code_fence_with_backticks.md` puts a triple-backtick block inside a four-backtick outer fence (the Markdown-Extra "fence inside a fence" idiom); `unicode_emoji.md` exercises non-ASCII (`é`, `中文`, emoji, leading LRM) so the byte-level prefix/suffix invariants in `appendDescription` / `prependDescription` are confirmed against multi-byte runes; `task_list.md` covers GitHub-style `- [x]` / `- [ ]` checkboxes; `html_inline.md` covers `<details>`, `<sub>`, and inline `<br/>` mixed with prose. `TestDescriptionEditors_GoldenCorpus` walks the directory so each new file auto-joins the regression set without test changes — adds 18 new sub-tests (6 × append/prepend/replace).
 
