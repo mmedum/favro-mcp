@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added (Phase 9.1 — Broader markdown corpus)
+- `internal/server/testdata/markdown/`: 6 new fixtures exercising markdown shapes Phase 6 didn't cover. `nested_lists.md` walks bullet + numbered lists 2 levels deep with `find this` mid-list-item; `blockquotes.md` covers single-level + `> >` nested quotes; `code_fence_with_backticks.md` puts a triple-backtick block inside a four-backtick outer fence (the Markdown-Extra "fence inside a fence" idiom); `unicode_emoji.md` exercises non-ASCII (`é`, `中文`, emoji, leading LRM) so the byte-level prefix/suffix invariants in `appendDescription` / `prependDescription` are confirmed against multi-byte runes; `task_list.md` covers GitHub-style `- [x]` / `- [ ]` checkboxes; `html_inline.md` covers `<details>`, `<sub>`, and inline `<br/>` mixed with prose. `TestDescriptionEditors_GoldenCorpus` walks the directory so each new file auto-joins the regression set without test changes — adds 18 new sub-tests (6 × append/prepend/replace).
+
 ## [1.0.0] — 2026-05-07
 
 First stable release. The Phase 0 → 8 build sequence is complete: full CRUD coverage of every Favro REST resource (collections, widgets, columns, cards, comments, tags, custom fields, groups, organizations, users), workflow tools for natural-language use (search, name resolution, surgical description edits, comment-by-card-name, tag-by-name), dry-run on every mutating tool, and a single multi-arch `favro-mcp.plugin` zip that registers the binary as an MCP server in a Claude Code or Cowork profile. 64 MCP tools registered.
