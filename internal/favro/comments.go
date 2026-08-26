@@ -87,6 +87,9 @@ func (c *Client) CreateComment(ctx context.Context, req CreateCommentRequest) (C
 // cardCommonId and userId are fixed at creation time. Beyond the
 // text, Favro accepts RemoveAttachments — a list of attachment URLs
 // (Comment.Attachments[].FileURL) to detach from the comment.
+//
+// UpdateComment runs each entry through CanonicalAttachmentURL, so
+// the presigned URL Favro hands back can be passed straight through.
 type UpdateCommentRequest struct {
 	Comment           string   `json:"comment"`
 	RemoveAttachments []string `json:"removeAttachments,omitempty"`
@@ -102,6 +105,16 @@ func (c *Client) UpdateComment(ctx context.Context, commentID string, req Update
 	}
 	if req.Comment == "" {
 		return Comment{}, fmt.Errorf("favro: comment body is required")
+	}
+	// A presigned URL can never match what Favro stored — see
+	// CanonicalAttachmentURL. Copy rather than mutate the caller's
+	// slice in place.
+	if len(req.RemoveAttachments) > 0 {
+		canonical := make([]string, len(req.RemoveAttachments))
+		for i, u := range req.RemoveAttachments {
+			canonical[i] = CanonicalAttachmentURL(u)
+		}
+		req.RemoveAttachments = canonical
 	}
 	var out Comment
 	if err := c.PutJSON(ctx, "/comments/"+url.PathEscape(commentID), req, &out); err != nil {

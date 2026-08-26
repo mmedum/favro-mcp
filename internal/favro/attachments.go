@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // errMissingFilename is returned by UploadAttachment when the
@@ -91,18 +92,40 @@ func (c *Client) uploadAttachment(ctx context.Context, path, filename, mimeType 
 	return out, nil
 }
 
+// CanonicalAttachmentURL strips the query string from an attachment
+// URL, leaving the stable S3 object URL.
+//
+// This matters because Favro hands back a *presigned* fileURL, minted
+// per request. Two reads of the same attachment, 56 minutes apart,
+// returned the same object key with different X-Amz-Date and
+// X-Amz-Signature values (verified live 2026-08-26). So the fileURL a
+// caller reads back is never byte-equal to anything Favro could have
+// stored, and matching on it cannot work. Everything up to the "?" is
+// stable; everything after it is a signature with a 24-hour expiry.
+//
+// Passing an already-stripped URL is a no-op.
+func CanonicalAttachmentURL(fileURL string) string {
+	if i := strings.IndexByte(fileURL, '?'); i >= 0 {
+		return fileURL[:i]
+	}
+	return fileURL
+}
+
 // RemoveAttachment detaches files from a card by their fileURL.
 //
-// The identifier matters: Favro documents removeAttachments as "the
-// list of attachments URLs". A Phase 7.1 live test passed the
-// attachment's display name and its underlying S3 object name, got
-// HTTP 200 both times, and observed no removal — consistent with
-// Favro matching on the full URL and silently ignoring values that
-// match nothing. Pass CardAttachment.FileURL, which is what both
-// favro_get_card_full and the upload response hand back.
+// Favro documents removeAttachments as "the list of attachments
+// URLs". Pass CardAttachment.FileURL as read — the query string is
+// stripped for you, see CanonicalAttachmentURL for why that is
+// required rather than cosmetic.
 //
-// This remains unverified against a live tenant. If a call returns
-// 200 and the attachment survives, the URL didn't match.
+// Two earlier attempts at this failed: Phase 7.1 passed the display
+// name and the bare S3 object name, and got HTTP 200 with no removal
+// both times; v1.1.0 passed the presigned URL whole, which cannot
+// match for the reason above.
+//
+// The stripped form is still unverified against a live tenant. Favro
+// returns 200 whether or not anything matched, so confirm by
+// re-reading the card.
 func (c *Client) RemoveAttachment(ctx context.Context, cardID string, fileURLs ...string) (Card, error) {
 	if cardID == "" {
 		return Card{}, errMissingID
@@ -110,12 +133,14 @@ func (c *Client) RemoveAttachment(ctx context.Context, cardID string, fileURLs .
 	if len(fileURLs) == 0 {
 		return Card{}, fmt.Errorf("favro: at least one attachment fileURL is required")
 	}
-	for _, u := range fileURLs {
+	canonical := make([]string, len(fileURLs))
+	for i, u := range fileURLs {
 		if u == "" {
 			return Card{}, fmt.Errorf("favro: attachment fileURL must not be empty")
 		}
+		canonical[i] = CanonicalAttachmentURL(u)
 	}
 	return c.UpdateCard(ctx, cardID, UpdateCardRequest{
-		RemoveAttachments: fileURLs,
+		RemoveAttachments: canonical,
 	})
 }
