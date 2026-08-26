@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server for [Favro](https://favro.com), written in
 
 ## Status
 
-**v1.0** — first stable release, plus an unreleased API-parity pass. See [CHANGELOG.md](./CHANGELOG.md) for the full history phase by phase. 83 MCP tools registered covering every Favro REST resource plus workflow tools (search, name resolution, surgical description edits) for natural-language use.
+**v1.1** — API-parity release. See [CHANGELOG.md](./CHANGELOG.md) for the full history phase by phase. 83 MCP tools registered covering every Favro REST resource — including tasks, tasklists, dependencies and activities — plus workflow tools (search, name resolution, surgical description edits) for natural-language use.
 
 ## Installation
 
