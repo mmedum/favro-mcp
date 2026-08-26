@@ -29,18 +29,38 @@ const UploadAttachmentMaxBytes = 8 * 1024 * 1024
 // leaves the rest zero, which masks the contract; CardAttachment
 // matches what Favro actually returns.
 //
-// Content-Type defaults to application/octet-stream so Favro infers
-// the kind from the filename extension rather than tripping its
-// JSON parser. Uses c.Do directly because the PostJSON wrapper
-// doesn't accept a query parameter — the filename has to ride on
-// the URL. encodeBody's []byte shortcut means the raw bytes pass
-// through unmodified. Empty cardID short-circuits with errMissingID;
+// mimeType is optional; pass "" to let Favro infer the kind from the
+// filename extension. Empty cardID short-circuits with errMissingID;
 // empty filename with errMissingFilename. Honors WithDryRun /
 // ForceDryRun via the wrapped Do.
-func (c *Client) UploadAttachment(ctx context.Context, cardID, filename string, content []byte) (CardAttachment, error) {
+func (c *Client) UploadAttachment(ctx context.Context, cardID, filename, mimeType string, content []byte) (CardAttachment, error) {
 	if cardID == "" {
 		return CardAttachment{}, errMissingID
 	}
+	return c.uploadAttachment(ctx, "/cards/"+url.PathEscape(cardID)+"/attachment", filename, mimeType, content)
+}
+
+// UploadCommentAttachment posts raw bytes to
+// POST /comments/{commentId}/attachment. Same contract as
+// UploadAttachment, but the file lands on a comment rather than on
+// the card itself.
+func (c *Client) UploadCommentAttachment(ctx context.Context, commentID, filename, mimeType string, content []byte) (CardAttachment, error) {
+	if commentID == "" {
+		return CardAttachment{}, errMissingID
+	}
+	return c.uploadAttachment(ctx, "/comments/"+url.PathEscape(commentID)+"/attachment", filename, mimeType, content)
+}
+
+// uploadAttachment is the shared body of the card and comment upload
+// paths — they differ only in the endpoint.
+//
+// Content-Type defaults to application/octet-stream so Favro infers
+// the kind from the filename extension rather than tripping its JSON
+// parser. Uses c.Do directly because the PostJSON wrapper doesn't
+// accept query parameters — the filename has to ride on the URL.
+// encodeBody's []byte shortcut means the raw bytes pass through
+// unmodified.
+func (c *Client) uploadAttachment(ctx context.Context, path, filename, mimeType string, content []byte) (CardAttachment, error) {
 	if filename == "" {
 		return CardAttachment{}, errMissingFilename
 	}
@@ -49,10 +69,13 @@ func (c *Client) UploadAttachment(ctx context.Context, cardID, filename string, 
 	}
 	q := url.Values{}
 	q.Set("filename", filename)
+	if mimeType != "" {
+		q.Set("mimeType", mimeType)
+	}
 	resp, err := c.Do(
 		ctx,
 		http.MethodPost,
-		"/cards/"+url.PathEscape(cardID)+"/attachment",
+		path,
 		q,
 		content,
 		WithHeader("Content-Type", "application/octet-stream"),
@@ -68,27 +91,31 @@ func (c *Client) UploadAttachment(ctx context.Context, cardID, filename string, 
 	return out, nil
 }
 
-// RemoveAttachment is reserved for future use and is currently
-// unexposed at the MCP layer.
+// RemoveAttachment detaches files from a card by their fileURL.
 //
-// **Known not working** (verified live Phase 7.1): Favro accepts a
-// PUT /cards/{cardId} body with `removeAttachments: ["filename"]`
-// and returns 200, but the attachment is NOT actually removed —
-// retried both with the display name and with the underlying S3
-// object name. Favro appears to silently ignore unknown fields,
-// suggesting the docs-hinted shape isn't what the API actually
-// requires. The `RemoveAttachments` field on UpdateCardRequest is
-// kept in case a future investigation finds the right wire shape;
-// the favro_remove_attachment MCP tool is intentionally NOT
-// registered until then.
-func (c *Client) RemoveAttachment(ctx context.Context, cardID, filename string) (Card, error) {
+// The identifier matters: Favro documents removeAttachments as "the
+// list of attachments URLs". A Phase 7.1 live test passed the
+// attachment's display name and its underlying S3 object name, got
+// HTTP 200 both times, and observed no removal — consistent with
+// Favro matching on the full URL and silently ignoring values that
+// match nothing. Pass CardAttachment.FileURL, which is what both
+// favro_get_card_full and the upload response hand back.
+//
+// This remains unverified against a live tenant. If a call returns
+// 200 and the attachment survives, the URL didn't match.
+func (c *Client) RemoveAttachment(ctx context.Context, cardID string, fileURLs ...string) (Card, error) {
 	if cardID == "" {
 		return Card{}, errMissingID
 	}
-	if filename == "" {
-		return Card{}, errMissingFilename
+	if len(fileURLs) == 0 {
+		return Card{}, fmt.Errorf("favro: at least one attachment fileURL is required")
+	}
+	for _, u := range fileURLs {
+		if u == "" {
+			return Card{}, fmt.Errorf("favro: attachment fileURL must not be empty")
+		}
 	}
 	return c.UpdateCard(ctx, cardID, UpdateCardRequest{
-		RemoveAttachments: []string{filename},
+		RemoveAttachments: fileURLs,
 	})
 }

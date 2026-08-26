@@ -31,7 +31,7 @@ func TestUploadAttachment_HappyPath(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	got, err := c.UploadAttachment(context.Background(), "ci-1", "note.txt", []byte("raw bytes here"))
+	got, err := c.UploadAttachment(context.Background(), "ci-1", "note.txt", "", []byte("raw bytes here"))
 	require.NoError(t, err)
 	require.Equal(t, "note.txt", got.Name,
 		"Favro returns the attachment object {name, fileURL}, not the Card — pinning the contract")
@@ -48,7 +48,7 @@ func TestUploadAttachment_EmptyCardID_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.UploadAttachment(context.Background(), "", "x.txt", []byte("data"))
+	_, err := c.UploadAttachment(context.Background(), "", "x.txt", "", []byte("data"))
 	require.ErrorIs(t, err, errMissingID)
 	require.Empty(t, h.seen())
 }
@@ -63,7 +63,7 @@ func TestUploadAttachment_EmptyFilename_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.UploadAttachment(context.Background(), "ci-1", "", []byte("data"))
+	_, err := c.UploadAttachment(context.Background(), "ci-1", "", "", []byte("data"))
 	require.ErrorIs(t, err, errMissingFilename)
 	require.Empty(t, h.seen())
 }
@@ -79,7 +79,7 @@ func TestUploadAttachment_OversizeCap(t *testing.T) {
 	c := newTestClient(srv)
 
 	oversized := make([]byte, UploadAttachmentMaxBytes+1)
-	_, err := c.UploadAttachment(context.Background(), "ci-1", "x.txt", oversized)
+	_, err := c.UploadAttachment(context.Background(), "ci-1", "x.txt", "", oversized)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "exceeds")
 	require.Empty(t, h.seen(), "oversize must short-circuit before any HTTP call")
@@ -95,7 +95,7 @@ func TestUploadAttachment_DryRun_ReturnsRecord(t *testing.T) {
 	c.BaseURL = "https://favro.invalid"
 	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
 
-	_, err := c.UploadAttachment(WithDryRun(context.Background()), "ci-1", "x.txt", []byte("data"))
+	_, err := c.UploadAttachment(WithDryRun(context.Background()), "ci-1", "x.txt", "", []byte("data"))
 	require.ErrorIs(t, err, ErrDryRun)
 	var rec *DryRunRecord
 	require.ErrorAs(t, err, &rec)
@@ -107,14 +107,20 @@ func TestUploadAttachment_DryRun_ReturnsRecord(t *testing.T) {
 }
 
 // TestRemoveAttachment_HappyPath pins that RemoveAttachment is a
-// thin wrapper over UpdateCard with removeAttachments populated.
+// thin wrapper over UpdateCard with removeAttachments populated, and
+// that the list carries attachment URLs — Favro documents
+// removeAttachments as "the list of attachments URLs", and a Phase
+// 7.1 live test using display names / S3 object names silently
+// removed nothing.
 func TestRemoveAttachment_HappyPath(t *testing.T) {
 	t.Parallel()
+
+	const fileURL = "https://s3-eu-west-1.amazonaws.com/organicrelations/2155aa13.txt"
 
 	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
 		require.Equal(t, http.MethodPut, rec.Method)
 		require.Equal(t, "/cards/ci-1", rec.Path)
-		require.JSONEq(t, `{"removeAttachments":["note.txt"]}`, rec.Body)
+		require.JSONEq(t, `{"removeAttachments":["`+fileURL+`"]}`, rec.Body)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"cardId":"ci-1"}`))
 	}}
@@ -122,11 +128,28 @@ func TestRemoveAttachment_HappyPath(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.RemoveAttachment(context.Background(), "ci-1", "note.txt")
+	_, err := c.RemoveAttachment(context.Background(), "ci-1", fileURL)
 	require.NoError(t, err)
 }
 
-func TestRemoveAttachment_EmptyFilename_NoNetworkCall(t *testing.T) {
+func TestRemoveAttachment_MultipleURLs(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.JSONEq(t, `{"removeAttachments":["https://a.invalid/1.txt","https://a.invalid/2.txt"]}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.RemoveAttachment(context.Background(), "ci-1",
+		"https://a.invalid/1.txt", "https://a.invalid/2.txt")
+	require.NoError(t, err)
+}
+
+func TestRemoveAttachment_NoURLs_NoNetworkCall(t *testing.T) {
 	t.Parallel()
 
 	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
@@ -134,9 +157,68 @@ func TestRemoveAttachment_EmptyFilename_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.RemoveAttachment(context.Background(), "ci-1", "")
-	require.ErrorIs(t, err, errMissingFilename)
+	_, err := c.RemoveAttachment(context.Background(), "ci-1")
+	require.ErrorContains(t, err, "at least one attachment fileURL")
+
+	_, err = c.RemoveAttachment(context.Background(), "ci-1", "")
+	require.ErrorContains(t, err, "must not be empty")
+
 	require.Empty(t, h.seen())
+}
+
+// The comment upload endpoint differs only in its path; pin that the
+// filename and mimeType still ride on the query string.
+func TestUploadCommentAttachment_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodPost, rec.Method)
+		require.Equal(t, "/comments/cm-1/attachment", rec.Path)
+		require.Equal(t, "note.txt", rec.Query.Get("filename"))
+		require.Equal(t, "text/plain", rec.Query.Get("mimeType"))
+		require.Equal(t, "application/octet-stream", rec.Headers.Get("Content-Type"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"name":"note.txt","fileURL":"https://s3.invalid/note.txt"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.UploadCommentAttachment(context.Background(), "cm-1", "note.txt", "text/plain", []byte("data"))
+	require.NoError(t, err)
+	require.Equal(t, "note.txt", got.Name)
+	require.Equal(t, "https://s3.invalid/note.txt", got.FileURL)
+}
+
+func TestUploadCommentAttachment_EmptyID_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UploadCommentAttachment(context.Background(), "", "x.txt", "", []byte("data"))
+	require.ErrorIs(t, err, errMissingID)
+	require.Empty(t, h.seen())
+}
+
+// mimeType is optional — omitting it must leave the query parameter
+// off entirely so Favro falls back to extension sniffing.
+func TestUploadAttachment_OmitsEmptyMimeType(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.False(t, rec.Query.Has("mimeType"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"name":"x.txt"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UploadAttachment(context.Background(), "ci-1", "x.txt", "", []byte("data"))
+	require.NoError(t, err)
 }
 
 // TestBuildRequest_ContentTypeOverride pins the regression: a

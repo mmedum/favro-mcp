@@ -23,9 +23,10 @@ type createCollectionInput struct {
 	Color                    string             `json:"color,omitempty" jsonschema:"optional palette color: blue, red, green, lime, purple, cyan, brown, orange, gray, pink, yellow, slategray"`
 	Background               string             `json:"background,omitempty" jsonschema:"optional decorative background name (Favro-defined; e.g. 'forest', 'ocean')"`
 	IconName                 string             `json:"icon_name,omitempty" jsonschema:"optional icon name (Favro-defined)"`
-	PublicSharing            string             `json:"public_sharing,omitempty" jsonschema:"sharing mode: 'off' (default), 'organization' (every member can see it), or 'public' (read-only public link)"`
+	PublicSharing            string             `json:"public_sharing,omitempty" jsonschema:"sharing mode: 'users' (specific users only), 'organization' (every member can see it), or 'public' (everyone on the internet)"`
 	FullMembersCanAddWidgets *bool              `json:"full_members_can_add_widgets,omitempty" jsonschema:"if true, full org members (not just owners) can add widgets to this collection"`
-	SharedToUsers            []favro.SharedUser `json:"shared_to_users,omitempty" jsonschema:"explicit user share list; alternative to public_sharing. Each entry has email or userId plus role."`
+	StarPage                 *bool              `json:"star_page,omitempty" jsonschema:"if true, star the new collection for the authenticated user"`
+	ShareToUsers             []favro.SharedUser `json:"share_to_users,omitempty" jsonschema:"people to invite to the collection. Each entry has email or userId plus role (guest / view / edit / admin)."`
 }
 
 // updateCollectionInput is the input for favro_update_collection.
@@ -36,9 +37,11 @@ type updateCollectionInput struct {
 	Color                    string             `json:"color,omitempty" jsonschema:"new palette color; omit to keep current"`
 	Background               string             `json:"background,omitempty" jsonschema:"new background name; omit to keep current"`
 	IconName                 string             `json:"icon_name,omitempty" jsonschema:"new icon name; omit to keep current"`
-	PublicSharing            string             `json:"public_sharing,omitempty" jsonschema:"new sharing mode ('off' / 'organization' / 'public'); omit to keep current"`
+	PublicSharing            string             `json:"public_sharing,omitempty" jsonschema:"new sharing mode ('users' / 'organization' / 'public'); omit to keep current"`
 	FullMembersCanAddWidgets *bool              `json:"full_members_can_add_widgets,omitempty" jsonschema:"flip the full-members-can-add-widgets flag; omit to keep current"`
-	SharedToUsers            []favro.SharedUser `json:"shared_to_users,omitempty" jsonschema:"new explicit share list; replaces the existing list when provided"`
+	StarPage                 *bool              `json:"star_page,omitempty" jsonschema:"true to star the collection for the authenticated user, false to unstar"`
+	ShareToUsers             []favro.SharedUser `json:"share_to_users,omitempty" jsonschema:"people to INVITE to the collection (not yet members). Each entry has email or userId plus role."`
+	Members                  []favro.SharedUser `json:"members,omitempty" jsonschema:"role changes for people ALREADY in the collection. Each entry has email or userId plus either a new role or delete: true to remove them."`
 	Archive                  *bool              `json:"archive,omitempty" jsonschema:"true to archive, false to unarchive; omit to keep current archive state"`
 }
 
@@ -52,8 +55,9 @@ func registerCreateCollection(srv *mcp.Server, r *Resolver) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: createCollectionToolName,
 		Description: "Create a new Favro collection. `name` is required. Sharing defaults " +
-			"to 'off' (only the creator can see it); pass `public_sharing: 'organization'` " +
-			"for org-wide visibility. Successful live writes invalidate the collection cache. " +
+			"to specific-users-only; pass `public_sharing: 'organization'` for org-wide " +
+			"visibility. Use `share_to_users` to invite people (each entry needs email or " +
+			"userId plus a role). Successful live writes invalidate the collection cache. " +
 			"Pass `dry_run: true` to preview the request without contacting Favro.",
 		Annotations: mutating("Create Favro collection", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createCollectionInput) (*mcp.CallToolResult, writeOutput[favro.Collection], error) {
@@ -65,7 +69,8 @@ func registerCreateCollection(srv *mcp.Server, r *Resolver) {
 			func() (favro.Collection, error) {
 				return r.client.CreateCollection(writeCtx, favro.CreateCollectionRequest{
 					Name:                     in.Name,
-					SharedToUsers:            in.SharedToUsers,
+					ShareToUsers:             in.ShareToUsers,
+					StarPage:                 in.StarPage,
 					PublicSharing:            in.PublicSharing,
 					Background:               in.Background,
 					Color:                    in.Color,
@@ -92,8 +97,10 @@ func registerUpdateCollection(srv *mcp.Server, r *Resolver) {
 		Name: updateCollectionToolName,
 		Description: "Update a Favro collection. Every body field is optional — pass at " +
 			"least one. `archive: true` archives, `archive: false` unarchives, omit to keep " +
-			"current. Successful live writes invalidate the collection cache. Pass " +
-			"`dry_run: true` to preview.",
+			"current. Membership uses two separate lists: `share_to_users` invites people " +
+			"who aren't in the collection yet, while `members` re-roles or (with " +
+			"`delete: true`) removes people who already are. Successful live writes " +
+			"invalidate the collection cache. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Update Favro collection", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateCollectionInput) (*mcp.CallToolResult, writeOutput[favro.Collection], error) {
 		writeCtx := ctx
@@ -109,7 +116,9 @@ func registerUpdateCollection(srv *mcp.Server, r *Resolver) {
 					Color:                    in.Color,
 					IconName:                 in.IconName,
 					FullMembersCanAddWidgets: in.FullMembersCanAddWidgets,
-					SharedToUsers:            in.SharedToUsers,
+					ShareToUsers:             in.ShareToUsers,
+					Members:                  in.Members,
+					StarPage:                 in.StarPage,
 					Archive:                  in.Archive,
 				})
 			},
@@ -180,7 +189,9 @@ func updateCollectionStateDiff(in *updateCollectionInput) string {
 		{in.PublicSharing != "", str("public_sharing", in.PublicSharing)},
 		{in.FullMembersCanAddWidgets != nil, bln("full_members_can_add_widgets", in.FullMembersCanAddWidgets)},
 		{in.Archive != nil, bln("archive", in.Archive)},
-		{len(in.SharedToUsers) > 0, func() string { return fmt.Sprintf("shared_to_users (%d)", len(in.SharedToUsers)) }},
+		{in.StarPage != nil, bln("star_page", in.StarPage)},
+		{len(in.ShareToUsers) > 0, func() string { return fmt.Sprintf("share_to_users (%d invited)", len(in.ShareToUsers)) }},
+		{len(in.Members) > 0, func() string { return fmt.Sprintf("members (%d updated)", len(in.Members)) }},
 	}
 	var changes []string
 	for _, f := range fields {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -176,7 +177,8 @@ func (r *Resolver) dereferenceAssignments(ctx context.Context, full *FullCard) e
 }
 
 func (r *Resolver) dereferenceCustomFields(ctx context.Context, full *FullCard) error {
-	if len(full.CustomFieldsValues) == 0 {
+	cfValues := full.CustomFields()
+	if len(cfValues) == 0 {
 		return nil
 	}
 	fields, _, err := r.listAllCustomFields(ctx, false)
@@ -189,16 +191,17 @@ func (r *Resolver) dereferenceCustomFields(ctx context.Context, full *FullCard) 
 	// otherwise (once per cardHasFieldType call, once again inside
 	// projectCustomFieldValues).
 	fieldsByID := indexByID(fields, func(f favro.CustomField) string { return f.CustomFieldID })
-	present := presentFieldTypes(full.CustomFieldsValues, fieldsByID)
+	present := presentFieldTypes(cfValues, fieldsByID)
 
-	// Members + Tags formatters need the org-global user / tag list
-	// to dereference IDs into names. Fetch only when the card
-	// actually has a value of that kind so the typical card
-	// (no Members or Tags custom field) still pays one
-	// listAllCustomFields call.
+	// Members, Vote and Tags formatters need the org-global user /
+	// tag list to dereference IDs into names. Fetch only when the
+	// card actually has a value of that kind so the typical card
+	// (none of those) still pays one listAllCustomFields call. A
+	// missing user list degrades Vote to a bare count rather than
+	// failing.
 	var users []favro.User
 	var tags []favro.Tag
-	if present[cfTypeMembers] {
+	if present[cfTypeMembers] || present[cfTypeVoting] || present[cfTypeVote] {
 		users, _, err = r.listAllUsers(ctx, false)
 		if err != nil {
 			return err
@@ -210,7 +213,7 @@ func (r *Resolver) dereferenceCustomFields(ctx context.Context, full *FullCard) 
 			return err
 		}
 	}
-	full.ResolvedCustomFields = projectCustomFieldValues(full.CustomFieldsValues, fieldsByID, users, tags)
+	full.ResolvedCustomFields = projectCustomFieldValues(cfValues, fieldsByID, users, tags)
 	return nil
 }
 
@@ -454,9 +457,6 @@ var customFieldFormatters = map[string]cfValueFormatter{
 	cfTypeText: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
 		return decodeJSONString(v.Value)
 	},
-	cfTypeLink: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
-		return decodeJSONString(v.Value)
-	},
 	cfTypeDate: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
 		return decodeJSONString(v.Value)
 	},
@@ -464,30 +464,54 @@ var customFieldFormatters = map[string]cfValueFormatter{
 		return decodeJSONString(v.Value)
 	},
 	cfTypeNumber: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
-		return decodeJSONNumber(v.Value)
+		n, ok := cfNumber(v)
+		if !ok {
+			return "", false
+		}
+		return formatFloat(n), true
+	},
+	cfTypeTime: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return formatTimeValue(v)
 	},
 	cfTypeCheckbox: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
 		return decodeJSONBool(v.Value)
 	},
-	cfTypeVoting: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
-		return decodeJSONBool(v.Value)
+	cfTypeVote: func(v favro.CardCustomFieldValue, _ favro.CustomField, users []favro.User, _ []favro.Tag) (string, bool) {
+		return formatVoteValue(v.Value, users)
+	},
+	cfTypeVoting: func(v favro.CardCustomFieldValue, _ favro.CustomField, users []favro.User, _ []favro.Tag) (string, bool) {
+		return formatVoteValue(v.Value, users)
+	},
+	cfTypeColor: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		if v.Color != "" {
+			return v.Color, true
+		}
+		return decodeJSONString(v.Value)
+	},
+	cfTypeLink: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		return formatLinkValue(v)
 	},
 	cfTypeSingleSelect: func(v favro.CardCustomFieldValue, f favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
-		return formatSelectValue(v.CustomFieldItemIDs, f.CustomFieldItems)
+		return formatSelectValue(cfItemIDs(v), f.CustomFieldItems)
 	},
 	cfTypeMultipleSelect: func(v favro.CardCustomFieldValue, f favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
-		return formatSelectValue(v.CustomFieldItemIDs, f.CustomFieldItems)
+		return formatSelectValue(cfItemIDs(v), f.CustomFieldItems)
 	},
 	cfTypeStatus: func(v favro.CardCustomFieldValue, f favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
-		return formatStatusValue(v.CustomFieldItemIDs, f.CustomFieldItems)
+		return formatStatusValue(cfItemIDs(v), f.CustomFieldItems)
 	},
 	cfTypeMembers: func(v favro.CardCustomFieldValue, _ favro.CustomField, users []favro.User, _ []favro.Tag) (string, bool) {
 		return formatMembersValue(v.Value, users)
 	},
 	cfTypeRating: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
-		return formatRatingValue(v.Value, v.Total)
+		return formatRatingValue(v)
 	},
 	cfTypeTimeline: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
+		// Documented carrier is the `timeline` sibling object; earlier
+		// revisions of this client read it out of `value`.
+		if len(v.Timeline) > 0 {
+			return formatTimelineValue(v.Timeline)
+		}
 		return formatTimelineValue(v.Value)
 	},
 	cfTypeProgress: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
@@ -502,6 +526,33 @@ var customFieldFormatters = map[string]cfValueFormatter{
 	cfTypeRelations: func(v favro.CardCustomFieldValue, _ favro.CustomField, _ []favro.User, _ []favro.Tag) (string, bool) {
 		return formatRelationsValue(v.Value)
 	},
+}
+
+// cfItemIDs returns the customFieldItemIds for a select-flavored
+// value. Favro's docs put them in `value` as a JSON array; earlier
+// revisions of this client read them from a `customFieldItemIds`
+// sibling. Prefer the documented shape, fall back to the legacy one,
+// so whichever Favro actually emits decodes.
+func cfItemIDs(v favro.CardCustomFieldValue) []string {
+	var ids []string
+	if err := json.Unmarshal(v.Value, &ids); err == nil && len(ids) > 0 {
+		return ids
+	}
+	return v.CustomFieldItemIDs
+}
+
+// cfNumber returns the numeric payload of a Number- or Rating-typed
+// value. The documented carrier is `total`; `value` is accepted as a
+// fallback for the same reason as cfItemIDs.
+func cfNumber(v favro.CardCustomFieldValue) (float64, bool) {
+	if v.Total != nil {
+		return *v.Total, true
+	}
+	var n float64
+	if err := json.Unmarshal(v.Value, &n); err == nil {
+		return n, true
+	}
+	return 0, false
 }
 
 // formatCustomFieldValue projects a raw Favro custom-field value
@@ -534,7 +585,7 @@ func decodeJSONString(raw json.RawMessage) (string, bool) {
 func decodeJSONNumber(raw json.RawMessage) (string, bool) {
 	var n float64
 	if err := json.Unmarshal(raw, &n); err == nil {
-		return strconv.FormatFloat(n, 'f', -1, 64), true
+		return formatFloat(n), true
 	}
 	return "", false
 }
@@ -607,6 +658,16 @@ func formatIDListValue[T any](raw json.RawMessage, items []T, getID, getName fun
 	if err := json.Unmarshal(raw, &ids); err != nil {
 		return "", false
 	}
+	return resolveIDsToNames(ids, items, getID, getName)
+}
+
+// resolveIDsToNames resolves already-decoded IDs against an
+// org-global list and joins the names it recognizes. Split out from
+// formatIDListValue so the Vote formatter — which needs the decoded
+// IDs for its own count fallback — can resolve without decoding
+// twice. Returns ("", false) for an empty list or when no ID is
+// known, so callers can pick their own fallback rendering.
+func resolveIDsToNames[T any](ids []string, items []T, getID, getName func(T) string) (string, bool) {
 	if len(ids) == 0 {
 		return "", false
 	}
@@ -623,21 +684,84 @@ func formatIDListValue[T any](raw json.RawMessage, items []T, getID, getName fun
 	return strings.Join(names, ", "), true
 }
 
-// formatRatingValue renders a Rating field as "<value> / <total>"
-// when total is known, falling back to the bare number otherwise.
-// Both parts use the same shortest-form float-or-int formatting as
-// the Number kind so star integers don't render with trailing
-// zeros.
-func formatRatingValue(raw json.RawMessage, total float64) (string, bool) {
-	var v float64
-	if err := json.Unmarshal(raw, &v); err != nil {
+// formatRatingValue renders a Rating field. Favro documents the
+// rating as an integer 0–5 carried in `total`, so the rendering is
+// "<n> / 5". When the value arrives in `value` instead (the shape
+// earlier revisions of this client assumed) and a separate `total`
+// is present, that total is treated as the maximum instead.
+func formatRatingValue(v favro.CardCustomFieldValue) (string, bool) {
+	var inValue float64
+	hasInValue := json.Unmarshal(v.Value, &inValue) == nil
+
+	if hasInValue && v.Total != nil {
+		return fmt.Sprintf("%s / %s", formatFloat(inValue), formatFloat(*v.Total)), true
+	}
+	n, ok := cfNumber(v)
+	if !ok {
 		return "", false
 	}
-	value := strconv.FormatFloat(v, 'f', -1, 64)
-	if total > 0 {
-		return fmt.Sprintf("%s / %s", value, strconv.FormatFloat(total, 'f', -1, 64)), true
+	return fmt.Sprintf("%s / %s", formatFloat(n), formatFloat(ratingMaxStars)), true
+}
+
+// ratingMaxStars is the fixed upper bound Favro documents for the
+// Rating custom-field type ("Valid value is integer from 0 to 5").
+const ratingMaxStars = 5
+
+// formatFloat renders a float in its shortest exact representation,
+// so integral values don't pick up trailing zeros.
+func formatFloat(n float64) string {
+	return strconv.FormatFloat(n, 'f', -1, 64)
+}
+
+// formatTimeValue renders a Time field's summed milliseconds as
+// "<h>h <m>m". Favro reports the total across every user's timesheet
+// entries; the per-user breakdown stays available in the raw payload.
+func formatTimeValue(v favro.CardCustomFieldValue) (string, bool) {
+	ms, ok := cfNumber(v)
+	if !ok {
+		return "", false
 	}
-	return value, true
+	d := time.Duration(ms) * time.Millisecond
+	return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60), true
+}
+
+// formatVoteValue renders a Vote field. Favro documents the value as
+// the array of userIds that voted, so the rendering resolves those to
+// names; a plain JSON bool (the shape earlier revisions assumed) is
+// accepted as a fallback.
+func formatVoteValue(raw json.RawMessage, users []favro.User) (string, bool) {
+	var ids []string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return decodeJSONBool(raw)
+	}
+	if len(ids) == 0 {
+		return "", false
+	}
+	// Names when the voters are known, a bare count when they aren't
+	// — an unresolvable id shouldn't hide the fact that a vote exists.
+	if s, ok := resolveIDsToNames(ids, users,
+		func(u favro.User) string { return u.UserID },
+		func(u favro.User) string { return u.Name }); ok {
+		return s, true
+	}
+	return fmt.Sprintf("%d votes", len(ids)), true
+}
+
+// formatLinkValue renders a Link field as "<text> (<url>)", or the
+// bare URL when no display text is set. Favro documents the payload
+// as a `link` object; a plain JSON string in `value` (the shape
+// earlier revisions assumed) is accepted as a fallback.
+func formatLinkValue(v favro.CardCustomFieldValue) (string, bool) {
+	if len(v.Link) > 0 {
+		var l favro.CustomFieldLink
+		if err := json.Unmarshal(v.Link, &l); err == nil && l.URL != "" {
+			if l.Text != "" {
+				return fmt.Sprintf("%s (%s)", l.Text, l.URL), true
+			}
+			return l.URL, true
+		}
+	}
+	return decodeJSONString(v.Value)
 }
 
 // formatTimelineValue renders a Timeline field's {startDate, dueDate}
@@ -664,13 +788,22 @@ func formatTimelineValue(raw json.RawMessage) (string, bool) {
 }
 
 // formatProgressValue renders a Progress field's percentage with a
-// trailing "%" — Favro stores progress as a 0–100 number.
+// trailing "%". Favro documents the payload as an object
+// {percentage}; a bare 0–100 number (the shape earlier revisions
+// assumed) is accepted as a fallback. Progress is calculated
+// server-side and read-only.
 func formatProgressValue(raw json.RawMessage) (string, bool) {
+	var obj struct {
+		Percentage *float64 `json:"percentage"`
+	}
+	if err := json.Unmarshal(raw, &obj); err == nil && obj.Percentage != nil {
+		return formatFloat(*obj.Percentage) + "%", true
+	}
 	var n float64
 	if err := json.Unmarshal(raw, &n); err != nil {
 		return "", false
 	}
-	return strconv.FormatFloat(n, 'f', -1, 64) + "%", true
+	return formatFloat(n) + "%", true
 }
 
 // formatTagsValue dereferences the JSON-array-of-tagIds against the

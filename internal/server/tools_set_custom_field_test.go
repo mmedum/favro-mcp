@@ -73,7 +73,8 @@ func TestMCP_SetCardCustomField_Text_HappyPath(t *testing.T) {
 func TestMCP_SetCardCustomField_Number_HappyPath(t *testing.T) {
 	t.Parallel()
 
-	c := customFieldFixture(t, nil, []favro.CustomField{
+	var body string
+	c := customFieldFixture(t, &body, []favro.CustomField{
 		{CustomFieldID: "cf-num", Type: "Number", Name: "Cost"},
 	})
 
@@ -87,7 +88,10 @@ func TestMCP_SetCardCustomField_Number_HappyPath(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	require.False(t, res.IsError)
+	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	require.Contains(t, body, `"total":42`,
+		"Number writes travel in `total`, not `value`")
+	require.NotContains(t, body, `"value"`)
 }
 
 func TestMCP_SetCardCustomField_Date_HappyPath(t *testing.T) {
@@ -133,7 +137,8 @@ func TestMCP_SetCardCustomField_Checkbox_HappyPath(t *testing.T) {
 func TestMCP_SetCardCustomField_SingleSelect_HappyPath(t *testing.T) {
 	t.Parallel()
 
-	c := customFieldFixture(t, nil, []favro.CustomField{
+	var body string
+	c := customFieldFixture(t, &body, []favro.CustomField{
 		{
 			CustomFieldID: "cf-sel",
 			Type:          "Single select",
@@ -154,7 +159,9 @@ func TestMCP_SetCardCustomField_SingleSelect_HappyPath(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	require.False(t, res.IsError)
+	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	require.Contains(t, body, `"value":["item-1"]`,
+		"select-flavored writes put item ids in `value`")
 }
 
 // TestMCP_SetCardCustomField_DryRun pins that the type-resolution
@@ -220,15 +227,15 @@ func TestMCP_SetCardCustomField_TypeMismatch(t *testing.T) {
 	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "number")
 }
 
-// TestMCP_SetCardCustomField_StillDeferredType pins that types
-// outside the dispatch table (Tags, Timeline, Voting, Progress,
-// Relations, Sequential ID, Date created) reject with a typed
-// long-tail error rather than silently falling through to one of
-// the supported applicators.
-func TestMCP_SetCardCustomField_StillDeferredType(t *testing.T) {
+// TestMCP_SetCardCustomField_UnsupportedType pins that types outside
+// the dispatch table reject with a typed error rather than silently
+// falling through to one of the supported applicators. Progress and
+// Sequential ID are calculated by Favro; Relations and Date created
+// have no documented write contract.
+func TestMCP_SetCardCustomField_UnsupportedType(t *testing.T) {
 	t.Parallel()
 
-	cases := []string{"Tags", "Timeline", "Voting", "Progress", "Relations", "Sequential ID", "Date created"}
+	cases := []string{"Progress", "Relations", "Sequential ID", "Date created"}
 	for _, deferred := range cases {
 		t.Run(deferred, func(t *testing.T) {
 			t.Parallel()
@@ -247,8 +254,8 @@ func TestMCP_SetCardCustomField_StillDeferredType(t *testing.T) {
 				},
 			})
 			require.NoError(t, err)
-			require.True(t, res.IsError, "still-deferred type %q must reject", deferred)
-			require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "not supported")
+			require.True(t, res.IsError, "unsupported type %q must reject", deferred)
+			require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "cannot be set")
 		})
 	}
 }
@@ -265,25 +272,26 @@ func TestMCP_SetCardCustomField_Members_HappyPath(t *testing.T) {
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: setCardCustomFieldToolName,
 		Arguments: map[string]any{
-			"card_id":         "ci-1",
-			"custom_field_id": "cf-mem",
-			"member_user_ids": []string{"u-1", "u-2"},
+			"card_id":                "ci-1",
+			"custom_field_id":        "cf-mem",
+			"add_member_user_ids":    []string{"u-1", "u-2"},
+			"remove_member_user_ids": []string{"u-3"},
 		},
 	})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"value":["u-1","u-2"]`,
-		"Members write must send value as a JSON array of userIds")
+	require.Contains(t, body, `"members":{"addUserIds":["u-1","u-2"],"removeUserIds":["u-3"]}`,
+		"Members writes travel in a `members` object of add/remove deltas")
 }
 
-// Members with an empty (non-nil) array clears the list — distinct
-// from omitting the field. Pins that the dispatch table treats
-// `member_user_ids: []` as "set to empty" rather than "unset".
-func TestMCP_SetCardCustomField_Members_EmptyArrayClears(t *testing.T) {
+// Favro's Members custom field takes add/remove deltas, so an
+// all-empty delta is a no-op request rather than a "clear the list"
+// instruction. Pin that it fails before any HTTP call instead of
+// sending a meaningless body.
+func TestMCP_SetCardCustomField_Members_EmptyDeltaRejected(t *testing.T) {
 	t.Parallel()
 
-	var body string
-	c := customFieldFixture(t, &body, []favro.CustomField{
+	c := customFieldFixture(t, nil, []favro.CustomField{
 		{CustomFieldID: "cf-mem", Type: "Members", Name: "Owners"},
 	})
 
@@ -291,15 +299,14 @@ func TestMCP_SetCardCustomField_Members_EmptyArrayClears(t *testing.T) {
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: setCardCustomFieldToolName,
 		Arguments: map[string]any{
-			"card_id":         "ci-1",
-			"custom_field_id": "cf-mem",
-			"member_user_ids": []string{},
+			"card_id":             "ci-1",
+			"custom_field_id":     "cf-mem",
+			"add_member_user_ids": []string{},
 		},
 	})
 	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"value":[]`,
-		"empty member_user_ids must serialize as a JSON empty array (clear members)")
+	require.True(t, res.IsError)
+	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "at least one userid")
 }
 
 func TestMCP_SetCardCustomField_Status_HappyPath(t *testing.T) {
@@ -324,8 +331,8 @@ func TestMCP_SetCardCustomField_Status_HappyPath(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"customFieldItemIds":["it-doing"]`,
-		"Status write must send customFieldItemIds as a single-element array")
+	require.Contains(t, body, `"value":["it-doing"]`,
+		"Status writes put the item id in `value` as a single-element array")
 }
 
 func TestMCP_SetCardCustomField_MultipleSelect_HappyPath(t *testing.T) {
@@ -347,7 +354,7 @@ func TestMCP_SetCardCustomField_MultipleSelect_HappyPath(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"customFieldItemIds":["it-a","it-b","it-c"]`)
+	require.Contains(t, body, `"value":["it-a","it-b","it-c"]`)
 }
 
 func TestMCP_SetCardCustomField_Rating_HappyPath(t *testing.T) {
@@ -365,18 +372,18 @@ func TestMCP_SetCardCustomField_Rating_HappyPath(t *testing.T) {
 			"card_id":         "ci-1",
 			"custom_field_id": "cf-rate",
 			"rating_value":    4,
-			"rating_total":    5,
 		},
 	})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"value":4`)
-	require.Contains(t, body, `"total":5`)
+	require.Contains(t, body, `"total":4`,
+		"Rating writes travel in `total`; Favro fixes the scale at 0-5")
+	require.NotContains(t, body, `"value"`)
 }
 
-// Rating without rating_total must fail before any HTTP call —
-// half-set Rating writes are a known foot-gun.
-func TestMCP_SetCardCustomField_Rating_MissingTotal(t *testing.T) {
+// Favro documents Rating as an integer 0-5. Out-of-range values must
+// fail before any HTTP call rather than being silently clamped.
+func TestMCP_SetCardCustomField_Rating_OutOfRange(t *testing.T) {
 	t.Parallel()
 
 	c := customFieldFixture(t, nil, []favro.CustomField{
@@ -389,12 +396,12 @@ func TestMCP_SetCardCustomField_Rating_MissingTotal(t *testing.T) {
 		Arguments: map[string]any{
 			"card_id":         "ci-1",
 			"custom_field_id": "cf-rate",
-			"rating_value":    4,
+			"rating_value":    9,
 		},
 	})
 	require.NoError(t, err)
 	require.True(t, res.IsError)
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "rating_total")
+	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "between 0 and 5")
 }
 
 func TestMCP_SetCardCustomField_Link_HappyPath(t *testing.T) {
@@ -417,8 +424,8 @@ func TestMCP_SetCardCustomField_Link_HappyPath(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"value":"https://example.com/spec"`)
-	require.Contains(t, body, `"linkText":"Spec"`)
+	require.Contains(t, body, `"link":{"url":"https://example.com/spec","text":"Spec"}`,
+		"Link writes travel in a `link` object")
 }
 
 // Link without link_text omits the field entirely — pin so a
@@ -442,7 +449,8 @@ func TestMCP_SetCardCustomField_Link_NoLinkText(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, res.IsError)
-	require.NotContains(t, body, "linkText", "linkText must be omitted when link_text is empty")
+	require.Contains(t, body, `"link":{"url":"https://example.com/spec"}`)
+	require.NotContains(t, body, `"text"`, "link text must be omitted when link_text is empty")
 }
 
 // TestMCP_SetCardCustomField_UnknownFieldID pins the
@@ -479,4 +487,196 @@ func TestMCP_SetCardCustomField_MissingRequiredFields(t *testing.T) {
 			assertMissingRequiredFieldFails(t, setCardCustomFieldToolName, field)
 		})
 	}
+}
+
+func TestMCP_SetCardCustomField_Tags_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	var body string
+	c := customFieldFixture(t, &body, []favro.CustomField{
+		{CustomFieldID: "cf-tags", Type: "Tags", Name: "Areas"},
+	})
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":         "ci-1",
+			"custom_field_id": "cf-tags",
+			"add_tag_ids":     []string{"t-1"},
+			"remove_tag_ids":  []string{"t-2"},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	require.Contains(t, body, `"tags":{"addTagIds":["t-1"],"removeTagIds":["t-2"]}`)
+	// Only the by-id forms are exposed: Favro's addTags takes names and
+	// creates unknown ones, which is the typo foot-gun the card-level
+	// tag tools hard-fail to prevent.
+	require.NotContains(t, body, `"addTags"`)
+}
+
+func TestMCP_SetCardCustomField_Timeline_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	var body string
+	c := customFieldFixture(t, &body, []favro.CustomField{
+		{CustomFieldID: "cf-tl", Type: "Timeline", Name: "Window"},
+	})
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":             "ci-1",
+			"custom_field_id":     "cf-tl",
+			"timeline_start_date": "2026-01-01T00:00:00Z",
+			"timeline_due_date":   "2026-02-01T00:00:00Z",
+			"timeline_show_time":  true,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	require.Contains(t, body,
+		`"timeline":{"startDate":"2026-01-01T00:00:00Z","dueDate":"2026-02-01T00:00:00Z","showTime":true}`)
+}
+
+// Favro requires both timeline bounds. A half-set Timeline must fail
+// before any HTTP call rather than writing a partial window.
+func TestMCP_SetCardCustomField_Timeline_MissingBound(t *testing.T) {
+	t.Parallel()
+
+	c := customFieldFixture(t, nil, []favro.CustomField{
+		{CustomFieldID: "cf-tl", Type: "Timeline", Name: "Window"},
+	})
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":             "ci-1",
+			"custom_field_id":     "cf-tl",
+			"timeline_start_date": "2026-01-01T00:00:00Z",
+		},
+	})
+	require.NoError(t, err)
+	require.True(t, res.IsError)
+	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "both required")
+}
+
+func TestMCP_SetCardCustomField_Vote_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	var body string
+	c := customFieldFixture(t, &body, []favro.CustomField{
+		{CustomFieldID: "cf-vote", Type: "Vote", Name: "Wanted"},
+	})
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":         "ci-1",
+			"custom_field_id": "cf-vote",
+			"vote":            true,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	require.Contains(t, body, `"value":true`)
+}
+
+// "Voting" is the spelling this client used before the write contract
+// was re-checked against Favro's docs, which call the type "Vote".
+// Both must route to the same applicator.
+func TestMCP_SetCardCustomField_Vote_LegacyTypeSpelling(t *testing.T) {
+	t.Parallel()
+
+	var body string
+	c := customFieldFixture(t, &body, []favro.CustomField{
+		{CustomFieldID: "cf-vote", Type: "Voting", Name: "Wanted"},
+	})
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":         "ci-1",
+			"custom_field_id": "cf-vote",
+			"vote":            false,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	require.Contains(t, body, `"value":false`)
+}
+
+func TestMCP_SetCardCustomField_Color_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	var body string
+	c := customFieldFixture(t, &body, []favro.CustomField{
+		{CustomFieldID: "cf-color", Type: "Color", Name: "Card color"},
+	})
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":         "ci-1",
+			"custom_field_id": "cf-color",
+			"color":           "blue-300",
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	require.Contains(t, body, `"color":"blue-300"`)
+}
+
+// Favro clears a Color field on an empty string, but an empty string
+// is indistinguishable from an omitted input — hence the sentinel.
+func TestMCP_SetCardCustomField_Color_ClearSentinel(t *testing.T) {
+	t.Parallel()
+
+	var body string
+	c := customFieldFixture(t, &body, []favro.CustomField{
+		{CustomFieldID: "cf-color", Type: "Color", Name: "Card color"},
+	})
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":         "ci-1",
+			"custom_field_id": "cf-color",
+			"color":           colorClearSentinel,
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	require.Contains(t, body, `"value":""`)
+	require.NotContains(t, body, `"color"`)
+}
+
+func TestMCP_SetCardCustomField_Time_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	var body string
+	c := customFieldFixture(t, &body, []favro.CustomField{
+		{CustomFieldID: "cf-time", Type: "Time", Name: "Logged"},
+	})
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":                 "ci-1",
+			"custom_field_id":         "cf-time",
+			"time_report_ms":          50400000,
+			"time_report_description": "pairing",
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	require.Contains(t, body, `"addUserReports":[{"value":50400000,"description":"pairing"}]`)
 }
