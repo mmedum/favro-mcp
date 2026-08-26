@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `cmd/favro-mcp` coverage 22% → 79%: log-level parsing, flag parsing, credential-resolution failures, every `auth` subcommand against a mocked keyring, and the binary's exit code on a failed start.
+
 ## [1.1.1] - 2026-08-26
 
 Docs, tests, and one attachment fix. No tool inputs changed.
