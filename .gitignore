@@ -26,6 +26,9 @@ Thumbs.db
 # Local-only config (never commit secrets)
 .env
 .env.local
+# Dev-only MCP wiring: points at bin/favro-mcp, which is a build output.
+# The shipped config for consumers is plugin-template/.mcp.json.
+.mcp.json
 .mcp.local.json
 
 # Local agent / tooling state

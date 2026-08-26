@@ -11,6 +11,10 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ### Added
 - `cmd/favro-mcp` coverage 22% → 79%: log-level parsing, flag parsing, credential-resolution failures, every `auth` subcommand against a mocked keyring, and the binary's exit code on a failed start.
 
+### Changed
+- `.mcp.json` is gitignored, and CONTRIBUTING documents the snippet instead. It points at `bin/favro-mcp`, a build output absent from a fresh clone, so committing it would ship a server config that fails to start. Consumers get `plugin-template/.mcp.json` via the `.plugin` bundle.
+- `CONTRIBUTING.md`: the workflow section claimed `main` was protected and that only squash/rebase merges were allowed. Neither is true — `main` has no protection rules and history is merge commits. Corrected, and the branch-protection section is now labelled as setup that hasn't been applied.
+
 ## [1.1.1] - 2026-08-26
 
 Docs, tests, and one attachment fix. No tool inputs changed.
@@ -25,7 +29,7 @@ Docs, tests, and one attachment fix. No tool inputs changed.
 - `CONTRIBUTING.md` documents the changelog, versioning and release rules, and the Go 1.27 / golangci-lint ≥ v2.13.1 requirement.
 
 ### Fixed
-- Attachment removal now strips the presigned query from the URL before sending. Favro re-mints `fileURL` on every read with a fresh `X-Amz-Signature`, so the value a caller reads back never matches what Favro stored — v1.1.0's "pass the fileURL" fix couldn't work either. Applies to `favro_remove_attachment` and `favro_update_comment`. Still unverified against a live tenant.
+- Attachment removal now strips the presigned query from the URL before sending. Favro re-mints `fileURL` on every read with a fresh `X-Amz-Signature`, so the value a caller reads back never matches what Favro stored — v1.1.0's "pass the fileURL" fix couldn't work either. Applies to `favro_remove_attachment` and `favro_update_comment`.
 
 ## [1.1.0] - 2026-08-26
 
