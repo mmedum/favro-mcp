@@ -301,3 +301,27 @@ func TestDeleteComment_EmptyID_NoNetworkCall(t *testing.T) {
 	require.ErrorIs(t, c.DeleteComment(context.Background(), ""), errMissingID)
 	require.Empty(t, h.seen())
 }
+
+// Comment attachments carry the same presigned fileURL as card
+// attachments, so UpdateComment strips the query too.
+func TestUpdateComment_StripsPresignedAttachmentQuery(t *testing.T) {
+	t.Parallel()
+
+	const objectURL = "https://favro.s3.eu-central-1.amazonaws.com/11111111-1111-1111-1111-111111111111.gif"
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.JSONEq(t, `{"comment":"edited","removeAttachments":["`+objectURL+`"]}`, rec.Body)
+		require.NotContains(t, rec.Body, "X-Amz-Signature")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"commentId":"cm-1","comment":"edited"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.UpdateComment(context.Background(), "cm-1", UpdateCommentRequest{
+		Comment:           "edited",
+		RemoveAttachments: []string{objectURL + "?X-Amz-Signature=deadbeef&X-Amz-Expires=86400"},
+	})
+	require.NoError(t, err)
+}

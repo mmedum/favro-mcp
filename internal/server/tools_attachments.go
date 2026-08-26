@@ -52,7 +52,7 @@ type uploadCommentAttachmentInput struct {
 type removeAttachmentInput struct {
 	dryRunInput
 	CardID   string   `json:"card_id" jsonschema:"the per-widget cardId to detach files from"`
-	FileURLs []string `json:"file_urls" jsonschema:"the attachment fileURL values to detach. Read them from favro_get_card_full or from a previous favro_upload_attachment response — Favro matches on the full URL, not the display name."`
+	FileURLs []string `json:"file_urls" jsonschema:"the attachment fileURL values to detach, exactly as favro_get_card_full or favro_upload_attachment returned them. Favro matches on the URL, not the display name; the presigned query string is stripped for you."`
 }
 
 func registerUploadAttachment(srv *mcp.Server, r *Resolver) {
@@ -166,12 +166,13 @@ func registerRemoveAttachment(srv *mcp.Server, r *Resolver) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: removeAttachmentToolName,
 		Description: "Detach one or more files from a Favro card. Favro has no per-attachment " +
-			"DELETE — removal rides on `removeAttachments` in PUT /cards/{cardId}, and the " +
-			"list is matched by attachment **URL**, not display name. Pass the `fileURL` " +
-			"values from favro_get_card_full or from a favro_upload_attachment response. " +
-			"Favro returns HTTP 200 whether or not anything matched, so verify by re-reading " +
-			"the card: if the attachment survives, the URL didn't match. Successful live " +
-			"writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+			"DELETE — removal rides on `removeAttachments` in PUT /cards/{cardId}, matched by " +
+			"attachment URL rather than display name. Pass the `fileURL` values from " +
+			"favro_get_card_full or favro_upload_attachment as-is: those URLs are presigned " +
+			"and re-minted on every read, so the tool strips the query string down to the " +
+			"stable object URL before sending. Favro returns HTTP 200 whether or not anything " +
+			"matched, so verify by re-reading the card. Successful live writes invalidate the " +
+			"search-cards cache. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Remove Favro attachment", true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in removeAttachmentInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		writeCtx := ctx
