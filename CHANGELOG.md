@@ -18,7 +18,6 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - `CONTRIBUTING.md` documents the changelog, versioning and release rules, and the Go 1.27 / golangci-lint ≥ v2.13.1 requirement.
 
 ### Fixed
-- `favro_move_card` needed a destination but didn't say so in its schema — found by the smoke test.
 - Attachment removal now strips the presigned query from the URL before sending. Favro re-mints `fileURL` on every read with a fresh `X-Amz-Signature`, so the value a caller reads back never matches what Favro stored — v1.1.0's "pass the fileURL" fix couldn't work either. Applies to `favro_remove_attachment` and `favro_update_comment`. Still unverified against a live tenant.
 
 ## [1.1.0] - 2026-08-26
