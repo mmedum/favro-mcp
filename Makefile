@@ -60,9 +60,14 @@ tidy: ## go mod tidy
 tidy-check: ## fail if go.mod / go.sum need updating
 	$(GO) mod tidy -diff
 
+# Binary mode, not source mode. govulncheck's source analysis runs on x/tools'
+# go/types, which as of x/vuln v1.7.0 (x/tools v0.49.0) tops out at go1.26 and
+# errors on the go1.27 stdlib. Binary mode reads the built artifact's symbol
+# table instead, so it works on 1.27 today and scans exactly what ships. Revert
+# to `$(GOVULNCHECK) ./...` once x/vuln ships an x/tools that understands 1.27.
 .PHONY: vulncheck
-vulncheck: ## govulncheck
-	$(GOVULNCHECK) ./...
+vulncheck: build ## govulncheck (binary mode — see comment above)
+	$(GOVULNCHECK) -mode=binary $(BIN)
 
 .PHONY: ci
 ci: lint vet test vulncheck ## run lint + vet + test + vulncheck (mirrors CI)

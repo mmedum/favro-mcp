@@ -17,14 +17,14 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: true
       - name: golangci-lint
         # @v8+ ships golangci-lint v2.x; @v6 / @v7 bundle a v1.x binary
-        # built with Go 1.24, which can't read a config targeting Go 1.26+.
+        # built with Go 1.24, which can't read a config targeting Go 1.27+.
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
@@ -38,8 +38,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: true
@@ -60,47 +60,47 @@ jobs:
     name: test-mcp
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: true
       - name: in-memory MCP transport tests
-        run: go test -race -run 'TestMCP' ./internal/server/... || echo "::notice::no MCP-protocol tests yet (placeholder)"
+        run: go test -race -run 'TestMCP' ./internal/server/...
 
   vulncheck:
     name: vulncheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: true
       - name: install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: build scan target
+        run: go build -o bin/favro-mcp ./cmd/favro-mcp
       - name: govulncheck
-        run: govulncheck ./...
+        # Binary mode, not source mode. govulncheck's source analysis runs on
+        # x/tools' go/types, which as of x/vuln v1.7.0 (x/tools v0.49.0) tops
+        # out at go1.26 and errors out on the go1.27 stdlib. Binary mode reads
+        # the built artifact's symbol table instead, so it works on 1.27 today
+        # and scans exactly what ships. Revert to `govulncheck ./...` once
+        # x/vuln ships an x/tools that understands 1.27.
+        run: govulncheck -mode=binary bin/favro-mcp
 
   build:
     name: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: true
       - name: go mod verify
-        # Skip when there are no dependencies yet (no go.sum). go mod verify
-        # exits non-zero with "missing go.sum" in that case, which is noise
-        # during early phases.
-        run: |
-          if [ -f go.sum ]; then
-            go mod verify
-          else
-            echo "::notice::no go.sum yet — skipping go mod verify"
-          fi
+        run: go mod verify
       - name: go mod tidy diff
         run: go mod tidy -diff
       - name: install goreleaser
@@ -108,14 +108,7 @@ jobs:
         with:
           install-only: true
       - name: snapshot build
-        # goreleaser.yaml lands in Phase 8; this step is a no-op until then.
-        run: |
-          if [ -f .goreleaser.yaml ] || [ -f .goreleaser.yml ] || [ -f goreleaser.yaml ]; then
-            goreleaser build --snapshot --clean
-          else
-            echo "::notice::goreleaser config not yet present — running plain go build."
-            go build -trimpath ./...
-          fi
+        run: goreleaser build --snapshot --clean
 
   coverage:
     name: coverage
@@ -126,12 +119,12 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: coverage
       - name: codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: coverage.out
           fail_ci_if_error: false

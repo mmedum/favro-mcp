@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -77,6 +78,27 @@ func favroFixture(t *testing.T, handler http.Handler) *favro.Client {
 	c.BaseURL = srv.URL
 	c.HTTPClient = srv.Client()
 	return c
+}
+
+// staticJSONFixture answers every request with the same JSON body
+// and, when capturedBody is non-nil, records the last request body so
+// wire-shape assertions can run against it. For tools whose handler
+// needs to branch on method or path, build the handler inline with
+// favroFixture instead.
+func staticJSONFixture(t *testing.T, capturedBody *string, response string) *favro.Client {
+	t.Helper()
+	return favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if capturedBody != nil {
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("read request body: %v", err)
+				return
+			}
+			*capturedBody = string(b)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(response))
+	}))
 }
 
 // connectInMemoryWith mirrors connectInMemory but uses the supplied
@@ -190,8 +212,47 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 		addTagToCardToolName,
 		removeTagFromCardToolName,
 		uploadAttachmentToolName,
+		uploadCommentAttachmentToolName,
+		removeAttachmentToolName,
+		listTasksToolName,
+		getTaskToolName,
+		createTaskToolName,
+		updateTaskToolName,
+		deleteTaskToolName,
+		listTasklistsToolName,
+		getTasklistToolName,
+		createTasklistToolName,
+		updateTasklistToolName,
+		deleteTasklistToolName,
+		listDependenciesToolName,
+		addDependenciesToolName,
+		replaceDependenciesToolName,
+		updateDependencyToolName,
+		deleteDependencyToolName,
+		deleteAllDependenciesToolName,
+		listCardActivitiesToolName,
 	}, "tools/list must advertise every registered tool; got %v", names)
 }
+
+// TestMCP_ToolsList_NoUnlistedTools is the other half of the subset
+// assertion above: it fails when a tool is registered but not named
+// in that list, so the coverage check can't silently fall behind.
+func TestMCP_ToolsList_NoUnlistedTools(t *testing.T) {
+	t.Parallel()
+
+	cs := connectInMemory(t)
+
+	res, err := cs.ListTools(t.Context(), nil)
+	require.NoError(t, err)
+
+	require.Len(t, res.Tools, registeredToolCount,
+		"a tool was registered or removed without updating registeredToolCount "+
+			"and the tools/list coverage assertion above")
+}
+
+// registeredToolCount is the number of tools New() registers. Bump it
+// together with the name list in TestMCP_ToolsList_IncludesFavroPing.
+const registeredToolCount = 83
 
 func TestMCP_FavroPing_ReturnsExpectedFields(t *testing.T) {
 	t.Parallel()

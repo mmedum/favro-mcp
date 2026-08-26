@@ -38,13 +38,15 @@ type updateWidgetInput struct {
 	BreakdownCardCommonID string `json:"breakdown_card_common_id,omitempty" jsonschema:"new breakdown cardCommonId; omit to keep current"`
 	OwnerRole             string `json:"owner_role,omitempty" jsonschema:"new owner role; omit to keep current"`
 	EditRole              string `json:"edit_role,omitempty" jsonschema:"new edit role; omit to keep current"`
-	Archive               *bool  `json:"archive,omitempty" jsonschema:"true to archive, false to unarchive; omit to keep current"`
+	Archive               *bool  `json:"archive,omitempty" jsonschema:"true to archive, false to unarchive; omit to keep current. Requires collection_id."`
+	CollectionID          string `json:"collection_id,omitempty" jsonschema:"the collectionId the archive applies to. REQUIRED whenever archive is set — a widget can belong to several collections."`
 }
 
 // deleteWidgetInput is the input for favro_delete_widget.
 type deleteWidgetInput struct {
 	dryRunInput
 	WidgetCommonID string `json:"widget_common_id" jsonschema:"the Favro widgetCommonId to delete"`
+	CollectionID   string `json:"collection_id,omitempty" jsonschema:"delete the widget only from this collection. Omit to delete every instance of the widget across all collections it belongs to."`
 }
 
 func registerCreateWidget(srv *mcp.Server, r *Resolver) {
@@ -94,8 +96,10 @@ func registerUpdateWidget(srv *mcp.Server, r *Resolver) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: updateWidgetToolName,
 		Description: "Update a Favro widget. Every body field is optional — pass at least one. " +
-			"`archive: true` archives, `archive: false` unarchives. Successful live writes " +
-			"invalidate the widget cache. Pass `dry_run: true` to preview.",
+			"`archive: true` archives, `archive: false` unarchives — both require " +
+			"`collection_id`, because a widget can belong to several collections and Favro " +
+			"scopes the archive to one of them. Successful live writes invalidate the " +
+			"widget cache. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Update Favro widget", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateWidgetInput) (*mcp.CallToolResult, writeOutput[favro.Widget], error) {
 		writeCtx := ctx
@@ -112,6 +116,7 @@ func registerUpdateWidget(srv *mcp.Server, r *Resolver) {
 					OwnerRole:             in.OwnerRole,
 					EditRole:              in.EditRole,
 					Archive:               in.Archive,
+					CollectionID:          in.CollectionID,
 				})
 			},
 			func() string { return updateWidgetStateDiff(&in) },
@@ -131,8 +136,10 @@ func registerDeleteWidget(srv *mcp.Server, r *Resolver) {
 		Name: deleteWidgetToolName,
 		Description: "Delete a Favro widget by its widgetCommonId. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Cards on the widget are removed; columns on " +
-			"the widget become inaccessible. On success the widget / column / search-cards " +
-			"caches are invalidated. Pass `dry_run: true` to preview.",
+			"the widget become inaccessible. Pass `collection_id` to remove the widget from " +
+			"just that collection; omitting it deletes every instance across all " +
+			"collections the widget belongs to. On success the widget / column / " +
+			"search-cards caches are invalidated. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Delete Favro widget", true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteWidgetInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
@@ -141,10 +148,13 @@ func registerDeleteWidget(srv *mcp.Server, r *Resolver) {
 		}
 		out, err := runWrite(
 			func() (struct{}, error) {
-				return struct{}{}, r.client.DeleteWidget(writeCtx, in.WidgetCommonID)
+				return struct{}{}, r.client.DeleteWidget(writeCtx, in.WidgetCommonID, in.CollectionID)
 			},
 			func() string {
-				return fmt.Sprintf("would delete widget %q (cards on the widget are removed; columns become inaccessible)", in.WidgetCommonID)
+				if in.CollectionID != "" {
+					return fmt.Sprintf("would delete widget %q from collection %q (cards on the widget are removed; columns become inaccessible)", in.WidgetCommonID, in.CollectionID)
+				}
+				return fmt.Sprintf("would delete widget %q from EVERY collection it belongs to (cards on the widget are removed; columns become inaccessible)", in.WidgetCommonID)
 			},
 		)
 		if err != nil {
@@ -180,6 +190,7 @@ func updateWidgetStateDiff(in *updateWidgetInput) string {
 		{in.OwnerRole != "", str("owner_role", in.OwnerRole)},
 		{in.EditRole != "", str("edit_role", in.EditRole)},
 		{in.Archive != nil, bln("archive", in.Archive)},
+		{in.CollectionID != "", str("collection_id", in.CollectionID)},
 	}
 	var changes []string
 	for _, f := range fields {

@@ -83,11 +83,14 @@ func TestListCards_FractionalPosition(t *testing.T) {
 }
 
 // TestListCards_CustomFieldsValuesDecoding pins the JSON contract
-// for Card.CustomFieldsValues across the field shapes Phase 4.4
-// dereferences. Value is json.RawMessage so each Favro type (text,
-// number, date, checkbox, link) survives decode without committing
-// the projection to a single Go type; CustomFieldItemIDs carries
-// the option references for select-flavored fields.
+// for Card.CustomFieldsValues. Value is json.RawMessage so each
+// Favro type survives decode without committing the projection to a
+// single Go type. The fixture deliberately mixes both wire shapes:
+// the documented one (Number/Rating in `total`, select item ids in
+// `value`, `timeline` / `link` sibling objects) and the legacy one
+// this client assumed before the contract was re-checked against the
+// docs (`customFieldItemIds`, Rating split across value+total), so
+// the tolerant decode covers whichever Favro actually emits.
 func TestListCards_CustomFieldsValuesDecoding(t *testing.T) {
 	t.Parallel()
 
@@ -102,7 +105,13 @@ func TestListCards_CustomFieldsValuesDecoding(t *testing.T) {
 				{"customFieldId":"cf-date","value":"2026-05-04T00:00:00Z"},
 				{"customFieldId":"cf-select","customFieldItemIds":["item-1"]},
 				{"customFieldId":"cf-multi","customFieldItemIds":["item-1","item-2"]},
-				{"customFieldId":"cf-rating","value":3,"total":7}
+				{"customFieldId":"cf-rating","value":3,"total":7},
+				{"customFieldId":"cf-status","value":["st-1"]},
+				{"customFieldId":"cf-number-total","total":8},
+				{"customFieldId":"cf-timeline","timeline":{"startDate":"2026-01-01","dueDate":"2026-02-01","showTime":true}},
+				{"customFieldId":"cf-link","link":{"url":"https://example.com","text":"docs"}},
+				{"customFieldId":"cf-color","color":"blue-300"},
+				{"customFieldId":"cf-time","total":50400000,"reports":{"u-1":{"reportId":"r-1","value":50400000}}}
 			]
 		}]}`))
 	}}
@@ -114,7 +123,7 @@ func TestListCards_CustomFieldsValuesDecoding(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, env.Entities, 1)
 	cfvs := env.Entities[0].CustomFieldsValues
-	require.Len(t, cfvs, 7)
+	require.Len(t, cfvs, 13)
 
 	// Lookup helper — order is preserved but tests don't depend on it.
 	byID := map[string]CardCustomFieldValue{}
@@ -128,7 +137,26 @@ func TestListCards_CustomFieldsValuesDecoding(t *testing.T) {
 	require.JSONEq(t, `"2026-05-04T00:00:00Z"`, string(byID["cf-date"].Value))
 	require.Equal(t, []string{"item-1"}, byID["cf-select"].CustomFieldItemIDs)
 	require.Equal(t, []string{"item-1", "item-2"}, byID["cf-multi"].CustomFieldItemIDs)
-	require.InDelta(t, 7.0, byID["cf-rating"].Total, 0.0001)
+
+	// Legacy shape: Rating split across value + total.
+	require.NotNil(t, byID["cf-rating"].Total)
+	require.InDelta(t, 7.0, *byID["cf-rating"].Total, 0.0001)
+
+	// Documented shapes.
+	require.JSONEq(t, `["st-1"]`, string(byID["cf-status"].Value))
+	require.NotNil(t, byID["cf-number-total"].Total)
+	require.InDelta(t, 8.0, *byID["cf-number-total"].Total, 0.0001)
+	require.JSONEq(t, `{"startDate":"2026-01-01","dueDate":"2026-02-01","showTime":true}`,
+		string(byID["cf-timeline"].Timeline))
+	require.JSONEq(t, `{"url":"https://example.com","text":"docs"}`, string(byID["cf-link"].Link))
+	require.Equal(t, "blue-300", byID["cf-color"].Color)
+	require.NotNil(t, byID["cf-time"].Total)
+	require.InDelta(t, 50400000.0, *byID["cf-time"].Total, 0.0001)
+	require.JSONEq(t, `{"u-1":{"reportId":"r-1","value":50400000}}`, string(byID["cf-time"].Reports))
+
+	// Total stays nil (not 0) when Favro omits it, so an explicit
+	// zero rating remains distinguishable from an unset field.
+	require.Nil(t, byID["cf-text"].Total)
 }
 
 func TestListCards_AllFiltersForwarded(t *testing.T) {
@@ -654,4 +682,57 @@ func TestDeleteCard_DryRun_ReturnsRecord(t *testing.T) {
 	require.Equal(t, http.MethodDelete, rec.Method)
 	require.Contains(t, rec.URL, "/cards/ci-1")
 	require.Contains(t, rec.URL, "everywhere=true")
+}
+
+// TestCard_CustomFields_ReconcilesBothWireKeys pins the accessor that
+// bridges the two keys Favro's docs and payloads disagree on: the
+// docs describe `customFields`, this client has always decoded
+// `customFieldsValues`, and no captured payload settles which one a
+// live tenant sends.
+func TestCard_CustomFields_ReconcilesBothWireKeys(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		payload string
+		wantID  string
+	}{
+		{
+			name:    "legacy key only",
+			payload: `{"cardId":"c1","customFieldsValues":[{"customFieldId":"cf-legacy"}]}`,
+			wantID:  "cf-legacy",
+		},
+		{
+			name:    "documented key only",
+			payload: `{"cardId":"c1","customFields":[{"customFieldId":"cf-doc"}]}`,
+			wantID:  "cf-doc",
+		},
+		{
+			name: "both present prefers the documented key",
+			payload: `{"cardId":"c1",
+				"customFieldsValues":[{"customFieldId":"cf-legacy"}],
+				"customFields":[{"customFieldId":"cf-doc"}]}`,
+			wantID: "cf-doc",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var card Card
+			require.NoError(t, json.Unmarshal([]byte(tc.payload), &card))
+			got := card.CustomFields()
+			require.Len(t, got, 1)
+			require.Equal(t, tc.wantID, got[0].CustomFieldID)
+		})
+	}
+}
+
+func TestCard_CustomFields_EmptyWhenNeitherKeyPresent(t *testing.T) {
+	t.Parallel()
+
+	var card Card
+	require.NoError(t, json.Unmarshal([]byte(`{"cardId":"c1"}`), &card))
+	require.Empty(t, card.CustomFields())
 }

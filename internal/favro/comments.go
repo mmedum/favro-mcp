@@ -84,10 +84,12 @@ func (c *Client) CreateComment(ctx context.Context, req CreateCommentRequest) (C
 }
 
 // UpdateCommentRequest is the body for PUT /comments/{commentId}.
-// Only the comment text is updateable; cardCommonId and userId are
-// fixed at creation time.
+// cardCommonId and userId are fixed at creation time. Beyond the
+// text, Favro accepts RemoveAttachments — a list of attachment URLs
+// (Comment.Attachments[].FileURL) to detach from the comment.
 type UpdateCommentRequest struct {
-	Comment string `json:"comment"`
+	Comment           string   `json:"comment"`
+	RemoveAttachments []string `json:"removeAttachments,omitempty"`
 }
 
 // UpdateComment updates the body of an existing comment. Returns
