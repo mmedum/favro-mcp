@@ -8,6 +8,10 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-26
+
+Docs, tests, and one attachment fix. No tool inputs changed.
+
 ### Added
 - `TestMCP_AllTools_SmokeCallable`: calls all 83 tools over the MCP transport with minimal input, `dry_run: true` for mutating ones. Fails if a registered tool has no entry, so new tools can't skip coverage.
 - `CLAUDE.md`: repo conventions for Claude Code — commands, layout, the Favro-returns-200-for-ignored-bodies trap, and the docs standards below.
@@ -18,7 +22,6 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - `CONTRIBUTING.md` documents the changelog, versioning and release rules, and the Go 1.27 / golangci-lint ≥ v2.13.1 requirement.
 
 ### Fixed
-- `favro_move_card` needed a destination but didn't say so in its schema — found by the smoke test.
 - Attachment removal now strips the presigned query from the URL before sending. Favro re-mints `fileURL` on every read with a fresh `X-Amz-Signature`, so the value a caller reads back never matches what Favro stored — v1.1.0's "pass the fileURL" fix couldn't work either. Applies to `favro_remove_attachment` and `favro_update_comment`. Still unverified against a live tenant.
 
 ## [1.1.0] - 2026-08-26
@@ -106,6 +109,7 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/mmedum/favro-mcp/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/mmedum/favro-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mmedum/favro-mcp/releases/tag/v1.0.0
