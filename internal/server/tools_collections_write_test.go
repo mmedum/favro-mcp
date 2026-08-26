@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -155,4 +156,68 @@ func TestMCP_DeleteCollection_DryRun(t *testing.T) {
 func TestMCP_DeleteCollection_MissingCollectionID(t *testing.T) {
 	t.Parallel()
 	assertMissingRequiredFieldFails(t, deleteCollectionToolName, "collection_id")
+}
+
+// Collection membership has an asymmetric wire contract: members come
+// back on read in `sharedToUsers`, but invites are sent in
+// `shareToUsers` and role changes in `members`. Posting the read-shaped
+// key is accepted by Favro and silently drops the invites, so pin the
+// write keys.
+func TestMCP_CreateCollection_SendsShareToUsers(t *testing.T) {
+	t.Parallel()
+
+	var body []byte
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"collectionId":"c-new","name":"Eng"}`))
+	}))
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: createCollectionToolName,
+		Arguments: map[string]any{
+			"name": "Eng",
+			"share_to_users": []map[string]any{
+				{"email": "someone@example.invalid", "role": "edit"},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+
+	require.Contains(t, string(body), `"shareToUsers":[{"email":"someone@example.invalid","role":"edit"}]`)
+	require.NotContains(t, string(body), `"sharedToUsers"`,
+		"the read-shaped key is ignored by Favro on write")
+}
+
+func TestMCP_UpdateCollection_SeparatesInvitesFromMemberChanges(t *testing.T) {
+	t.Parallel()
+
+	var body []byte
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"collectionId":"c-1","name":"Eng"}`))
+	}))
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCollectionToolName,
+		Arguments: map[string]any{
+			"collection_id": "c-1",
+			"share_to_users": []map[string]any{
+				{"email": "new@example.invalid", "role": "view"},
+			},
+			"members": []map[string]any{
+				{"userId": "u-1", "role": "admin"},
+				{"userId": "u-2", "delete": true},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+
+	require.Contains(t, string(body), `"shareToUsers":[{"email":"new@example.invalid","role":"view"}]`)
+	require.Contains(t, string(body), `"members":[{"userId":"u-1","role":"admin"},{"userId":"u-2","delete":true}]`)
 }

@@ -3,6 +3,7 @@ package favro
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 )
 
@@ -124,6 +125,15 @@ func (c *Client) CreateWidget(ctx context.Context, req CreateWidgetRequest) (Wid
 // UpdateWidgetRequest is the body for PUT /widgets/{widgetCommonId}.
 // Every field is optional; absent ones are left untouched. Archive
 // is *bool so &false (unarchive) is distinguishable from "don't touch".
+//
+// CollectionID is REQUIRED whenever Archive is set: a widget can live
+// in several collections, so Favro needs to know which one the
+// archive applies to. UpdateWidget enforces the pairing client-side
+// rather than letting the request fail at the API.
+//
+// Type and BreakdownCardCommonID are not in Favro's documented
+// update parameter list; they are retained because earlier phases
+// sent them and Favro accepts the body.
 type UpdateWidgetRequest struct {
 	Name                  string `json:"name,omitempty"`
 	Type                  string `json:"type,omitempty"`
@@ -132,12 +142,19 @@ type UpdateWidgetRequest struct {
 	OwnerRole             string `json:"ownerRole,omitempty"`
 	EditRole              string `json:"editRole,omitempty"`
 	Archive               *bool  `json:"archive,omitempty"`
+	CollectionID          string `json:"collectionId,omitempty"`
 }
 
-// UpdateWidget updates a widget by its widgetCommonId.
+// UpdateWidget updates a widget by its widgetCommonId. Archiving
+// requires req.CollectionID — Favro scopes the archive to one of the
+// collections the widget belongs to, and omitting it makes the call
+// fail server-side with a less obvious message.
 func (c *Client) UpdateWidget(ctx context.Context, widgetCommonID string, req UpdateWidgetRequest) (Widget, error) {
 	if widgetCommonID == "" {
 		return Widget{}, errMissingID
+	}
+	if req.Archive != nil && req.CollectionID == "" {
+		return Widget{}, fmt.Errorf("favro: archiving a widget requires collection_id (a widget can belong to several collections)")
 	}
 	var out Widget
 	if err := c.PutJSON(ctx, "/widgets/"+url.PathEscape(widgetCommonID), req, &out); err != nil {
@@ -146,8 +163,17 @@ func (c *Client) UpdateWidget(ctx context.Context, widgetCommonID string, req Up
 	return out, nil
 }
 
-// DeleteWidget deletes a widget by its widgetCommonId. Honors
-// WithDryRun / ForceDryRun via the wrapped DeleteJSON.
-func (c *Client) DeleteWidget(ctx context.Context, widgetCommonID string) error {
-	return deleteByID(ctx, c, "/widgets", widgetCommonID)
+// DeleteWidget deletes a widget by its widgetCommonId. collectionID
+// scopes the delete to a single collection; empty deletes every
+// instance of the widget across all collections it belongs to.
+// Honors WithDryRun / ForceDryRun via the wrapped DeleteJSON.
+func (c *Client) DeleteWidget(ctx context.Context, widgetCommonID, collectionID string) error {
+	if widgetCommonID == "" {
+		return errMissingID
+	}
+	q := url.Values{}
+	if collectionID != "" {
+		q.Set("collectionId", collectionID)
+	}
+	return c.doJSON(ctx, http.MethodDelete, "/widgets/"+url.PathEscape(widgetCommonID), q, nil, nil)
 }

@@ -12,6 +12,7 @@ const (
 	headerRateLimitLimit     = "X-RateLimit-Limit"
 	headerRateLimitRemaining = "X-RateLimit-Remaining"
 	headerRateLimitReset     = "X-RateLimit-Reset"
+	headerRateLimitDelay     = "X-RateLimit-Delay"
 	headerRetryAfter         = "Retry-After"
 	headerRequestID          = "X-Favro-Backend-Identifier"
 )
@@ -33,6 +34,12 @@ type RateLimitSnapshot struct {
 	// RetryAfter is populated only on HTTP 429 — the caller is meant
 	// to wait this long before trying again.
 	RetryAfter time.Duration
+	// Delay is how long Favro itself held the response back to let
+	// the token bucket refill, from X-RateLimit-Delay. A non-zero
+	// value means the call already succeeded but the account is
+	// being throttled; Favro fails the request outright once the
+	// needed delay would exceed 10 seconds.
+	Delay time.Duration
 	// ObservedAt is when this snapshot was recorded.
 	ObservedAt time.Time
 	// Path is the URL path of the request that produced the snapshot
@@ -78,25 +85,47 @@ func parseRateLimitHeaders(resp *http.Response) RateLimitSnapshot {
 	if resp.Request != nil && resp.Request.URL != nil {
 		s.Path = resp.Request.URL.Path
 	}
-	if v := resp.Header.Get(headerRateLimitLimit); v != "" {
+	for _, h := range rateLimitHeaderParsers {
+		if v := resp.Header.Get(h.name); v != "" {
+			h.apply(&s, v)
+		}
+	}
+	return s
+}
+
+// rateLimitHeaderParsers maps each observed header to the field it
+// fills. A table rather than a chain of ifs so adding a header is one
+// row — and every entry keeps the same "absent leaves the zero value
+// alone, unparseable is ignored" behaviour.
+var rateLimitHeaderParsers = []struct {
+	name  string
+	apply func(*RateLimitSnapshot, string)
+}{
+	{headerRateLimitLimit, func(s *RateLimitSnapshot, v string) {
 		if n, err := strconv.Atoi(v); err == nil {
 			s.Limit = n
 		}
-	}
-	if v := resp.Header.Get(headerRateLimitRemaining); v != "" {
+	}},
+	{headerRateLimitRemaining, func(s *RateLimitSnapshot, v string) {
 		if n, err := strconv.Atoi(v); err == nil {
 			s.Remaining = n
 		}
-	}
-	if v := resp.Header.Get(headerRateLimitReset); v != "" {
+	}},
+	{headerRateLimitReset, func(s *RateLimitSnapshot, v string) {
 		if epoch, err := strconv.ParseInt(v, 10, 64); err == nil {
 			s.Reset = time.Unix(epoch, 0)
 		}
-	}
-	if v := resp.Header.Get(headerRetryAfter); v != "" {
+	}},
+	{headerRetryAfter, func(s *RateLimitSnapshot, v string) {
 		s.RetryAfter = parseRetryAfter(v)
-	}
-	return s
+	}},
+	// Documented as a duration in seconds; Favro may send a
+	// fractional value, so parse as a float rather than an int.
+	{headerRateLimitDelay, func(s *RateLimitSnapshot, v string) {
+		if secs, err := strconv.ParseFloat(v, 64); err == nil && secs > 0 {
+			s.Delay = time.Duration(secs * float64(time.Second))
+		}
+	}},
 }
 
 // parseRetryAfter handles the two RFC 7231 forms: an integer number of

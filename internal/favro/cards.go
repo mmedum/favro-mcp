@@ -68,7 +68,13 @@ type Card struct {
 	// Value is kept as json.RawMessage because the shape varies by
 	// field type; CustomFieldItemIDs / Total carry the typed flavors
 	// callers commonly need without requiring a parse.
+	//
+	// Favro's docs name this field `customFields` while this client
+	// has always decoded `customFieldsValues`. Rather than pick one,
+	// both keys decode and CustomFields() reconciles them — read
+	// through that accessor, not these fields directly.
 	CustomFieldsValues []CardCustomFieldValue `json:"customFieldsValues,omitempty"`
+	CustomFieldsDocKey []CardCustomFieldValue `json:"customFields,omitempty"`
 	// TasksTotal / TasksDone are the on-card checklist counts. Lets
 	// the LLM see "3 of 7 tasks remaining" without an extra /tasks
 	// fetch. The full /tasks + /tasklists resources are not yet
@@ -92,6 +98,61 @@ type Card struct {
 
 	NumComments           int `json:"numComments,omitempty"`
 	TotalAttachmentsCount int `json:"totalAttachmentsCount,omitempty"`
+
+	// TodoListUserID / TodoListCompleted are set instead of
+	// WidgetCommonID when the card lives in a user's personal todo
+	// list rather than on a widget.
+	TodoListUserID    string `json:"todoListUserId,omitempty"`
+	TodoListCompleted bool   `json:"todoListCompleted,omitempty"`
+	// Dependencies are the before/after links to other cards. The
+	// dedicated /cards/{id}/dependencies endpoints manage them.
+	Dependencies []CardDependency `json:"dependencies,omitempty"`
+}
+
+// CardDependency is one before/after link between two cards.
+// CardID / CardCommonID identify the *other* card; ReverseCardID is
+// this card's own instance id. IsBefore reports whether the other
+// card must complete first.
+type CardDependency struct {
+	CardID        string `json:"cardId,omitempty"`
+	CardCommonID  string `json:"cardCommonId,omitempty"`
+	IsBefore      bool   `json:"isBefore,omitempty"`
+	ReverseCardID string `json:"reverseCardId,omitempty"`
+}
+
+// CardDependencyOption is the write shape for a dependency: the card
+// to link to, and which side of this card it sits on.
+type CardDependencyOption struct {
+	CardID   string `json:"cardId"`
+	IsBefore bool   `json:"isBefore,omitempty"`
+}
+
+// CardTask is one task inside a tasklist, as supplied when creating
+// tasklists inline on a card.
+type CardTask struct {
+	Name      string `json:"name"`
+	Completed bool   `json:"completed,omitempty"`
+}
+
+// CardTasklist is a named checklist attached to a card, as supplied
+// when creating or updating a card inline. The standalone /tasklists
+// and /tasks endpoints manage them after creation.
+type CardTasklist struct {
+	Name  string     `json:"name"`
+	Tasks []CardTask `json:"tasks,omitempty"`
+}
+
+// CustomFields returns the card's custom-field values, reconciling
+// the two wire keys Favro's docs and its payloads disagree on:
+// `customFieldsValues` (what this client has always decoded) and
+// `customFields` (what the docs describe). Whichever arrives
+// non-empty wins; the documented key is preferred on the unlikely
+// chance both are present.
+func (c Card) CustomFields() []CardCustomFieldValue {
+	if len(c.CustomFieldsDocKey) > 0 {
+		return c.CustomFieldsDocKey
+	}
+	return c.CustomFieldsValues
 }
 
 // CardAttachment is one file attachment on a Favro card. Fields are
@@ -120,26 +181,40 @@ type CardTimeOnBoard struct {
 }
 
 // CardCustomFieldValue is one per-card custom-field value entry.
-// Favro returns different shapes per field type; the type-discriminated
-// fields below cover the common kinds:
+// Favro discriminates the payload shape by the field's Type. Per the
+// REST docs (https://favro.com/developer/, "Custom field types"):
 //
-//   - Text/Link: Value is a JSON string.
-//   - Number/Rating: Value is a JSON number.
-//   - Date/Date created: Value is an ISO-8601 string.
-//   - Checkbox/Voting: Value is a JSON bool.
-//   - Single select: CustomFieldItemIDs holds one ID referencing
-//     CustomField.CustomFieldItems.
-//   - Multiple select: CustomFieldItemIDs holds N IDs.
-//   - Members: Value or a separate field carries user IDs.
-//   - Timeline: Value carries {startDate, dueDate}.
+//   - Text / Date: Value is a JSON string.
+//   - Checkbox: Value is a JSON bool.
+//   - Number / Rating: Total carries the number (NOT Value).
+//   - Time: Total carries the summed milliseconds, Reports the
+//     per-user breakdown keyed by userId.
+//   - Vote / Members / Tags / Status / Multiple select: Value is a
+//     JSON array of IDs (userIds, tagIds, or customFieldItemIds).
+//   - Timeline: Timeline carries {startDate, dueDate, showTime}.
+//   - Link: Link carries {url, text}.
+//   - Progress: Value is an object {percentage}.
+//   - Color: Color carries the color token.
 //
-// Total is the running sum surfaced for Rating-style fields. Fields
-// outside this struct are ignored on decode (forward-compatible).
+// CustomFieldItemIDs is retained as a decode fallback: it is not in
+// the documented contract, but earlier revisions of this client read
+// select-flavored values from it and no live payload has been
+// captured to confirm which shape Favro actually emits. The
+// formatters in internal/server prefer the documented Value array
+// and fall back to this field, so both wire shapes decode correctly.
+//
+// Total is a pointer so an explicit 0 stays distinguishable from an
+// unset field. Fields outside this struct are ignored on decode
+// (forward-compatible).
 type CardCustomFieldValue struct {
 	CustomFieldID      string          `json:"customFieldId"`
 	Value              json.RawMessage `json:"value,omitempty"`
+	Total              *float64        `json:"total,omitempty"`
+	Color              string          `json:"color,omitempty"`
+	Timeline           json.RawMessage `json:"timeline,omitempty"`
+	Link               json.RawMessage `json:"link,omitempty"`
+	Reports            json.RawMessage `json:"reports,omitempty"`
 	CustomFieldItemIDs []string        `json:"customFieldItemIds,omitempty"`
-	Total              float64         `json:"total,omitempty"`
 }
 
 // CardAssignment is one entry in Card.Assignments.
@@ -298,6 +373,17 @@ type CreateCardRequest struct {
 	TagIDs              []string `json:"tagIds,omitempty"`
 	StartDate           string   `json:"startDate,omitempty"`
 	DueDate             string   `json:"dueDate,omitempty"`
+	// Dependencies links other cards at creation time; Tasklists
+	// seeds checklists; CustomFields sets field values in the same
+	// round-trip instead of a follow-up PUT.
+	Dependencies []CardDependencyOption  `json:"dependencies,omitempty"`
+	Tasklists    []CardTasklist          `json:"tasklists,omitempty"`
+	CustomFields []CardCustomFieldUpdate `json:"customFields,omitempty"`
+
+	// DescriptionFormat selects "plaintext" (Favro's default) or
+	// "markdown" for the DetailedDescription on the *returned* card.
+	// It rides in the query string, not the body, hence json:"-".
+	DescriptionFormat string `json:"-"`
 }
 
 // CreateCard creates a new card. Returns the created Card (Favro
@@ -311,7 +397,7 @@ func (c *Client) CreateCard(ctx context.Context, req CreateCardRequest) (Card, e
 		return Card{}, fmt.Errorf("favro: card name is required")
 	}
 	var out Card
-	if err := c.PostJSON(ctx, "/cards", req, &out); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/cards", descriptionFormatQuery(req.DescriptionFormat), req, &out); err != nil {
 		return Card{}, err
 	}
 	return out, nil
@@ -322,8 +408,9 @@ func (c *Client) CreateCard(ctx context.Context, req CreateCardRequest) (Card, e
 // where "absent" must be distinguishable from a zero value:
 //
 //   - Archive: nil = don't touch, &true = archive, &false = unarchive.
-//   - CompleteAssignments: nil = don't touch, &true/&false = mark
-//     all assignments accordingly.
+//   - CompleteAssignments: the per-user completion flips, as
+//     {userId, completed} pairs. Favro documents this as an array,
+//     not a blanket boolean.
 //
 // Tag mutations come in two flavors: AddTags / RemoveTags (by name,
 // auto-create on add) and AddTagIDs / RemoveTagIDs (by tagId,
@@ -357,7 +444,7 @@ type UpdateCardRequest struct {
 	SheetPosition       *float64                `json:"sheetPosition,omitempty"`
 	AddAssignmentIDs    []string                `json:"addAssignmentIds,omitempty"`
 	RemoveAssignmentIDs []string                `json:"removeAssignmentIds,omitempty"`
-	CompleteAssignments *bool                   `json:"completeAssignments,omitempty"`
+	CompleteAssignments []CardAssignment        `json:"completeAssignments,omitempty"`
 	AddTags             []string                `json:"addTags,omitempty"`
 	RemoveTags          []string                `json:"removeTags,omitempty"`
 	AddTagIDs           []string                `json:"addTagIds,omitempty"`
@@ -366,36 +453,133 @@ type UpdateCardRequest struct {
 	DueDate             string                  `json:"dueDate,omitempty"`
 	Archive             *bool                   `json:"archive,omitempty"`
 	CustomFields        []CardCustomFieldUpdate `json:"customFields,omitempty"`
-	// RemoveAttachments is a list of attachment names (matching
-	// CardAttachment.Name on the read side) to remove from the card.
-	// Favro has no per-attachment DELETE — removal goes through this
-	// field on PUT /cards/{cardId}.
+	// AddDependencies links more cards to this one; RemoveDependencies
+	// takes the plain cardIds of links to drop. The dedicated
+	// /cards/{id}/dependencies endpoints are the richer surface.
+	AddDependencies    []CardDependencyOption `json:"addDependencies,omitempty"`
+	RemoveDependencies []string               `json:"removeDependencies,omitempty"`
+	// AddTasklists appends checklists to the card.
+	AddTasklists []CardTasklist `json:"addTasklists,omitempty"`
+	// AddFavroAttachments links other Favro objects (cards, boards)
+	// to this card; RemoveFavroAttachmentIDs unlinks them by their
+	// itemCommonId.
+	AddFavroAttachments      []CardFavroAttachment `json:"addFavroAttachments,omitempty"`
+	RemoveFavroAttachmentIDs []string              `json:"removeFavroAttachmentIds,omitempty"`
+	// RemoveAttachments is a list of attachment *URLs* (matching
+	// CardAttachment.FileURL on the read side) to detach from the
+	// card — not display names. Favro has no per-attachment DELETE;
+	// removal goes through this field on PUT /cards/{cardId}.
 	RemoveAttachments []string `json:"removeAttachments,omitempty"`
+
+	// DescriptionFormat selects "plaintext" (Favro's default) or
+	// "markdown" for the DetailedDescription on the *returned* card.
+	// It rides in the query string, not the body, hence json:"-".
+	DescriptionFormat string `json:"-"`
 }
 
-// CardCustomFieldUpdate is one entry in UpdateCardRequest.CustomFields.
-// Mirrors the read-shape CardCustomFieldValue but for writes. Value
-// is `any` because the Favro wire shape is type-discriminated:
+// descriptionFormatQuery renders the optional descriptionFormat
+// query parameter shared by the card create / update / read paths.
+// Returns nil when unset so callers send no query string at all.
+func descriptionFormatQuery(format string) url.Values {
+	if format == "" {
+		return nil
+	}
+	return url.Values{"descriptionFormat": []string{format}}
+}
+
+// CardCustomFieldUpdate is one entry in
+// UpdateCardRequest.CustomFields / CreateCardRequest.CustomFields.
+// The shape is type-discriminated; this struct is the union of every
+// documented per-type parameter set ("Card custom field parameters"
+// at https://favro.com/developer/). Exactly one flavor should be
+// populated per entry:
 //
-//   - Text / Link: JSON string (Link also takes optional LinkText).
-//   - Number / Rating: JSON number (Rating also requires Total — the
-//     max stars).
-//   - Date: ISO-8601 string.
-//   - Checkbox / Voting: JSON bool.
-//   - Members: JSON array of userIds.
-//   - Single select / Multiple select / Status: omit Value; set
-//     CustomFieldItemIDs (a single-element slice for single-select
-//     and Status; multi-element for Multiple select).
+//   - Text / Date: Value (string).
+//   - Checkbox: Value (bool).
+//   - Vote: Value (bool — true votes, false unvotes).
+//   - Number: Total (number). NOT Value.
+//   - Rating: Total (integer 0–5). NOT Value.
+//   - Status / Multiple select: Value (array of customFieldItemIds).
+//   - Members: Members ({addUserIds, removeUserIds, completeUsers}).
+//   - Tags: Tags ({addTags, addTagIds, removeTags, removeTagIds}).
+//   - Timeline: Timeline ({startDate, dueDate, showTime}).
+//   - Link: Link ({url, text}).
+//   - Color: Color (a card-color token).
+//   - Time: AddUserReports / UpdateUserReports / RemoveUserReports.
+//
+// Progress is calculated by Favro and read-only; writes to it are
+// ignored server-side.
 //
 // The MCP `favro_set_card_custom_field` convenience tool resolves
-// the field type via the resolver cache and builds the right
-// entry; direct callers can also build it manually.
+// the field type via the resolver cache and builds the right entry;
+// direct callers can also build it manually.
 type CardCustomFieldUpdate struct {
-	CustomFieldID      string   `json:"customFieldId"`
-	Value              any      `json:"value,omitempty"`
-	CustomFieldItemIDs []string `json:"customFieldItemIds,omitempty"`
-	Total              *int     `json:"total,omitempty"`
-	LinkText           string   `json:"linkText,omitempty"`
+	CustomFieldID string   `json:"customFieldId"`
+	Value         any      `json:"value,omitempty"`
+	Total         *float64 `json:"total,omitempty"`
+	Color         string   `json:"color,omitempty"`
+
+	Members  *CustomFieldMembersUpdate `json:"members,omitempty"`
+	Tags     *CustomFieldTagsUpdate    `json:"tags,omitempty"`
+	Timeline *CustomFieldTimeline      `json:"timeline,omitempty"`
+	Link     *CustomFieldLink          `json:"link,omitempty"`
+
+	AddUserReports    []CustomFieldTimeReport `json:"addUserReports,omitempty"`
+	UpdateUserReports []CustomFieldTimeReport `json:"updateUserReports,omitempty"`
+	RemoveUserReports []CustomFieldTimeReport `json:"removeUserReports,omitempty"`
+}
+
+// CustomFieldMembersUpdate is the write payload for a Members-typed
+// custom field. Favro models this as add/remove deltas rather than a
+// whole-list replacement, so clearing a field means listing the
+// current members in RemoveUserIDs.
+type CustomFieldMembersUpdate struct {
+	AddUserIDs    []string `json:"addUserIds,omitempty"`
+	RemoveUserIDs []string `json:"removeUserIds,omitempty"`
+	// CompleteUsers flips the per-user completion state on the
+	// custom field, mirroring card-level assignment completion.
+	CompleteUsers []CardAssignment `json:"completeUsers,omitempty"`
+}
+
+// CustomFieldTagsUpdate is the write payload for a Tags-typed custom
+// field. AddTags takes tag *names* and creates any that don't exist
+// yet in the organization — favro_set_card_custom_field deliberately
+// does not expose it for that reason (see the add-tag-to-card tools,
+// which hard-fail on unknown tags to prevent typo-created tags).
+type CustomFieldTagsUpdate struct {
+	AddTags      []string `json:"addTags,omitempty"`
+	AddTagIDs    []string `json:"addTagIds,omitempty"`
+	RemoveTags   []string `json:"removeTags,omitempty"`
+	RemoveTagIDs []string `json:"removeTagIds,omitempty"`
+}
+
+// CustomFieldTimeline is the value of a Timeline-typed custom field,
+// used on both the read and the write side. StartDate and DueDate are
+// ISO-8601 and both required by Favro when setting the field.
+type CustomFieldTimeline struct {
+	StartDate string `json:"startDate,omitempty"`
+	DueDate   string `json:"dueDate,omitempty"`
+	ShowTime  bool   `json:"showTime,omitempty"`
+}
+
+// CustomFieldLink is the value of a Link-typed custom field, used on
+// both the read and the write side. Text is the optional display
+// label; URL is required when setting the field.
+type CustomFieldLink struct {
+	URL  string `json:"url,omitempty"`
+	Text string `json:"text,omitempty"`
+}
+
+// CustomFieldTimeReport is one entry in a Time-typed custom field's
+// per-user timesheet. Value is in milliseconds; passing 0 removes the
+// entry. UserID is optional on add but required on update.
+type CustomFieldTimeReport struct {
+	ReportID            string   `json:"reportId,omitempty"`
+	UserID              string   `json:"userId,omitempty"`
+	Value               *float64 `json:"value,omitempty"`
+	Description         string   `json:"description,omitempty"`
+	DetailedDescription string   `json:"detailedDescription,omitempty"`
+	CreatedAt           string   `json:"createdAt,omitempty"`
 }
 
 // UpdateCard updates a card by its per-widget cardId. Returns the
@@ -407,7 +591,8 @@ func (c *Client) UpdateCard(ctx context.Context, cardID string, req UpdateCardRe
 		return Card{}, errMissingID
 	}
 	var out Card
-	if err := c.PutJSON(ctx, "/cards/"+url.PathEscape(cardID), req, &out); err != nil {
+	path := "/cards/" + url.PathEscape(cardID)
+	if err := c.doJSON(ctx, http.MethodPut, path, descriptionFormatQuery(req.DescriptionFormat), req, &out); err != nil {
 		return Card{}, err
 	}
 	return out, nil

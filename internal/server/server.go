@@ -84,11 +84,12 @@ func New(client *favro.Client, source, version string) *mcp.Server {
 	registerAddTagToCard(srv, resolver)
 	registerRemoveTagFromCard(srv, resolver)
 	registerUploadAttachment(srv, resolver)
-	// favro_remove_attachment is intentionally NOT registered:
-	// Favro silently ignores `removeAttachments` on PUT /cards
-	// (verified live Phase 7.1). favro.RemoveAttachment is kept
-	// for future investigation; the MCP tool stays gated until the
-	// right wire shape is found.
+	registerUploadCommentAttachment(srv, resolver)
+	registerRemoveAttachment(srv, resolver)
+	registerTasks(srv, client)
+	registerTasklists(srv, client)
+	registerDependencies(srv, client)
+	registerActivities(srv, client)
 
 	return srv
 }

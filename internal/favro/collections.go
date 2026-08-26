@@ -16,9 +16,10 @@ type Collection struct {
 	Color          string       `json:"color,omitempty"`
 	Background     string       `json:"background,omitempty"`
 	SharedToUsers  []SharedUser `json:"sharedToUsers,omitempty"`
-	// PublicSharing is one of "off", "organization", "public" today.
-	// Left as a string because Favro could extend the set without
-	// notice and a typed enum would silently mask new values.
+	// PublicSharing is one of "users", "organization", "public" per
+	// Favro's docs. Left as a string because Favro could extend the
+	// set without notice and a typed enum would silently mask new
+	// values.
 	PublicSharing string `json:"publicSharing,omitempty"`
 	Archived      bool   `json:"archived,omitempty"`
 	// FullMembersCanAddWidgets is the docs-canonical field name,
@@ -58,13 +59,24 @@ func (c *Client) GetCollection(ctx context.Context, collectionID string) (Collec
 }
 
 // CreateCollectionRequest is the body for POST /collections. Name is
-// required; the rest are optional. SharedToUsers may include either
-// `email` or `userId` per entry.
+// required; the rest are optional.
+//
+// Note the asymmetry with the read shape: a Collection comes back
+// with its members in `sharedToUsers`, but invites are *sent* in
+// `shareToUsers` (no "d"). They are different wire keys for the same
+// concept, and posting the read-shaped key silently drops the
+// invites.
+//
+// Color and IconName are not in Favro's documented parameter list.
+// They are kept because earlier phases sent them and Favro accepts
+// the body; live observation in Phase 5.4 was that `color` is
+// ignored on write and Favro derives `background` instead.
 type CreateCollectionRequest struct {
 	Name                     string       `json:"name"`
-	SharedToUsers            []SharedUser `json:"sharedToUsers,omitempty"`
+	ShareToUsers             []SharedUser `json:"shareToUsers,omitempty"`
 	PublicSharing            string       `json:"publicSharing,omitempty"`
 	Background               string       `json:"background,omitempty"`
+	StarPage                 *bool        `json:"starPage,omitempty"`
 	Color                    string       `json:"color,omitempty"`
 	IconName                 string       `json:"iconName,omitempty"`
 	FullMembersCanAddWidgets *bool        `json:"fullMembersCanAddWidgets,omitempty"`
@@ -86,14 +98,22 @@ func (c *Client) CreateCollection(ctx context.Context, req CreateCollectionReque
 // UpdateCollectionRequest is the body for PUT /collections/{collectionId}.
 // Every field is optional; absent ones are left untouched. Archive
 // is *bool so &false (unarchive) is distinguishable from "don't touch".
+//
+// Membership changes travel through two distinct keys, matching
+// Favro's documented parameter list: ShareToUsers *invites* people
+// who aren't in the collection yet, while Members updates the role
+// of — or, with Delete set, removes — someone already in it. Neither
+// is the read-shaped `sharedToUsers` key, which Favro ignores here.
 type UpdateCollectionRequest struct {
 	Name                     string       `json:"name,omitempty"`
 	PublicSharing            string       `json:"publicSharing,omitempty"`
 	Background               string       `json:"background,omitempty"`
+	StarPage                 *bool        `json:"starPage,omitempty"`
 	Color                    string       `json:"color,omitempty"`
 	IconName                 string       `json:"iconName,omitempty"`
 	FullMembersCanAddWidgets *bool        `json:"fullMembersCanAddWidgets,omitempty"`
-	SharedToUsers            []SharedUser `json:"sharedToUsers,omitempty"`
+	ShareToUsers             []SharedUser `json:"shareToUsers,omitempty"`
+	Members                  []SharedUser `json:"members,omitempty"`
 	Archive                  *bool        `json:"archive,omitempty"`
 }
 
