@@ -109,9 +109,23 @@ func TestFormatCustomFieldValue(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			name:   "link",
+			name:   "link legacy string value",
 			field:  favro.CustomField{Type: "Link"},
 			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`"https://example.invalid"`)},
+			want:   "https://example.invalid",
+			wantOK: true,
+		},
+		{
+			name:   "link object with display text",
+			field:  favro.CustomField{Type: "Link"},
+			value:  favro.CardCustomFieldValue{Link: json.RawMessage(`{"url":"https://example.invalid","text":"docs"}`)},
+			want:   "docs (https://example.invalid)",
+			wantOK: true,
+		},
+		{
+			name:   "link object without display text",
+			field:  favro.CustomField{Type: "Link"},
+			value:  favro.CardCustomFieldValue{Link: json.RawMessage(`{"url":"https://example.invalid"}`)},
 			want:   "https://example.invalid",
 			wantOK: true,
 		},
@@ -127,6 +141,21 @@ func TestFormatCustomFieldValue(t *testing.T) {
 			field:  favro.CustomField{Type: "Number"},
 			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`3.14`)},
 			want:   "3.14",
+			wantOK: true,
+		},
+		{
+			// Documented shape: Number travels in `total`.
+			name:   "number from total",
+			field:  favro.CustomField{Type: "Number"},
+			value:  favro.CardCustomFieldValue{Total: cfFloat(8)},
+			want:   "8",
+			wantOK: true,
+		},
+		{
+			name:   "number zero in total is not treated as unset",
+			field:  favro.CustomField{Type: "Number"},
+			value:  favro.CardCustomFieldValue{Total: cfFloat(0)},
+			want:   "0",
 			wantOK: true,
 		},
 		{
@@ -231,6 +260,18 @@ func TestFormatCustomFieldValue(t *testing.T) {
 			wantOK: true,
 		},
 		{
+			name: "status from documented value array",
+			field: favro.CustomField{
+				Type: "Status",
+				CustomFieldItems: []favro.CustomFieldItem{
+					{CustomFieldItemID: "st-1", Name: "Doing", Color: "blue"},
+				},
+			},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`["st-1"]`)},
+			want:   "Doing (blue)",
+			wantOK: true,
+		},
+		{
 			name: "status without color falls back to plain name",
 			field: favro.CustomField{
 				Type: "Status",
@@ -243,17 +284,27 @@ func TestFormatCustomFieldValue(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			name:   "rating with total",
+			// Documented shape: the rating lives in `total`, and the
+			// scale is fixed at 0-5.
+			name:   "rating from total",
 			field:  favro.CustomField{Type: "Rating"},
-			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`3`), Total: 5},
+			value:  favro.CardCustomFieldValue{Total: cfFloat(3)},
 			want:   "3 / 5",
 			wantOK: true,
 		},
 		{
-			name:   "rating without total falls back to bare value",
+			// Legacy shape: value carries the rating and total the max.
+			name:   "rating split across value and total",
+			field:  favro.CustomField{Type: "Rating"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`3`), Total: cfFloat(7)},
+			want:   "3 / 7",
+			wantOK: true,
+		},
+		{
+			name:   "rating from bare value assumes the documented 0-5 scale",
 			field:  favro.CustomField{Type: "Rating"},
 			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`4`)},
-			want:   "4",
+			want:   "4 / 5",
 			wantOK: true,
 		},
 		{
@@ -285,17 +336,62 @@ func TestFormatCustomFieldValue(t *testing.T) {
 			wantOK: false,
 		},
 		{
-			name:   "voting bool",
+			name:   "voting legacy bool",
 			field:  favro.CustomField{Type: "Voting"},
 			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`true`)},
 			want:   "true",
 			wantOK: true,
 		},
 		{
-			name:   "progress",
+			// Documented shape: the value is the array of userIds that
+			// voted, so known voters resolve to names.
+			name:   "vote resolves voter names",
+			field:  favro.CustomField{Type: "Vote"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`["u-1","u-2"]`)},
+			users:  []favro.User{{UserID: "u-1", Name: "Alice"}, {UserID: "u-2", Name: "Bob"}},
+			want:   "Alice, Bob",
+			wantOK: true,
+		},
+		{
+			name:   "vote falls back to a count when voters are unknown",
+			field:  favro.CustomField{Type: "Vote"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`["u-1","u-2"]`)},
+			want:   "2 votes",
+			wantOK: true,
+		},
+		{
+			name:   "timeline from documented sibling object",
+			field:  favro.CustomField{Type: "Timeline"},
+			value:  favro.CardCustomFieldValue{Timeline: json.RawMessage(`{"startDate":"2026-01-01T00:00:00Z","dueDate":"2026-02-01T00:00:00Z"}`)},
+			want:   "2026-01-01T00:00:00Z → 2026-02-01T00:00:00Z",
+			wantOK: true,
+		},
+		{
+			name:   "progress legacy bare number",
 			field:  favro.CustomField{Type: "Progress"},
 			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`75`)},
 			want:   "75%",
+			wantOK: true,
+		},
+		{
+			name:   "progress from documented percentage object",
+			field:  favro.CustomField{Type: "Progress"},
+			value:  favro.CardCustomFieldValue{Value: json.RawMessage(`{"percentage":40}`)},
+			want:   "40%",
+			wantOK: true,
+		},
+		{
+			name:   "time renders summed milliseconds",
+			field:  favro.CustomField{Type: "Time"},
+			value:  favro.CardCustomFieldValue{Total: cfFloat(50400000)},
+			want:   "14h 0m",
+			wantOK: true,
+		},
+		{
+			name:   "color",
+			field:  favro.CustomField{Type: "Color"},
+			value:  favro.CardCustomFieldValue{Color: "blue-300"},
+			want:   "blue-300",
 			wantOK: true,
 		},
 		{
@@ -633,3 +729,7 @@ func TestGetFullCard_SkipsResolversWhenCardHasNoIDs(t *testing.T) {
 	require.EqualValues(t, 0, fix.calls["/customfields"].Load())
 	require.EqualValues(t, 0, fix.calls["/comments"].Load())
 }
+
+// cfFloat returns a pointer to n. CardCustomFieldValue.Total is a
+// pointer so an explicit 0 stays distinguishable from an unset field.
+func cfFloat(n float64) *float64 { return &n }

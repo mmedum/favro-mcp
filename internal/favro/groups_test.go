@@ -245,18 +245,32 @@ func TestDeleteGroup_EmptyID_NoNetworkCall(t *testing.T) {
 }
 
 // TestUpdateCard_CustomFieldsValuePassthrough pins that
-// UpdateCardRequest.CustomFields marshals onto the wire as a
-// type-discriminated object. Phase 5.5 added the field; the
-// favro_set_card_custom_field convenience tool builds these.
+// UpdateCardRequest.CustomFields marshals onto the wire in the
+// per-type shapes documented under "Card custom field parameters"
+// at https://favro.com/developer/ — notably that Number and Rating
+// travel in `total` (not `value`), select-flavored types put their
+// item ids in `value`, and Members / Tags / Timeline / Link each
+// have a dedicated sibling object.
 func TestUpdateCard_CustomFieldsValuePassthrough(t *testing.T) {
 	t.Parallel()
+
+	num := 42.0
+	rating := 3.0
+	logged := 50400000.0
 
 	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
 		require.JSONEq(t, `{"customFields":[
 			{"customFieldId":"cf-text","value":"hello"},
-			{"customFieldId":"cf-num","value":42},
+			{"customFieldId":"cf-num","total":42},
 			{"customFieldId":"cf-bool","value":true},
-			{"customFieldId":"cf-select","customFieldItemIds":["item-1"]}
+			{"customFieldId":"cf-select","value":["item-1"]},
+			{"customFieldId":"cf-rating","total":3},
+			{"customFieldId":"cf-members","members":{"addUserIds":["u-1"],"removeUserIds":["u-2"]}},
+			{"customFieldId":"cf-tags","tags":{"addTagIds":["t-1"]}},
+			{"customFieldId":"cf-timeline","timeline":{"startDate":"2026-01-01","dueDate":"2026-02-01"}},
+			{"customFieldId":"cf-link","link":{"url":"https://example.com","text":"docs"}},
+			{"customFieldId":"cf-color","color":"blue-300"},
+			{"customFieldId":"cf-time","addUserReports":[{"value":50400000,"description":"work"}]}
 		]}`, rec.Body)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"cardId":"ci-1"}`))
@@ -268,9 +282,24 @@ func TestUpdateCard_CustomFieldsValuePassthrough(t *testing.T) {
 	_, err := c.UpdateCard(context.Background(), "ci-1", UpdateCardRequest{
 		CustomFields: []CardCustomFieldUpdate{
 			{CustomFieldID: "cf-text", Value: "hello"},
-			{CustomFieldID: "cf-num", Value: 42},
+			{CustomFieldID: "cf-num", Total: &num},
 			{CustomFieldID: "cf-bool", Value: true},
-			{CustomFieldID: "cf-select", CustomFieldItemIDs: []string{"item-1"}},
+			{CustomFieldID: "cf-select", Value: []string{"item-1"}},
+			{CustomFieldID: "cf-rating", Total: &rating},
+			{CustomFieldID: "cf-members", Members: &CustomFieldMembersUpdate{
+				AddUserIDs:    []string{"u-1"},
+				RemoveUserIDs: []string{"u-2"},
+			}},
+			{CustomFieldID: "cf-tags", Tags: &CustomFieldTagsUpdate{AddTagIDs: []string{"t-1"}}},
+			{CustomFieldID: "cf-timeline", Timeline: &CustomFieldTimeline{
+				StartDate: "2026-01-01",
+				DueDate:   "2026-02-01",
+			}},
+			{CustomFieldID: "cf-link", Link: &CustomFieldLink{URL: "https://example.com", Text: "docs"}},
+			{CustomFieldID: "cf-color", Color: "blue-300"},
+			{CustomFieldID: "cf-time", AddUserReports: []CustomFieldTimeReport{
+				{Value: &logged, Description: "work"},
+			}},
 		},
 	})
 	require.NoError(t, err)

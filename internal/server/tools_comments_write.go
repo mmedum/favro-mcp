@@ -25,8 +25,9 @@ type createCommentInput struct {
 // updateCommentInput is the input for favro_update_comment.
 type updateCommentInput struct {
 	dryRunInput
-	CommentID string `json:"comment_id" jsonschema:"the Favro commentId to update"`
-	Comment   string `json:"comment" jsonschema:"the new comment text (markdown supported); replaces the existing body in full"`
+	CommentID         string   `json:"comment_id" jsonschema:"the Favro commentId to update"`
+	Comment           string   `json:"comment" jsonschema:"the new comment text (markdown supported); replaces the existing body in full"`
+	RemoveAttachments []string `json:"remove_attachments,omitempty" jsonschema:"attachment URLs to detach from the comment. Use the fileURL values from favro_get_comment / favro_list_comments."`
 }
 
 // deleteCommentInput is the input for favro_delete_comment.
@@ -80,9 +81,15 @@ func registerUpdateComment(srv *mcp.Server, r *Resolver) {
 		}
 		out, err := runWrite(
 			func() (favro.Comment, error) {
-				return r.client.UpdateComment(writeCtx, in.CommentID, favro.UpdateCommentRequest{Comment: in.Comment})
+				return r.client.UpdateComment(writeCtx, in.CommentID, favro.UpdateCommentRequest{
+					Comment:           in.Comment,
+					RemoveAttachments: in.RemoveAttachments,
+				})
 			},
 			func() string {
+				if len(in.RemoveAttachments) > 0 {
+					return fmt.Sprintf("would replace the body of comment %q and detach %d attachment(s)", in.CommentID, len(in.RemoveAttachments))
+				}
 				return fmt.Sprintf("would replace the body of comment %q", in.CommentID)
 			},
 		)

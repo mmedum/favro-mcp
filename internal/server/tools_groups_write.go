@@ -20,7 +20,7 @@ const (
 type createGroupInput struct {
 	dryRunInput
 	Name    string              `json:"name" jsonschema:"the group name (required)"`
-	Members []favro.GroupMember `json:"members,omitempty" jsonschema:"optional initial member list. Each entry pairs a userId with a role string ('administrator' / 'member' / 'viewer'). Resolve userIds via favro_resolve_user."`
+	Members []favro.GroupMember `json:"members,omitempty" jsonschema:"optional initial member list. Each entry identifies a person by userId or email plus a role ('administrator' / 'member'). Resolve userIds via favro_resolve_user."`
 }
 
 // updateGroupInput is the input for favro_update_group. Members,
@@ -31,7 +31,7 @@ type updateGroupInput struct {
 	dryRunInput
 	GroupID string              `json:"group_id" jsonschema:"the Favro groupId to update. Resolve via favro_resolve_group."`
 	Name    string              `json:"name,omitempty" jsonschema:"new group name; omit to keep current"`
-	Members []favro.GroupMember `json:"members,omitempty" jsonschema:"REPLACES the group's member list when set (no add/remove semantics on this endpoint). Compose the full intended list before sending."`
+	Members []favro.GroupMember `json:"members,omitempty" jsonschema:"the group's full intended member list — it REPLACES the existing one, so include everyone who should remain. Each entry identifies a person by userId or email plus a role ('administrator' / 'member'). A per-entry delete: true is accepted (Favro documents it) but whole-list replacement is what was observed live."`
 }
 
 // deleteGroupInput is the input for favro_delete_group.
@@ -74,9 +74,13 @@ func registerUpdateGroup(srv *mcp.Server, r *Resolver) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: updateGroupToolName,
 		Description: "Update a Favro group. Both fields optional. `members`, when set, " +
-			"REPLACES the group's member list — there is no add/remove on this endpoint, " +
-			"so the LLM must compose the full intended list before sending. Successful " +
-			"live writes invalidate the group cache. Pass `dry_run: true` to preview.",
+			"REPLACES the group's member list — compose the full intended list before " +
+			"sending, and drop anyone who should leave. (Favro's docs describe add/remove " +
+			"delta semantics with a per-entry `delete` flag, but a live test observed whole" +
+			"-list replacement; sending the full list is correct under either reading, " +
+			"whereas sending only a delta is not.) Each entry identifies a person by " +
+			"userId or email plus a role. Successful live writes invalidate the group " +
+			"cache. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Update Favro group", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateGroupInput) (*mcp.CallToolResult, writeOutput[favro.Group], error) {
 		writeCtx := ctx
@@ -137,7 +141,17 @@ func updateGroupStateDiff(in *updateGroupInput) string {
 		changes = append(changes, fmt.Sprintf("name → %q", in.Name))
 	}
 	if in.Members != nil {
-		changes = append(changes, fmt.Sprintf("members → %d entries (replaces existing)", len(in.Members)))
+		var removals int
+		for _, m := range in.Members {
+			if m.Delete != nil && *m.Delete {
+				removals++
+			}
+		}
+		if removals > 0 {
+			changes = append(changes, fmt.Sprintf("members → %d entries (replaces existing), %d flagged for delete", len(in.Members), removals))
+		} else {
+			changes = append(changes, fmt.Sprintf("members → %d entries (replaces existing)", len(in.Members)))
+		}
 	}
 	if len(changes) == 0 {
 		return fmt.Sprintf("would PUT group %q with no changed fields (no-op)", in.GroupID)

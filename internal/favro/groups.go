@@ -20,14 +20,20 @@ type Group struct {
 	GroupID        string        `json:"groupId"`
 	OrganizationID string        `json:"organizationId,omitempty"`
 	Name           string        `json:"name"`
+	CreatorUserID  string        `json:"creatorUserId,omitempty"`
+	MemberCount    int           `json:"memberCount,omitempty"`
 	Members        []GroupMember `json:"members,omitempty"`
 }
 
-// GroupMember is one user assigned to a group with a per-membership
-// role.
+// GroupMember is one member of a group. On read Favro fills UserID
+// and Role. On write it accepts EITHER UserID or Email to identify
+// the person, and Delete removes them instead of re-roling them —
+// when Delete is set, Role becomes optional.
 type GroupMember struct {
-	UserID string `json:"userId"`
+	UserID string `json:"userId,omitempty"`
+	Email  string `json:"email,omitempty"`
 	Role   string `json:"role,omitempty"`
+	Delete *bool  `json:"delete,omitempty"`
 }
 
 // ListGroups returns one page of groups in the active organization.

@@ -263,7 +263,7 @@ func TestUpdateWidget_ArchiveTrue(t *testing.T) {
 	t.Parallel()
 
 	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
-		require.JSONEq(t, `{"archive":true}`, rec.Body,
+		require.JSONEq(t, `{"archive":true,"collectionId":"c-1"}`, rec.Body,
 			"&true must marshal as archive:true; *bool keeps the explicit boolean from being omitempty-elided")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"widgetCommonId":"w-1","archived":true}`))
@@ -273,7 +273,10 @@ func TestUpdateWidget_ArchiveTrue(t *testing.T) {
 	c := newTestClient(srv)
 
 	archive := true
-	got, err := c.UpdateWidget(context.Background(), "w-1", UpdateWidgetRequest{Archive: &archive})
+	got, err := c.UpdateWidget(context.Background(), "w-1", UpdateWidgetRequest{
+		Archive:      &archive,
+		CollectionID: "c-1",
+	})
 	require.NoError(t, err)
 	require.True(t, got.Archived)
 }
@@ -303,7 +306,26 @@ func TestDeleteWidget_HappyPath(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	require.NoError(t, c.DeleteWidget(context.Background(), "w-1"))
+	require.NoError(t, c.DeleteWidget(context.Background(), "w-1", ""))
+}
+
+// A widget can live in several collections. Passing a collectionId
+// scopes the delete to one of them; omitting it (above) deletes every
+// instance.
+func TestDeleteWidget_ScopedToCollection(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.Equal(t, http.MethodDelete, rec.Method)
+		require.Equal(t, "/widgets/w-1", rec.Path)
+		require.Equal(t, "c-1", rec.Query.Get("collectionId"))
+		w.WriteHeader(http.StatusNoContent)
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	require.NoError(t, c.DeleteWidget(context.Background(), "w-1", "c-1"))
 }
 
 func TestDeleteWidget_EmptyID_NoNetworkCall(t *testing.T) {
@@ -314,6 +336,29 @@ func TestDeleteWidget_EmptyID_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	require.ErrorIs(t, c.DeleteWidget(context.Background(), ""), errMissingID)
+	require.ErrorIs(t, c.DeleteWidget(context.Background(), "", ""), errMissingID)
 	require.Empty(t, h.seen())
+}
+
+// Favro scopes a widget archive to a single collection, so an
+// archive without collectionId must fail before any HTTP work rather
+// than being rejected server-side with a vaguer message.
+func TestUpdateWidget_ArchiveRequiresCollectionID(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	archive := true
+	_, err := c.UpdateWidget(context.Background(), "w-1", UpdateWidgetRequest{Archive: &archive})
+	require.ErrorContains(t, err, "collection_id")
+	require.Empty(t, h.seen())
+
+	_, err = c.UpdateWidget(context.Background(), "w-1", UpdateWidgetRequest{
+		Archive:      &archive,
+		CollectionID: "c-1",
+	})
+	require.NoError(t, err)
 }
