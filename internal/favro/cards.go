@@ -465,10 +465,12 @@ type UpdateCardRequest struct {
 	// itemCommonId.
 	AddFavroAttachments      []CardFavroAttachment `json:"addFavroAttachments,omitempty"`
 	RemoveFavroAttachmentIDs []string              `json:"removeFavroAttachmentIds,omitempty"`
-	// RemoveAttachments is a list of attachment *URLs* (matching
-	// CardAttachment.FileURL on the read side) to detach from the
-	// card — not display names. Favro has no per-attachment DELETE;
-	// removal goes through this field on PUT /cards/{cardId}.
+	// RemoveAttachments is a list of attachment URLs to detach from
+	// the card — not display names, and not the presigned URL Favro
+	// hands back verbatim. Use CanonicalAttachmentURL to strip the
+	// signature first; RemoveAttachment does it for you. Favro has no
+	// per-attachment DELETE, so removal goes through this field on
+	// PUT /cards/{cardId}.
 	RemoveAttachments []string `json:"removeAttachments,omitempty"`
 
 	// DescriptionFormat selects "plaintext" (Favro's default) or
