@@ -18,17 +18,17 @@ Go 1.27. `go.mod` is the single source of truth — every CI job resolves via
 
 ## Layout
 
-- `internal/auth` — credential sources (env, OS keyring), `Token`, startup validation.
-- `internal/favro` — the REST client. One file per resource, each with its types, request structs and `Client` methods.
-- `internal/server` — the MCP layer. `tools_*.go` register tools; `resolver.go` holds the name→ID caches; `full_card.go` does the dereferencing fan-out.
-- `internal/cache` — generic TTL cache.
-- `cmd/favro-mcp` — stdio entry point and the `auth` subcommands.
+`internal/favro` is the REST client (one file per resource); `internal/server`
+is the MCP layer. The two non-obvious pieces:
+
+- `internal/server/resolver.go` — the name→ID caches every `favro_resolve_*` tool and most write tools go through. Write tools must invalidate the right cache on success.
+- `internal/server/full_card.go` — the parallel dereferencing fan-out behind `favro_get_card_full`.
 
 ## Working with the Favro API
 
-Favro's [REST docs](https://favro.com/developer/) and the live API disagree in
-places, and **Favro returns HTTP 200 for a request body it ignores** — a wrong
-field name looks exactly like success. This has bitten this repo repeatedly.
+**Favro returns HTTP 200 for a request body it ignores.** A wrong field name
+looks exactly like success. Its [REST docs](https://favro.com/developer/) also
+disagree with the live API in places. Both have bitten this repo repeatedly.
 
 - Reads: be tolerant. Accept the documented shape *and* any shape previously observed, preferring the documented one. `Card.CustomFields()`, `Tasklist.Title()` and `Activity.CommonID()` exist for exactly this.
 - Writes: send the documented shape, and say in the tool description if it's unverified.
