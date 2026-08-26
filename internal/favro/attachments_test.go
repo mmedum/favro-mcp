@@ -106,21 +106,22 @@ func TestUploadAttachment_DryRun_ReturnsRecord(t *testing.T) {
 	require.Equal(t, "application/octet-stream", rec.Headers.Get("Content-Type"))
 }
 
-// TestRemoveAttachment_HappyPath pins that RemoveAttachment is a
-// thin wrapper over UpdateCard with removeAttachments populated, and
-// that the list carries attachment URLs — Favro documents
-// removeAttachments as "the list of attachments URLs", and a Phase
-// 7.1 live test using display names / S3 object names silently
-// removed nothing.
-func TestRemoveAttachment_HappyPath(t *testing.T) {
+// Favro hands back a presigned fileURL, re-minted on every read with
+// a fresh X-Amz-Date and X-Amz-Signature (verified live). Sending it
+// whole can never match what Favro stored, so RemoveAttachment must
+// strip the query down to the stable object URL.
+func TestRemoveAttachment_StripsPresignedQuery(t *testing.T) {
 	t.Parallel()
 
-	const fileURL = "https://s3-eu-west-1.amazonaws.com/organicrelations/2155aa13.txt"
+	const objectURL = "https://favro.s3.eu-central-1.amazonaws.com/00000000-0000-0000-0000-000000000000.png"
+	const presigned = objectURL + "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260826T044924Z" +
+		"&X-Amz-Expires=86400&X-Amz-Signature=deadbeef&X-Amz-SignedHeaders=host"
 
 	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
 		require.Equal(t, http.MethodPut, rec.Method)
 		require.Equal(t, "/cards/ci-1", rec.Path)
-		require.JSONEq(t, `{"removeAttachments":["`+fileURL+`"]}`, rec.Body)
+		require.JSONEq(t, `{"removeAttachments":["`+objectURL+`"]}`, rec.Body)
+		require.NotContains(t, rec.Body, "X-Amz-Signature")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"cardId":"ci-1"}`))
 	}}
@@ -128,8 +129,46 @@ func TestRemoveAttachment_HappyPath(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.RemoveAttachment(context.Background(), "ci-1", fileURL)
+	_, err := c.RemoveAttachment(context.Background(), "ci-1", presigned)
 	require.NoError(t, err)
+}
+
+// An already-stripped URL must survive untouched, and the caller's
+// slice must not be mutated in place.
+func TestRemoveAttachment_AlreadyCanonical(t *testing.T) {
+	t.Parallel()
+
+	const objectURL = "https://files.invalid/abc.txt"
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		require.JSONEq(t, `{"removeAttachments":["`+objectURL+`"]}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	urls := []string{objectURL}
+	_, err := c.RemoveAttachment(context.Background(), "ci-1", urls...)
+	require.NoError(t, err)
+	require.Equal(t, []string{objectURL}, urls, "caller's slice must not be rewritten")
+}
+
+func TestCanonicalAttachmentURL(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, in, want string }{
+		{"strips query", "https://h/o.png?X-Amz-Signature=abc", "https://h/o.png"},
+		{"no query is a no-op", "https://h/o.png", "https://h/o.png"},
+		{"bare question mark", "https://h/o.png?", "https://h/o.png"},
+		{"empty", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, CanonicalAttachmentURL(tc.in))
+		})
+	}
 }
 
 func TestRemoveAttachment_MultipleURLs(t *testing.T) {
