@@ -123,9 +123,9 @@ func CanonicalAttachmentURL(fileURL string) string {
 // both times; v1.1.0 passed the presigned URL whole, which cannot
 // match for the reason above.
 //
-// The stripped form is still unverified against a live tenant. Favro
-// returns 200 whether or not anything matched, so confirm by
-// re-reading the card.
+// Verified live 2026-08-26: the stripped form does remove the
+// attachment. Favro still returns 200 whether or not anything matched,
+// so confirm by re-reading the card.
 func (c *Client) RemoveAttachment(ctx context.Context, cardID string, fileURLs ...string) (Card, error) {
 	if cardID == "" {
 		return Card{}, errMissingID

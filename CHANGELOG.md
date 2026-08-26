@@ -22,7 +22,7 @@ Docs, tests, and one attachment fix. No tool inputs changed.
 - `CONTRIBUTING.md` documents the changelog, versioning and release rules, and the Go 1.27 / golangci-lint ≥ v2.13.1 requirement.
 
 ### Fixed
-- Attachment removal now strips the presigned query from the URL before sending. Favro re-mints `fileURL` on every read with a fresh `X-Amz-Signature`, so the value a caller reads back never matches what Favro stored — v1.1.0's "pass the fileURL" fix couldn't work either. Applies to `favro_remove_attachment` and `favro_update_comment`. Still unverified against a live tenant.
+- Attachment removal now strips the presigned query from the URL before sending. Favro re-mints `fileURL` on every read with a fresh `X-Amz-Signature`, so the value a caller reads back never matches what Favro stored — v1.1.0's "pass the fileURL" fix couldn't work either. Applies to `favro_remove_attachment` and `favro_update_comment`.
 
 ## [1.1.0] - 2026-08-26
 
