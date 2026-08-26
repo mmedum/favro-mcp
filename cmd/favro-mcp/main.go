@@ -68,7 +68,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) err
 		}
 	}
 
-	return runServer(args)
+	return runServer(args, stderr)
 }
 
 // configureLogging installs a stderr-bound slog default handler. Level
@@ -109,17 +109,19 @@ func parseLogLevel(s string) (slog.Level, bool) {
 
 // runServer is the default path: resolve credentials, optionally
 // validate them live, build the MCP server, and run it over stdio.
-func runServer(args []string) error {
+// stderr carries usage and flag-parse diagnostics; everything else
+// goes through the slog default handler run() already bound to it.
+func runServer(args []string, stderr io.Writer) error {
 	fs := flag.NewFlagSet("favro-mcp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // we print our own usage to stderr.
 	dryRun := fs.Bool("dry-run", false, "force every mutating tool into dry-run mode regardless of input")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			printUsage(os.Stderr)
+			printUsage(stderr)
 			return nil
 		}
-		errf(os.Stderr, "favro-mcp: %v\n\n", err)
-		printUsage(os.Stderr)
+		errf(stderr, "favro-mcp: %v\n\n", err)
+		printUsage(stderr)
 		return err
 	}
 
