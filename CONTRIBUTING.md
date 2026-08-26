@@ -5,6 +5,7 @@
 ```
 git clone https://github.com/mmedum/favro-mcp.git
 cd favro-mcp
+make build       # build ./bin/favro-mcp
 make ci          # lint + test + vet + vulncheck
 make test        # unit tests with race detector
 make lint        # golangci-lint + gofumpt diff + goimports
@@ -14,17 +15,41 @@ make build       # build ./bin/favro-mcp
 Go 1.27 required — `go.mod` is the single source of truth. `golangci-lint` must be
 v2.13.1 or newer; older builds refuse a config targeting Go 1.27.
 
+## Dogfooding the local build
+
+To point Claude Code at your own build instead of the released plugin, create
+an untracked `.mcp.json` at the repo root:
+
+```json
+{
+  "mcpServers": {
+    "favro": {
+      "command": "${CLAUDE_PROJECT_DIR:-.}/bin/favro-mcp"
+    }
+  }
+}
+```
+
+It is gitignored on purpose: `bin/` is a build output, so a committed config
+would reference a command that doesn't exist in a fresh clone. The config
+shipped to users is `plugin-template/.mcp.json`, which resolves via
+`${CLAUDE_PLUGIN_ROOT}`. Run `make build` first, then reconnect the server and
+check with `favro_ping` that the version matches your working tree.
+
 ## Workflow
 
-- Work on feature branches; `main` is protected.
-- Open a PR — direct pushes to `main` are blocked.
-- CI must be green before merge: `lint`, `test-unit` on ubuntu/macos/windows, `test-mcp`, `vulncheck`, `build`.
-- Squash or rebase merges only (linear history).
+- Work on feature branches. Never commit to `main` directly.
+- Open a PR. CI must be green before merge: `lint`, `test-unit` on ubuntu/macos/windows, `test-mcp`, `vulncheck`, `build`.
+- Merge commits, so each PR stays identifiable in `git log --merges`.
 - Before pushing: `make fmt && make lint && make test`.
 
-## Branch protection (one-time repo setup)
+Branch protection is **not** currently enabled on `main`, so the above are
+conventions rather than enforced rules. The next section is the setup that
+would enforce them.
 
-On `main`:
+## Branch protection (not yet enabled)
+
+`main` is unprotected today. To enforce the workflow above, configure on `main`:
 
 - Require a pull request before merging.
 - Required approvals: 0 if solo maintainer; 1 once a co-maintainer exists.
@@ -32,7 +57,6 @@ On `main`:
   `lint`, `test-unit (ubuntu-latest)`, `test-unit (macos-latest)`, `test-unit (windows-latest)`,
   `test-mcp`, `vulncheck`, `build`.
 - Require conversation resolution before merging.
-- Require linear history.
 - Lock force-push.
 - Allow auto-merge for PRs whose checks pass (Dependabot patch + minor only).
 
