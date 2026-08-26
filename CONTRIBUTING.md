@@ -11,7 +11,8 @@ make lint        # golangci-lint + gofumpt diff + goimports
 make build       # build ./bin/favro-mcp
 ```
 
-Go 1.26+ required. The `toolchain` directive auto-bumps you to the matching toolchain.
+Go 1.27 required — `go.mod` is the single source of truth. `golangci-lint` must be
+v2.13.1 or newer; older builds refuse a config targeting Go 1.27.
 
 ## Workflow
 
@@ -46,16 +47,33 @@ On `main`:
 
 Every mutating tool accepts `dry_run: bool`. When adding a new write tool, also add a test that uses an HTTP transport which fails the test if `RoundTrip` is ever called during dry-run. The PR template prompts for confirmation that this exists.
 
+## Changelog
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+- Categories, in this order: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
+- Newest version first, ISO dates (`YYYY-MM-DD`), link references at the bottom.
+- **One line per change.** Say what changed, and why only when it isn't obvious from the change itself. Keep the specifics — tool names, wire keys, CVE ids, versions — but leave the investigation story in the commit body or the PR.
+- New entries go under `[Unreleased]`. They only move under a version heading in a release PR.
+
+## Versioning
+
+[SemVer](https://semver.org). The MCP tool schema is the public interface:
+renaming or removing a tool input is a breaking change. If one ships in a minor
+release, the changelog entry has to say why.
+
 ## Releasing
 
-Releases are tag-driven. After a phase exits its gate:
+Releases are tag-driven.
 
-1. Open a release PR moving "Unreleased" entries in `CHANGELOG.md` under a new heading with the date.
-2. Merge the release PR.
+1. Open a release PR moving `[Unreleased]` entries under a new version heading with the date, and add its link reference.
+2. Merge it.
 3. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
-4. The `release.yml` workflow rebuilds, cross-compiles, and publishes the GitHub Release with binaries + `.plugin` attached.
+4. `release.yml` cross-compiles and publishes the GitHub Release with binaries + `.plugin` attached.
 
-Pre-release tags (`v1.0.0-rc.1`) are auto-marked as pre-release by goreleaser.
+The tag must point at a commit whose `CHANGELOG.md` already names the version —
+goreleaser bundles that file into every archive. Pre-release tags
+(`v1.0.0-rc.1`) are auto-marked as pre-release.
 
 ## License
 
