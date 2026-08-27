@@ -50,16 +50,13 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
 
+# github-native hands changelog generation to GitHub's release-notes API,
+# which ignores goreleaser's `sort` and `filters` — they were configured here
+# for a while and silently did nothing. The human-readable summary comes from
+# CHANGELOG.md via --release-header in .github/workflows/release.yml; this
+# generated PR list sits underneath it for provenance.
 changelog:
   use: github-native
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "Merge pull request"
-      - "Merge branch"
 
 release:
   prerelease: auto
