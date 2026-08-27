@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `cmd/favro-mcp` coverage 22% → 79%: log-level parsing, flag parsing, credential-resolution failures, every `auth` subcommand against a mocked keyring, and the binary's exit code on a failed start.
+
 ### Changed
 - `.mcp.json` is gitignored, and CONTRIBUTING documents the snippet instead. It points at `bin/favro-mcp`, a build output absent from a fresh clone, so committing it would ship a server config that fails to start. Consumers get `plugin-template/.mcp.json` via the `.plugin` bundle.
 - `CONTRIBUTING.md`: the workflow section claimed `main` was protected and that only squash/rebase merges were allowed. Neither is true — `main` has no protection rules and history is merge commits. Corrected, and the branch-protection section is now labelled as setup that hasn't been applied.
