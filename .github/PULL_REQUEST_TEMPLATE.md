@@ -17,5 +17,6 @@
 - [ ] `make ci` passes locally (lint + vet + test + vulncheck).
 - [ ] New/changed mutating tools accept `dry_run: bool` and have a test that fails if HTTP `RoundTrip` happens during dry-run.
 - [ ] No secrets, tokens, or `Authorization` headers in code, tests, fixtures, or logs.
-- [ ] Docs updated (`README.md`, tool inventory in `CHANGELOG.md` under `[Unreleased]`).
+- [ ] New or changed tools have a row in `docs/TOOLS.md`, and one in `smokeToolInputs` (`internal/server/smoke_test.go`).
+- [ ] `CHANGELOG.md` has an entry under `[Unreleased]`; `README.md` updated if the overview changed.
 - [ ] If this is a breaking tool I/O change, the `[Unreleased]` section says so.

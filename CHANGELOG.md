@@ -17,6 +17,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - `.mcp.json` is gitignored, and CONTRIBUTING documents the snippet instead. It points at `bin/favro-mcp`, a build output absent from a fresh clone, so committing it would ship a server config that fails to start. Consumers get `plugin-template/.mcp.json` via the `.plugin` bundle.
 
 ### Fixed
+- The PR checklist told contributors to update a "tool inventory in `CHANGELOG.md`". No such inventory exists: v1.1.1 moved the tool table to `docs/TOOLS.md`, so anyone following the checklist added a tool without documenting it. Now points at `docs/TOOLS.md` and `smokeToolInputs`.
 - `README.md` said building from source needs Go 1.26+ and credited a `toolchain` directive in `go.mod` for bumping collaborators. `go.mod` declares `go 1.27.0` and has no `toolchain` directive, so both halves were wrong and contradicted the Go 1.27 requirement stated higher up the same file.
 
 ## [1.1.1] - 2026-08-26
