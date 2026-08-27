@@ -92,7 +92,11 @@ func registerSetCardCustomField(srv *mcp.Server, r *Resolver) {
 			"favro_resolve_tag; select / status item ids via favro_get_custom_field. " +
 			"Progress and Sequential ID are calculated by Favro and reject writes. " +
 			"Successful live writes invalidate the search-cards cache. Pass " +
-			"`dry_run: true` to preview.",
+			"`dry_run: true` to preview. The per-type body shapes come from Favro's REST " +
+			"docs and have not all been confirmed against a live tenant. Favro answers 200 " +
+			"for a body it ignored, and a field not enabled on the widget is accepted and " +
+			"discarded, so read the card back with favro_get_card_full to confirm the value " +
+			"actually changed.",
 		Annotations: mutating("Set Favro card custom field", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in setCardCustomFieldInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		field, err := lookupCustomFieldType(ctx, r, in.CustomFieldID, in.ForceRefresh)
