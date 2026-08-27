@@ -38,27 +38,28 @@ check with `favro_ping` that the version matches your working tree.
 
 ## Workflow
 
-- Work on feature branches. Never commit to `main` directly.
-- Open a PR. CI must be green before merge: `lint`, `test-unit` on ubuntu/macos/windows, `test-mcp`, `vulncheck`, `build`.
+- Work on feature branches. `main` rejects direct pushes.
+- Open a PR. All eight checks must be green before merge.
 - Merge commits, so each PR stays identifiable in `git log --merges`.
 - Before pushing: `make fmt && make lint && make test`.
 
-Branch protection is **not** currently enabled on `main`, so the above are
-conventions rather than enforced rules. The next section is the setup that
-would enforce them.
+These are enforced, not conventions — see below.
 
-## Branch protection (not yet enabled)
+## Branch protection
 
-`main` is unprotected today. To enforce the workflow above, configure on `main`:
+`main` is protected by a repository ruleset, active with no bypass actors: the
+rules apply to everyone, maintainers included.
 
-- Require a pull request before merging.
-- Required approvals: 0 if solo maintainer; 1 once a co-maintainer exists.
-- Required status checks (must be green and up-to-date with `main`):
-  `lint`, `test-unit (ubuntu-latest)`, `test-unit (macos-latest)`, `test-unit (windows-latest)`,
-  `test-mcp`, `vulncheck`, `build`.
+- Require a pull request before merging. Approvals: 0 while solo; raise it once a co-maintainer exists.
 - Require conversation resolution before merging.
-- Lock force-push.
-- Allow auto-merge for PRs whose checks pass (Dependabot patch + minor only).
+- Required status checks, which must be green *and* up to date with `main`:
+  `lint`, `build`, `coverage`, `test-mcp`, `vulncheck`,
+  `test-unit (ubuntu-latest)`, `test-unit (macos-latest)`, `test-unit (windows-latest)`.
+- Block force-pushes and branch deletion.
+
+Check names are matched literally, so renaming a CI job silently drops its
+requirement — and adding one leaves it unrequired until the ruleset is updated
+too.
 
 ## Tests
 
