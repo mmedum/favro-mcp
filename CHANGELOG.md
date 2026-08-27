@@ -8,20 +8,22 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-27
+
+Corrects the `favro_set_card_custom_field` description, which read as though its
+writes were verified. No tool inputs changed.
+
 ### Added
 - `cmd/favro-mcp` coverage 22% → 79%: log-level parsing, flag parsing, credential-resolution failures, every `auth` subcommand against a mocked keyring, and the binary's exit code on a failed start.
 
 ### Changed
-- Branch protection is enforced on `main`: a ruleset, active with no bypass actors, requiring a PR, conversation resolution, and all eight CI checks green and up to date. Direct pushes are rejected.
-- `CONTRIBUTING.md` documents the workflow that is actually enforced, including the `coverage` check it had always omitted. It previously claimed a protection that did not exist.
-- `.mcp.json` is gitignored, and CONTRIBUTING documents the snippet instead. It points at `bin/favro-mcp`, a build output absent from a fresh clone, so committing it would ship a server config that fails to start. Consumers get `plugin-template/.mcp.json` via the `.plugin` bundle.
 - Release notes now lead with the version's `CHANGELOG.md` section, passed to goreleaser as `--release-header`; GitHub's generated PR list stays underneath. Published releases had been the PR list alone, so consumers saw internal phase numbering and never the changelog. `scripts/changelog-section.sh` extracts the section and fails the release if the version has none.
+- Repo process, no effect on the shipped server: branch protection enforced on `main` (PR required, eight status checks, no bypass actors); `CONTRIBUTING.md` and the PR checklist corrected to match, the checklist now pointing at `docs/TOOLS.md` rather than a tool inventory that does not exist; `.mcp.json` gitignored, with the snippet documented in CONTRIBUTING instead.
 
 ### Fixed
 - `favro_set_card_custom_field` now says in its description that the per-type body shapes are unconfirmed against a live tenant, that Favro answers 200 for a body it ignored, and that a field not enabled on the widget is accepted and discarded. README carried this caveat; the tool description an LLM actually reads did not.
-- `.goreleaser.yaml` carried a `sort` and five `filters.exclude` patterns that `use: github-native` ignores, so the `chore:` commits it claimed to drop appeared in every published release anyway. Removed, with a comment recording why.
-- The PR checklist told contributors to update a "tool inventory in `CHANGELOG.md`". No such inventory exists: v1.1.1 moved the tool table to `docs/TOOLS.md`, so anyone following the checklist added a tool without documenting it. Now points at `docs/TOOLS.md` and `smokeToolInputs`.
 - `README.md` said building from source needs Go 1.26+ and credited a `toolchain` directive in `go.mod` for bumping collaborators. `go.mod` declares `go 1.27.0` and has no `toolchain` directive, so both halves were wrong and contradicted the Go 1.27 requirement stated higher up the same file.
+- `.goreleaser.yaml` carried a `sort` and five `filters.exclude` patterns that `use: github-native` ignores, so the `chore:` commits it claimed to drop appeared in every published release anyway. Removed, with a comment recording why.
 
 ## [1.1.1] - 2026-08-26
 
@@ -124,7 +126,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/mmedum/favro-mcp/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/mmedum/favro-mcp/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/mmedum/favro-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mmedum/favro-mcp/releases/tag/v1.0.0
