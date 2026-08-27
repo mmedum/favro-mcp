@@ -48,7 +48,9 @@ cd favro-mcp
 make build       # → bin/favro-mcp
 ```
 
-Requires Go 1.26+. The `toolchain` directive in `go.mod` auto-bumps collaborators to the matching minor.
+Requires Go 1.27, the version `go.mod` declares. Under the default
+`GOTOOLCHAIN=auto` an older toolchain downloads it on demand; under
+`GOTOOLCHAIN=local` the build fails instead of downgrading.
 
 ## Authentication
 
