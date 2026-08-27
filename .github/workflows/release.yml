@@ -45,8 +45,13 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           install-only: true
+      - name: release notes header
+        # Written outside the work tree on purpose: goreleaser refuses to
+        # release from a dirty git state, and a file in the repo root would
+        # make it one.
+        run: scripts/changelog-section.sh "${{ github.ref_name }}" > "${{ runner.temp }}/release-header.md"
       - name: goreleaser release
-        run: goreleaser release --clean
+        run: goreleaser release --clean --release-header="${{ runner.temp }}/release-header.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: package .plugin
