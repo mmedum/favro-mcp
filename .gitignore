@@ -33,7 +33,6 @@ Thumbs.db
 
 # Local agent / tooling state
 .claude/
-.entire/
 
 # Go module cache (handled by setup-go in CI)
 go.work
