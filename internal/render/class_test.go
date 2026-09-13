@@ -5,22 +5,29 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/mmedum/favro-mcp/internal/favro"
 )
 
-// selfClassed is the shape the server package's sentinels have: an
-// error that names its own class.
+// selfClassed is the shape every error in this repository has: one that
+// names its own class.
 type selfClassed struct{ class Class }
 
 func (e selfClassed) Error() string     { return "sentinel" }
 func (e selfClassed) ErrorClass() Class { return e.class }
+
+// retryAfter additionally reports a wait, the way the client's rate
+// limit error does.
+type retryAfter struct {
+	class Class
+	secs  int
+}
+
+func (e retryAfter) Error() string          { return "sentinel" }
+func (e retryAfter) ErrorClass() Class      { return e.class }
+func (e retryAfter) RetryAfterSeconds() int { return e.secs }
 
 func TestClassify(t *testing.T) {
 	t.Parallel()
@@ -31,21 +38,8 @@ func TestClassify(t *testing.T) {
 		want Class
 	}{
 		{"nil", nil, ClassInvalid},
-		{"401", &favro.AuthError{Status: 401}, ClassAuth},
-		{"403", &favro.ForbiddenError{Status: 403, Path: "/cards/x"}, ClassForbidden},
-		{"429", &favro.RateLimitError{Status: 429, RetryAfter: 30 * time.Second}, ClassRateLimited},
-		{"404", &favro.NotFoundError{Resource: "card"}, ClassNotFound},
-		{"400", &favro.ValidationError{Status: 400}, ClassInvalid},
-		{"5xx after retries", &favro.TransientError{Status: 503, Attempts: 4}, ClassUnavailable},
-		// *APIError carries only what the client did not turn into a
-		// typed error first: 3xx and the leftover 4xx. 404, 429 and
-		// 5xx never reach it, which is why classifyStatus has no
-		// branch for them.
-		{"409 via APIError", &favro.APIError{Status: http.StatusConflict}, ClassConflict},
-		{"405 via APIError", &favro.APIError{Status: http.StatusMethodNotAllowed}, ClassUnsupported},
-		{"410 via APIError", &favro.APIError{Status: http.StatusGone}, ClassInvalid},
-		{"418 via APIError", &favro.APIError{Status: http.StatusTeapot}, ClassInvalid},
 		{"self-classed wins", selfClassed{ClassAmbiguous}, ClassAmbiguous},
+		{"self-classed, any member", selfClassed{ClassUnsupported}, ClassUnsupported},
 		{"context cancelled", context.Canceled, ClassUnavailable},
 		{"deadline", context.DeadlineExceeded, ClassUnavailable},
 		{"unclassified falls back", errors.New("something the server layer raised"), ClassInvalid},
@@ -60,16 +54,16 @@ func TestClassify(t *testing.T) {
 }
 
 // TestClassifyWalksTheChain is the property everything else depends
-// on: the sentinels are wrapped with fmt.Errorf("%w: …") at the point
-// they are raised, so a classifier that only looked at the outermost
-// error would classify every one of them as the fallback.
+// on: an error is wrapped with fmt.Errorf("%w: …") at the point it is
+// raised, so a classifier that only looked at the outermost error would
+// classify every one of them as the fallback.
 func TestClassifyWalksTheChain(t *testing.T) {
 	t.Parallel()
 
 	require.Equal(t, ClassAmbiguous,
 		Classify(fmt.Errorf("%w (3 matches for %q)", selfClassed{ClassAmbiguous}, "a name")))
 	require.Equal(t, ClassNotFound,
-		Classify(fmt.Errorf("looking up: %w", &favro.NotFoundError{Resource: "tag"})))
+		Classify(fmt.Errorf("looking up: %w", selfClassed{ClassNotFound})))
 }
 
 // TestClassifyNetworkError covers the layer below the typed errors: a
@@ -86,25 +80,24 @@ func TestError(t *testing.T) {
 	t.Parallel()
 
 	require.NoError(t, Error(nil))
-
-	got := Error(&favro.NotFoundError{Resource: "card", ID: "x"})
-	require.Equal(t, `[not_found] Favro card "x" not found`, got.Error())
+	require.Equal(t, "[not_found] sentinel", Error(selfClassed{ClassNotFound}).Error())
 
 	// The one class with a machine-readable operand. It goes in the
-	// text because a failed call has no structuredContent to put it in.
-	got = Error(&favro.RateLimitError{Status: 429, RetryAfter: 90 * time.Second})
+	// text because a failed call has no structuredContent to put it in,
+	// and it is asked of the error through an interface so that this
+	// package stays a leaf.
+	got := Error(retryAfter{ClassRateLimited, 90})
 	require.Contains(t, got.Error(), "[rate_limited]")
 	require.Contains(t, got.Error(), "retry_after_seconds=90")
 
-	// A rate limit with no Retry-After still classifies, and says
-	// nothing it does not know.
-	got = Error(&favro.RateLimitError{Status: 429})
+	// An error that reports no wait says nothing it does not know.
+	got = Error(retryAfter{ClassRateLimited, 0})
 	require.Contains(t, got.Error(), "[rate_limited]")
 	require.NotContains(t, got.Error(), "retry_after_seconds")
 
-	// Sub-second waits round up rather than to "wait 0 seconds".
-	got = Error(&favro.RateLimitError{Status: 429, RetryAfter: 200 * time.Millisecond})
-	require.Contains(t, got.Error(), "retry_after_seconds=1")
+	// The operand is only meaningful on that one class.
+	got = Error(retryAfter{ClassUnavailable, 30})
+	require.Equal(t, "[unavailable] sentinel", got.Error())
 }
 
 // TestClassValuesAreWireSafe pins the spelling: a class is part of
@@ -118,58 +111,5 @@ func TestClassValuesAreWireSafe(t *testing.T) {
 		require.Equal(t, strings.ToLower(s), s, "class %q must be lowercase", c)
 		require.NotContains(t, s, " ", "class %q must not contain a space", c)
 		require.NotContains(t, s, "]", "class %q would break the [class] prefix", c)
-	}
-}
-
-// TestEveryFavroErrorTypeIsClassified is the other half of the
-// vocabulary's coverage, and the one the sentinels do not give.
-//
-// A sentinel in internal/server names its own class, so a new one that
-// forgot to would fail TestEverySentinelIsClassified. The typed errors
-// in internal/favro do not: Classify reads them from the outside, and
-// an eighth type added there would fall past classifyFavro, past
-// classifyTransport, and land on the ClassInvalid fallback with
-// nothing failing and the `classes` gate still reporting the
-// vocabulary consistent.
-//
-// So the list of types is read from the source and the expectations
-// are held against it. The deeper fix is to let those types name their
-// own class the way the sentinels do, which needs Class to live in a
-// package internal/favro can import — a layout question, and A3 is
-// where layout is decided.
-func TestEveryFavroErrorTypeIsClassified(t *testing.T) {
-	t.Parallel()
-
-	expected := map[string]Class{
-		"AuthError":       ClassAuth,
-		"ForbiddenError":  ClassForbidden,
-		"RateLimitError":  ClassRateLimited,
-		"NotFoundError":   ClassNotFound,
-		"ValidationError": ClassInvalid,
-		"TransientError":  ClassUnavailable,
-		"APIError":        ClassInvalid, // by status; see classifyStatus
-	}
-	samples := map[string]error{
-		"AuthError":       &favro.AuthError{Status: 401},
-		"ForbiddenError":  &favro.ForbiddenError{Status: 403},
-		"RateLimitError":  &favro.RateLimitError{Status: 429},
-		"NotFoundError":   &favro.NotFoundError{Resource: "card"},
-		"ValidationError": &favro.ValidationError{Status: 400},
-		"TransientError":  &favro.TransientError{Status: 503, Attempts: 4},
-		"APIError":        &favro.APIError{Status: 410},
-	}
-
-	declared := declaredErrorTypes(t)
-	require.GreaterOrEqual(t, len(declared), 7,
-		"read %d error types out of internal/favro/errors.go", len(declared))
-
-	for _, name := range declared {
-		want, ok := expected[name]
-		require.True(t, ok,
-			"internal/favro declares %s and Classify has no case for it — it would reach the ClassInvalid fallback silently", name)
-		require.Equal(t, want, Classify(samples[name]))
-	}
-	for name := range expected {
-		require.Contains(t, declared, name, "%s is expected here but no longer declared", name)
 	}
 }

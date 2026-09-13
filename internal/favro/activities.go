@@ -1,9 +1,6 @@
 package favro
 
-import (
-	"context"
-	"net/url"
-)
+import "net/url"
 
 // Activity is one entry in a card's audit trail. Which fields are
 // populated depends on Type: a column move fills ColumnID /
@@ -74,14 +71,4 @@ func (f ListActivitiesFilter) Values() url.Values {
 		q.Set("until", f.Until)
 	}
 	return q
-}
-
-// ListCardActivities returns one page of a card's activity history,
-// newest first. cardID is the per-widget card id, not the common id.
-func (c *Client) ListCardActivities(ctx context.Context, page int, requestID, cardID string, filter ListActivitiesFilter) (PageEnvelope[Activity], error) {
-	if cardID == "" {
-		return PageEnvelope[Activity]{}, errMissingID
-	}
-	path := "/cards/" + url.PathEscape(cardID) + "/activities"
-	return listPageQ[Activity](ctx, c, path, filter.Values(), page, requestID)
 }

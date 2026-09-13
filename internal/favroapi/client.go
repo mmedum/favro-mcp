@@ -1,0 +1,734 @@
+// Package favroapi is the Favro REST client: one method per endpoint,
+// with the retry policy, rate-limit observation, pagination, the
+// dry-run gate and the typed errors.
+//
+// API-faithful — a method here does what the endpoint does and no more.
+// Anything that composes several calls, resolves a name, or decides a
+// policy belongs above it, and nothing here imports the MCP SDK.
+//
+// The wire types it sends and receives are internal/favro; the error
+// vocabulary its errors name is internal/render. Those are the only two
+// packages in this module it depends on, besides internal/auth for the
+// credentials it applies to every request.
+package favroapi
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/mmedum/favro-mcp/internal/auth"
+)
+
+const (
+	// DefaultBaseURL is the production Favro REST API base URL.
+	DefaultBaseURL = "https://favro.com/api/v1"
+	// defaultTimeout caps any single request (including retries
+	// re-using the parent context). 30s is generous for a write
+	// operation against a live API.
+	defaultTimeout = 30 * time.Second
+	// rateLimitRetryCap is the upper bound on the Retry-After-driven
+	// sleep before we give up and surface RateLimitError. Per plan §7.
+	rateLimitRetryCap = 30 * time.Second
+	// transientMaxAttempts is the total attempt count for 5xx responses
+	// (1 initial + 2 retries). Backoff schedule is below.
+	transientMaxAttempts = 3
+	// maxBodyBytes caps the per-error body excerpt we keep in memory
+	// for ValidationError / APIError. Favro responses are small.
+	maxBodyBytes = 4 * 1024
+	// redactedValue is the sentinel substituted for sensitive header
+	// values in debug logs and dry-run records.
+	redactedValue = "[REDACTED]"
+)
+
+// transientBackoffSchedule[i] is the sleep before attempt i+1.
+// Indices are 0-based; the schedule has transientMaxAttempts-1 entries.
+var transientBackoffSchedule = []time.Duration{
+	250 * time.Millisecond,
+	1 * time.Second,
+	4 * time.Second,
+}
+
+// Client is an authenticated, retrying Favro REST client with
+// rate-limit observation and a per-request dry-run gate. Higher-level
+// resource methods compose Do for their wire-level concerns.
+type Client struct {
+	// BaseURL overrides the default Favro base URL. Tests point it
+	// at httptest.Server; production leaves it empty.
+	BaseURL string
+	// HTTPClient overrides the default *http.Client. Empty means a
+	// fresh client with defaultTimeout.
+	HTTPClient *http.Client
+	// Token is applied to every request via auth.Token.Apply.
+	Token auth.Token
+	// UserAgent is sent on every request. Empty means a sensible default.
+	UserAgent string
+	// ForceDryRun, when true, short-circuits every mutating request
+	// (POST / PUT / DELETE / PATCH) and returns ErrDryRun together
+	// with a *DryRunRecord describing the call that would have been
+	// made. Set by the binary's --dry-run flag.
+	ForceDryRun bool
+
+	rl *rateLimitTracker
+}
+
+// NewClient constructs a Client with sensible defaults.
+func NewClient(tok auth.Token) *Client {
+	return &Client{
+		BaseURL:    DefaultBaseURL,
+		HTTPClient: &http.Client{Timeout: defaultTimeout},
+		Token:      tok,
+		UserAgent:  "favro-mcp/client",
+		rl:         &rateLimitTracker{},
+	}
+}
+
+// LatestRateLimit exposes the most-recent RateLimitSnapshot. Returns
+// (zero, false) if no Favro request has been made yet.
+func (c *Client) LatestRateLimit() (RateLimitSnapshot, bool) {
+	if c.rl == nil {
+		return RateLimitSnapshot{}, false
+	}
+	return c.rl.latest()
+}
+
+// dryRunCtxKey is the context key for per-request dry-run.
+type dryRunCtxKey struct{}
+
+// WithDryRun returns a context that opts in to dry-run for any
+// mutating request executed under it. The Client's ForceDryRun field
+// also opts in process-wide; either is sufficient.
+func WithDryRun(ctx context.Context) context.Context {
+	return context.WithValue(ctx, dryRunCtxKey{}, true)
+}
+
+// IsDryRun reports whether ctx is in dry-run mode.
+func IsDryRun(ctx context.Context) bool {
+	v, _ := ctx.Value(dryRunCtxKey{}).(bool)
+	return v
+}
+
+// ErrDryRun is returned by Do alongside a *DryRunRecord when the call
+// was short-circuited because dry-run is in effect. Callers detect it
+// with errors.Is.
+var ErrDryRun = errors.New("favro: dry-run — request not sent")
+
+// DryRunRecord describes a request that would have been sent in
+// non-dry-run mode. Returned via the (*Response, error) pair: response
+// is nil and the error wraps ErrDryRun with a *DryRunRecord
+// accessible via errors.As.
+type DryRunRecord struct {
+	Method  string
+	URL     string
+	Headers http.Header // Authorization is redacted before storage.
+	Body    []byte      // raw request body if any.
+}
+
+func (r *DryRunRecord) Error() string {
+	return fmt.Sprintf("favro: dry-run %s %s — request not sent", r.Method, r.URL)
+}
+
+func (r *DryRunRecord) Unwrap() error { return ErrDryRun }
+
+// RequestOption customizes a single Do call. Composed via
+// WithHeader / WithHeaders to inject extra headers (the most common
+// case is X-Favro-Backend-Identifier on paginated requests).
+type RequestOption func(*requestConfig)
+
+type requestConfig struct {
+	headers http.Header
+}
+
+// WithHeader adds a single request header. Repeating the same name
+// appends to the existing list.
+func WithHeader(name, value string) RequestOption {
+	return func(cfg *requestConfig) {
+		if cfg.headers == nil {
+			cfg.headers = http.Header{}
+		}
+		cfg.headers.Add(name, value)
+	}
+}
+
+// GetJSON sends an authenticated GET to path (with optional query)
+// and decodes the response body into out. Wraps Do's retry/rate-limit
+// machinery for the common "fetch and unmarshal" pattern used by
+// every read-only resource method. RequestOptions (e.g. WithHeader)
+// flow through to Do — the typical user is paginated reads injecting
+// X-Favro-Backend-Identifier on subsequent pages.
+//
+// Errors:
+//   - Same typed kinds as Do (AuthError / ForbiddenError /
+//     NotFoundError / RateLimitError / TransientError / APIError).
+//   - A wrapped decode error if the response isn't valid JSON or
+//     contains trailing data (the latter would silently mask a
+//     malformed server response).
+func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, out any, opts ...RequestOption) error {
+	return c.doJSON(ctx, http.MethodGet, path, query, nil, out, opts...)
+}
+
+// PostJSON sends an authenticated POST with a JSON body and decodes
+// the response into out. out may be nil if the caller doesn't need
+// the response payload. Dry-run propagates: when in effect the call
+// returns *DryRunRecord wrapped in ErrDryRun, and out is left
+// untouched. Same error kinds as Do.
+func (c *Client) PostJSON(ctx context.Context, path string, body, out any, opts ...RequestOption) error {
+	return c.doJSON(ctx, http.MethodPost, path, nil, body, out, opts...)
+}
+
+// PutJSON sends an authenticated PUT with a JSON body and decodes
+// the response into out (out may be nil). Same dry-run + error
+// semantics as PostJSON.
+func (c *Client) PutJSON(ctx context.Context, path string, body, out any, opts ...RequestOption) error {
+	return c.doJSON(ctx, http.MethodPut, path, nil, body, out, opts...)
+}
+
+// PatchJSON sends an authenticated PATCH with a JSON body and
+// decodes the response into out (out may be nil). Same dry-run +
+// error semantics as PostJSON.
+func (c *Client) PatchJSON(ctx context.Context, path string, body, out any, opts ...RequestOption) error {
+	return c.doJSON(ctx, http.MethodPatch, path, nil, body, out, opts...)
+}
+
+// DeleteJSON sends an authenticated DELETE and decodes the response
+// into out (out may be nil — DELETE responses are commonly empty,
+// in which case pass nil to skip decoding). Same dry-run + error
+// semantics as PostJSON.
+func (c *Client) DeleteJSON(ctx context.Context, path string, out any, opts ...RequestOption) error {
+	return c.doJSON(ctx, http.MethodDelete, path, nil, nil, out, opts...)
+}
+
+// doJSON is the shared body of GetJSON / PostJSON / PutJSON /
+// PatchJSON / DeleteJSON: build + send the request via Do, decode
+// the response into out (skip if out is nil or the body is empty).
+// Errors propagate Do's typed error kinds, including the
+// *DryRunRecord-wrapping-ErrDryRun returned for mutating methods
+// while dry-run is in effect — the caller's encodedBody is
+// preserved on the record for inspection.
+func (c *Client) doJSON(ctx context.Context, method, path string, query url.Values, body, out any, opts ...RequestOption) error {
+	resp, err := c.Do(ctx, method, path, query, body, opts...)
+	if err != nil {
+		return err
+	}
+	defer drainAndClose(resp)
+	if out == nil {
+		return nil
+	}
+	return decodeJSONLenient(resp, out)
+}
+
+// decodeJSONLenient decodes resp.Body into out and tolerates a
+// genuinely empty body (some 204 / DELETE responses) by returning
+// nil. Trailing JSON tokens after the first value surface as a
+// typed error — silently dropping them would mask a malformed
+// server response. Caller is responsible for closing the body.
+//
+// On decode failure the error includes the response status,
+// content-type, and a length-capped body prefix so wire-contract
+// gaps (e.g. Favro returning HTML where JSON was expected) can be
+// diagnosed from the MCP tool error alone. The diagnostic buffer
+// is bounded at bodyPrefixCap bytes via a TeeReader, so the
+// success path stays streaming and memory-bounded.
+func decodeJSONLenient(resp *http.Response, out any) error {
+	prefix := &boundedBuffer{cap: bodyPrefixCap}
+	dec := json.NewDecoder(io.TeeReader(resp.Body, prefix))
+	if err := dec.Decode(out); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return fmt.Errorf("favro: decode response from %s (status=%d, content-type=%q, body-prefix=%q): %w",
+			redactPath(requestPath(resp)), resp.StatusCode, resp.Header.Get("Content-Type"), prefix.escapedString(), err)
+	}
+	if dec.More() {
+		return fmt.Errorf("favro: unexpected trailing data in response from %s", redactPath(requestPath(resp)))
+	}
+	return nil
+}
+
+// requestPath returns the path of the request that produced resp,
+// or "" if it can't be determined.
+func requestPath(resp *http.Response) string {
+	if resp == nil || resp.Request == nil || resp.Request.URL == nil {
+		return ""
+	}
+	return resp.Request.URL.Path
+}
+
+// bodyPrefixCap caps the response-body excerpt embedded in
+// decode-error messages. 256 bytes is enough to identify HTML
+// fallbacks ("<!DOCTYPE", "<p>") and typical error JSONs without
+// bloating the LLM-visible error.
+const bodyPrefixCap = 256
+
+// boundedBuffer accumulates up to cap bytes; further writes are
+// silently dropped. Used as a TeeReader sink so decodeJSONLenient's
+// success path doesn't pay full-body memory just to surface a
+// prefix on the error path.
+type boundedBuffer struct {
+	buf []byte
+	cap int
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	if room := b.cap - len(b.buf); room > 0 {
+		if len(p) < room {
+			b.buf = append(b.buf, p...)
+		} else {
+			b.buf = append(b.buf, p[:room]...)
+		}
+	}
+	return len(p), nil
+}
+
+// escapedString returns the buffered prefix with newlines escaped
+// so multi-line HTML responses don't fragment downstream log lines.
+func (b *boundedBuffer) escapedString() string {
+	return strings.ReplaceAll(string(b.buf), "\n", "\\n")
+}
+
+// Do executes an authenticated request with retry and rate-limit
+// observation. body may be nil; if not nil it is JSON-encoded.
+//
+// The returned *http.Response, when non-nil, has its body still open;
+// callers must close it. On error the response is nil and one of the
+// typed error kinds (AuthError / ForbiddenError / RateLimitError /
+// NotFoundError / ValidationError / TransientError / APIError /
+// *DryRunRecord) is returned.
+//
+// Retry policy (per plan §7):
+//   - 429: single retry honoring Retry-After capped at 30s, then
+//     RateLimitError.
+//   - 5xx: exponential backoff (250ms, 1s, 4s), max 3 attempts total.
+//   - 401 / 403 / 404: never retried.
+func (c *Client) Do(ctx context.Context, method, path string, query url.Values, body any, opts ...RequestOption) (*http.Response, error) {
+	method = strings.ToUpper(method)
+
+	encodedBody, err := encodeBody(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode request body: %w", err)
+	}
+
+	cfg := requestConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	base := c.BaseURL
+	if base == "" {
+		base = DefaultBaseURL
+	}
+	fullURL, err := joinURL(base, path, query)
+	if err != nil {
+		return nil, err
+	}
+
+	if shouldDryRun(c, ctx, method) {
+		return nil, c.buildDryRunRecord(ctx, method, fullURL, encodedBody, cfg.headers)
+	}
+
+	httpClient := c.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: defaultTimeout}
+	}
+
+	resp, err := c.execute(ctx, httpClient, method, fullURL, encodedBody, cfg.headers)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// execute drives the retry loop. The loop is hand-rolled rather than
+// using a middleware pattern because the retry conditions are tightly
+// coupled to typed-error mapping.
+func (c *Client) execute(ctx context.Context, httpClient *http.Client, method, fullURL string, encodedBody []byte, extra http.Header) (*http.Response, error) {
+	for attempt := 1; attempt <= transientMaxAttempts; attempt++ {
+		resp, err := c.attempt(ctx, httpClient, method, fullURL, encodedBody, extra, attempt)
+		if err != nil {
+			return nil, err
+		}
+		// resp == nil + err == nil means "retry; the inner handler
+		// already drained the previous response and slept the backoff".
+		if resp != nil {
+			return resp, nil
+		}
+	}
+	// Loop body always returns; reaching here means handle5xx /
+	// handle429 returned (nil retry-signal) on the final iteration,
+	// which they're documented not to do. A panic catches a future
+	// regression louder than a fabricated TransientError would.
+	panic("favro: execute loop fell through; handler returned retry signal on final attempt")
+}
+
+// attempt sends one request and classifies the result. Returns:
+//   - (resp, nil) on a 2xx response — caller owns the body.
+//   - (nil, err) on a terminal error.
+//   - (nil, nil) when the caller should retry (5xx within budget, or
+//     a 429 with Retry-After ≤ cap on attempt 1).
+func (c *Client) attempt(ctx context.Context, httpClient *http.Client, method, fullURL string, encodedBody []byte, extra http.Header, attempt int) (*http.Response, error) {
+	req, err := c.buildRequest(ctx, method, fullURL, encodedBody, extra)
+	if err != nil {
+		return nil, err
+	}
+	c.logRequest(req, attempt)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("favro %s %s: %w", method, redactPath(fullURL), err)
+	}
+	if c.rl != nil {
+		c.rl.record(parseRateLimitHeaders(resp))
+	}
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return resp, nil
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, c.handle429(ctx, resp, attempt)
+	}
+	if resp.StatusCode >= 500 {
+		return nil, c.handle5xx(ctx, resp, attempt)
+	}
+	return nil, classifyClientError(resp)
+}
+
+// handle429 implements the single-retry-on-429 policy. Returns nil to
+// signal "retry"; otherwise a RateLimitError. The response body is
+// always drained.
+func (c *Client) handle429(ctx context.Context, resp *http.Response, attempt int) error {
+	retryAfterRaw := resp.Header.Get(headerRetryAfter)
+	retryAfter := parseRetryAfter(retryAfterRaw)
+	drainAndClose(resp)
+	// Retry once when the server gave us a Retry-After we can actually
+	// wait out (≤ cap). A header of "0" means "retry immediately";
+	// missing header falls through to the typed error so the caller
+	// decides the policy.
+	if attempt == 1 && retryAfterRaw != "" && retryAfter <= rateLimitRetryCap {
+		return sleepCtx(ctx, retryAfter)
+	}
+	return &RateLimitError{RetryAfter: retryAfter, Status: resp.StatusCode}
+}
+
+// handle5xx implements the exponential-backoff retry policy for 5xx.
+// Returns nil to signal "retry"; otherwise a TransientError.
+func (c *Client) handle5xx(ctx context.Context, resp *http.Response, attempt int) error {
+	drainAndClose(resp)
+	if attempt >= transientMaxAttempts {
+		return &TransientError{Status: resp.StatusCode, Attempts: attempt}
+	}
+	return sleepCtx(ctx, transientBackoffSchedule[attempt-1])
+}
+
+// buildRequest composes a fresh *http.Request for one attempt. The body
+// is wrapped in bytes.NewReader so retries see the full payload.
+// extra headers (e.g. X-Favro-Backend-Identifier on paginated calls,
+// or a Content-Type override for raw-bytes attachment uploads) are
+// applied last; for single-valued headers (Content-Type) extra
+// fully overrides via Set so the JSON default doesn't leak through
+// for binary payloads.
+func (c *Client) buildRequest(ctx context.Context, method, fullURL string, encodedBody []byte, extra http.Header) (*http.Request, error) {
+	var bodyReader io.Reader = http.NoBody
+	if len(encodedBody) > 0 {
+		bodyReader = bytes.NewReader(encodedBody)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	c.Token.Apply(req)
+	req.Header.Set("Accept", "application/json")
+	if len(encodedBody) > 0 && extra.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if ua := c.UserAgent; ua != "" {
+		req.Header.Set("User-Agent", ua)
+	}
+	for k, vs := range extra {
+		// Content-Type is single-valued; Set so the caller's value
+		// wins instead of producing a comma-joined "json, octet"
+		// pair.
+		if http.CanonicalHeaderKey(k) == "Content-Type" {
+			req.Header.Set(k, vs[len(vs)-1])
+			continue
+		}
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
+	}
+	return req, nil
+}
+
+// classifyClientError maps a non-retryable client status to a typed error.
+func classifyClientError(resp *http.Response) error {
+	body := readErrorBody(resp)
+	defer drainAndClose(resp)
+	path := ""
+	if resp.Request != nil && resp.Request.URL != nil {
+		path = resp.Request.URL.Path
+	}
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return &AuthError{Status: resp.StatusCode}
+	case http.StatusForbidden:
+		return &ForbiddenError{Status: resp.StatusCode, Path: path}
+	case http.StatusNotFound:
+		return &NotFoundError{Path: path}
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		return &ValidationError{Status: resp.StatusCode, Body: body}
+	default:
+		return &APIError{Status: resp.StatusCode, Body: body, Path: path}
+	}
+}
+
+// shouldDryRun returns true for mutating methods when the client or the
+// context has dry-run enabled. GETs always go through.
+func shouldDryRun(c *Client, ctx context.Context, method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
+		return c.ForceDryRun || IsDryRun(ctx)
+	default:
+		return false
+	}
+}
+
+// buildDryRunRecord builds a redacted *DryRunRecord for a
+// short-circuited request. fullURL must be the already-validated URL
+// (Do runs joinURL before deciding to dry-run, so we never have to
+// re-derive or risk swallowing an invalid-URL error here).
+//
+// The headers come from buildRequest — the same composition the real
+// request uses — and then through redactHeaders, the same rule the
+// debug line uses. Composing them a second time by hand is what this
+// replaced, and that copy had drifted: it omitted Accept, and it
+// redacted by writing the sentinel into two Set calls, so a
+// caller-supplied header would have been recorded in full.
+func (c *Client) buildDryRunRecord(ctx context.Context, method, fullURL string, body []byte, extra http.Header) *DryRunRecord {
+	hdr := http.Header{}
+	// The request is built and never sent; it exists so that the
+	// header set on the record is the one the wire would have seen.
+	if req, err := c.buildRequest(ctx, method, fullURL, body, extra); err == nil {
+		for k, v := range redactHeaders(req.Header) {
+			hdr.Set(k, v)
+		}
+	}
+
+	return &DryRunRecord{
+		Method:  method,
+		URL:     fullURL,
+		Headers: hdr,
+		Body:    body,
+	}
+}
+
+// joinURL composes the request URL from base + path + query.
+func joinURL(base, path string, query url.Values) (string, error) {
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", fmt.Errorf("invalid base URL: %w", err)
+	}
+	if path == "" {
+		return "", errors.New("favro: empty path")
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/" + strings.TrimLeft(path, "/")
+	if len(query) > 0 {
+		u.RawQuery = query.Encode()
+	}
+	return u.String(), nil
+}
+
+// encodeBody serializes body to JSON, returning nil for nil/empty.
+func encodeBody(body any) ([]byte, error) {
+	if body == nil {
+		return nil, nil
+	}
+	if raw, ok := body.([]byte); ok {
+		return raw, nil
+	}
+	return json.Marshal(body)
+}
+
+// readErrorBody reads up to maxBodyBytes from resp.Body and returns it
+// as a string. Used to enrich ValidationError / APIError messages.
+func readErrorBody(resp *http.Response) string {
+	if resp.Body == nil {
+		return ""
+	}
+	limited := io.LimitReader(resp.Body, maxBodyBytes)
+	b, _ := io.ReadAll(limited)
+	return strings.TrimSpace(string(b))
+}
+
+// drainAndClose discards remaining body bytes and closes the body so
+// the underlying connection can be reused.
+func drainAndClose(resp *http.Response) {
+	if resp == nil || resp.Body == nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+}
+
+// sleepCtx sleeps for d unless ctx fires first. Returns the context
+// error if it does.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// logRequest emits a redacted slog.Debug line for one attempt.
+//
+// Both halves of the URL are stripped of the values that name a
+// resource, because Favro addresses everything by id and puts those ids
+// in both halves: the query carries cardCommonId, widgetCommonId and
+// sequentialId, and the path carries /cards/{cardId} for every
+// get-one endpoint. Logging either whole reconstructs exactly which
+// cards a session touched, which is what standard §4 forbids. What is
+// left — the shape of the path and the names of the filters — is the
+// part a debug line is actually for, and it identifies nobody.
+func (c *Client) logRequest(req *http.Request, attempt int) {
+	if !slog.Default().Enabled(req.Context(), slog.LevelDebug) {
+		return
+	}
+	// gosec G706 flags request-derived data flowing into log output;
+	// the path / query keys / headers all originate from code-controlled
+	// input here (the caller's chosen path and filter names) and
+	// the Authorization header is redacted by redactHeaders.
+	slog.Debug("favro request", //nolint:gosec
+		"method", req.Method,
+		"path", redactPathIDs(req.URL.Path),
+		"query_keys", queryKeys(req.URL.RawQuery),
+		"attempt", attempt,
+		"headers", redactHeaders(req.Header),
+	)
+}
+
+// redactPathIDs replaces the id segments of a Favro path with {id},
+// leaving the endpoint shape: "/cards/{id}/attachments" rather than the
+// card somebody read.
+//
+// A segment is kept only if it reads as part of an endpoint: lowercase
+// alphanumeric, and shorter than the 24 characters every Favro id has.
+// That keeps "cards" and the "v1" in the base URL, and cannot keep an
+// id, because the only variable segments these paths carry are the ids
+// this client itself interpolates and those are 24-hex. Anything the
+// rule does not recognise — uppercase, punctuation, anything long —
+// becomes {id} rather than being printed.
+func redactPathIDs(path string) string {
+	segments := strings.Split(path, "/")
+	for i, seg := range segments {
+		if !isResourceName(seg) {
+			segments[i] = "{id}"
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+// isResourceName reports whether seg is one of Favro's endpoint names
+// rather than an identifier.
+func isResourceName(seg string) bool {
+	if seg == "" {
+		return true // the empty segments around the separators
+	}
+	if len(seg) >= favroIDLength {
+		return false
+	}
+	for _, r := range seg {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// favroIDLength is the length of the ids Favro mints. A path segment
+// this long is an id whatever it is made of.
+const favroIDLength = 24
+
+// queryKeys returns the sorted parameter names in raw, without their
+// values. A malformed query still yields its names: url.ParseQuery
+// reports an error and returns what it did parse, and a debug line is
+// not the place to care.
+func queryKeys(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	values, _ := url.ParseQuery(raw) //nolint:errcheck // partial parse is the useful answer here
+	keys := make([]string, 0, len(values))
+	for k := range values {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// redactHeaders returns a copy of h with sensitive header values
+// replaced. The original is not mutated.
+//
+// This is the one place headers are rendered for anything other than
+// the wire: the debug line and the dry-run record both go through it,
+// so isSensitiveHeader is the single rule and a header added to it is
+// covered in both at once.
+func redactHeaders(h http.Header) map[string]string {
+	out := make(map[string]string, len(h))
+	for k, v := range h {
+		if isSensitiveHeader(k) {
+			out[k] = redactedValue
+			continue
+		}
+		out[k] = strings.Join(v, ",")
+	}
+	return out
+}
+
+// isSensitiveHeader is the canonical "should this header be redacted"
+// rule. Authorization is the obvious one; Cookie / Set-Cookie are
+// included defensively even though Favro doesn't use them.
+//
+// organizationId is here because it names the tenant, and Token.Apply
+// sets it on every single request — so the header map was reprinting
+// the organization id on every debug line, which is the same leak §9
+// records for the startup line and one it did not know about. Found by
+// TestDebugLogNeverCarriesTheSubject on its first run, which is the
+// argument for asserting over the whole captured output rather than
+// over the line under suspicion.
+func isSensitiveHeader(name string) bool {
+	switch http.CanonicalHeaderKey(name) {
+	case "Authorization", "Cookie", "Set-Cookie", "Proxy-Authorization",
+		headerOrganizationID:
+		return true
+	}
+	return false
+}
+
+// headerOrganizationID is the canonical form of the header
+// auth.Token.Apply sets. Canonical, because that is the form
+// http.Header stores and http.CanonicalHeaderKey returns.
+const headerOrganizationID = "Organizationid"
+
+// redactPath strips the query string from a URL for use in error
+// messages — pagination cursors and request IDs aren't load-bearing
+// for diagnostics.
+func redactPath(full string) string {
+	if i := strings.Index(full, "?"); i >= 0 {
+		return full[:i]
+	}
+	return full
+}

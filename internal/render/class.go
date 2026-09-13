@@ -19,11 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"strings"
-	"time"
-
-	"github.com/mmedum/favro-mcp/internal/favro"
 )
 
 // Class is one member of the closed error vocabulary. Every error a
@@ -98,8 +94,17 @@ var Classes = []Class{
 	ClassAmbiguous,
 }
 
+// Retryable is implemented by an error that knows how long the caller
+// should wait. Only ClassRateLimited carries one.
+type Retryable interface {
+	// RetryAfterSeconds returns the wait in whole seconds, rounded up
+	// so that a sub-second wait never reads as "retry immediately".
+	// Zero means the server did not say.
+	RetryAfterSeconds() int
+}
+
 // Classed is implemented by an error that names its own class. The
-// server package's sentinel errors implement it, which is what keeps
+// sentinels in internal/tools and internal/service implement it, which is what keeps
 // classification derived from the error rather than from a match on
 // its text.
 type Classed interface {
@@ -108,9 +113,11 @@ type Classed interface {
 
 // Classify returns the class of err.
 //
-// The order matters: an error that names its own class wins over a
-// structural guess, and a typed Favro error wins over the transport
-// layer beneath it.
+// Every error this repository raises names its own class: the server's
+// sentinels through classed(), and the client's typed errors through
+// ErrorClass() methods on themselves. Classify walks the chain for one,
+// then falls back to the transport layer, which is the only place an
+// error arrives that nobody here constructed.
 //
 // The fallback is ClassInvalid, and that is a measured choice rather
 // than a neutral one. Every error this server's own layer raises
@@ -118,7 +125,7 @@ type Classed interface {
 // exactly one of", "is required", "must be between" — so ClassInvalid
 // tells the caller the true thing in every case that exists today. A
 // server bug arriving here would be mislabelled; that is the trade,
-// and TestEverySentinelIsClassified in internal/server is what keeps
+// and TestEverySentinelIsClassified, in internal/tools, is what keeps
 // the set of unclassified errors from growing quietly.
 func Classify(err error) Class {
 	if err == nil {
@@ -128,55 +135,16 @@ func Classify(err error) Class {
 	if errors.As(err, &classed) {
 		return classed.ErrorClass()
 	}
-	if class, ok := classifyFavro(err); ok {
-		return class
-	}
 	if class, ok := classifyTransport(err); ok {
 		return class
 	}
 	return ClassInvalid
 }
 
-// classifyFavro reads the typed errors internal/favro raises. The
-// order is the order the client raises them in, and *APIError comes
-// last because it is the catch-all whose status is the only thing left
-// to read.
-func classifyFavro(err error) (Class, bool) {
-	var authErr *favro.AuthError
-	if errors.As(err, &authErr) {
-		return ClassAuth, true
-	}
-	var forbidden *favro.ForbiddenError
-	if errors.As(err, &forbidden) {
-		return ClassForbidden, true
-	}
-	var rateLimited *favro.RateLimitError
-	if errors.As(err, &rateLimited) {
-		return ClassRateLimited, true
-	}
-	var notFound *favro.NotFoundError
-	if errors.As(err, &notFound) {
-		return ClassNotFound, true
-	}
-	var validation *favro.ValidationError
-	if errors.As(err, &validation) {
-		return ClassInvalid, true
-	}
-	var transient *favro.TransientError
-	if errors.As(err, &transient) {
-		return ClassUnavailable, true
-	}
-	var apiErr *favro.APIError
-	if errors.As(err, &apiErr) {
-		return classifyStatus(apiErr.Status), true
-	}
-	return "", false
-}
-
-// classifyTransport is the layer below the typed errors: a request
-// that never reached Favro is about the network rather than about
-// anything the caller asked for. context.Canceled is the host hanging
-// up mid-call.
+// classifyTransport is the layer below the typed errors: a request that
+// never reached Favro is about the network rather than about anything
+// the caller asked for. context.Canceled is the host hanging up
+// mid-call.
 func classifyTransport(err error) (Class, bool) {
 	var netErr net.Error
 	if errors.As(err, &netErr) {
@@ -186,26 +154,6 @@ func classifyTransport(err error) (Class, bool) {
 		return ClassUnavailable, true
 	}
 	return "", false
-}
-
-// classifyStatus maps the statuses *favro.APIError can actually carry.
-//
-// That set is much smaller than it looks. APIError is built in one
-// place — classifyClientError, in internal/favro/client.go — and only
-// after Do has peeled off 2xx, 429 and every 5xx, and after 401, 403,
-// 404, 400 and 422 have become their own typed errors. So the statuses
-// that reach here are 3xx and the leftover 4xx, and a branch for 404 or
-// 502 would be a second copy of the client's table that no test could
-// exercise and nothing would keep in step.
-func classifyStatus(status int) Class {
-	switch status {
-	case http.StatusConflict:
-		return ClassConflict
-	case http.StatusMethodNotAllowed:
-		return ClassUnsupported
-	default:
-		return ClassInvalid
-	}
 }
 
 // Error renders err as the standard's "[class] actionable message".
@@ -225,16 +173,40 @@ func Error(err error) error {
 	// It goes in the message because that is the only half of a failed
 	// call a client is guaranteed to show: SetError puts the error text
 	// in Content and there is no structuredContent on an error result.
+	//
+	// Asked of the error through an interface, not read off a concrete
+	// type, so that this package stays a leaf: it is imported by the
+	// one that defines the error.
 	if class == ClassRateLimited {
-		var rateLimited *favro.RateLimitError
-		if errors.As(err, &rateLimited) && rateLimited.RetryAfter > 0 {
-			secs := int(rateLimited.RetryAfter.Round(time.Second) / time.Second)
-			if secs < 1 {
-				secs = 1
+		var retryable Retryable
+		if errors.As(err, &retryable) {
+			if secs := retryable.RetryAfterSeconds(); secs > 0 {
+				return fmt.Errorf("[%s] %s (retry_after_seconds=%d)", class, msg, secs)
 			}
-			return fmt.Errorf("[%s] %s (retry_after_seconds=%d)", class, msg, secs)
 		}
 	}
 
 	return fmt.Errorf("[%s] %s", class, msg)
+}
+
+// sentinel is an error that names its own class, for the packages
+// above this one to declare theirs with.
+type sentinel struct {
+	class Class
+	msg   string
+}
+
+func (e *sentinel) Error() string { return e.msg }
+
+// ErrorClass satisfies Classed.
+func (e *sentinel) ErrorClass() Class { return e.class }
+
+// Sentinel builds a package-level error that carries its class, so the
+// boundary can render "[class] message" without matching on the text.
+//
+// The class comes first because it is the part a reader checks when
+// they look at one of these. Wrapping the result with
+// fmt.Errorf("%w: …") keeps the class, since Classify walks the chain.
+func Sentinel(class Class, msg string) error {
+	return &sentinel{class: class, msg: msg}
 }

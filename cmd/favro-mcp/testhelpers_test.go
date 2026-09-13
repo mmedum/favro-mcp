@@ -12,6 +12,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/internal/config"
 )
 
 // TestMain installs go-keyring's in-memory mock before any test in this
@@ -83,7 +84,7 @@ func restoreDefaultLogger(t *testing.T) {
 // default logger afterwards.
 func isolateLogging(t *testing.T) {
 	t.Helper()
-	t.Setenv(envLogLevel, "debug")
+	t.Setenv(config.EnvLogLevel, "debug")
 	restoreDefaultLogger(t)
 }
 

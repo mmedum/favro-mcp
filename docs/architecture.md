@@ -2,7 +2,7 @@
 
 **Status, 2026-09-13.** Released: v1.1.2. The server's own feature phases
 (0–9) are complete and shipped. Of the alignment programme in §16, phases
-**A0, A1 and A2 are done and unreleased**; A3–A8 are not started. Where a
+**A0, A1, A2 and A3 are done and unreleased**; A4–A8 are not started. Where a
 sentence below describes something that does not exist, it says so and
 names the phase that builds it.
 
@@ -133,7 +133,7 @@ recorded because they are not re-derivable from reading it, and because
 
 ### 4.1 Names in, ids out, cached in between
 
-The model speaks names; Favro speaks ids. `internal/server/resolver.go`
+The model speaks names; Favro speaks ids. `internal/service/resolver.go`
 is the one place that bridges the two, with per-resource TTLs — 5 minutes
 for slow-changing org metadata (tags, users, custom fields, groups), 60
 seconds for things people add mid-session (collections, widgets,
@@ -187,21 +187,24 @@ mirrors the siblings; the names are Favro's.
 
 ```
 cmd/favro-mcp/            main: server default, auth subcommands, --version,
-                          --dry-run, --dump-schemas (A1), doctor (A7)
-internal/config/          FAVRO_* env with flags bound to the same names,
-                          validated at start                            (A3)
+                          --dry-run, --dump-schemas, doctor (A7)
+internal/config/          every FAVRO_* setting, resolved once at startup
 internal/auth/            credential resolution: env → OS keyring; Token.Apply
 internal/favro/           wire types only: Card, Widget, Column, …. No deps
 internal/favroapi/        the REST client: retry, rate-limit observation,
-                          dry-run gate, pagination, redacted logging,
-                          errors. No MCP imports                        (A3)
+                          dry-run gate, pagination, redacted logging, errors.
+                          No MCP imports
+internal/favroapi/favroapitest/
+                          the one client fixture the test packages above
+                          it share, so hard rule 1's "belongs to nobody"
+                          triple has a single spelling
 internal/cache/           the TTL cache the resolver runs on
 internal/service/         orchestration: resolution, search, full-card
-                          fan-out, description editing, write policy    (A3)
+                          fan-out, description editing. No MCP imports
 internal/render/          the readable half of every result, never the same
                           bytes as the structured half; and the closed
-                          error vocabulary
-internal/tools/           the MCP surface, one file per area            (A3)
+                          error vocabulary. Imports nothing
+internal/tools/           the MCP surface, one file per area
 internal/server/          SDK wiring; schema dump through an in-memory session
 internal/redact/          the one redactor the live driver prints through (A6)
 internal/livecover/       what "the driver covers the surface" means, so the
@@ -214,14 +217,21 @@ testdata/                 synthetic fixtures, goldens, the API snapshot
 docs/
 ```
 
-Dependency direction runs one way: `tools` → `service` → `favroapi` →
-`favro`. Nothing under `internal/favroapi` imports MCP; `internal/favro`
-imports nothing. depguard holds it (A3).
+Dependency direction runs one way: `server` → `tools` → `service` →
+`favroapi` → `favro`, with `config`, `cache`, `auth` and `render` as
+leaves. Nothing under `internal/service` or `internal/favroapi` imports
+MCP; `internal/favro` and `internal/render` import nothing from this
+module at all.
 
-**Today** everything from `service`, `render` and `tools` lives in
-`internal/server` (85 files), and `internal/favro` is both the wire types
-and the client. That is the one structural difference from the siblings,
-and A3 is the phase that removes it.
+**depguard holds it**, one rule per package naming what that package may
+not reach, so an import that runs uphill fails `make check` rather than
+review. The rules were checked by breaking them: an `mcp` import added
+to `internal/service` fails with the sentence the rule carries.
+
+`internal/render` being a leaf is what lets `internal/favroapi`'s typed
+errors name their own class (§6.2). The vocabulary has to live below the
+package that raises the errors, or the classification has to be done
+from outside — which is what A2 shipped and A3 removed.
 
 **One language.** Everything the repository runs on itself is Go. The two
 shell scripts that used to live in `scripts/` are gone (A1): a shell
@@ -292,22 +302,22 @@ Two tests hold the edges of that fallback, and it is worth being exact
 about which edges, because neither covers the third.
 `TestEverySentinelIsClassified` parses `internal/server` for
 package-level sentinels and requires each to name its class.
-`TestEveryFavroErrorTypeIsClassified` reads the types declared in
-`internal/favro/errors.go` and requires `Classify` to have a case for
-each, so an eighth typed error cannot land on the fallback in silence.
+`TestEveryErrorTypeNamesItsClass`, in `internal/favroapi`, reads the
+types its own `errors.go` declares and requires each to name a class,
+so an eighth typed error cannot land on the fallback in silence.
 What neither covers is an inline `fmt.Errorf` in a handler: those are
 the dozen or so argument errors above, they are all genuinely
 `invalid`, and nothing would fail if a future one were not. Making a
 new error a sentinel is what buys the check.
 
-The asymmetry between those two tests is itself a note for A3. A
-sentinel names its own class; the Favro error types have theirs read
-off them from outside, because `Class` lives in `internal/render`,
-which imports `internal/favro` and so cannot be imported by it. The
-uniform version puts `Class` in a leaf package and gives each typed
-error an `ErrorClass()`, at which point `Classify` collapses to one
-`errors.As`. That is a layout change, and A3 is where layout is
-decided.
+Both halves name their own class. That was not true when the
+vocabulary was written: `Class` lived in `internal/render`, which
+imported the client package and so could not be imported by it, and the
+client's typed errors had their class read off them from outside by a
+switch. A3 made `internal/render` a leaf, and each error in
+`internal/favroapi` carries an `ErrorClass()` — so `Classify` is one
+`errors.As` plus a transport fallback, and an eighth error type cannot
+be added without naming its class.
 
 **`unverified` was proposed and rejected.** §17's first open decision
 asked whether the state §2.1 describes — a write whose 200 this server
@@ -425,7 +435,7 @@ across all of them:
 - Every mutating tool takes `dry_run` and has a test proving dry-run
   never reaches `RoundTrip`.
 - Every registered tool has a row in `smokeToolInputs`
-  (`internal/server/smoke_test.go`) or the smoke test fails. This is the
+  (`internal/tools/smoke_test.go`) or the smoke test fails. This is the
   repository's one existing instance of the standard's "derive the list
   from the code" rule, and it predates the standard.
 - List tools surface `next_page` and never aggregate. Page numbers on
@@ -713,10 +723,13 @@ phase An" before the next begins.
   third one nobody had recorded, the `organizationId` header, pinned by
   an existing assertion. §17's first open decision is settled in §6.2:
   `unverified` was written out as a message and rejected.
-- **A3 — layout.** `internal/server` split into `internal/tools` /
-  `internal/service` / `internal/server`; `internal/favro` split into wire
-  types and `internal/favroapi`;
-  `internal/config` added; depguard holds the dependency direction.
+- **A3 — layout. Done.** `internal/server` split into `internal/tools`
+  (the MCP surface), `internal/service` (orchestration) and
+  `internal/server` (SDK wiring, two files); `internal/favro` split into
+  the wire types and `internal/favroapi`; `internal/config` added;
+  depguard holds the direction, with each rule checked by breaking it.
+  `internal/render` became a leaf on the way, which let the client's
+  typed errors name their own class and closed the gap A2 recorded.
 - **A4 — stdlib tests.** testify and go-difflib removed, package by
   package, floor unchanged.
 - **A5 — API compliance.** `gates api-diff` fetches favro.com/developer
@@ -761,9 +774,13 @@ under `[Unreleased]`. Tags are cut by the maintainer, never proposed.
 2. **Does the `.plugin` bundle stay once `.mcpb` exists?** Two bundles is
    two manifests to keep honest. Answer in A7; the current lean is yes,
    because the plugin is how this server is actually installed.
-3. **How much of `favro_get_card_full`'s fan-out belongs in `service`
-   versus `tools`?** A3 decides; the fan-out is the one piece of
-   genuinely concurrent orchestration in the repository.
+3. ~~**How much of `favro_get_card_full`'s fan-out belongs in `service`
+   versus `tools`?**~~ **Decided in A3: all of it.** `FullCard`,
+   `FullCardIdentity` and every `dereference*` step live in
+   `internal/service`; the tool is a schema, one call and a return. The
+   fan-out is the only genuinely concurrent orchestration in the
+   repository, and concurrency owned by a protocol handler is
+   concurrency nothing can test without a protocol session.
 4. **Do webhooks come back?** They were deferred indefinitely in phase 9,
    with an HTTP transport, because nothing consumes a callback: this
    server is a stdio process a host starts and stops, and a webhook needs
@@ -806,7 +823,9 @@ it; **asserted**, meaning believed and not yet held by anything.
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
 | 2026-09-13 | The SDK writes the same bytes into `content` and `structuredContent` when a tool declares an output schema | Read `mcp/server.go:398–435` in the module cache: the marshalled output becomes `StructuredContent`, and when `res.Content` is nil the same serialized JSON is added as a `TextContent` block | **Verified here.** Every tool in this repository returns a typed output and a nil result, so every one of them is in that state. Standard §2 forbids it: the two halves must both be present and must not be the same bytes. Fixed in A2 at `addTool`, so the fix is one function rather than 83 handlers that each have to remember |
-| 2026-09-13 | The debug request log cannot reconstruct its subject | Read `internal/favro/client.go:587–601`: it logs `req.URL.RawQuery`, and Favro's query strings carry `cardCommonId`, `widgetCommonId` and `sequentialId` | **Verified here — the claim is false.** Standard §4's rule is that a log must not identify or reconstruct the subject; an id in a query string does both. A2 logs the parameter names instead, which is the part a debug line is for |
+| 2026-09-13 | The debug request log cannot reconstruct its subject | Read the request logger in the client package
+(`internal/favroapi/client.go`; it was under `internal/favro` until A3
+split the wire types out): it logs `req.URL.RawQuery`, and Favro's query strings carry `cardCommonId`, `widgetCommonId` and `sequentialId` | **Verified here — the claim is false.** Standard §4's rule is that a log must not identify or reconstruct the subject; an id in a query string does both. A2 logs the parameter names instead, which is the part a debug line is for |
 | 2026-09-13 | "Never put tenant data in commits, PRs, docs or tool descriptions" is enforced | Searched the repository for a gate, a test or a CI step holding it. There is none; gitleaks is not configured either | **Verified here — unheld.** The loudest rule in CLAUDE.md is the one nothing can fail. A1 |
 | 2026-09-13 | Favro's documented endpoint surface | Fetched favro.com/developer. 22 endpoints this client does not implement: `/webhooks` ×3, `/organizations` write ×2, SCIM v1.1 ×10 and v2.0 ×12 (counted from that fetch) | **Asserted, pending A5.** The fetch went through a summarising reader, which is exactly the "reference page's prose" the standard warns about. A5 re-derives the snapshot per section and the count becomes a gate's output rather than a sentence here |
 | 2026-09-13 | The sibling gate set | Read all four `Makefile`s and both gate registries (`scripts/gates`) | **Adopted.** 14 gates plus `transcript` and `live-cover` where a live driver exists. Note the standard's own warning: reading a `check:` target list is not an audit of what runs, since several siblings run gates as ordinary Go tests |
@@ -826,6 +845,8 @@ it; **asserted**, meaning believed and not yet held by anything.
 | 2026-09-13 | The debug line's remaining leak was the query string | Wrote the test §9 asked for — capture every record at `LevelDebug`, drive a request whose token and filters are all markers, assert no marker appears anywhere — and ran it against the fixed code | **Verified here — the claim was false.** It failed on the first run, on the `organizationId` *header*: `Token.Apply` sets it on every request and `redactHeaders` redacted only `Authorization`. A test in the repository asserted it passed through unredacted, so the behaviour was not an oversight, it was pinned. Redacted now, and the pinned assertion reads the other way |
 | 2026-09-13 | The query string was the whole of the URL leak | Ran `/security-review` over A2's diff. It reported no exploitable finding, and noted below its own bar that `req.URL.Path` was still logged whole | **Verified here — the claim was false.** Every get-one endpoint is `/cards/{cardId}`, so the path carried the same ids the query did. `TestDebugLogNeverCarriesTheSubject` had passed throughout, because it drove a list endpoint where the ids are all in the query — the test proved the rule for one call site and the sentence claimed it for all of them. Fixed, and the test drives a get-one call now |
 | 2026-09-13 | A unit test against `httptest` exercises the path the server really sends | The first `redactPathIDs` rejected any digit in a segment. Unit tests passed; the live check printed `path=/api/{id}/cards/{id}` | **Verified here — the claim was false.** `httptest`'s base URL has no version segment, so the test asserted against a shape production never produces and `v1` was being redacted as an identifier. The rule takes lowercase alphanumerics now, and the test has a row for the real path. Nothing leaked — this one cost only the usefulness of the log — but it is the same blind spot as the row above, found the same day, in the fix for it |
+| 2026-09-13 | A package split is a mechanical change | Split `internal/favro` into wire types and a client with a line-based script first. It detached every doc comment from its declaration and misclassified declarations | **Verified here — the claim was false, at the first attempt.** Rewritten against `go/ast`, where a declaration carries its own `Doc`, and the classification became one rule — a `*Client` receiver — with five named exceptions rather than a regexp. The lesson is the standard's own: the tool that understands the language is the one to parse it with |
+| 2026-09-14 | A scripted rename touches only identifiers | A3 qualified references across the split with a word-boundary regexp. The security review, diffing each moved file against its old copy, found `req.Header.Set("favro.User-Agent", ua)` | **Verified here — the claim was false.** `User` is a wire type, and the regexp matched it inside a string literal, so every request went out with Go's default agent and a junk header. No test asserted the header, so the suite stayed green through the whole refactor. Fixed, and every string literal in the module was then parsed with `go/ast` and checked for a package qualifier — that one was the only real hit in ten |
 | 2026-09-13 | `unverified` earns a place in the error vocabulary | §17's instruction: decide by writing the message. Wrote it — `[unverified] Favro returned 200 and the write was not read back` — and followed what a caller does with it | **Verified here — rejected.** An error class renders with `IsError` set, which says the call failed; a caller that retries on that posts the comment twice. It also carries nothing per call, because this server never reads back, so the flag is constant per tool — and a constant per tool is a tool description, which is where it already is. §6.2 records the reasoning |
 | 2026-09-13 | Twelve tools are destructive | Counted the tools annotated `DestructiveHint: true` while building the registration gate | **Verified here — the claim was false; there are thirteen.** §8 had carried the hand-typed count since it was written. The gate now reads the annotation at registration and the test derives the same set from the live surface, so neither a count nor a list of names is written down anywhere |
 | 2026-09-13 | A gate that skips the file it guards is checking the right thing | Ran the new `classes` gate: it reported six of the nine classes as emitted by nothing | **Verified here — the claim was false, and it was this gate's own first finding about itself.** It skipped `class.go` wholesale to avoid counting the declarations, and `Classify` — where six of the nine are returned from — is in that file. It now skips the const block and the `Classes` slice and walks everything else |

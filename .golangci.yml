@@ -57,6 +57,42 @@ linters:
 
     depguard:
       rules:
+        # The dependency direction of §5, for the part of it the
+        # compiler does not already hold.
+        #
+        # server -> tools -> service -> favroapi -> favro, with config,
+        # cache, auth and render as leaves. Most of that direction is
+        # self-enforcing: an import that runs uphill between two of
+        # those packages is an import cycle, and `go build` rejects it
+        # with a better message than depguard would. Writing those out
+        # anyway would be four rules that can never fire, which is the
+        # thing this repository's own standard argues against.
+        #
+        # What is left is the three that can fire, because none of them
+        # is a cycle: a leaf reaching sideways to another leaf, and the
+        # MCP SDK reaching below the tool layer.
+        favro-imports-nothing:
+          list-mode: lax
+          files:
+            - "**/internal/favro/*.go"
+          deny:
+            - pkg: "github.com/mmedum/favro-mcp/internal"
+              desc: "internal/favro is the wire vocabulary and imports nothing from this module; a type that needs a dependency belongs in the package that has one"
+        render-is-a-leaf:
+          list-mode: lax
+          files:
+            - "**/internal/render/*.go"
+          deny:
+            - pkg: "github.com/mmedum/favro-mcp/internal"
+              desc: "internal/render holds the error vocabulary that internal/favroapi imports, so it cannot import anything back — an error names its own class through the Classed interface"
+        no-mcp-below-the-tool-layer:
+          list-mode: lax
+          files:
+            - "**/internal/favroapi/*.go"
+            - "**/internal/service/*.go"
+          deny:
+            - pkg: "github.com/modelcontextprotocol/go-sdk"
+              desc: "internal/favroapi is a REST client and internal/service returns plain Go values; the MCP surface is internal/tools, and keeping the SDK out of both is what makes them testable without a protocol session"
         no-testify-assert:
           list-mode: lax
           deny:

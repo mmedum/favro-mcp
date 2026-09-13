@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/internal/config"
 )
 
 // TestRun_Version_PrintsToStdout pins the discipline that --version
@@ -68,42 +69,14 @@ func TestRun_UnknownAuthSubcommand_Errors(t *testing.T) {
 	require.Contains(t, stderr.String(), "unknown subcommand")
 }
 
-func TestParseLogLevel(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name       string
-		in         string
-		want       slog.Level
-		recognized bool
-	}{
-		{"empty defaults to info", "", slog.LevelInfo, true},
-		{"info", "info", slog.LevelInfo, true},
-		{"debug", "debug", slog.LevelDebug, true},
-		{"warn", "warn", slog.LevelWarn, true},
-		{"warning alias", "warning", slog.LevelWarn, true},
-		{"error", "error", slog.LevelError, true},
-		{"unknown falls back to info", "loud", slog.LevelInfo, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, recognized := parseLogLevel(tc.in)
-			require.Equal(t, tc.want, got)
-			require.Equal(t, tc.recognized, recognized)
-		})
-	}
-}
-
 func TestConfigureLogging_UnrecognizedLevel_WarnsOnStderr(t *testing.T) {
-	t.Setenv(envLogLevel, "loud")
+	t.Setenv(config.EnvLogLevel, "loud")
 	restoreDefaultLogger(t)
 
 	var stderr bytes.Buffer
 	configureLogging(&stderr)
 
-	require.Contains(t, stderr.String(), "unrecognized log level")
+	require.Contains(t, stderr.String(), "unrecognized "+config.EnvLogLevel)
 	require.Contains(t, stderr.String(), "loud", "the rejected value belongs in the warning")
 }
 
@@ -111,7 +84,7 @@ func TestConfigureLogging_UnrecognizedLevel_WarnsOnStderr(t *testing.T) {
 // promises: the value is case- and whitespace-insensitive, and it
 // really filters records below the threshold.
 func TestConfigureLogging_LevelFromEnv(t *testing.T) {
-	t.Setenv(envLogLevel, "  ERROR ")
+	t.Setenv(config.EnvLogLevel, "  ERROR ")
 	restoreDefaultLogger(t)
 
 	var stderr bytes.Buffer
@@ -138,7 +111,7 @@ func TestRunServer_UnknownFlag_ErrorsWithUsage(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	err := runServer([]string{"--no-such-flag"}, io.Discard, &stderr)
+	err := runServer([]string{"--no-such-flag"}, config.Load(), io.Discard, &stderr)
 
 	require.Error(t, err)
 	require.Contains(t, stderr.String(), "no-such-flag")
@@ -149,7 +122,7 @@ func TestRunServer_HelpFlag_PrintsUsageWithoutError(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	require.NoError(t, runServer([]string{"-h"}, io.Discard, &stderr))
+	require.NoError(t, runServer([]string{"-h"}, config.Load(), io.Discard, &stderr))
 	require.Contains(t, stderr.String(), "Usage:")
 }
 
@@ -158,7 +131,7 @@ func TestRunServer_NoCredentials_ErrorsBeforeContactingFavro(t *testing.T) {
 	var logs bytes.Buffer
 	captureLogs(t, &logs)
 
-	err := runServer(nil, io.Discard, io.Discard)
+	err := runServer(nil, config.Load(), io.Discard, io.Discard)
 
 	require.Error(t, err)
 	require.Contains(t, logs.String(), "could not resolve Favro credentials")
@@ -176,7 +149,7 @@ func TestRunServer_PartialEnvCredentials_Errors(t *testing.T) {
 	var logs bytes.Buffer
 	captureLogs(t, &logs)
 
-	err := runServer(nil, io.Discard, io.Discard)
+	err := runServer(nil, config.Load(), io.Discard, io.Discard)
 
 	require.Error(t, err)
 	require.Contains(t, logs.String(), "could not resolve Favro credentials")
@@ -191,7 +164,7 @@ func TestRunServer_DryRunFlag_AnnouncedAtStartup(t *testing.T) {
 
 	// Startup still fails at credential resolution; what matters here is
 	// that --dry-run parsed and was announced before that point.
-	require.Error(t, runServer([]string{"--dry-run"}, io.Discard, io.Discard))
+	require.Error(t, runServer([]string{"--dry-run"}, config.Load(), io.Discard, io.Discard))
 	require.Contains(t, logs.String(), "all mutating Favro requests will short-circuit")
 }
 
@@ -326,12 +299,12 @@ func TestStartupLineNamesNoTenant(t *testing.T) {
 	t.Setenv(auth.EnvUserEmail, tok.Email)
 	t.Setenv(auth.EnvAPIToken, tok.APIToken)
 	t.Setenv(auth.EnvOrganizationID, tok.OrganizationID)
-	t.Setenv(envSkipValidate, "1")
+	t.Setenv(config.EnvSkipValidate, "1")
 
 	// stdin is /dev/null under `go test`, so the stdio transport sees
 	// EOF at once and the server shuts down cleanly. The run is only
 	// here to get past credential resolution and emit the line.
-	require.NoError(t, runServer(nil, io.Discard, io.Discard))
+	require.NoError(t, runServer(nil, config.Load(), io.Discard, io.Discard))
 
 	out := logs.String()
 	require.Contains(t, out, "favro-mcp starting",
@@ -343,35 +316,6 @@ func TestStartupLineNamesNoTenant(t *testing.T) {
 	require.NotContains(t, out, tok.APIToken)
 }
 
-// TestDestructiveEnabled pins the parse. The default and every
-// unreadable value mean off: a typo in the variable that enables
-// deletes must not enable deletes.
-func TestDestructiveEnabled(t *testing.T) {
-	cases := []struct {
-		name string
-		env  string
-		want bool
-	}{
-		{"unset", "", false}, // unset and empty are the same to os.Getenv
-		{"true", "true", true},
-		{"upper", "TRUE", true},
-		{"one", "1", true},
-		{"false", "false", false},
-		{"yes", "yes", false},
-		{"padded", "  true ", false}, // ParseBool does not trim, and neither do we
-	}
-
-	for _, tc := range cases {
-		env, want := tc.env, tc.want
-		t.Run(tc.name, func(t *testing.T) {
-			restoreDefaultLogger(t)
-			configureLogging(io.Discard)
-			t.Setenv(envEnableDestructive, env)
-			require.Equal(t, want, destructiveEnabled())
-		})
-	}
-}
-
 // TestUsageDocumentsDestructiveFlag keeps --help honest: a tool surface
 // that changes with an environment variable is undiscoverable if the
 // variable is not listed.
@@ -380,5 +324,5 @@ func TestUsageDocumentsDestructiveFlag(t *testing.T) {
 
 	var buf bytes.Buffer
 	printUsage(&buf)
-	require.Contains(t, buf.String(), envEnableDestructive)
+	require.Contains(t, buf.String(), config.EnvEnableDestructive)
 }
