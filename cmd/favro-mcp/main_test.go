@@ -306,3 +306,79 @@ func TestCleanDisconnect(t *testing.T) {
 		})
 	}
 }
+
+// TestStartupLineNamesNoTenant is the second half of what §9 says A2
+// owes. The startup line logged the organization id at INFO, which
+// named the tenant in the first line of every session — not at debug,
+// not behind a flag, in every log anyone has ever collected from this
+// server.
+//
+// The assertion is over everything that was logged, not over the one
+// line: the rule is that no forbidden value reaches a log at any
+// level.
+func TestStartupLineNamesNoTenant(t *testing.T) {
+	requireNonTTYStdin(t)
+	isolateCredentials(t)
+	var logs bytes.Buffer
+	captureLogs(t, &logs)
+
+	tok := testCredentials()
+	t.Setenv(auth.EnvUserEmail, tok.Email)
+	t.Setenv(auth.EnvAPIToken, tok.APIToken)
+	t.Setenv(auth.EnvOrganizationID, tok.OrganizationID)
+	t.Setenv(envSkipValidate, "1")
+
+	// stdin is /dev/null under `go test`, so the stdio transport sees
+	// EOF at once and the server shuts down cleanly. The run is only
+	// here to get past credential resolution and emit the line.
+	require.NoError(t, runServer(nil, io.Discard, io.Discard))
+
+	out := logs.String()
+	require.Contains(t, out, "favro-mcp starting",
+		"logged nothing, so this test proved nothing")
+	require.Contains(t, out, "credential_source", "the line still has to be worth logging")
+
+	require.NotContains(t, out, tok.OrganizationID, "the organization id names the tenant")
+	require.NotContains(t, out, tok.Email)
+	require.NotContains(t, out, tok.APIToken)
+}
+
+// TestDestructiveEnabled pins the parse. The default and every
+// unreadable value mean off: a typo in the variable that enables
+// deletes must not enable deletes.
+func TestDestructiveEnabled(t *testing.T) {
+	cases := []struct {
+		name string
+		env  string
+		want bool
+	}{
+		{"unset", "", false}, // unset and empty are the same to os.Getenv
+		{"true", "true", true},
+		{"upper", "TRUE", true},
+		{"one", "1", true},
+		{"false", "false", false},
+		{"yes", "yes", false},
+		{"padded", "  true ", false}, // ParseBool does not trim, and neither do we
+	}
+
+	for _, tc := range cases {
+		env, want := tc.env, tc.want
+		t.Run(tc.name, func(t *testing.T) {
+			restoreDefaultLogger(t)
+			configureLogging(io.Discard)
+			t.Setenv(envEnableDestructive, env)
+			require.Equal(t, want, destructiveEnabled())
+		})
+	}
+}
+
+// TestUsageDocumentsDestructiveFlag keeps --help honest: a tool surface
+// that changes with an environment variable is undiscoverable if the
+// variable is not listed.
+func TestUsageDocumentsDestructiveFlag(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	printUsage(&buf)
+	require.Contains(t, buf.String(), envEnableDestructive)
+}

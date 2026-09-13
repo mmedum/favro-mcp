@@ -39,8 +39,8 @@ type getCardInput struct {
 	CardID string `json:"card_id" jsonschema:"the Favro per-widget cardId (NOT the cross-widget cardCommonId — Favro 403s if you pass a cardCommonId here). To fetch a card known only by cardCommonId, call favro_list_cards with that filter."`
 }
 
-func registerCards(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerCards(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listCardsToolName,
 		Description: "List Favro cards with optional filters: `widget_common_id` (single " +
 			"widget), `collection_id` (cards in any widget of that collection), `card_common_id` " +
@@ -67,7 +67,7 @@ func registerCards(srv *mcp.Server, client *favro.Client) {
 		return nil, newListOutput(env), nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: getCardToolName,
 		Description: "Get a single Favro card by its per-widget cardId. Favro's GET endpoint " +
 			"only accepts the per-widget cardId — passing a cardCommonId here 403s. To fetch " +

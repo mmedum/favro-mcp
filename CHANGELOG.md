@@ -11,22 +11,35 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ### Added
 - `docs/architecture.md`: the design, the platform constraints, the evidence log, and the A0–A8 plan that aligns this repository with the shared Go MCP server standard the four sibling servers run.
 - `--dump-schemas` prints the whole tool surface as JSON, and `schemas.json` is committed: `make schemas` writes it, the `schema-diff` gate verifies it is current, so a wire change shows up in the pull request's diff rather than only on the machine that ran the gate.
-- `scripts/gates`, one Go binary holding eight checks that run in both `make check` and CI: the per-package coverage floor (80%), `leaks`, `pins`, `parity`, `plugin`, `schema-diff`, `smoke` and `staleness`. Each has tests and each reports how much it read.
+- `scripts/gates`, one Go binary holding nine checks that run in both `make check` and CI: the per-package coverage floor (80%), `leaks`, `pins`, `classes`, `parity`, `plugin`, `schema-diff`, `smoke` and `staleness`. Each has tests and each reports how much it read.
 - `leaks` scans the working tree for tenant data — addresses, 24-hex Favro ids, keyed organization ids and tokens, app links, card references — and `leaks history` scans every blob and commit message. The rule has been in CLAUDE.md since phase 3 with nothing enforcing it.
 - gitleaks, go-licenses and CodeQL in CI; `.gitleaks.toml`; `.githooks/pre-commit` (via `make hooks`) runs gofmt, vet and the leak scan before a commit.
+- `FAVRO_ENABLE_DESTRUCTIVE`: set it to `true` to register the delete-style tools. See Removed.
+- `internal/render`: the readable half of every tool result, and the closed error vocabulary — `invalid`, `not_found`, `auth`, `conflict`, `unavailable`, `unsupported`, `forbidden`, `rate_limited`, `ambiguous`.
+- `classes` gate: the vocabulary in `internal/render/class.go` and the table in `docs/architecture.md` §6.2 must name each other, and a class no code returns fails too.
 
 ### Changed
 - `CLAUDE.md` restructured to the sibling shape — mission, hard rules, where things go, definition of done — and now points at `docs/architecture.md` for anything it used to summarise.
-- `make ci` is now `make check`, and `gates parity` fails if it and `ci.yml` stop running the same set — every one of `check`'s fifteen prerequisites, not just the gates, matched by what each recipe runs rather than by target name.
+- `make ci` is now `make check`, and `gates parity` fails if it and `ci.yml` stop running the same set — every one of `check`'s sixteen prerequisites, not just the gates, matched by what each recipe runs rather than by target name.
 - Every GitHub Action is pinned to a full commit SHA with the version in a trailing comment, and every tool it installs is pinned to one exact version; `gates pins` holds both, plus the workflow-level `shell: bash` the Windows runner needs.
 - govulncheck runs in source mode again, pinned to v1.8.0. The binary-mode workaround existed because v1.7.0's analysis could not parse the Go 1.27 stdlib; v1.8.0 can, and source mode analyses call paths rather than a symbol table.
 - `scripts/changelog-section.sh` and `scripts/package-plugin.sh` are now `gates release-notes` and `gates plugin-pack`. The packer gains what the shell version could not have: the launcher's platform table is the table the gate reads, so a renamed binary fails on the commit that renames it rather than for every user of that platform.
 - The licence check ignores `github.com/segmentio/asm` by path — it relicensed to MIT-0, which go-licenses v1.6.0's classifier does not recognise and no allowlist value can match.
+- Every tool error is now `[class] actionable message`, from the closed vocabulary. A 429 carries `retry_after_seconds` in the text, since a failed call has no `structuredContent` to put it in.
+- Tool results send a readable `content` block and a machine-readable `structuredContent` one. They used to be the same bytes: the SDK copies the marshalled output into a text block when a handler leaves `Content` unset, and every handler did.
+
+### Removed
+- The thirteen delete-style tools are no longer in `tools/list` by default; set `FAVRO_ENABLE_DESTRUCTIVE=true` to register them. Breaking, and deliberately so: a client-side prompt is not a safety layer, because a host in an auto-approve permission mode runs a tool annotated `destructiveHint` without asking and the MCP spec says clients treat tool annotations as untrusted. No tool input changed, and one environment variable restores the previous surface.
 
 ### Fixed
 - The server exited 1 whenever a host closed the stdio pipe, which every host logs as a crash. The SDK reports a disconnect as JSON-RPC −32004 with the EOF only as message text, so `errors.Is(err, io.EOF)` never matched it; the code is matched now.
 - Test fixtures used an address at a registrable domain (`e.com`); they use `example.test`.
 - README documents `FAVRO_LOG_LEVEL` and `FAVRO_MCP_SKIP_VALIDATE`, which the binary has always read.
+
+### Security
+- The debug request log no longer carries the query string or the path's ids. Favro addresses everything by id in both halves of the URL — `cardCommonId`, `widgetCommonId` and `sequentialId` in the query, `/cards/{cardId}` in the path — so a debug log reconstructed which cards a session touched. The parameter names and the endpoint shape are logged instead.
+- The `organizationId` header is redacted in the debug log and in dry-run records. `Token.Apply` sets it on every request, so it was reprinted on every debug line — and a test asserted that it passed through unredacted.
+- The startup line no longer logs `organization_id`, which named the tenant at INFO in the first line of every session. `favro_ping` still returns it.
 
 ## [1.1.2] - 2026-08-27
 

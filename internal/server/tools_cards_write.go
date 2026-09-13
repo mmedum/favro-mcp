@@ -99,8 +99,8 @@ type deleteCardInput struct {
 	Everywhere bool   `json:"everywhere,omitempty" jsonschema:"if false (default), deletes only this per-widget card instance; other widgets sharing the same cardCommonId keep their copies. If true, deletes the cardCommonId across EVERY widget — irreversible."`
 }
 
-func registerCreateCard(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerCreateCard(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: createCardToolName,
 		Description: "Create a new Favro card. `name` is required; pass `widget_common_id` " +
 			"(resolve via favro_resolve_widget) to create on a board, or omit to put the " +
@@ -143,8 +143,8 @@ func registerCreateCard(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerUpdateCard(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUpdateCard(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: updateCardToolName,
 		Description: "Update a Favro card by its per-widget cardId. Every body field is " +
 			"optional — pass at least one. For relocations prefer favro_move_card; for " +
@@ -190,8 +190,8 @@ func registerUpdateCard(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerArchiveCard(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerArchiveCard(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: archiveCardToolName,
 		Description: "Archive a Favro card by its per-widget cardId. Convenience over " +
 			"favro_update_card with `archive: true`. Reversible via favro_unarchive_card. " +
@@ -217,8 +217,8 @@ func registerArchiveCard(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerUnarchiveCard(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUnarchiveCard(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: unarchiveCardToolName,
 		Description: "Unarchive a Favro card by its per-widget cardId. Convenience over " +
 			"favro_update_card with `archive: false`. Successful live writes invalidate " +
@@ -243,8 +243,8 @@ func registerUnarchiveCard(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerMoveCard(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerMoveCard(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: moveCardToolName,
 		Description: "Move a Favro card to a different widget, column, and/or lane. At " +
 			"least one of widget_common_id / column_id / lane_id must be set. Convenience " +
@@ -280,8 +280,8 @@ func registerMoveCard(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerDeleteCard(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerDeleteCard(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: deleteCardToolName,
 		Description: "Delete a Favro card by its per-widget cardId. With `everywhere: false` " +
 			"(default) only this widget's instance is removed — other widgets sharing the " +

@@ -158,7 +158,7 @@ func (c *Client) UpdateTags(ctx context.Context, updates []BulkTagUpdate) ([]Tag
 		}
 	}
 	if shouldDryRun(c, ctx, http.MethodPut) {
-		return nil, c.buildBulkTagUpdateDryRun(updates)
+		return nil, c.buildBulkTagUpdateDryRun(ctx, updates)
 	}
 	out := make([]Tag, len(updates))
 	g, gctx := errgroup.WithContext(ctx)
@@ -186,12 +186,12 @@ func (c *Client) UpdateTags(ctx context.Context, updates []BulkTagUpdate) ([]Tag
 // no literal bulk-request payload because Favro has no bulk endpoint).
 // Header composition is delegated to buildDryRunRecord so the
 // redaction + Content-Type rules stay in one place.
-func (c *Client) buildBulkTagUpdateDryRun(updates []BulkTagUpdate) *DryRunRecord {
+func (c *Client) buildBulkTagUpdateDryRun(ctx context.Context, updates []BulkTagUpdate) *DryRunRecord {
 	body, _ := json.Marshal(updates)
 	base := c.BaseURL
 	if base == "" {
 		base = DefaultBaseURL
 	}
 	url := fmt.Sprintf("%s/tags/{tagId} × %d (client-side parallel fan-out)", base, len(updates))
-	return c.buildDryRunRecord(http.MethodPut, url, body, nil)
+	return c.buildDryRunRecord(ctx, http.MethodPut, url, body, nil)
 }

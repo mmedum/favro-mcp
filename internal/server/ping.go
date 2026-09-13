@@ -33,7 +33,7 @@ type PingOutput struct {
 // registerPing wires the favro_ping tool into srv. The output is
 // captured at registration time because nothing in it changes during
 // the server's lifetime — credentials are resolved once at startup.
-func registerPing(srv *mcp.Server, client *favro.Client, source, version string) {
+func registerPing(reg *registry, client *favro.Client, source, version string) {
 	out := PingOutput{
 		Server:           serverName,
 		Version:          version,
@@ -41,7 +41,7 @@ func registerPing(srv *mcp.Server, client *favro.Client, source, version string)
 		CredentialSource: source,
 	}
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: pingToolName,
 		Description: "Liveness check. Returns the server version, the bound Favro " +
 			"organization id, and which credential source is active. Does NOT " +

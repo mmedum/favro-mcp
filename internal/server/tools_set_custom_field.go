@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 const setCardCustomFieldToolName = "favro_set_card_custom_field"
@@ -19,7 +20,13 @@ const setCardCustomFieldToolName = "favro_set_card_custom_field"
 // because Favro calculates the value server-side and ignores writes
 // (Progress, Sequential ID) or because the type has no documented
 // write contract (Relations, Date created).
-var errUnsupportedCustomFieldType = errors.New("favro: custom-field type cannot be set by favro_set_card_custom_field")
+// errCustomFieldNotFound is a custom-field id that no field in the
+// organization carries. Custom fields are org-global with no name
+// index, so this is the end of the road rather than a retry.
+var errCustomFieldNotFound = classed(render.ClassNotFound,
+	"favro: custom field not found in active organization")
+
+var errUnsupportedCustomFieldType = classed(render.ClassUnsupported, "favro: custom-field type cannot be set by favro_set_card_custom_field")
 
 // setCardCustomFieldInput is the input for favro_set_card_custom_field.
 // Exactly one *kind* of value input must be supplied, and its kind must
@@ -66,8 +73,8 @@ type setCardCustomFieldInput struct {
 	ForceRefresh bool `json:"force_refresh,omitempty" jsonschema:"if true, bypass the 5-minute custom-field cache when resolving the field's type. Useful when a field was just created or its options changed mid-session."`
 }
 
-func registerSetCardCustomField(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerSetCardCustomField(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: setCardCustomFieldToolName,
 		Description: "Set a single custom-field value on a Favro card. Supply exactly one " +
 			"kind of value input, matching the resolved field's Type:\n" +
@@ -144,7 +151,7 @@ func lookupCustomFieldType(ctx context.Context, r *Resolver, customFieldID strin
 			return f, nil
 		}
 	}
-	return favro.CustomField{}, fmt.Errorf("favro: custom field %q not found in active organization", customFieldID)
+	return favro.CustomField{}, fmt.Errorf("%w: %q", errCustomFieldNotFound, customFieldID)
 }
 
 // setCFOption maps one kind of value input to the field types it

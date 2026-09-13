@@ -18,8 +18,8 @@ type getGroupInput struct {
 	GroupID string `json:"group_id" jsonschema:"the Favro groupId"`
 }
 
-func registerGroups(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerGroups(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listGroupsToolName,
 		Description: "List Favro groups (named user collections) in the active organization. " +
 			"Groups are org-global (no widget or card scope). Each entry includes the " +
@@ -29,7 +29,7 @@ func registerGroups(srv *mcp.Server, client *favro.Client) {
 		Annotations: readOnly("List Favro groups"),
 	}, wrapList(client.ListGroups))
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name:        getGroupToolName,
 		Description: "Get a single Favro group by its groupId. Read-only.",
 		Annotations: readOnly("Get Favro group"),

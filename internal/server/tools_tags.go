@@ -25,8 +25,8 @@ type getTagInput struct {
 	TagID string `json:"tag_id" jsonschema:"the Favro tagId"`
 }
 
-func registerTags(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerTags(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listTagsToolName,
 		Description: "List Favro tags in the active organization. Tags are org-global " +
 			"(no widget or card scope). Pass `name` for an exact-match server-side " +
@@ -41,7 +41,7 @@ func registerTags(srv *mcp.Server, client *favro.Client) {
 		return nil, newListOutput(env), nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name:        getTagToolName,
 		Description: "Get a single Favro tag by its tagId. Read-only.",
 		Annotations: readOnly("Get Favro tag"),

@@ -17,8 +17,8 @@ type deleteTagInput struct {
 	TagID string `json:"tag_id" jsonschema:"the Favro tagId to delete. Resolve via favro_resolve_tag if you only have the tag name."`
 }
 
-func registerDeleteTag(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerDeleteTag(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: deleteTagToolName,
 		Description: "Delete an org-global Favro tag by its tagId. The tag is removed from " +
 			"every card it was applied to — Favro does not soft-delete tags. On a " +

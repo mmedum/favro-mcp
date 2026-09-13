@@ -2,12 +2,12 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 const addCommentToCardToolName = "favro_add_comment_to_card"
@@ -31,15 +31,15 @@ const addCommentAmbiguityWindow = 5
 // Local FT search needs a scope (Favro's /cards endpoint rejects
 // unfiltered listings); the tool surfaces the requirement directly
 // instead of waiting for the deeper search-cards 400.
-var errAddCommentSearchScopeRequired = errors.New("favro_add_comment_to_card: search_query requires exactly one of widget_common_id or collection_id")
+var errAddCommentSearchScopeRequired = classed(render.ClassInvalid, "favro_add_comment_to_card: search_query requires exactly one of widget_common_id or collection_id")
 
 // errAddCommentIdentityRequired is returned when the caller supplies
 // neither a card identity nor a search_query.
-var errAddCommentIdentityRequired = errors.New("favro_add_comment_to_card: pass exactly one of card_common_id, card_id, sequential_id, or search_query")
+var errAddCommentIdentityRequired = classed(render.ClassInvalid, "favro_add_comment_to_card: pass exactly one of card_common_id, card_id, sequential_id, or search_query")
 
 // errAddCommentNoMatch is returned when search_query matches no
 // cards in the supplied scope.
-var errAddCommentNoMatch = errors.New("favro_add_comment_to_card: search_query matched no cards in the supplied scope")
+var errAddCommentNoMatch = classed(render.ClassNotFound, "favro_add_comment_to_card: search_query matched no cards in the supplied scope")
 
 // addCommentToCardInput is the input for favro_add_comment_to_card.
 // Exactly one of the four identity flavors must be set; with
@@ -67,8 +67,8 @@ type addCommentToCardResult struct {
 	Candidates []SearchedCard `json:"candidates,omitempty" jsonschema:"ranked candidate cards when ambiguous=true"`
 }
 
-func registerAddCommentToCard(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerAddCommentToCard(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: addCommentToCardToolName,
 		Description: "Add a comment to a Favro card identified by one of card_common_id / " +
 			"card_id / sequential_id (the integer of a 'BSC-123' ref) / search_query. With " +

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 // FullCard is the output of favro_get_card_full: a card with every
@@ -101,13 +101,13 @@ func (id FullCardIdentity) Validate() error {
 
 // errFullCardIdentityRequired is returned when the caller does not
 // supply exactly one of card_id / card_common_id / sequential_id.
-var errFullCardIdentityRequired = errors.New("favro_get_card_full: pass exactly one of card_id, card_common_id, sequential_id")
+var errFullCardIdentityRequired = classed(render.ClassInvalid, "favro_get_card_full: pass exactly one of card_id, card_common_id, sequential_id")
 
 // errFullCardNotFound is returned when the identity matches no card
 // in the bound organization. Distinct from a HTTP 404 on
 // /cards/{cardId} — this fires when ListCards with the filter
 // returns zero entities.
-var errFullCardNotFound = errors.New("favro_get_card_full: no card matched the supplied identity")
+var errFullCardNotFound = classed(render.ClassNotFound, "favro_get_card_full: no card matched the supplied identity")
 
 // fullCardCommentDefaultLimit caps comments fetched on the implicit
 // path. 20 is enough for the typical card's recent activity without

@@ -52,7 +52,23 @@ is current before starting work that a later phase is going to move.**
    there will not be one.
 10. **No auto-commit, no auto-push.** Never push a tag without being
     asked.
-11. **Any rule adopted from the standard needs three things**: make it a
+11. **Destructive tools are registered only when
+    `FAVRO_ENABLE_DESTRUCTIVE=true`**, and which ones is read from the
+    `DestructiveHint` annotation in `addTool` — never from a list of
+    names. `dry_run` is not a second guard for this: a host in an
+    auto-approve mode runs an annotated tool without prompting.
+12. **Every error a tool returns is `[class] actionable message`**, from
+    the closed vocabulary in `internal/render`. The class comes from the
+    error's type, never from matching its text; a new sentinel is built
+    with `classed(render.Class…, …)`. Adding or removing a class means
+    editing `docs/architecture.md` §6.2 in the same commit, or the
+    `classes` gate fails.
+13. **`content` and `structuredContent` are never the same bytes.** The
+    SDK makes them identical if a handler leaves `Content` nil;
+    `addTool` fills the readable half from `internal/render`. A new
+    output shape that needs a better summary implements
+    `render.Summarizer`.
+14. **Any rule adopted from the standard needs three things**: make it a
     test, derive its list from the code rather than typing the list out,
     and have the checker assert a floor on how much it read. "Found
     nothing" and "looked at nothing" print the same sentence otherwise.
@@ -92,8 +108,8 @@ make help      # every target, with what it does
 ```
 
 `make check` is the whole gate: fmt-check, vet, tidy, lint, cover, vuln,
-licenses, secrets, leaks, pins, parity, plugin, schema-diff, smoke,
-staleness. The eight gates among those are `scripts/gates`, one Go
+licenses, secrets, leaks, pins, classes, parity, plugin, schema-diff,
+smoke, staleness. The nine gates among those are `scripts/gates`, one Go
 binary with a registry, and `gates parity` fails if `make check` and
 `ci.yml` stop running the same set — so adding a gate means adding it in
 both places, and the registry's `gate: true` flag is what says a gate

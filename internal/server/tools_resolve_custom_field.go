@@ -14,8 +14,8 @@ type resolveCustomFieldInput struct {
 	ForceRefresh bool   `json:"force_refresh,omitempty" jsonschema:"bypass the 5-minute custom-field cache and re-fetch from Favro before matching"`
 }
 
-func registerResolveCustomField(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerResolveCustomField(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: resolveCustomFieldToolName,
 		Description: "Resolve a custom field name (or part of it) to one or more customFieldId " +
 			"candidates. Each candidate includes the field's `type` (\"Single select\", \"Date\", " +

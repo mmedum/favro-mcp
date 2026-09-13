@@ -29,8 +29,8 @@ type getColumnInput struct {
 	ColumnID string `json:"column_id" jsonschema:"the Favro column id (columnId)"`
 }
 
-func registerColumns(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerColumns(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listColumnsToolName,
 		Description: "List Favro columns (status lanes) on a single widget. " +
 			"`widget_common_id` is REQUIRED — Favro rejects unfiltered listings with 400. " +
@@ -50,7 +50,7 @@ func registerColumns(srv *mcp.Server, client *favro.Client) {
 		return nil, newListOutput(env), nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name:        getColumnToolName,
 		Description: "Get a single Favro column by its columnId. Read-only.",
 		Annotations: readOnly("Get Favro column"),

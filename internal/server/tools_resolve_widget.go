@@ -15,8 +15,8 @@ type resolveWidgetInput struct {
 	ForceRefresh bool   `json:"force_refresh,omitempty" jsonschema:"bypass the 60-second widget cache and re-fetch from Favro before matching"`
 }
 
-func registerResolveWidget(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerResolveWidget(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: resolveWidgetToolName,
 		Description: "Resolve a widget (board) name (or part of it) to one or more widgetCommonId " +
 			"candidates. Optional `collection_id` restricts results to widgets that belong to " +

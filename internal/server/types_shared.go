@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 // listInput is the shared input shape for every list-tool that maps
@@ -188,4 +191,64 @@ func wrapList[T any](fn listFn[T]) func(context.Context, *mcp.CallToolRequest, l
 		}
 		return nil, newListOutput(env), nil
 	}
+}
+
+// Summary renders a page for the readable half: what came back, where
+// in the sequence it sits, and whether there is more. The pagination
+// line comes first because it is the one thing a caller cannot get by
+// reading the items — and because this server never aggregates pages,
+// so a caller that misses `next_page` silently sees a prefix of the
+// answer and believes it is the whole one.
+func (o listOutput[T]) Summary() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d %s", len(o.Items), render.Plural(len(o.Items), "item", "items"))
+	if o.TotalPages > 0 {
+		fmt.Fprintf(&b, " · page %d of %d", o.Page, o.TotalPages)
+	}
+	if o.NextPage != nil {
+		fmt.Fprintf(&b, " · next_page %d (not fetched; call again to continue)", *o.NextPage)
+	} else {
+		b.WriteString(" · last page")
+	}
+	b.WriteString(render.InlineList(o.Items))
+	return b.String()
+}
+
+// Summary renders a write for the readable half. The dry-run branch
+// leads with the verdict and the method and URL, because "did this
+// actually happen" is the only question a caller has about a mutating
+// call, and a result that looks like a success is how §2.1's problem
+// starts.
+func (o writeOutput[T]) Summary() string {
+	if o.DryRun {
+		var b strings.Builder
+		b.WriteString("DRY RUN — nothing was sent to Favro.")
+		if o.WouldCall != nil {
+			fmt.Fprintf(&b, "\n  would call: %s %s", o.WouldCall.Method, o.WouldCall.URL)
+		}
+		if o.PredictedStateDiff != "" {
+			fmt.Fprintf(&b, "\n  would change: %s", o.PredictedStateDiff)
+		}
+		return b.String()
+	}
+	if o.Result == nil {
+		return "done; Favro returned no resource."
+	}
+	return "done:\n" + render.Summary(*o.Result)
+}
+
+// Summary renders a name lookup for the readable half: the count
+// first, because zero and several are the two answers that need a
+// different next call, then the candidates one line each so the
+// caller can pick without a second round-trip.
+func (o resolveOutput[T]) Summary() string {
+	source := "fetched from Favro"
+	if o.Cached {
+		source = "from cache; pass force_refresh to re-fetch"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d %s (%s)",
+		len(o.Candidates), render.Plural(len(o.Candidates), "candidate", "candidates"), source)
+	b.WriteString(render.InlineList(o.Candidates))
+	return b.String()
 }

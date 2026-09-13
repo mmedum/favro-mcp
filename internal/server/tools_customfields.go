@@ -18,8 +18,8 @@ type getCustomFieldInput struct {
 	CustomFieldID string `json:"custom_field_id" jsonschema:"the Favro customFieldId"`
 }
 
-func registerCustomFields(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerCustomFields(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listCustomFieldsToolName,
 		Description: "List Favro custom fields in the active organization. Custom fields " +
 			"are org-global (no widget or card scope). Each entry includes the field's " +
@@ -33,7 +33,7 @@ func registerCustomFields(srv *mcp.Server, client *favro.Client) {
 		Annotations: readOnly("List Favro custom fields"),
 	}, wrapList(client.ListCustomFields))
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name:        getCustomFieldToolName,
 		Description: "Get a single Favro custom field by its customFieldId. Read-only.",
 		Annotations: readOnly("Get Favro custom field"),

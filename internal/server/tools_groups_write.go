@@ -40,8 +40,8 @@ type deleteGroupInput struct {
 	GroupID string `json:"group_id" jsonschema:"the Favro groupId to delete"`
 }
 
-func registerCreateGroup(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerCreateGroup(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: createGroupToolName,
 		Description: "Create a new org-global Favro group. `name` is required; `members` is " +
 			"optional (Favro creates an empty group when omitted). Successful live writes " +
@@ -70,8 +70,8 @@ func registerCreateGroup(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerUpdateGroup(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUpdateGroup(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: updateGroupToolName,
 		Description: "Update a Favro group. Both fields optional. `members`, when set, " +
 			"REPLACES the group's member list — compose the full intended list before " +
@@ -103,8 +103,8 @@ func registerUpdateGroup(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerDeleteGroup(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerDeleteGroup(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: deleteGroupToolName,
 		Description: "Delete a Favro group by its groupId. Destructive — MCP hosts may warn " +
 			"before auto-confirming. The group is removed from any sharing / assignment / " +

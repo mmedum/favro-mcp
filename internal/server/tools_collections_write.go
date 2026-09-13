@@ -51,8 +51,8 @@ type deleteCollectionInput struct {
 	CollectionID string `json:"collection_id" jsonschema:"the Favro collectionId to delete"`
 }
 
-func registerCreateCollection(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerCreateCollection(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: createCollectionToolName,
 		Description: "Create a new Favro collection. `name` is required. Sharing defaults " +
 			"to specific-users-only; pass `public_sharing: 'organization'` for org-wide " +
@@ -92,8 +92,8 @@ func registerCreateCollection(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerUpdateCollection(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUpdateCollection(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: updateCollectionToolName,
 		Description: "Update a Favro collection. Every body field is optional — pass at " +
 			"least one. `archive: true` archives, `archive: false` unarchives, omit to keep " +
@@ -134,8 +134,8 @@ func registerUpdateCollection(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerDeleteCollection(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerDeleteCollection(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: deleteCollectionToolName,
 		Description: "Delete a Favro collection by its collectionId. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Favro does not cascade-delete widgets when a " +

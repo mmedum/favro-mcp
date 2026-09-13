@@ -67,6 +67,10 @@ func init() {
 			run: pins, args: "", gate: true,
 			doc: "every action is a SHA and every tool version is exact",
 		},
+		"classes": {
+			run: classes, args: "", gate: true,
+			doc: "the closed error vocabulary and the document that names it",
+		},
 		"parity": {
 			run: parity, args: "", gate: true,
 			doc: "`make check` and CI run the same gates",

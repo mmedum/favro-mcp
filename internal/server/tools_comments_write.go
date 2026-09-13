@@ -36,8 +36,8 @@ type deleteCommentInput struct {
 	CommentID string `json:"comment_id" jsonschema:"the Favro commentId to delete"`
 }
 
-func registerCreateComment(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerCreateComment(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: createCommentToolName,
 		Description: "Add a new comment to a Favro card identified by `card_common_id`. " +
 			"`comment` is the markdown body. Pass `dry_run: true` to preview the " +
@@ -67,8 +67,8 @@ func registerCreateComment(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerUpdateComment(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUpdateComment(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: updateCommentToolName,
 		Description: "Replace the body of an existing Favro comment. The new `comment` " +
 			"text replaces the existing body in full; surgical edit-in-place is " +
@@ -100,8 +100,8 @@ func registerUpdateComment(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerDeleteComment(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerDeleteComment(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: deleteCommentToolName,
 		Description: "Delete a Favro comment by its commentId. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Pass `dry_run: true` to preview.",

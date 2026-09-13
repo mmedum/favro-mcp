@@ -65,12 +65,13 @@ Two sources, checked in order; the first one that produces a complete `(email, t
 1. **Environment variables** — `FAVRO_USER_EMAIL`, `FAVRO_API_TOKEN`, `FAVRO_ORGANIZATION_ID`.
 2. **OS keyring** — populated once via `favro-mcp auth login` (cross-platform: macOS Keychain, Windows Credential Manager, Linux Secret Service).
 
-Two more variables change how the server runs rather than who it runs as:
+Three more variables change how the server runs rather than who it runs as:
 
 | Variable | Effect |
 | --- | --- |
 | `FAVRO_LOG_LEVEL` | `debug` / `info` (default) / `warn` / `error`. Logs go to stderr; stdout carries only the MCP protocol stream. |
 | `FAVRO_MCP_SKIP_VALIDATE` | When set to anything non-empty, skips the startup call that checks the credentials against Favro. For offline testing; the server then fails on the first real tool call instead of at startup. |
+| `FAVRO_ENABLE_DESTRUCTIVE` | Set to `true` to register the delete-style tools. Off by default, and "off" means they are absent from `tools/list` rather than guarded — a host in an auto-approve mode runs a tool without prompting, so not registering it is the only guarantee. Anything the value cannot be read as `true` leaves them off. |
 
 ### `auth` subcommands
 

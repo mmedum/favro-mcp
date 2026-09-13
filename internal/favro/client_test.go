@@ -362,7 +362,11 @@ func TestRedactHeaders_Authorization(t *testing.T) {
 
 	out := redactHeaders(h)
 	require.Equal(t, "[REDACTED]", out["Authorization"])
-	require.Equal(t, "org-1", out["Organizationid"])
+	// organizationId names the tenant and rides on every request, so
+	// it is redacted too. This assertion used to read the other way,
+	// which is how the leak survived: the behaviour was not an
+	// oversight, it was pinned.
+	require.Equal(t, "[REDACTED]", out["Organizationid"])
 	require.Equal(t, "application/json", out["Accept"])
 }
 
@@ -502,6 +506,12 @@ func TestDryRun_WriteHelpers_NoRoundTrip(t *testing.T) {
 			require.Contains(t, rec.URL, "favro.invalid")
 			require.Equal(t, "[REDACTED]", rec.Headers.Get("Authorization"),
 				"DryRunRecord must redact the Authorization header so secrets cannot leak via tool output")
+			require.Equal(t, "[REDACTED]", rec.Headers.Get("organizationId"),
+				"DryRunRecord must redact the organization id, which names the tenant")
+			// The record composes its headers through buildRequest, so
+			// an empty set here would mean that failed silently.
+			require.Equal(t, "application/json", rec.Headers.Get("Accept"),
+				"DryRunRecord must show the headers the real request would carry")
 		})
 	}
 }

@@ -19,8 +19,8 @@ type listCardActivitiesInput struct {
 	Until  string `json:"until,omitempty" jsonschema:"only activities before this ISO 8601 timestamp"`
 }
 
-func registerActivities(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerActivities(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listCardActivitiesToolName,
 		Description: "Read a Favro card's activity history — who changed what, and when. " +
 			"Answers \"when did this move to Done\", \"who reassigned this\", \"what changed " +

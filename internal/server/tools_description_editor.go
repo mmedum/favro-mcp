@@ -9,7 +9,15 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
+
+// errDescriptionFindNoMatch is the refusal in §7.3: a `find` that
+// matched nothing would PUT the description back unchanged, and a
+// no-op write returns 200 exactly like a real one — so the caller
+// would read success where nothing happened.
+var errDescriptionFindNoMatch = classed(render.ClassNotFound,
+	"favro: 'find' matched nothing in the card description; refusing to PUT an unchanged body")
 
 const (
 	appendCardDescriptionToolName    = "favro_append_card_description"
@@ -44,8 +52,8 @@ type replaceInCardDescriptionInput struct {
 	UseRegex bool `json:"use_regex,omitempty" jsonschema:"if true, 'find' is compiled as a Go regular expression and 'replace' may include $N backrefs. Default false (literal substring match)."`
 }
 
-func registerAppendCardDescription(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerAppendCardDescription(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: appendCardDescriptionToolName,
 		Description: "Append markdown text to a Favro card's description, preserving the " +
 			"existing markdown structure. Reads the card with `descriptionFormat=markdown` " +
@@ -68,8 +76,8 @@ func registerAppendCardDescription(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerPrependCardDescription(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerPrependCardDescription(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: prependCardDescriptionToolName,
 		Description: "Prepend markdown text to a Favro card's description, preserving the " +
 			"existing markdown structure. Reads the card with `descriptionFormat=markdown`, " +
@@ -90,8 +98,8 @@ func registerPrependCardDescription(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerReplaceInCardDescription(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerReplaceInCardDescription(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: replaceInCardDescriptionToolName,
 		Description: "Replace text in a Favro card's description. Default `count: 1` so a " +
 			"common substring doesn't accidentally rewrite every occurrence; pass `count: 0` " +
@@ -116,7 +124,7 @@ func registerReplaceInCardDescription(srv *mcp.Server, r *Resolver) {
 			return nil, writeOutput[editorResult]{}, err
 		}
 		if hits == 0 {
-			return nil, writeOutput[editorResult]{}, fmt.Errorf("favro: 'find' matched nothing in card %q description; refusing to PUT an unchanged body", in.CardID)
+			return nil, writeOutput[editorResult]{}, fmt.Errorf("%w (card %q)", errDescriptionFindNoMatch, in.CardID)
 		}
 		stateDiff := fmt.Sprintf("would replace %d match(es) of %q in card %q description", hits, in.Find, in.CardID)
 		out, err := runDescriptionEdit(ctx, r, in.CardID, in.DryRun, oldBody, newBody, stateDiff)

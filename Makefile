@@ -99,6 +99,10 @@ leaks-history: ## every blob and every commit message in the history
 pins: ## actions pinned by SHA, tool versions exact, shells pinned
 	@$(GO) run ./scripts/gates pins
 
+.PHONY: classes
+classes: ## the closed error vocabulary, against the document that names it
+	@$(GO) run ./scripts/gates classes
+
 .PHONY: parity
 parity: ## `make check` and ci.yml run the same things
 	@$(GO) run ./scripts/gates parity
@@ -133,7 +137,7 @@ package-plugin: ## build a snapshot favro-mcp.plugin (requires goreleaser)
 	$(GO) run ./scripts/gates plugin-pack
 
 .PHONY: check
-check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins parity plugin schema-diff smoke staleness ## everything CI runs
+check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes parity plugin schema-diff smoke staleness ## everything CI runs
 
 .PHONY: clean
 clean: ## remove build artifacts
