@@ -37,3 +37,7 @@ Thumbs.db
 # Go module cache (handled by setup-go in CI)
 go.work
 go.work.sum
+
+# `go build ./scripts/gates` drops a binary here under the directory name.
+/gates
+/.gates

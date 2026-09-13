@@ -14,7 +14,7 @@
 
 ## Checklist
 
-- [ ] `make ci` passes locally (lint + vet + test + vulncheck).
+- [ ] `make check` passes locally (every gate CI runs).
 - [ ] New/changed mutating tools accept `dry_run: bool` and have a test that fails if HTTP `RoundTrip` happens during dry-run.
 - [ ] No secrets, tokens, or `Authorization` headers in code, tests, fixtures, or logs.
 - [ ] New or changed tools have a row in `docs/TOOLS.md`, and one in `smokeToolInputs` (`internal/server/smoke_test.go`).

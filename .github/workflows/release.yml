@@ -7,24 +7,28 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+-*"
 
 permissions:
-  contents: write
+  contents: read
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           check-latest: true
-      - name: lint
-        uses: golangci/golangci-lint-action@v9
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
+          version: v2.13.2
           args: --timeout=5m
       - name: unit tests
         run: go test -race ./...
@@ -33,33 +37,39 @@ jobs:
     name: goreleaser
     runs-on: ubuntu-latest
     needs: verify
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           check-latest: true
       - name: install goreleaser
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           install-only: true
+          version: v2.18.1
       - name: release notes header
         # Written outside the work tree on purpose: goreleaser refuses to
-        # release from a dirty git state, and a file in the repo root would
-        # make it one.
-        run: scripts/changelog-section.sh "${{ github.ref_name }}" > "${{ runner.temp }}/release-header.md"
+        # release from a dirty git state, and a file in the repo root
+        # would make it one. The gate exits non-zero when the version has
+        # no changelog section, so a release whose entry was never
+        # written fails at tag time rather than publishing empty notes.
+        run: go run ./scripts/gates release-notes "${{ github.ref_name }}" > "${{ runner.temp }}/release-header.md"
       - name: goreleaser release
         run: goreleaser release --clean --release-header="${{ runner.temp }}/release-header.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: package .plugin
         # Plugin packaging shares the goreleaser job because it consumes
-        # dist/ — running on a separate runner would lose the artifacts.
-        # Skip on pre-release tags: `.plugin` represents a stable install.
+        # dist/ — a separate runner would lose those artifacts. Skipped on
+        # pre-release tags: the .plugin represents a stable install.
         if: ${{ !contains(github.ref, '-') }}
-        run: scripts/package-plugin.sh
+        run: go run ./scripts/gates plugin-pack
       - name: attach .plugin to release
         if: ${{ !contains(github.ref, '-') }}
         run: gh release upload "${{ github.ref_name }}" favro-mcp.plugin --clobber
