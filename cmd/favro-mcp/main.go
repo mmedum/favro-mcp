@@ -23,37 +23,17 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/config"
+	"github.com/mmedum/favro-mcp/internal/favroapi"
 	"github.com/mmedum/favro-mcp/internal/server"
 	"github.com/mmedum/favro-mcp/internal/version"
 )
-
-// envSkipValidate, when set to a non-empty value, suppresses the
-// startup live-validation HTTP call. Lets protocol-only integration
-// tests exercise the MCP surface without contacting Favro.
-const envSkipValidate = "FAVRO_MCP_SKIP_VALIDATE"
-
-// envLogLevel selects the slog level. Values are case-insensitive:
-// debug, info (default), warn, error.
-const envLogLevel = "FAVRO_LOG_LEVEL"
-
-// envEnableDestructive registers the delete-style tools. Unset — the
-// default — and they are not in tools/list at all.
-//
-// Off by default because a client-side prompt is not a safety layer:
-// a host in an auto-approve permission mode runs a tool annotated
-// destructive without asking anyone, and the MCP spec says clients
-// treat tool annotations as untrusted. The tool that cannot run
-// unattended is the one that was never registered.
-const envEnableDestructive = "FAVRO_ENABLE_DESTRUCTIVE"
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
@@ -66,7 +46,7 @@ func main() {
 // where every diagnostic goes; stdout is reserved for the MCP
 // protocol stream when the server is running.
 func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-	configureLogging(stderr)
+	cfg := configureLogging(stderr)
 
 	if len(args) > 0 {
 		switch args[0] {
@@ -81,50 +61,32 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) err
 		}
 	}
 
-	return runServer(args, stdout, stderr)
+	return runServer(args, cfg, stdout, stderr)
 }
 
-// configureLogging installs a stderr-bound slog default handler. Level
-// comes from FAVRO_LOG_LEVEL; unrecognized values fall back to info
-// and emit a warning once the handler is installed.
-func configureLogging(stderr io.Writer) {
-	raw := strings.ToLower(strings.TrimSpace(os.Getenv(envLogLevel)))
-	level, recognized := parseLogLevel(raw)
-	h := slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level})
-	slog.SetDefault(slog.New(h))
-	if !recognized {
-		// gosec G706 flags os.Getenv values flowing into log output, but
-		// env vars are trusted local config in our threat model.
-		slog.Warn("unrecognized log level — falling back to info", //nolint:gosec
-			"var", envLogLevel,
-			"value", raw,
-		)
+// configureLogging installs a stderr-bound slog default handler and
+// returns the settings it read on the way.
+//
+// The order is the whole reason this returns a Config rather than
+// logging what it found: the log level is one of the settings, so
+// anything config.Load could not read has to be warned about after the
+// handler exists, not while it is being chosen.
+func configureLogging(stderr io.Writer) config.Config {
+	cfg := config.Load()
+	slog.SetDefault(slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel})))
+	for _, w := range cfg.Warnings {
+		// gosec G706 flags env values flowing into log output, but env
+		// vars are trusted local config in our threat model.
+		slog.Warn(w) //nolint:gosec
 	}
-}
-
-// parseLogLevel maps a case-folded env value to a slog.Level. The
-// second return is false for unknown values (callers may want to
-// surface a warning).
-func parseLogLevel(s string) (slog.Level, bool) {
-	switch s {
-	case "", "info":
-		return slog.LevelInfo, true
-	case "debug":
-		return slog.LevelDebug, true
-	case "warn", "warning":
-		return slog.LevelWarn, true
-	case "error":
-		return slog.LevelError, true
-	default:
-		return slog.LevelInfo, false
-	}
+	return cfg
 }
 
 // runServer is the default path: resolve credentials, optionally
 // validate them live, build the MCP server, and run it over stdio.
 // stderr carries usage and flag-parse diagnostics; everything else
 // goes through the slog default handler run() already bound to it.
-func runServer(args []string, stdout io.Writer, stderr io.Writer) error {
+func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Writer) error {
 	fs := flag.NewFlagSet("favro-mcp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // we print our own usage to stderr.
 	dryRun := fs.Bool("dry-run", false, "force every mutating tool into dry-run mode regardless of input")
@@ -150,7 +112,7 @@ func runServer(args []string, stdout io.Writer, stderr io.Writer) error {
 	if *dryRun {
 		// Wired through Client.ForceDryRun below — every POST/PUT/
 		// DELETE/PATCH issued via the Favro client short-circuits and
-		// returns a *favro.DryRunRecord. Phase 5 adds the high-level
+		// returns a *favroapi.DryRunRecord. Phase 5 adds the high-level
 		// mutating tools that exercise this gate.
 		slog.Info("--dry-run set; all mutating Favro requests will short-circuit and return a DryRunRecord")
 	}
@@ -176,7 +138,7 @@ func runServer(args []string, stdout io.Writer, stderr io.Writer) error {
 		"credential_source", rt.Source,
 	)
 
-	if os.Getenv(envSkipValidate) == "" {
+	if !cfg.SkipValidate {
 		v := auth.DefaultValidator()
 		if err := v.Validate(ctx, rt.Token); err != nil {
 			slog.Error("Favro credentials rejected at startup", "error", err)
@@ -184,18 +146,22 @@ func runServer(args []string, stdout io.Writer, stderr io.Writer) error {
 		}
 		slog.Debug("startup credentials validated against Favro")
 	} else {
-		slog.Warn("FAVRO_MCP_SKIP_VALIDATE is set — startup live validation disabled")
+		slog.Warn(config.EnvSkipValidate + " is set — startup live validation disabled")
 	}
 
-	client := favro.NewClient(rt.Token)
+	client := favroapi.NewClient(rt.Token)
 	client.ForceDryRun = *dryRun
 
-	opts := server.Options{Destructive: destructiveEnabled()}
+	opts := server.Options{
+		Destructive:      cfg.Destructive,
+		CredentialSource: rt.Source,
+		Version:          version.String(),
+	}
 	if opts.Destructive {
-		slog.Warn("FAVRO_ENABLE_DESTRUCTIVE is set — delete-style tools are registered and can run unattended")
+		slog.Warn(config.EnvEnableDestructive + " is set — delete-style tools are registered and can run unattended")
 	}
 
-	srv := server.New(client, rt.Source, version.String(), opts)
+	srv := server.New(client, opts)
 	if err := srv.Run(ctx, &mcp.StdioTransport{}); !cleanDisconnect(err) {
 		slog.Error("MCP server exited with error", "error", err)
 		return err
@@ -215,25 +181,12 @@ func runServer(args []string, stdout io.Writer, stderr io.Writer) error {
 // snapshot, and the schema-diff gate would then stop watching them for
 // the breaking changes it exists to catch.
 func dumpSchemaSurface(ctx context.Context, stdout io.Writer) error {
-	srv := server.New(favro.NewClient(auth.Token{}), "none", version.String(), server.Options{Destructive: true})
+	srv := server.New(favroapi.NewClient(auth.Token{}), server.Options{
+		Destructive:      true,
+		CredentialSource: "none",
+		Version:          version.String(),
+	})
 	return server.DumpSchemas(ctx, srv, stdout, version.String())
-}
-
-// destructiveEnabled reads envEnableDestructive. Anything Go reads as
-// false, and anything it cannot read at all, means off: a typo in the
-// variable that enables deletes must not enable deletes.
-func destructiveEnabled() bool {
-	raw := os.Getenv(envEnableDestructive)
-	if raw == "" {
-		return false
-	}
-	on, err := strconv.ParseBool(raw)
-	if err != nil {
-		slog.Warn("ignoring unparseable "+envEnableDestructive+"; delete-style tools stay unregistered",
-			"hint", "set it to true or false")
-		return false
-	}
-	return on
 }
 
 // cleanDisconnect reports whether the server stopped for an ordinary
@@ -281,8 +234,8 @@ Environment:
   %s           debug | info | warn | error  (default: info)
   %s   When set, skip the startup /organizations ping.
   %s  Set to true to register the delete-style tools (default: off).
-`, auth.EnvUserEmail, auth.EnvAPIToken, auth.EnvOrganizationID, envLogLevel, envSkipValidate,
-		envEnableDestructive)
+`, auth.EnvUserEmail, auth.EnvAPIToken, auth.EnvOrganizationID,
+		config.EnvLogLevel, config.EnvSkipValidate, config.EnvEnableDestructive)
 }
 
 // missingCredsHint is the canonical "tell the user what to do next"

@@ -11,7 +11,7 @@ import (
 )
 
 // Summarizer is implemented by an output type that knows how to say
-// what it holds. The shared output shapes in internal/server implement
+// what it holds. The shared output shapes in internal/tools implement
 // it, which covers the list, write and resolve tools — the three
 // families where a generic field dump would bury the one thing the
 // caller needs (the next page, the dry-run verdict, the candidates).
@@ -274,7 +274,7 @@ func deref(rv reflect.Value) reflect.Value {
 
 func isTime(t reflect.Type) bool { return t == reflect.TypeOf(time.Time{}) }
 
-// Plural is the obvious helper, exported because internal/server
+// Plural is the obvious helper, exported because internal/tools
 // builds its own summary headers ("52 items", "7 candidates") and
 // already imports this package.
 func Plural(n int, one, many string) string {

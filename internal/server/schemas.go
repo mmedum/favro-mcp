@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/mmedum/favro-mcp/internal/tools"
 )
 
 // sdkModule is the import path whose version the dump reports. Read from
@@ -60,7 +62,7 @@ func DumpSchemas(ctx context.Context, srv *mcp.Server, w io.Writer, version stri
 		Version string      `json:"version"`
 		SDK     string      `json:"sdk"`
 		Tools   []*mcp.Tool `json:"tools"`
-	}{serverName, version, sdkVersion(), res.Tools}
+	}{tools.ServerName, version, sdkVersion(), res.Tools}
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

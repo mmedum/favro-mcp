@@ -1,7 +1,5 @@
 package favro
 
-import "context"
-
 // CustomField is a Favro custom field — org-global metadata that
 // can be attached to any card, with the active value living on
 // the card's CustomFieldsValues. Two reads matter for an LLM:
@@ -41,18 +39,4 @@ type CustomFieldItem struct {
 	Name              string `json:"name"`
 	Color             string `json:"color,omitempty"`
 	Enabled           bool   `json:"enabled,omitempty"`
-}
-
-// ListCustomFields returns one page of custom fields in the active
-// organization. Custom fields are org-global; there is no widget
-// or card filter.
-func (c *Client) ListCustomFields(ctx context.Context, page int, requestID string) (PageEnvelope[CustomField], error) {
-	return listPage[CustomField](ctx, c, "/customfields", page, requestID)
-}
-
-// GetCustomField returns a single custom field by its
-// customFieldId. Returns *NotFoundError if no such custom field
-// exists in the active organization.
-func (c *Client) GetCustomField(ctx context.Context, customFieldID string) (CustomField, error) {
-	return getByID[CustomField](ctx, c, "/customfields", customFieldID)
 }

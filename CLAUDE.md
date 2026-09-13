@@ -40,7 +40,7 @@ is current before starting work that a later phase is going to move.**
    never reaches `RoundTrip`. The gate lives in the client, not in the
    tool.
 5. **Every registered tool needs a row in `smokeToolInputs`**
-   (`internal/server/smoke_test.go`) or the smoke test fails.
+   (`internal/tools/smoke_test.go`) or the smoke test fails.
 6. **Pagination is never auto-aggregated.** List tools surface
    `next_page` and require an explicit follow-up.
 7. **Tag tools hard-fail on unknown tag names** rather than creating
@@ -49,7 +49,10 @@ is current before starting work that a later phase is going to move.**
 8. **Single-org.** The server binds `FAVRO_ORGANIZATION_ID` at startup
    and no tool takes an `organization_id`.
 9. **Own wire types, raw REST.** There is no generated Favro client and
-   there will not be one.
+   there will not be one. The dependency direction is
+   `server` → `tools` → `service` → `favroapi` → `favro`, with `config`,
+   `cache`, `auth` and `render` as leaves; depguard fails the build on an
+   import that runs uphill.
 10. **No auto-commit, no auto-push.** Never push a tag without being
     asked.
 11. **Destructive tools are registered only when
@@ -78,17 +81,26 @@ is current before starting work that a later phase is going to move.**
 - `cmd/favro-mcp/` — server default, `auth` subcommands, `--version`,
   `--dry-run`.
 - `internal/auth/` — credential resolution: env → OS keyring; `Token.Apply`.
-- `internal/favro/` — the REST client and the wire types, one file per
-  resource. A3 splits the client out into `internal/favroapi/`.
+- `internal/favro/` — the wire types, one file per resource. Imports
+  nothing.
+- `internal/favroapi/` — the REST client, one file per resource. No MCP.
+- `internal/config/` — every `FAVRO_*` setting, resolved once at startup.
 - `internal/cache/` — the TTL cache the resolver runs on.
-- `internal/server/` — the MCP layer. Two non-obvious pieces:
+- `internal/service/` — orchestration, and no MCP imports. Two
+  non-obvious pieces:
   - `resolver.go` — the name→ID caches every `favro_resolve_*` tool and
     most write tools go through. **A write tool must invalidate the right
-    cache on success.**
+    cache on success**, which is why the `Invalidate*` methods are
+    exported rather than internal.
   - `full_card.go` — the parallel dereferencing fan-out behind
     `favro_get_card_full`.
-  A3 splits this package into `internal/tools/` (the MCP surface),
-  `internal/service/` (orchestration) and `internal/server/` (SDK wiring).
+- `internal/render/` — the readable half of every result, and the closed
+  error vocabulary. Imports nothing, which is what lets
+  `internal/favroapi`'s errors name their own class.
+- `internal/tools/` — the MCP surface, one file per area, plus
+  `register.go` (the one list of what is registered) and `registry.go`
+  (`addTool`, where the destructive gate and both result halves live).
+- `internal/server/` — SDK wiring and the schema dump, and nothing else.
 - `internal/version/` — the build stamp.
 - `scripts/gates/` — this repository's own checks, as Go. **One language,
   and no shell** (standard §1). A new gate goes in the registry in

@@ -17,6 +17,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - `FAVRO_ENABLE_DESTRUCTIVE`: set it to `true` to register the delete-style tools. See Removed.
 - `internal/render`: the readable half of every tool result, and the closed error vocabulary — `invalid`, `not_found`, `auth`, `conflict`, `unavailable`, `unsupported`, `forbidden`, `rate_limited`, `ambiguous`.
 - `classes` gate: the vocabulary in `internal/render/class.go` and the table in `docs/architecture.md` §6.2 must name each other, and a class no code returns fails too.
+- `internal/config`: every `FAVRO_*` setting resolved once at startup, with the values it could not read reported rather than silently defaulted.
+- depguard rules holding the package dependency direction, one per package, naming what it may not import.
 
 ### Changed
 - `CLAUDE.md` restructured to the sibling shape — mission, hard rules, where things go, definition of done — and now points at `docs/architecture.md` for anything it used to summarise.
@@ -27,6 +29,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - The licence check ignores `github.com/segmentio/asm` by path — it relicensed to MIT-0, which go-licenses v1.6.0's classifier does not recognise and no allowlist value can match.
 - Every tool error is now `[class] actionable message`, from the closed vocabulary. A 429 carries `retry_after_seconds` in the text, since a failed call has no `structuredContent` to put it in.
 - Tool results send a readable `content` block and a machine-readable `structuredContent` one. They used to be the same bytes: the SDK copies the marshalled output into a text block when a handler leaves `Content` unset, and every handler did.
+- Package layout split to the shape the sibling servers use: `internal/favro` is the wire types alone and `internal/favroapi` the REST client; `internal/server` is split into `internal/tools` (the MCP surface), `internal/service` (resolution, search, the full-card fan-out, description editing) and `internal/server` (SDK wiring, two files). Direction runs one way — `server` → `tools` → `service` → `favroapi` → `favro` — with `config`, `cache`, `auth` and `render` as leaves.
+- `internal/favroapi`'s typed errors name their own class, rather than having one read off them by a switch in `internal/render`. An eighth error type can no longer reach the fallback class in silence.
+- The Resolver's cache invalidation is exported API (`InvalidateTagCache` and the rest). A write tool in another package has to call it, and the rule that it must was already the load-bearing one.
 - List tools are now genuinely 1-indexed, as their schema has always said. `page` went to Favro untouched and Favro counts from zero, so asking for page 1 returned the second page and the first was never seen — a valid page of real results with rows silently absent. `page` and `next_page` in responses count from one to match.
 
 ### Removed
@@ -36,6 +41,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - The server exited 1 whenever a host closed the stdio pipe, which every host logs as a crash. The SDK reports a disconnect as JSON-RPC −32004 with the EOF only as message text, so `errors.Is(err, io.EOF)` never matched it; the code is matched now.
 - Test fixtures used an address at a registrable domain (`e.com`); they use `example.test`.
 - README documents `FAVRO_LOG_LEVEL` and `FAVRO_MCP_SKIP_VALIDATE`, which the binary has always read.
+- The `User-Agent` header is sent again. A scripted rename during the package split rewrote the literal `"User-Agent"` into `"favro.User-Agent"`, so requests carried Go's default agent and a junk header; nothing asserted it, so no test failed.
 
 ### Security
 - The debug request log no longer carries the query string or the path's ids. Favro addresses everything by id in both halves of the URL — `cardCommonId`, `widgetCommonId` and `sequentialId` in the query, `/cards/{cardId}` in the path — so a debug log reconstructed which cards a session touched. The parameter names and the endpoint shape are logged instead.
