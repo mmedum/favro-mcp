@@ -39,7 +39,7 @@ func TestMCP_ListCollections_HappyPath(t *testing.T) {
 	require.Len(t, out.Items, 1)
 	require.Equal(t, "Engineering", out.Items[0].Name)
 	require.NotNil(t, out.NextPage)
-	require.Equal(t, 1, *out.NextPage)
+	require.Equal(t, 2, *out.NextPage)
 	require.Equal(t, "req-c", out.RequestID)
 }
 

@@ -50,7 +50,7 @@ func registerCards(reg *registry, client *favro.Client) {
 			"SAME filters again) to retrieve subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro cards"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listCardsInput) (*mcp.CallToolResult, listOutput[favro.Card], error) {
-		env, err := client.ListCards(ctx, in.Page, in.RequestID, favro.ListCardsFilter{
+		env, err := client.ListCards(ctx, in.favroPage(), in.RequestID, favro.ListCardsFilter{
 			WidgetCommonID:    in.WidgetCommonID,
 			CollectionID:      in.CollectionID,
 			CardCommonID:      in.CardCommonID,

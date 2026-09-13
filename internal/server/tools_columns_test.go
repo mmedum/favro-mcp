@@ -42,7 +42,7 @@ func TestMCP_ListColumns_HappyPath(t *testing.T) {
 	require.Equal(t, "Doing", out.Items[0].Name)
 	require.Equal(t, 1, out.Items[0].Position)
 	require.NotNil(t, out.NextPage)
-	require.Equal(t, 1, *out.NextPage)
+	require.Equal(t, 2, *out.NextPage)
 }
 
 func TestMCP_ListColumns_MissingWidget_ReturnsToolError(t *testing.T) {

@@ -40,7 +40,7 @@ func TestMCP_ListCards_HappyPath(t *testing.T) {
 	require.Equal(t, "Print visitor passes", out.Items[0].Name)
 	require.Equal(t, 42, out.Items[0].SequentialID)
 	require.NotNil(t, out.NextPage)
-	require.Equal(t, 1, *out.NextPage)
+	require.Equal(t, 2, *out.NextPage)
 }
 
 func TestMCP_ListCards_FiltersForwarded(t *testing.T) {

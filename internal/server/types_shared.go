@@ -20,10 +20,33 @@ import (
 type listInput struct {
 	// Page is the 1-indexed page number. Omit (or 0) for the first
 	// page. Pass values from a prior call's `next_page`.
-	Page int `json:"page,omitempty" jsonschema:"1-indexed page; omit for the first page"`
+	//
+	// 1-indexed here and 0-indexed on the wire: see favroPage.
+	Page int `json:"page,omitempty" jsonschema:"1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting."`
 	// RequestID is the prior call's `request_id`. Required when Page
 	// > 0; ignored otherwise.
 	RequestID string `json:"request_id,omitempty" jsonschema:"request_id from a prior page; required when page > 0 (Favro routes via X-Favro-Backend-Identifier)"`
+}
+
+// favroPage converts this tool's 1-indexed page number into the
+// 0-indexed one Favro's `page` parameter takes.
+//
+// The two numberings used to be the same number. The schema has said
+// "1-indexed" since these tools shipped, and the value went to Favro
+// untouched — so a caller that believed the schema and asked for page 1
+// was served Favro's page 1, the *second* page, and never saw the
+// first. Nothing failed: it returned a valid page of real results, and
+// the missing rows were simply absent.
+//
+// The conversion lives here rather than in internal/favro because that
+// package is a faithful client of Favro's REST API, and Favro's page is
+// 0-indexed. This is the MCP layer keeping the promise its own schema
+// makes.
+func (in listInput) favroPage() int {
+	if in.Page <= 0 {
+		return 0 // omitted, or an explicit first page
+	}
+	return in.Page - 1
 }
 
 // listOutput is the shared output shape for every list-tool. Items
@@ -40,14 +63,17 @@ type listOutput[T any] struct {
 // newListOutput projects a Favro PageEnvelope into the MCP-shaped
 // listOutput.
 func newListOutput[T any](env favro.PageEnvelope[T]) listOutput[T] {
+	// Favro counts pages from zero; this surface counts from one, so
+	// what comes back reads the way the input schema promises and
+	// `next_page` can be passed straight back in.
 	out := listOutput[T]{
 		Items:      env.Entities,
-		Page:       env.Page,
+		Page:       env.Page + 1,
 		TotalPages: env.Pages,
 		RequestID:  env.RequestID,
 	}
 	if env.HasNextPage() {
-		next := env.Page + 1
+		next := env.Page + 2
 		out.NextPage = &next
 	}
 	return out
@@ -185,7 +211,7 @@ type listFn[T any] func(ctx context.Context, page int, requestID string) (favro.
 // every favro_list_<resource> tool reduces to one line.
 func wrapList[T any](fn listFn[T]) func(context.Context, *mcp.CallToolRequest, listInput) (*mcp.CallToolResult, listOutput[T], error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in listInput) (*mcp.CallToolResult, listOutput[T], error) {
-		env, err := fn(ctx, in.Page, in.RequestID)
+		env, err := fn(ctx, in.favroPage(), in.RequestID)
 		if err != nil {
 			return nil, listOutput[T]{}, err
 		}
