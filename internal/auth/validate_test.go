@@ -44,7 +44,7 @@ func fakeFavro(t *testing.T, status int) *httptest.Server {
 }
 
 func goodToken() Token {
-	return Token{Email: "u@e.com", APIToken: "tok", OrganizationID: "org-1"}
+	return Token{Email: "u@example.test", APIToken: "tok", OrganizationID: "org-1"}
 }
 
 func TestValidator_OK(t *testing.T) {
@@ -96,7 +96,7 @@ func TestValidator_RejectsIncompleteToken_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	v := &Validator{BaseURL: srv.URL, Client: srv.Client()}
-	err := v.Validate(context.Background(), Token{Email: "u@e.com"}) // missing token + org
+	err := v.Validate(context.Background(), Token{Email: "u@example.test"}) // missing token + org
 
 	var mfe *missingFieldError
 	require.ErrorAs(t, err, &mfe)

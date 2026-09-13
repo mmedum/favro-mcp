@@ -37,25 +37,25 @@ func TestEnvSource_Load(t *testing.T) {
 		{
 			name: "all set -> Token",
 			env: map[string]string{
-				EnvUserEmail:      "u@e.com",
+				EnvUserEmail:      "u@example.test",
 				EnvAPIToken:       "tok",
 				EnvOrganizationID: "org-1",
 			},
-			wantToken: Token{Email: "u@e.com", APIToken: "tok", OrganizationID: "org-1"},
+			wantToken: Token{Email: "u@example.test", APIToken: "tok", OrganizationID: "org-1"},
 		},
 		{
 			name: "whitespace is trimmed",
 			env: map[string]string{
-				EnvUserEmail:      "  u@e.com  ",
+				EnvUserEmail:      "  u@example.test  ",
 				EnvAPIToken:       " tok ",
 				EnvOrganizationID: " org-1 ",
 			},
-			wantToken: Token{Email: "u@e.com", APIToken: "tok", OrganizationID: "org-1"},
+			wantToken: Token{Email: "u@example.test", APIToken: "tok", OrganizationID: "org-1"},
 		},
 		{
 			name: "partial -> missingFieldError, not errNotConfigured",
 			env: map[string]string{
-				EnvUserEmail: "u@e.com",
+				EnvUserEmail: "u@example.test",
 				EnvAPIToken:  "tok",
 				// no FAVRO_ORGANIZATION_ID
 			},

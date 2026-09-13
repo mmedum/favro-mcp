@@ -30,7 +30,7 @@ func TestKeyringSource_RoundTrip(t *testing.T) {
 	resetKeyring(t)
 
 	src := KeyringSource{}
-	original := Token{Email: "u@e.com", APIToken: "tok-xyz", OrganizationID: "org-1"}
+	original := Token{Email: "u@example.test", APIToken: "tok-xyz", OrganizationID: "org-1"}
 
 	require.NoError(t, src.Save(context.Background(), original))
 
@@ -50,8 +50,8 @@ func TestKeyringSource_Load_NoActivePointer_ReturnsNotConfigured(t *testing.T) {
 func TestKeyringSource_Load_DanglingPointer_ReturnsNotConfigured(t *testing.T) {
 	resetKeyring(t)
 
-	// Active pointer says "u@e.com" but no payload entry exists.
-	require.NoError(t, keyring.Set(keyringActiveService, keyringActiveAccount, "u@e.com"))
+	// Active pointer says "u@example.test" but no payload entry exists.
+	require.NoError(t, keyring.Set(keyringActiveService, keyringActiveAccount, "u@example.test"))
 
 	_, err := KeyringSource{}.Load(context.Background())
 	require.ErrorIs(t, err, errNotConfigured,
@@ -61,8 +61,8 @@ func TestKeyringSource_Load_DanglingPointer_ReturnsNotConfigured(t *testing.T) {
 func TestKeyringSource_Load_CorruptPayload_Errors(t *testing.T) {
 	resetKeyring(t)
 
-	require.NoError(t, keyring.Set(keyringActiveService, keyringActiveAccount, "u@e.com"))
-	require.NoError(t, keyring.Set(keyringService, "u@e.com", "not-json"))
+	require.NoError(t, keyring.Set(keyringActiveService, keyringActiveAccount, "u@example.test"))
+	require.NoError(t, keyring.Set(keyringService, "u@example.test", "not-json"))
 
 	_, err := KeyringSource{}.Load(context.Background())
 	require.Error(t, err)
@@ -73,7 +73,7 @@ func TestKeyringSource_Load_CorruptPayload_Errors(t *testing.T) {
 func TestKeyringSource_Save_RejectsIncompleteToken(t *testing.T) {
 	resetKeyring(t)
 
-	err := KeyringSource{}.Save(context.Background(), Token{Email: "u@e.com"})
+	err := KeyringSource{}.Save(context.Background(), Token{Email: "u@example.test"})
 	var mfe *missingFieldError
 	require.ErrorAs(t, err, &mfe, "Save must validate before writing anything")
 }
@@ -87,7 +87,7 @@ func TestKeyringSource_Delete_Idempotent(t *testing.T) {
 	// After Save then Delete, Load returns errNotConfigured again.
 	src := KeyringSource{}
 	require.NoError(t, src.Save(context.Background(), Token{
-		Email: "u@e.com", APIToken: "t", OrganizationID: "o",
+		Email: "u@example.test", APIToken: "t", OrganizationID: "o",
 	}))
 	require.NoError(t, src.Delete(context.Background()))
 

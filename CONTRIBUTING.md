@@ -6,7 +6,9 @@
 git clone https://github.com/mmedum/favro-mcp.git
 cd favro-mcp
 make build       # build ./bin/favro-mcp
-make ci          # lint + test + vet + vulncheck
+make check       # everything CI runs: fmt, vet, tidy, lint, cover, vuln,
+                 # licenses, secrets, leaks, pins, parity, plugin,
+                 # schema-diff, smoke, staleness
 make test        # unit tests with race detector
 make lint        # golangci-lint + gofumpt diff + goimports
 make build       # build ./bin/favro-mcp

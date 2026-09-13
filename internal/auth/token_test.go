@@ -26,7 +26,7 @@ func TestToken_Apply_SetsBasicAuthAndOrgHeader(t *testing.T) {
 func TestToken_Apply_OmitsEmptyOrgID(t *testing.T) {
 	t.Parallel()
 
-	tok := Token{Email: "u@e.com", APIToken: "t"}
+	tok := Token{Email: "u@example.test", APIToken: "t"}
 	req, err := http.NewRequest(http.MethodGet, "https://example.com", http.NoBody)
 	require.NoError(t, err)
 
@@ -47,7 +47,7 @@ func TestToken_Validate(t *testing.T) {
 	}{
 		{
 			name: "all fields present",
-			tok:  Token{Email: "u@e.com", APIToken: "t", OrganizationID: "o"},
+			tok:  Token{Email: "u@example.test", APIToken: "t", OrganizationID: "o"},
 		},
 		{
 			name:    "all fields missing",
@@ -63,13 +63,13 @@ func TestToken_Validate(t *testing.T) {
 		},
 		{
 			name:    "missing token only",
-			tok:     Token{Email: "u@e.com", OrganizationID: "o"},
+			tok:     Token{Email: "u@example.test", OrganizationID: "o"},
 			wantErr: true,
 			missing: []string{"API token"},
 		},
 		{
 			name:    "missing org only",
-			tok:     Token{Email: "u@e.com", APIToken: "t"},
+			tok:     Token{Email: "u@example.test", APIToken: "t"},
 			wantErr: true,
 			missing: []string{"organization id"},
 		},
@@ -116,22 +116,22 @@ func TestToken_Validate_RejectsCRLF(t *testing.T) {
 	}{
 		{
 			name: "CR in email",
-			tok:  Token{Email: "u@e.com\r", APIToken: "t", OrganizationID: "o"},
+			tok:  Token{Email: "u@example.test\r", APIToken: "t", OrganizationID: "o"},
 			want: []string{"email"},
 		},
 		{
 			name: "LF in API token",
-			tok:  Token{Email: "u@e.com", APIToken: "tok\nevil", OrganizationID: "o"},
+			tok:  Token{Email: "u@example.test", APIToken: "tok\nevil", OrganizationID: "o"},
 			want: []string{"API token"},
 		},
 		{
 			name: "CRLF in organization id",
-			tok:  Token{Email: "u@e.com", APIToken: "t", OrganizationID: "o\r\nX-Injected: 1"},
+			tok:  Token{Email: "u@example.test", APIToken: "t", OrganizationID: "o\r\nX-Injected: 1"},
 			want: []string{"organization id"},
 		},
 		{
 			name: "multiple bad fields",
-			tok:  Token{Email: "u\r@e.com", APIToken: "t\nx", OrganizationID: "o"},
+			tok:  Token{Email: "u\r@example.test", APIToken: "t\nx", OrganizationID: "o"},
 			want: []string{"email", "API token"},
 		},
 	}

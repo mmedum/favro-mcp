@@ -6,6 +6,7 @@
 //	favro-mcp                run as MCP server over stdio
 //	favro-mcp --version      print version + commit
 //	favro-mcp --dry-run      run server with all writes forced into dry-run
+//	favro-mcp --dump-schemas print the tool schemas as JSON and exit
 //	favro-mcp auth login     interactive credential capture
 //	favro-mcp auth status    show user/org (token never printed)
 //	favro-mcp auth logout    delete keyring entries
@@ -25,6 +26,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
@@ -68,7 +70,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) err
 		}
 	}
 
-	return runServer(args, stderr)
+	return runServer(args, stdout, stderr)
 }
 
 // configureLogging installs a stderr-bound slog default handler. Level
@@ -111,10 +113,11 @@ func parseLogLevel(s string) (slog.Level, bool) {
 // validate them live, build the MCP server, and run it over stdio.
 // stderr carries usage and flag-parse diagnostics; everything else
 // goes through the slog default handler run() already bound to it.
-func runServer(args []string, stderr io.Writer) error {
+func runServer(args []string, stdout io.Writer, stderr io.Writer) error {
 	fs := flag.NewFlagSet("favro-mcp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // we print our own usage to stderr.
 	dryRun := fs.Bool("dry-run", false, "force every mutating tool into dry-run mode regardless of input")
+	dumpSchemas := fs.Bool("dump-schemas", false, "print the tool schemas as JSON and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			printUsage(stderr)
@@ -123,6 +126,14 @@ func runServer(args []string, stderr io.Writer) error {
 		errf(stderr, "favro-mcp: %v\n\n", err)
 		printUsage(stderr)
 		return err
+	}
+
+	// Before credentials: the schema dump describes the surface, and the
+	// surface does not depend on who is calling. The schema-diff gate
+	// builds this binary at an old tag and asks it for its schemas, and
+	// that build has no keyring and no environment to read.
+	if *dumpSchemas {
+		return dumpSchemaSurface(context.Background(), stdout)
 	}
 
 	if *dryRun {
@@ -164,12 +175,42 @@ func runServer(args []string, stderr io.Writer) error {
 	client.ForceDryRun = *dryRun
 
 	srv := server.New(client, rt.Source, version.String())
-	if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
+	if err := srv.Run(ctx, &mcp.StdioTransport{}); !cleanDisconnect(err) {
 		slog.Error("MCP server exited with error", "error", err)
 		return err
 	}
 	slog.Info("favro-mcp shut down cleanly")
 	return nil
+}
+
+// dumpSchemaSurface writes the whole tool surface to w. The client it
+// builds is never used to reach Favro — listing tools touches no
+// handler — so an empty token is the right one to pass: asking for
+// credentials here would make the gate that reads this need them too.
+func dumpSchemaSurface(ctx context.Context, stdout io.Writer) error {
+	srv := server.New(favro.NewClient(auth.Token{}), "none", version.String())
+	return server.DumpSchemas(ctx, srv, stdout, version.String())
+}
+
+// cleanDisconnect reports whether the server stopped for an ordinary
+// reason: the context was cancelled, or the client went away.
+//
+// errors.Is(err, io.EOF) does not catch a client going away. The SDK
+// reports a closed connection as JSON-RPC -32004 with the EOF only as
+// message text, so an unmatched error made this process exit 1 every
+// time a host closed the pipe — which every host logs as a crash. The
+// code is matched, not the text: `jsonrpc.Error` is a public alias of
+// the SDK's wire type, so errors.As reaches it without sniffing a
+// string that is free to change.
+func cleanDisconnect(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
+		return true
+	}
+	var je *jsonrpc.Error
+	if errors.As(err, &je) {
+		return je.Code == -32004 || je.Code == -32003
+	}
+	return false
 }
 
 func printVersion(w io.Writer) {
@@ -183,6 +224,7 @@ Usage:
   favro-mcp                Run as MCP server over stdio.
   favro-mcp --dry-run      Run server; force every mutating tool into dry-run.
   favro-mcp --version      Print version and exit.
+  favro-mcp --dump-schemas Print the tool schemas as JSON and exit.
   favro-mcp auth login     Interactively store credentials in the OS keyring.
   favro-mcp auth status    Show the active user / organization (token never printed).
   favro-mcp auth logout    Delete keyring entries.

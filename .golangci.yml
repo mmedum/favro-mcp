@@ -79,6 +79,25 @@ linters:
         linters:
           - gocyclo
           - gosec
+      # scripts/gates is maintainer-only tooling and never ships: every
+      # gate reads files under the repository root and shells out to
+      # git, which is precisely what gosec's G204/G304/G306/G70x warn
+      # about. Here that is the job rather than a finding. gocyclo goes
+      # with it because a gate is a list of rules, and splitting one
+      # into six functions to satisfy a complexity count makes the rules
+      # harder to read than the number is worth. Scoped to this
+      # directory, so the server's own code keeps both linters.
+      - path: ^scripts/gates/
+        linters:
+          - gosec
+        # Named, so the exclusion is the one the comment argues for.
+        # Disabling all of gosec here would also switch off G101, the
+        # hardcoded-credential rule, in the one package that carries
+        # credential-shaped strings on purpose.
+        text: "(G204|G304|G306|G70[0-9])"
+      - path: ^scripts/gates/
+        linters:
+          - gocyclo
 
 formatters:
   enable:

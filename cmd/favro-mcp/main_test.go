@@ -2,6 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -9,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
@@ -133,7 +138,7 @@ func TestRunServer_UnknownFlag_ErrorsWithUsage(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	err := runServer([]string{"--no-such-flag"}, &stderr)
+	err := runServer([]string{"--no-such-flag"}, io.Discard, &stderr)
 
 	require.Error(t, err)
 	require.Contains(t, stderr.String(), "no-such-flag")
@@ -144,7 +149,7 @@ func TestRunServer_HelpFlag_PrintsUsageWithoutError(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	require.NoError(t, runServer([]string{"-h"}, &stderr))
+	require.NoError(t, runServer([]string{"-h"}, io.Discard, &stderr))
 	require.Contains(t, stderr.String(), "Usage:")
 }
 
@@ -153,7 +158,7 @@ func TestRunServer_NoCredentials_ErrorsBeforeContactingFavro(t *testing.T) {
 	var logs bytes.Buffer
 	captureLogs(t, &logs)
 
-	err := runServer(nil, io.Discard)
+	err := runServer(nil, io.Discard, io.Discard)
 
 	require.Error(t, err)
 	require.Contains(t, logs.String(), "could not resolve Favro credentials")
@@ -171,7 +176,7 @@ func TestRunServer_PartialEnvCredentials_Errors(t *testing.T) {
 	var logs bytes.Buffer
 	captureLogs(t, &logs)
 
-	err := runServer(nil, io.Discard)
+	err := runServer(nil, io.Discard, io.Discard)
 
 	require.Error(t, err)
 	require.Contains(t, logs.String(), "could not resolve Favro credentials")
@@ -186,7 +191,7 @@ func TestRunServer_DryRunFlag_AnnouncedAtStartup(t *testing.T) {
 
 	// Startup still fails at credential resolution; what matters here is
 	// that --dry-run parsed and was announced before that point.
-	require.Error(t, runServer([]string{"--dry-run"}, io.Discard))
+	require.Error(t, runServer([]string{"--dry-run"}, io.Discard, io.Discard))
 	require.Contains(t, logs.String(), "all mutating Favro requests will short-circuit")
 }
 
@@ -230,4 +235,74 @@ func TestMain_ExitsNonZeroOnStartupFailure(t *testing.T) {
 	var exitErr *exec.ExitError
 	require.ErrorAs(t, err, &exitErr)
 	require.Equal(t, 1, exitErr.ExitCode())
+}
+
+// --dump-schemas is what the schema-diff and staleness gates read, and
+// both run in CI where there is no keyring and no token. It also has to
+// show the whole surface: a dump that omitted a tool would hide exactly
+// the change — a tool disappearing — that the diff exists to catch.
+func TestDumpSchemasNeedsNoCredentials(t *testing.T) {
+	t.Setenv(auth.EnvUserEmail, "")
+	t.Setenv(auth.EnvAPIToken, "")
+	t.Setenv(auth.EnvOrganizationID, "")
+
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, run([]string{"--dump-schemas"}, nil, &stdout, &stderr))
+
+	var dump struct {
+		Server string `json:"server"`
+		Tools  []struct {
+			Name        string         `json:"name"`
+			Description string         `json:"description"`
+			InputSchema map[string]any `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &dump))
+	require.Equal(t, "favro-mcp", dump.Server)
+
+	names := make(map[string]bool, len(dump.Tools))
+	for _, tool := range dump.Tools {
+		require.NotEmpty(t, tool.Description, "%s has no description", tool.Name)
+		require.NotEmpty(t, tool.InputSchema, "%s has no input schema", tool.Name)
+		names[tool.Name] = true
+	}
+	// A read tool, a write tool and a destructive one. The last is the
+	// reason this assertion names tools at all: once destructive tools
+	// register only behind an environment flag, a dump built the easy
+	// way stops listing them and nothing else would say so.
+	for _, want := range []string{"favro_ping", "favro_list_cards", "favro_create_card", "favro_delete_card"} {
+		require.True(t, names[want], "--dump-schemas omits %s", want)
+	}
+}
+
+// cleanDisconnect decides whether this process exits 0 or 1, and it got
+// that wrong for every ordinary disconnect until the smoke gate caught
+// it: the SDK reports a closed stdio session as JSON-RPC -32004 with the
+// EOF only as message text, so errors.Is(err, io.EOF) never matched and
+// every host logged an ordinary shutdown as a crash.
+func TestCleanDisconnect(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		err   error
+		clean bool
+	}{
+		{"a server that stopped on its own", nil, true},
+		{"the context was cancelled", context.Canceled, true},
+		{"a wrapped cancellation", fmt.Errorf("run: %w", context.Canceled), true},
+		{"a plain EOF", io.EOF, true},
+		{"the server closing, as the SDK reports it", &jsonrpc.Error{Code: -32004, Message: "server is closing"}, true},
+		{"the client closing", &jsonrpc.Error{Code: -32003, Message: "client is closing"}, true},
+		{"the server closing, wrapped", fmt.Errorf("run: %w", &jsonrpc.Error{Code: -32004}), true},
+		// Everything else still has to reach the exit code. A protocol
+		// error that is not a disconnect is a real failure, and so is
+		// anything the transport reports.
+		{"a JSON-RPC error that is not a disconnect", &jsonrpc.Error{Code: -32600, Message: "invalid request"}, false},
+		{"an ordinary failure", errors.New("the transport broke"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.clean, cleanDisconnect(tc.err))
+		})
+	}
 }
