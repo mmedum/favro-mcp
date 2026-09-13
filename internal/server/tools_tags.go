@@ -34,7 +34,7 @@ func registerTags(reg *registry, client *favro.Client) {
 			"from the prior response to retrieve subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro tags"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listTagsInput) (*mcp.CallToolResult, listOutput[favro.Tag], error) {
-		env, err := client.ListTags(ctx, in.Page, in.RequestID, favro.ListTagsFilter{Name: in.Name})
+		env, err := client.ListTags(ctx, in.favroPage(), in.RequestID, favro.ListTagsFilter{Name: in.Name})
 		if err != nil {
 			return nil, listOutput[favro.Tag]{}, err
 		}

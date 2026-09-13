@@ -39,7 +39,7 @@ func registerWidgets(reg *registry, client *favro.Client) {
 			"subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro widgets"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listWidgetsInput) (*mcp.CallToolResult, listOutput[favro.Widget], error) {
-		env, err := client.ListWidgets(ctx, in.Page, in.RequestID, favro.ListWidgetsFilter{
+		env, err := client.ListWidgets(ctx, in.favroPage(), in.RequestID, favro.ListWidgetsFilter{
 			CollectionID: in.CollectionID,
 			Archived:     in.Archived,
 		})

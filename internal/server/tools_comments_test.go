@@ -41,7 +41,7 @@ func TestMCP_ListComments_HappyPath(t *testing.T) {
 	require.Len(t, out.Items, 1)
 	require.Equal(t, "hello", out.Items[0].Body)
 	require.NotNil(t, out.NextPage)
-	require.Equal(t, 1, *out.NextPage)
+	require.Equal(t, 2, *out.NextPage)
 }
 
 func TestMCP_ListComments_FilterForwarded(t *testing.T) {

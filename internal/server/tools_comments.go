@@ -35,7 +35,7 @@ func registerComments(reg *registry, client *favro.Client) {
 			"(and `card_common_id` again) to retrieve subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro comments"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listCommentsInput) (*mcp.CallToolResult, listOutput[favro.Comment], error) {
-		env, err := client.ListComments(ctx, in.Page, in.RequestID, in.CardCommonID)
+		env, err := client.ListComments(ctx, in.favroPage(), in.RequestID, in.CardCommonID)
 		if err != nil {
 			return nil, listOutput[favro.Comment]{}, err
 		}

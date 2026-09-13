@@ -40,7 +40,7 @@ func registerColumns(reg *registry, client *favro.Client) {
 			"response (and `widget_common_id` again) to retrieve subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro columns"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listColumnsInput) (*mcp.CallToolResult, listOutput[favro.Column], error) {
-		env, err := client.ListColumns(ctx, in.Page, in.RequestID, in.WidgetCommonID)
+		env, err := client.ListColumns(ctx, in.favroPage(), in.RequestID, in.WidgetCommonID)
 		if err != nil {
 			return nil, listOutput[favro.Column]{}, err
 		}

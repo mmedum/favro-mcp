@@ -48,7 +48,7 @@ func TestMCP_ListGroups_HappyPath(t *testing.T) {
 	require.Equal(t, "u-1", out.Items[0].Members[0].UserID)
 	require.Equal(t, "administrator", out.Items[0].Members[0].Role)
 	require.NotNil(t, out.NextPage)
-	require.Equal(t, 1, *out.NextPage)
+	require.Equal(t, 2, *out.NextPage)
 }
 
 func TestMCP_GetGroup_HappyPath(t *testing.T) {

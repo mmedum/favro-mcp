@@ -3,6 +3,10 @@
 Every tool `favro-mcp` registers, what it does, and the inputs that matter.
 Read-only tools never accept `dry_run`; every mutating tool does.
 
+Page numbers are 1-indexed: omit `page` or pass `1` for the first page.
+Pass the `next_page` value from a response rather than counting, because
+paging also requires the `request_id` from that same response.
+
 The rows marked **Destructive** are not registered unless
 `FAVRO_ENABLE_DESTRUCTIVE=true` is set in the server's environment.
 Without it they are absent from `tools/list` rather than guarded: a host

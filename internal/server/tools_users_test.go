@@ -39,7 +39,7 @@ func TestMCP_ListUsers_HappyPath(t *testing.T) {
 	require.Len(t, out.Items, 1)
 	require.Equal(t, "Alice", out.Items[0].Name)
 	require.NotNil(t, out.NextPage, "two-page response must surface next_page")
-	require.Equal(t, 1, *out.NextPage)
+	require.Equal(t, 2, *out.NextPage)
 	require.Equal(t, "req-u", out.RequestID)
 }
 

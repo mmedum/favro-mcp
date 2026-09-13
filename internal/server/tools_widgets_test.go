@@ -40,7 +40,7 @@ func TestMCP_ListWidgets_HappyPath(t *testing.T) {
 	require.Equal(t, "Sprint Board", out.Items[0].Name)
 	require.Equal(t, "board", out.Items[0].Type)
 	require.NotNil(t, out.NextPage)
-	require.Equal(t, 1, *out.NextPage)
+	require.Equal(t, 2, *out.NextPage)
 }
 
 func TestMCP_ListWidgets_FiltersByCollection(t *testing.T) {

@@ -39,10 +39,10 @@ func TestMCP_ListOrganizations_HappyPath(t *testing.T) {
 	out := decodeStructured[listOutput[favro.Organization]](t, res)
 	require.Len(t, out.Items, 1)
 	require.Equal(t, "Acme", out.Items[0].Name)
-	require.Equal(t, 0, out.Page)
+	require.Equal(t, 1, out.Page, "Favro page 0 is page 1 on this surface")
 	require.Equal(t, 2, out.TotalPages)
 	require.NotNil(t, out.NextPage, "two-page response must surface next_page")
-	require.Equal(t, 1, *out.NextPage)
+	require.Equal(t, 2, *out.NextPage)
 	require.Equal(t, "req-1", out.RequestID)
 }
 

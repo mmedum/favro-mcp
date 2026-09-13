@@ -1,6 +1,6 @@
 {
   "server": "favro-mcp",
-  "version": "v1.1.2-2-g84303f5-dirty (84303f5)",
+  "version": "v1.1.2-5-g4a55bde-dirty (4a55bde)",
   "sdk": "v1.7.0",
   "tools": [
     {
@@ -5510,7 +5510,7 @@
             "type": "string"
           },
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -5658,7 +5658,7 @@
             "type": "string"
           },
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -6095,7 +6095,7 @@
             "type": "boolean"
           },
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -6225,7 +6225,7 @@
         "additionalProperties": false,
         "properties": {
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -6335,7 +6335,7 @@
             "type": "string"
           },
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -6452,7 +6452,7 @@
         "additionalProperties": false,
         "properties": {
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -6627,7 +6627,7 @@
         "additionalProperties": false,
         "properties": {
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -6739,7 +6739,7 @@
         "additionalProperties": false,
         "properties": {
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -6858,7 +6858,7 @@
             "type": "string"
           },
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -6944,7 +6944,7 @@
             "type": "string"
           },
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -7038,7 +7038,7 @@
             "type": "string"
           },
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -7136,7 +7136,7 @@
         "additionalProperties": false,
         "properties": {
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
@@ -7225,7 +7225,7 @@
             "type": "string"
           },
           "page": {
-            "description": "1-indexed page; omit for the first page",
+            "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {

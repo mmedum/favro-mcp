@@ -63,7 +63,7 @@ func registerTasks(reg *registry, client *favro.Client) {
 			"when the individual item names matter. Read-only.",
 		Annotations: readOnly("List Favro tasks"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listTasksInput) (*mcp.CallToolResult, listOutput[favro.Task], error) {
-		env, err := client.ListTasks(ctx, in.Page, in.RequestID, favro.ListTasksFilter{
+		env, err := client.ListTasks(ctx, in.favroPage(), in.RequestID, favro.ListTasksFilter{
 			CardCommonID: in.CardCommonID,
 			TaskListID:   in.TaskListID,
 		})

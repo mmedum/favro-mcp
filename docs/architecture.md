@@ -428,7 +428,15 @@ across all of them:
   (`internal/server/smoke_test.go`) or the smoke test fails. This is the
   repository's one existing instance of the standard's "derive the list
   from the code" rule, and it predates the standard.
-- List tools surface `next_page` and never aggregate.
+- List tools surface `next_page` and never aggregate. Page numbers on
+  this surface are 1-indexed; Favro's are 0-indexed, and `favroPage`
+  converts at the boundary. The two used to be the same number while the
+  schema said "1-indexed", so a caller that believed the schema and
+  asked for page 1 was served the second page and never saw the first —
+  a valid page of real results with rows silently missing, which is why
+  no test caught it. The conversion lives in the MCP layer because
+  `internal/favro` is a faithful client of an API whose page is
+  0-indexed.
 - Where two tools overlap, each description names the other and says
   when to choose it (`favro_update_card` vs `favro_move_card` /
   `favro_archive_card`; `favro_add_tag_to_card` vs `favro_update_card`

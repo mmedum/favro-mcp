@@ -27,6 +27,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - The licence check ignores `github.com/segmentio/asm` by path — it relicensed to MIT-0, which go-licenses v1.6.0's classifier does not recognise and no allowlist value can match.
 - Every tool error is now `[class] actionable message`, from the closed vocabulary. A 429 carries `retry_after_seconds` in the text, since a failed call has no `structuredContent` to put it in.
 - Tool results send a readable `content` block and a machine-readable `structuredContent` one. They used to be the same bytes: the SDK copies the marshalled output into a text block when a handler leaves `Content` unset, and every handler did.
+- List tools are now genuinely 1-indexed, as their schema has always said. `page` went to Favro untouched and Favro counts from zero, so asking for page 1 returned the second page and the first was never seen — a valid page of real results with rows silently absent. `page` and `next_page` in responses count from one to match.
 
 ### Removed
 - The thirteen delete-style tools are no longer in `tools/list` by default; set `FAVRO_ENABLE_DESTRUCTIVE=true` to register them. Breaking, and deliberately so: a client-side prompt is not a safety layer, because a host in an auto-approve permission mode runs a tool annotated `destructiveHint` without asking and the MCP spec says clients treat tool annotations as untrusted. No tool input changed, and one environment variable restores the previous surface.
