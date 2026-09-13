@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -43,6 +44,16 @@ const envSkipValidate = "FAVRO_MCP_SKIP_VALIDATE"
 // envLogLevel selects the slog level. Values are case-insensitive:
 // debug, info (default), warn, error.
 const envLogLevel = "FAVRO_LOG_LEVEL"
+
+// envEnableDestructive registers the delete-style tools. Unset — the
+// default — and they are not in tools/list at all.
+//
+// Off by default because a client-side prompt is not a safety layer:
+// a host in an auto-approve permission mode runs a tool annotated
+// destructive without asking anyone, and the MCP spec says clients
+// treat tool annotations as untrusted. The tool that cannot run
+// unattended is the one that was never registered.
+const envEnableDestructive = "FAVRO_ENABLE_DESTRUCTIVE"
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
@@ -154,10 +165,15 @@ func runServer(args []string, stdout io.Writer, stderr io.Writer) error {
 			"error", err)
 		return err
 	}
+	// The organization id is deliberately absent. It used to be here,
+	// which named the tenant in the first line of every session at the
+	// default log level — the kind of thing only a live run shows, and
+	// it showed it during A1's live check. favro_ping still returns it,
+	// because a tool result goes to the caller who asked; a log goes to
+	// whoever ends up holding the file.
 	slog.Info("favro-mcp starting",
 		"version", version.String(),
 		"credential_source", rt.Source,
-		"organization_id", rt.Token.OrganizationID,
 	)
 
 	if os.Getenv(envSkipValidate) == "" {
@@ -174,7 +190,12 @@ func runServer(args []string, stdout io.Writer, stderr io.Writer) error {
 	client := favro.NewClient(rt.Token)
 	client.ForceDryRun = *dryRun
 
-	srv := server.New(client, rt.Source, version.String())
+	opts := server.Options{Destructive: destructiveEnabled()}
+	if opts.Destructive {
+		slog.Warn("FAVRO_ENABLE_DESTRUCTIVE is set — delete-style tools are registered and can run unattended")
+	}
+
+	srv := server.New(client, rt.Source, version.String(), opts)
 	if err := srv.Run(ctx, &mcp.StdioTransport{}); !cleanDisconnect(err) {
 		slog.Error("MCP server exited with error", "error", err)
 		return err
@@ -187,9 +208,32 @@ func runServer(args []string, stdout io.Writer, stderr io.Writer) error {
 // builds is never used to reach Favro — listing tools touches no
 // handler — so an empty token is the right one to pass: asking for
 // credentials here would make the gate that reads this need them too.
+// Destructive is on here regardless of the environment: this file is
+// the record of every schema this binary can serve, and whether a tool
+// is registered is a deployment decision rather than a wire one. A dump
+// that followed the flag would drop thirteen tools out of the committed
+// snapshot, and the schema-diff gate would then stop watching them for
+// the breaking changes it exists to catch.
 func dumpSchemaSurface(ctx context.Context, stdout io.Writer) error {
-	srv := server.New(favro.NewClient(auth.Token{}), "none", version.String())
+	srv := server.New(favro.NewClient(auth.Token{}), "none", version.String(), server.Options{Destructive: true})
 	return server.DumpSchemas(ctx, srv, stdout, version.String())
+}
+
+// destructiveEnabled reads envEnableDestructive. Anything Go reads as
+// false, and anything it cannot read at all, means off: a typo in the
+// variable that enables deletes must not enable deletes.
+func destructiveEnabled() bool {
+	raw := os.Getenv(envEnableDestructive)
+	if raw == "" {
+		return false
+	}
+	on, err := strconv.ParseBool(raw)
+	if err != nil {
+		slog.Warn("ignoring unparseable "+envEnableDestructive+"; delete-style tools stay unregistered",
+			"hint", "set it to true or false")
+		return false
+	}
+	return on
 }
 
 // cleanDisconnect reports whether the server stopped for an ordinary
@@ -236,7 +280,9 @@ Environment:
   %s     Favro organization id; the server is single-org.
   %s           debug | info | warn | error  (default: info)
   %s   When set, skip the startup /organizations ping.
-`, auth.EnvUserEmail, auth.EnvAPIToken, auth.EnvOrganizationID, envLogLevel, envSkipValidate)
+  %s  Set to true to register the delete-style tools (default: off).
+`, auth.EnvUserEmail, auth.EnvAPIToken, auth.EnvOrganizationID, envLogLevel, envSkipValidate,
+		envEnableDestructive)
 }
 
 // missingCredsHint is the canonical "tell the user what to do next"

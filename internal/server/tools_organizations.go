@@ -18,8 +18,8 @@ type getOrgInput struct {
 	OrganizationID string `json:"organization_id" jsonschema:"the Favro organization id (24-char hex)"`
 }
 
-func registerOrganizations(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerOrganizations(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listOrgsToolName,
 		Description: "List Favro organizations the API token can see. Returns one " +
 			"page; pass `page` (1-indexed) plus the `request_id` from the prior " +
@@ -27,7 +27,7 @@ func registerOrganizations(srv *mcp.Server, client *favro.Client) {
 		Annotations: readOnly("List Favro organizations"),
 	}, wrapList(client.ListOrganizations))
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name:        getOrgToolName,
 		Description: "Get a single Favro organization by id. Read-only.",
 		Annotations: readOnly("Get Favro organization"),

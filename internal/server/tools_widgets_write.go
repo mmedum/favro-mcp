@@ -49,8 +49,8 @@ type deleteWidgetInput struct {
 	CollectionID   string `json:"collection_id,omitempty" jsonschema:"delete the widget only from this collection. Omit to delete every instance of the widget across all collections it belongs to."`
 }
 
-func registerCreateWidget(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerCreateWidget(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: createWidgetToolName,
 		Description: "Create a new Favro widget (board) inside a collection. `collection_id` " +
 			"and `name` are required. `type` defaults to Favro's choice ('backlog') when " +
@@ -92,8 +92,8 @@ func registerCreateWidget(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerUpdateWidget(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUpdateWidget(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: updateWidgetToolName,
 		Description: "Update a Favro widget. Every body field is optional — pass at least one. " +
 			"`archive: true` archives, `archive: false` unarchives — both require " +
@@ -131,8 +131,8 @@ func registerUpdateWidget(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerDeleteWidget(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerDeleteWidget(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: deleteWidgetToolName,
 		Description: "Delete a Favro widget by its widgetCommonId. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Cards on the widget are removed; columns on " +

@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 // paths expect raw bytes from a single file; surfacing the error
 // locally avoids reading device nodes or large directory listings
 // over the wire.
-var errAttachmentPathNotAFile = errors.New("favro: file_path must point at a regular file")
+var errAttachmentPathNotAFile = classed(render.ClassInvalid, "favro: file_path must point at a regular file")
 
 // uploadAttachmentInput is the input for favro_upload_attachment.
 // v0.1 supports local file paths only — the tool reads from disk
@@ -55,8 +55,8 @@ type removeAttachmentInput struct {
 	FileURLs []string `json:"file_urls" jsonschema:"the attachment fileURL values to detach, exactly as favro_get_card_full or favro_upload_attachment returned them. Favro matches on the URL, not the display name; the presigned query string is stripped for you."`
 }
 
-func registerUploadAttachment(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUploadAttachment(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: uploadAttachmentToolName,
 		Description: "Upload a local file as an attachment on a Favro card via raw-bytes POST. " +
 			"Reads from `file_path` (absolute), then POSTs to `/cards/{cardId}/attachment` with " +
@@ -124,8 +124,8 @@ func readAttachmentFile(path string) ([]byte, error) {
 	return content, nil
 }
 
-func registerUploadCommentAttachment(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUploadCommentAttachment(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: uploadCommentAttachmentToolName,
 		Description: "Upload a local file as an attachment on a Favro comment via raw-bytes " +
 			"POST to `/comments/{commentId}/attachment`. Same contract as " +
@@ -162,8 +162,8 @@ func registerUploadCommentAttachment(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerRemoveAttachment(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerRemoveAttachment(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: removeAttachmentToolName,
 		Description: "Detach one or more files from a Favro card. Favro has no per-attachment " +
 			"DELETE — removal rides on `removeAttachments` in PUT /cards/{cardId}, matched by " +

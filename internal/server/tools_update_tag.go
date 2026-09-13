@@ -20,8 +20,8 @@ type updateTagInput struct {
 	Color string `json:"color,omitempty" jsonschema:"new palette color: blue, red, green, lime, purple, cyan, brown, orange, gray, pink, yellow, slategray. Leave empty to keep the current color."`
 }
 
-func registerUpdateTag(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUpdateTag(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: updateTagToolName,
 		Description: "Update an org-global Favro tag's name and/or color. Both fields are " +
 			"optional; pass at least one to make a meaningful change. The change " +

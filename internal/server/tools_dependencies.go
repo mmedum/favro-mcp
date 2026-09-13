@@ -53,14 +53,14 @@ type deleteAllDependenciesInput struct {
 	CardID string `json:"card_id" jsonschema:"the per-widget cardId to clear every dependency from"`
 }
 
-func registerDependencies(srv *mcp.Server, client *favro.Client) {
-	registerReadDependencies(srv, client)
-	registerWriteDependencies(srv, client)
-	registerDeleteDependencies(srv, client)
+func registerDependencies(reg *registry, client *favro.Client) {
+	registerReadDependencies(reg, client)
+	registerWriteDependencies(reg, client)
+	registerDeleteDependencies(reg, client)
 }
 
-func registerReadDependencies(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerReadDependencies(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listDependenciesToolName,
 		Description: "List a Favro card's dependencies — the before/after links to other " +
 			"cards. Not paginated: Favro returns the full list in one response. Each entry " +
@@ -75,8 +75,8 @@ func registerReadDependencies(srv *mcp.Server, client *favro.Client) {
 	})
 }
 
-func registerWriteDependencies(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerWriteDependencies(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: addDependenciesToolName,
 		Description: "ADD dependencies to a Favro card, keeping the ones already there. " +
 			dependencyDirectionDoc +
@@ -103,7 +103,7 @@ func registerWriteDependencies(srv *mcp.Server, client *favro.Client) {
 		return nil, out, nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: replaceDependenciesToolName,
 		Description: "REPLACE a Favro card's dependency list: every existing link is removed " +
 			"and the supplied set becomes the whole list. " + dependencyDirectionDoc +
@@ -130,7 +130,7 @@ func registerWriteDependencies(srv *mcp.Server, client *favro.Client) {
 		return nil, out, nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: updateDependencyToolName,
 		Description: "Flip the direction of one existing dependency on a Favro card. " +
 			dependencyDirectionDoc + "Returns the card's full dependency list afterwards. " +
@@ -158,8 +158,8 @@ func registerWriteDependencies(srv *mcp.Server, client *favro.Client) {
 	})
 }
 
-func registerDeleteDependencies(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerDeleteDependencies(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: deleteDependencyToolName,
 		Description: "Remove one dependency link from a Favro card. The cards themselves are " +
 			"untouched — only the link between them goes away. Pass `dry_run: true` to preview.",
@@ -183,7 +183,7 @@ func registerDeleteDependencies(srv *mcp.Server, client *favro.Client) {
 		return nil, out, nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: deleteAllDependenciesToolName,
 		Description: "Remove EVERY dependency link from a Favro card. The cards themselves " +
 			"are untouched. Destructive — MCP hosts may warn before auto-confirming. Pass " +

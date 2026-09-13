@@ -14,8 +14,8 @@ type resolveCollectionInput struct {
 	ForceRefresh bool   `json:"force_refresh,omitempty" jsonschema:"bypass the 60-second collection cache and re-fetch from Favro before matching"`
 }
 
-func registerResolveCollection(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerResolveCollection(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: resolveCollectionToolName,
 		Description: "Resolve a collection name (or part of it) to one or more collectionId " +
 			"candidates. " + resolveScoreScaleDoc +

@@ -25,8 +25,8 @@ type getCollectionInput struct {
 	CollectionID string `json:"collection_id" jsonschema:"the Favro collection id"`
 }
 
-func registerCollections(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerCollections(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listCollectionsToolName,
 		Description: "List Favro collections in the organization the API token is scoped to. " +
 			"Pass `archived: true` to include archived collections. Returns one page; " +
@@ -43,7 +43,7 @@ func registerCollections(srv *mcp.Server, client *favro.Client) {
 		return nil, newListOutput(env), nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name:        getCollectionToolName,
 		Description: "Get a single Favro collection by id. Read-only.",
 		Annotations: readOnly("Get Favro collection"),

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -319,7 +320,7 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 	}
 
 	if shouldDryRun(c, ctx, method) {
-		return nil, c.buildDryRunRecord(method, fullURL, encodedBody, cfg.headers)
+		return nil, c.buildDryRunRecord(ctx, method, fullURL, encodedBody, cfg.headers)
 	}
 
 	httpClient := c.HTTPClient
@@ -491,27 +492,23 @@ func shouldDryRun(c *Client, ctx context.Context, method string) bool {
 // short-circuited request. fullURL must be the already-validated URL
 // (Do runs joinURL before deciding to dry-run, so we never have to
 // re-derive or risk swallowing an invalid-URL error here).
-func (c *Client) buildDryRunRecord(method, fullURL string, body []byte, extra http.Header) *DryRunRecord {
+//
+// The headers come from buildRequest — the same composition the real
+// request uses — and then through redactHeaders, the same rule the
+// debug line uses. Composing them a second time by hand is what this
+// replaced, and that copy had drifted: it omitted Accept, and it
+// redacted by writing the sentinel into two Set calls, so a
+// caller-supplied header would have been recorded in full.
+func (c *Client) buildDryRunRecord(ctx context.Context, method, fullURL string, body []byte, extra http.Header) *DryRunRecord {
 	hdr := http.Header{}
-	if c.UserAgent != "" {
-		hdr.Set("User-Agent", c.UserAgent)
-	}
-	if c.Token.OrganizationID != "" {
-		hdr.Set("organizationId", c.Token.OrganizationID)
-	}
-	hdr.Set("Authorization", redactedValue)
-	if len(body) > 0 && extra.Get("Content-Type") == "" {
-		hdr.Set("Content-Type", "application/json")
-	}
-	for k, vs := range extra {
-		if http.CanonicalHeaderKey(k) == "Content-Type" {
-			hdr.Set(k, vs[len(vs)-1])
-			continue
-		}
-		for _, v := range vs {
-			hdr.Add(k, v)
+	// The request is built and never sent; it exists so that the
+	// header set on the record is the one the wire would have seen.
+	if req, err := c.buildRequest(ctx, method, fullURL, body, extra); err == nil {
+		for k, v := range redactHeaders(req.Header) {
+			hdr.Set(k, v)
 		}
 	}
+
 	return &DryRunRecord{
 		Method:  method,
 		URL:     fullURL,
@@ -585,26 +582,98 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 }
 
 // logRequest emits a redacted slog.Debug line for one attempt.
+//
+// Both halves of the URL are stripped of the values that name a
+// resource, because Favro addresses everything by id and puts those ids
+// in both halves: the query carries cardCommonId, widgetCommonId and
+// sequentialId, and the path carries /cards/{cardId} for every
+// get-one endpoint. Logging either whole reconstructs exactly which
+// cards a session touched, which is what standard §4 forbids. What is
+// left — the shape of the path and the names of the filters — is the
+// part a debug line is actually for, and it identifies nobody.
 func (c *Client) logRequest(req *http.Request, attempt int) {
 	if !slog.Default().Enabled(req.Context(), slog.LevelDebug) {
 		return
 	}
 	// gosec G706 flags request-derived data flowing into log output;
-	// the path / query / headers all originate from code-controlled
-	// input here (token-derived org id, the caller's chosen path) and
+	// the path / query keys / headers all originate from code-controlled
+	// input here (the caller's chosen path and filter names) and
 	// the Authorization header is redacted by redactHeaders.
 	slog.Debug("favro request", //nolint:gosec
 		"method", req.Method,
-		"path", req.URL.Path,
-		"query", req.URL.RawQuery,
+		"path", redactPathIDs(req.URL.Path),
+		"query_keys", queryKeys(req.URL.RawQuery),
 		"attempt", attempt,
 		"headers", redactHeaders(req.Header),
 	)
 }
 
+// redactPathIDs replaces the id segments of a Favro path with {id},
+// leaving the endpoint shape: "/cards/{id}/attachments" rather than the
+// card somebody read.
+//
+// A segment is kept only if it reads as part of an endpoint: lowercase
+// alphanumeric, and shorter than the 24 characters every Favro id has.
+// That keeps "cards" and the "v1" in the base URL, and cannot keep an
+// id, because the only variable segments these paths carry are the ids
+// this client itself interpolates and those are 24-hex. Anything the
+// rule does not recognise — uppercase, punctuation, anything long —
+// becomes {id} rather than being printed.
+func redactPathIDs(path string) string {
+	segments := strings.Split(path, "/")
+	for i, seg := range segments {
+		if !isResourceName(seg) {
+			segments[i] = "{id}"
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+// isResourceName reports whether seg is one of Favro's endpoint names
+// rather than an identifier.
+func isResourceName(seg string) bool {
+	if seg == "" {
+		return true // the empty segments around the separators
+	}
+	if len(seg) >= favroIDLength {
+		return false
+	}
+	for _, r := range seg {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// favroIDLength is the length of the ids Favro mints. A path segment
+// this long is an id whatever it is made of.
+const favroIDLength = 24
+
+// queryKeys returns the sorted parameter names in raw, without their
+// values. A malformed query still yields its names: url.ParseQuery
+// reports an error and returns what it did parse, and a debug line is
+// not the place to care.
+func queryKeys(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	values, _ := url.ParseQuery(raw) //nolint:errcheck // partial parse is the useful answer here
+	keys := make([]string, 0, len(values))
+	for k := range values {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // redactHeaders returns a copy of h with sensitive header values
-// replaced. The original is not mutated. Used in slog debug lines and
-// in DryRunRecord.
+// replaced. The original is not mutated.
+//
+// This is the one place headers are rendered for anything other than
+// the wire: the debug line and the dry-run record both go through it,
+// so isSensitiveHeader is the single rule and a header added to it is
+// covered in both at once.
 func redactHeaders(h http.Header) map[string]string {
 	out := make(map[string]string, len(h))
 	for k, v := range h {
@@ -620,13 +689,27 @@ func redactHeaders(h http.Header) map[string]string {
 // isSensitiveHeader is the canonical "should this header be redacted"
 // rule. Authorization is the obvious one; Cookie / Set-Cookie are
 // included defensively even though Favro doesn't use them.
+//
+// organizationId is here because it names the tenant, and Token.Apply
+// sets it on every single request — so the header map was reprinting
+// the organization id on every debug line, which is the same leak §9
+// records for the startup line and one it did not know about. Found by
+// TestDebugLogNeverCarriesTheSubject on its first run, which is the
+// argument for asserting over the whole captured output rather than
+// over the line under suspicion.
 func isSensitiveHeader(name string) bool {
 	switch http.CanonicalHeaderKey(name) {
-	case "Authorization", "Cookie", "Set-Cookie", "Proxy-Authorization":
+	case "Authorization", "Cookie", "Set-Cookie", "Proxy-Authorization",
+		headerOrganizationID:
 		return true
 	}
 	return false
 }
+
+// headerOrganizationID is the canonical form of the header
+// auth.Token.Apply sets. Canonical, because that is the form
+// http.Header stores and http.CanonicalHeaderKey returns.
+const headerOrganizationID = "Organizationid"
 
 // redactPath strips the query string from a URL for use in error
 // messages — pagination cursors and request IDs aren't load-bearing

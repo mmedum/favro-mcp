@@ -35,8 +35,8 @@ type RateLimitOutput struct {
 
 // registerRateLimitStatus wires favro_rate_limit_status into srv. The
 // tool reads from client.LatestRateLimit; it does not contact Favro.
-func registerRateLimitStatus(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerRateLimitStatus(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: rateLimitToolName,
 		Description: "Reports the most recently observed Favro rate-limit headers " +
 			"(X-RateLimit-Limit / Remaining / Reset / Delay, plus Retry-After on 429). " +

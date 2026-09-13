@@ -2,13 +2,13 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 const (
@@ -20,13 +20,13 @@ const (
 // the supplied tag_name. The MCP error message points the LLM at
 // favro_create_tag explicitly — auto-creating from a typo is the
 // failure mode plan §6a wants prevented at all costs.
-var errTagToCardUnknown = errors.New("favro: tag name not found in active organization (typo? to add a brand-new tag, call favro_create_tag explicitly)")
+var errTagToCardUnknown = classed(render.ClassNotFound, "favro: tag name not found in active organization (typo? to add a brand-new tag, call favro_create_tag explicitly)")
 
 // errTagToCardAmbiguous is returned when multiple tags share the
 // requested name (Favro doesn't enforce name uniqueness). The
 // caller should use favro_update_card with an explicit add_tag_ids
 // containing the correct tagId.
-var errTagToCardAmbiguous = errors.New("favro: multiple tags share this exact name; pick one via favro_resolve_tag and use favro_update_card with add_tag_ids / remove_tag_ids directly")
+var errTagToCardAmbiguous = classed(render.ClassAmbiguous, "favro: multiple tags share this exact name; pick one via favro_resolve_tag and use favro_update_card with add_tag_ids / remove_tag_ids directly")
 
 // addTagToCardInput / removeTagFromCardInput share the same shape;
 // the action distinguishes them at the favro layer.
@@ -42,8 +42,8 @@ type removeTagFromCardInput struct {
 	TagName string `json:"tag_name" jsonschema:"exact tag name (case-insensitive)"`
 }
 
-func registerAddTagToCard(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerAddTagToCard(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: addTagToCardToolName,
 		Description: "Add an existing org-global tag to a Favro card by tag NAME. Hard-fails " +
 			"if the name doesn't match exactly — typo prevention is the whole point. To add " +
@@ -57,8 +57,8 @@ func registerAddTagToCard(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerRemoveTagFromCard(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerRemoveTagFromCard(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: removeTagFromCardToolName,
 		Description: "Remove an org-global tag from a Favro card by tag NAME. Hard-fails if " +
 			"the name doesn't match exactly. Successful live writes invalidate the " +

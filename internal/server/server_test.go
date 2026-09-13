@@ -111,9 +111,21 @@ func staticJSONFixture(t *testing.T, capturedBody *string, response string) *fav
 // has completed" otherwise).
 func connectInMemoryWith(t *testing.T, favroClient *favro.Client) *mcp.ClientSession {
 	t.Helper()
+	// Destructive on, so the shared harness sees the whole surface:
+	// the smoke test's rule is a row per registered tool, and a
+	// harness that quietly dropped thirteen of them would turn that
+	// rule into a smaller promise. TestDestructiveToolsAreOptIn is
+	// where the default is checked.
+	return connectInMemoryOpts(t, favroClient, Options{Destructive: true})
+}
+
+// connectInMemoryOpts is connectInMemoryWith with the server options
+// spelled out, for the tests whose subject is what gets registered.
+func connectInMemoryOpts(t *testing.T, favroClient *favro.Client, opts Options) *mcp.ClientSession {
+	t.Helper()
 	ctx := t.Context()
 
-	srv := New(favroClient, "env", "v0.1.0-test")
+	srv := New(favroClient, "env", "v0.1.0-test", opts)
 	client := mcp.NewClient(&mcp.Implementation{Name: "favro-mcp-test", Version: "v0.0.0"}, nil)
 
 	clientT, serverT := mcp.NewInMemoryTransports()

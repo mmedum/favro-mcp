@@ -3,6 +3,12 @@
 Every tool `favro-mcp` registers, what it does, and the inputs that matter.
 Read-only tools never accept `dry_run`; every mutating tool does.
 
+The rows marked **Destructive** are not registered unless
+`FAVRO_ENABLE_DESTRUCTIVE=true` is set in the server's environment.
+Without it they are absent from `tools/list` rather than guarded: a host
+in an auto-approve permission mode runs a tool without prompting, so
+being unregistered is the only guarantee.
+
 The **Phase** column records which build phase shipped the tool. `parity`
 marks tools added by the API-parity pass that re-checked this client against
 Favro's published REST docs.

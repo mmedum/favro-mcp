@@ -101,6 +101,7 @@ var allowedRefPrefixes = map[string]string{
 	"ISO": "ISO-8601, cited wherever a date format is described",
 	"BSD": "SPDX licence identifiers (BSD-2-Clause, BSD-3-Clause) in the licence allowlist",
 	"MIT": "the SPDX identifier MIT-0, named where the licence check ignores a module",
+	"UTF": "UTF-8, cited where internal/render explains why it clips on a rune boundary",
 	"BSC": "the example card reference in tool descriptions, fixtures and the search tokenizer's comment. Confirmed with the maintainer on 2026-09-13 that it belongs to no real board, which is the only thing that makes this entry an exemption rather than a hole — it has to stay invented",
 }
 

@@ -14,8 +14,8 @@ type resolveGroupInput struct {
 	ForceRefresh bool   `json:"force_refresh,omitempty" jsonschema:"bypass the 5-minute group cache and re-fetch from Favro before matching"`
 }
 
-func registerResolveGroup(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerResolveGroup(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: resolveGroupToolName,
 		Description: "Resolve a group name (or part of it) to one or more groupId candidates. " +
 			resolveScoreScaleDoc +

@@ -29,8 +29,8 @@ type getWidgetInput struct {
 	WidgetCommonID string `json:"widget_common_id" jsonschema:"the Favro widget id (the cross-widget widgetCommonId)"`
 }
 
-func registerWidgets(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerWidgets(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listWidgetsToolName,
 		Description: "List Favro widgets (boards) in the organization the API token is scoped to. " +
 			"Pass `collection_id` to scope the result to a single collection. Pass " +
@@ -49,7 +49,7 @@ func registerWidgets(srv *mcp.Server, client *favro.Client) {
 		return nil, newListOutput(env), nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name:        getWidgetToolName,
 		Description: "Get a single Favro widget by its widgetCommonId. Read-only.",
 		Annotations: readOnly("Get Favro widget"),

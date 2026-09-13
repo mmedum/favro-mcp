@@ -42,8 +42,8 @@ type deleteColumnInput struct {
 	WidgetCommonID string `json:"widget_common_id,omitempty" jsonschema:"optional widgetCommonId; if known, lets the cache invalidation be scoped to one widget rather than sweeping all column caches"`
 }
 
-func registerCreateColumn(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerCreateColumn(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: createColumnToolName,
 		Description: "Create a new column on a Favro widget. `widget_common_id` and `name` " +
 			"are required. `position` is 0-based; omit to append. Successful live writes " +
@@ -77,8 +77,8 @@ func registerCreateColumn(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerUpdateColumn(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUpdateColumn(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: updateColumnToolName,
 		Description: "Update a Favro column. Every body field is optional — pass at least one. " +
 			"Pass `widget_common_id` if known so the cache invalidation can be scoped to one " +
@@ -110,8 +110,8 @@ func registerUpdateColumn(srv *mcp.Server, r *Resolver) {
 	})
 }
 
-func registerDeleteColumn(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerDeleteColumn(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: deleteColumnToolName,
 		Description: "Delete a Favro column by its columnId. Destructive — MCP hosts may warn " +
 			"before auto-confirming. Favro forbids deleting a column that contains cards " +

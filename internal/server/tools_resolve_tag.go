@@ -15,8 +15,8 @@ type resolveTagInput struct {
 	ForceRefresh bool   `json:"force_refresh,omitempty" jsonschema:"bypass the 5-minute tag cache and re-fetch the tag list from Favro before matching"`
 }
 
-func registerResolveTag(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerResolveTag(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: resolveTagToolName,
 		Description: "Resolve a tag name (or part of it) to one or more tagId candidates. " +
 			"Use this before any tool that needs a tagId so you don't have to walk the " +

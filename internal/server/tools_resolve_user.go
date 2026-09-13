@@ -14,8 +14,8 @@ type resolveUserInput struct {
 	ForceRefresh bool   `json:"force_refresh,omitempty" jsonschema:"bypass the 5-minute user cache and re-fetch the user list from Favro before matching"`
 }
 
-func registerResolveUser(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerResolveUser(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: resolveUserToolName,
 		Description: "Resolve a user name or email (or part of either) to one or more userId " +
 			"candidates. Matches the better of name and email score. Email is included in " +

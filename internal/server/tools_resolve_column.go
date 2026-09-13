@@ -15,8 +15,8 @@ type resolveColumnInput struct {
 	ForceRefresh   bool   `json:"force_refresh,omitempty" jsonschema:"bypass the 60-second per-widget column cache and re-fetch from Favro before matching"`
 }
 
-func registerResolveColumn(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerResolveColumn(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: resolveColumnToolName,
 		Description: "Resolve a column name to one or more columnId candidates on a given widget. " +
 			"`widget_common_id` is REQUIRED — column names repeat across widgets and an " +

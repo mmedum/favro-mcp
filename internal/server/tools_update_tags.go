@@ -27,8 +27,8 @@ type bulkTagUpdateInput struct {
 	Color string `json:"color,omitempty" jsonschema:"new palette color: blue, red, green, lime, purple, cyan, brown, orange, gray, pink, yellow, slategray. Leave empty on this entry to keep the current color."`
 }
 
-func registerUpdateTags(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUpdateTags(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: updateTagsToolName,
 		Description: "Apply multiple tag updates in one tool call. Favro has no real " +
 			"bulk-tag endpoint, so this fans out to N parallel `PUT /tags/{tagId}` " +

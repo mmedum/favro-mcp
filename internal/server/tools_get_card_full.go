@@ -19,8 +19,8 @@ type getCardFullInput struct {
 	CommentLimit    int    `json:"comment_limit,omitempty" jsonschema:"max comments to return when include_comments=true; trims the first page locally. Default 20."`
 }
 
-func registerGetCardFull(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerGetCardFull(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: getCardFullToolName,
 		Description: "Fetch one Favro card with every id field dereferenced into a " +
 			"human-readable name: tag IDs → tag names, assignee userIds → user names + " +

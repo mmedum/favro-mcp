@@ -2,9 +2,10 @@ package server
 
 import (
 	"context"
-	"errors"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 const searchCardsToolName = "favro_search_cards"
@@ -14,13 +15,13 @@ const searchCardsToolName = "favro_search_cards"
 // exclusive — Favro's /cards endpoint accepts either filter, not
 // both, and conflating them would silently widen the search beyond
 // the caller's intent.
-var errSearchCardsScopeConflict = errors.New("favro_search_cards: pass widget_common_id OR collection_id, not both")
+var errSearchCardsScopeConflict = classed(render.ClassInvalid, "favro_search_cards: pass widget_common_id OR collection_id, not both")
 
 // errSearchCardsScopeRequired is returned when neither widget_common_id
 // nor collection_id is supplied. Favro's /cards endpoint rejects
 // unfiltered listings (HTTP 400) so org-wide search isn't directly
 // supported; the caller should resolve a widget or collection first.
-var errSearchCardsScopeRequired = errors.New("favro_search_cards: widget_common_id or collection_id is required (Favro's /cards endpoint rejects unfiltered listings); call favro_resolve_widget or favro_resolve_collection first if you don't know one")
+var errSearchCardsScopeRequired = classed(render.ClassInvalid, "favro_search_cards: widget_common_id or collection_id is required (Favro's /cards endpoint rejects unfiltered listings); call favro_resolve_widget or favro_resolve_collection first if you don't know one")
 
 // searchCardsInput is the input for favro_search_cards.
 //
@@ -43,8 +44,8 @@ type searchCardsOutput struct {
 	Cached  bool           `json:"cached" jsonschema:"true when the underlying card list came from the in-memory scoped cache rather than a fresh Favro fetch"`
 }
 
-func registerSearchCards(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerSearchCards(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: searchCardsToolName,
 		Description: "Search Favro cards by name and description, ranked locally because " +
 			"the Favro API has no full-text search. Exactly one of `widget_common_id` " +

@@ -18,8 +18,8 @@ type createTagInput struct {
 	Color string `json:"color,omitempty" jsonschema:"optional palette color: blue, red, green, lime, purple, cyan, brown, orange, gray, pink, yellow, slategray. Omit to let Favro pick randomly."`
 }
 
-func registerCreateTag(srv *mcp.Server, r *Resolver) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerCreateTag(reg *registry, r *Resolver) {
+	addTool(reg, &mcp.Tool{
 		Name: createTagToolName,
 		Description: "Create a new Favro tag in the active organization. Favro does not " +
 			"enforce name uniqueness, so calling this with an existing name will create a " +

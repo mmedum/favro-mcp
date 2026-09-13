@@ -2,7 +2,7 @@
 
 **Status, 2026-09-13.** Released: v1.1.2. The server's own feature phases
 (0–9) are complete and shipped. Of the alignment programme in §16, phases
-**A0 and A1 are done and unreleased**; A2–A8 are not started. Where a
+**A0, A1 and A2 are done and unreleased**; A3–A8 are not started. Where a
 sentence below describes something that does not exist, it says so and
 names the phase that builds it.
 
@@ -198,8 +198,9 @@ internal/favroapi/        the REST client: retry, rate-limit observation,
 internal/cache/           the TTL cache the resolver runs on
 internal/service/         orchestration: resolution, search, full-card
                           fan-out, description editing, write policy    (A3)
-internal/render/          text output: the readable half of every result,
-                          never the same bytes as the structured half   (A2)
+internal/render/          the readable half of every result, never the same
+                          bytes as the structured half; and the closed
+                          error vocabulary
 internal/tools/           the MCP surface, one file per area            (A3)
 internal/server/          SDK wiring; schema dump through an in-memory session
 internal/redact/          the one redactor the live driver prints through (A6)
@@ -255,29 +256,78 @@ The one place the distinction bites is §2.6's two card ids. Every tool
 that takes one says in its description which it wants and why, because a
 wrong choice is a 403 rather than a validation error.
 
-### 6.2 Error classes (A2 builds this)
+### 6.2 Error classes
 
-Today the layer boundary carries typed Go errors — `AuthError`,
-`ForbiddenError`, `RateLimitError`, `NotFoundError`, `ValidationError`,
-`APIError` — which reach the model as whatever text they format. The
-standard asks for a closed vocabulary rendered as `[class] actionable
-message`. A2 introduces it, derived from the code and asserted from both
-sides by the `classes` gate: a class the code emits and the document does
-not name fails, and a documented class no code emits fails too.
+Every error a tool returns is rendered `[class] actionable message`,
+from a closed vocabulary. The class is derived from the error's own
+type — `Classify`, in `internal/render`, walks the chain with
+`errors.As` — and never from matching on its text.
 
-The vocabulary starts from the standard's six — `invalid`, `not_found`,
-`auth`, `conflict`, `unavailable`, `unsupported` — plus the ones this
-platform forces:
+The `classes` gate holds this table and `internal/render/class.go` to
+each other from both sides. A class the code declares and this table
+does not name fails. A class this table names and no code returns fails
+too, and that is the side that actually rots: to somebody deciding how
+to handle an error, a documented class nothing emits is
+indistinguishable from one that simply has not happened yet.
 
-| Class | When |
-|---|---|
-| `forbidden` | Favro's 403, which it uses both for "no permission" and for "exists but not visible to this token" (§2.6). Collapsing it into `not_found` would tell a model to stop looking for something that is there |
-| `rate_limited` | 429, carrying `retry_after_seconds`. Distinct from `unavailable` because the caller's correct response is to wait a named duration rather than to retry |
-| `ambiguous` | a name matching several candidates. The caller must choose, not retry |
-| `unverified` | a write whose 200 this server does not trust (§2.1) and whose read-back has not happened. Distinct from success |
+| Class | When | What the caller does about it |
+|---|---|---|
+| `invalid` | the request as given cannot be served: a missing argument, two mutually exclusive ones, a value out of range. Also Favro's 400 and 422 | change the arguments |
+| `not_found` | a resource, or a name, that is not there — Favro's 404, a tag name no tag carries, a `find` that matched nothing | stop looking, or resolve a name first |
+| `auth` | Favro's 401: the credentials themselves | nothing; a human has to fix it |
+| `conflict` | a state collision — the resource moved under the caller | re-read, then retry |
+| `unavailable` | Favro, or the network to it, failing: 5xx after the retry budget, a transport error, a cancelled context | retry later; the arguments are not the problem |
+| `unsupported` | something this server will not do, as opposed to something that failed — a custom-field type `favro_set_card_custom_field` cannot write, Favro's 405 and 501 | do not try this again |
+| `forbidden` | Favro's 403, which it uses both for "no permission" and for "exists but not visible to this token" (§2.6). Collapsing it into `not_found` would tell a model to stop looking for something that is there | try a different route to the resource, or ask for access |
+| `rate_limited` | 429, carrying `retry_after_seconds` in the message. Distinct from `unavailable` because the correct response is to wait a named duration rather than to retry | wait the named number of seconds |
+| `ambiguous` | a name matching several candidates | choose one; do not retry the name |
 
-The last is the one a sibling would not have. It is on the table rather
-than settled — §17 keeps it open until A2 has tried to emit it.
+The fallback for an error that names no class is `invalid`, and that is
+measured rather than neutral: every error this server's own layer
+raises without a sentinel is an argument the caller got wrong — "pass
+exactly one of", "is required", "must be between". A server bug
+arriving there would be mislabelled, which is the trade.
+
+Two tests hold the edges of that fallback, and it is worth being exact
+about which edges, because neither covers the third.
+`TestEverySentinelIsClassified` parses `internal/server` for
+package-level sentinels and requires each to name its class.
+`TestEveryFavroErrorTypeIsClassified` reads the types declared in
+`internal/favro/errors.go` and requires `Classify` to have a case for
+each, so an eighth typed error cannot land on the fallback in silence.
+What neither covers is an inline `fmt.Errorf` in a handler: those are
+the dozen or so argument errors above, they are all genuinely
+`invalid`, and nothing would fail if a future one were not. Making a
+new error a sentinel is what buys the check.
+
+The asymmetry between those two tests is itself a note for A3. A
+sentinel names its own class; the Favro error types have theirs read
+off them from outside, because `Class` lives in `internal/render`,
+which imports `internal/favro` and so cannot be imported by it. The
+uniform version puts `Class` in a leaf package and gives each typed
+error an `ErrorClass()`, at which point `Classify` collapses to one
+`errors.As`. That is a layout change, and A3 is where layout is
+decided.
+
+**`unverified` was proposed and rejected.** §17's first open decision
+asked whether the state §2.1 describes — a write whose 200 this server
+does not trust — earns a class, and said to decide it by trying to
+write the message. The message is
+`[unverified] Favro returned 200 and the write was not read back`, and
+writing it settles it two ways.
+
+It is rendered on an error result, which sets `IsError`. That tells the
+caller the call failed, when the write may well have landed; a caller
+that retries on `IsError` posts the comment twice or creates the card
+twice. The class would cause the damage it was meant to warn about.
+
+And it carries nothing per call. This server does not read back, so the
+flag would be constant for a given tool — and a constant per tool is a
+tool description, which is where it already lives (§7.4 names the three
+writes that have this property, and each tool says so). If read-back
+ever lands, the honest signal is a field on a *successful* result, not
+a class on a failed one.
+
 ## 7. Reading and writing
 
 ### 7.1 Reading a card
@@ -383,14 +433,24 @@ across all of them:
   when to choose it (`favro_update_card` vs `favro_move_card` /
   `favro_archive_card`; `favro_add_tag_to_card` vs `favro_update_card`
   with `add_tag_ids`).
-- **Destructive tools are registered only when `FAVRO_ENABLE_DESTRUCTIVE=true`**
-  (A2). Twelve tools are affected. Today they are always registered and
-  `dry_run` is the only guard, which the standard rejects for a reason it
-  verified live: a host in an auto-approve permission mode runs an
-  annotated tool without prompting, and the spec says clients treat tool
-  annotations as untrusted. Client-side approval is not a safety layer.
-  This removes tools from the default surface, so it is a breaking change
-  and the changelog has to say so.
+- **Destructive tools are registered only when `FAVRO_ENABLE_DESTRUCTIVE=true`.**
+  `dry_run` used to be the only guard, which the standard rejects for a
+  reason it verified live: a host in an auto-approve permission mode runs
+  an annotated tool without prompting, and the spec says clients treat
+  tool annotations as untrusted. Client-side approval is not a safety
+  layer; the tool that cannot run unattended is the one that is not
+  registered. This removes tools from the default surface, so it is a
+  breaking change and the changelog says so.
+
+  Which tools those are is read from `DestructiveHint` at the moment of
+  registration, in `addTool` — there is no second list of destructive
+  tool names, because the tool that would be missing from it is the one
+  added by somebody who did not know it existed.
+  `TestDestructiveToolsAreOptIn` derives the same set from the
+  annotations on the live surface and requires the default surface to
+  differ from the full one by exactly it. The count is deliberately not
+  written here: this section said "twelve" while the code annotated
+  thirteen, which is the §7b failure in miniature.
 
 ## 9. Confidentiality, security, safety
 
@@ -434,18 +494,56 @@ The working-tree scan is the one in `make check`; the history scan stays
 manual, because its findings are facts about the past rather than things
 a commit can fix. What it is for is knowing.
 
-**Logging.** Method, path, attempt and outcome at debug; never a payload.
-The Authorization header is redacted at the one place headers are
-rendered, shared by the debug line and the dry-run record.
-Two places break that rule today. `client.go:596` logs
-`req.URL.RawQuery`, and Favro's query strings carry `cardCommonId`,
-`widgetCommonId` and `sequentialId`; and the startup line logs
-`organization_id` in full at INFO, which names the tenant in the first
-line of every session — found by running the server against a real
+**Logging.** Method, endpoint shape, query parameter *names*, attempt
+and outcome at debug; never a payload, and never a value that
+identifies the subject. The Authorization header is redacted at the one
+place headers are rendered, shared by the debug line and the dry-run
+record, and so is `organizationId`.
+
+§9 knew about two breaches of that rule when A2 started. It found two
+more while fixing them, and the way each of the last two surfaced is
+the useful part.
+
+The two known ones. The debug line logged `req.URL.RawQuery`, and
+Favro's query strings carry `cardCommonId`, `widgetCommonId` and
+`sequentialId`, so a debug log reconstructed which cards a session
+touched; it logs the parameter names now. The startup line logged
+`organization_id` in full at INFO, naming the tenant in the first line
+of every session — found by running the server against a real
 organization during A1's live check, which is the kind of thing only a
-live run shows. Both are findings of this review rather than design
-decisions; A2 removes them and adds the test that fails if any forbidden
-value reaches a log at any level.
+live run shows.
+
+**The third was found by the test, not by reading.** `organizationId` is
+a header, `Token.Apply` sets it on every request, and `redactHeaders`
+redacted only `Authorization`, so the header map reprinted the
+organization id on every debug line. An existing test asserted it passed
+through unredacted: the behaviour was not an oversight, it was pinned.
+That is the argument for `TestDebugLogNeverCarriesTheSubject` asserting
+over everything captured rather than over the line under suspicion, and
+for capturing at `LevelDebug`, since a capture at the default level
+passes against the broken code.
+
+**The fourth was found by the security review, and the test had a hole
+that let it through.** `req.URL.Path` was still logged whole, and every
+get-one endpoint is `/cards/{cardId}` — the same leak as the query
+string, in the other half of the same URL. The test missed it because it
+drove a list endpoint, where the ids are all in the query. It now drives
+a get-one call as well, and the path is logged as its shape:
+`redactPathIDs` keeps a segment only if it reads as part of an endpoint
+— lowercase alphanumeric, shorter than the 24 characters every Favro id
+has — and anything else becomes `{id}` rather than being printed.
+
+Its first version was stricter, rejecting any digit, and a live run
+caught what the unit test could not: the production path is
+`/api/v1/cards/{id}`, so `v1` was being redacted as an identifier. The
+test talks to an `httptest` server whose base URL has no version
+segment, so it was asserting against a path shape that does not occur.
+There is now a row for the real one.
+
+The lesson §9 records is not about any of the four. It is that "no
+forbidden value reaches a log" is a claim about every call site and
+every level, and a test that exercises one call site proves it for one
+call site.
 
 **Safety.** §8's destructive-tool gate; §4.2's dry-run; §4.3's hard-fail
 on unknown tag names. Reads are budgeted only by pagination.
@@ -471,9 +569,9 @@ from a person's account. That sentence belongs in the README, and does.
 
 Config is read from `FAVRO_USER_EMAIL`, `FAVRO_API_TOKEN`,
 `FAVRO_ORGANIZATION_ID`, `FAVRO_LOG_LEVEL` and
-`FAVRO_MCP_SKIP_VALIDATE`, plus `FAVRO_ENABLE_DESTRUCTIVE` from A2. A3
-moves the reading and validating into `internal/config` with flags bound
-to the same names, as the siblings do.
+`FAVRO_MCP_SKIP_VALIDATE` and `FAVRO_ENABLE_DESTRUCTIVE`. A3 moves the
+reading and validating into `internal/config` with flags bound to the
+same names, as the siblings do.
 
 Stdout carries JSON-RPC frames only; logs go to stderr through `slog`.
 
@@ -544,7 +642,7 @@ the standard lists it as a thing that bites).
 | Pagination never auto-aggregates | Every list tool returns `next_page` + `request_id`, and callers must pass both back |
 | Dry-run gate lives in the client | A tool cannot forget it; the test proving it is per-tool |
 | Tag tools hard-fail unknown names | A typo cannot create an org-global tag; creating one is explicit |
-| Destructive tools behind an env flag (A2) | Twelve tools leave the default surface; breaking change; changelog says why |
+| Destructive tools behind an env flag | The delete-style tools leave the default surface; breaking change; changelog says why. Which ones is read from the annotation, never from a list |
 | Stdlib tests (A4) | Two dependencies gone; thousands of assertion lines rewritten once |
 | API surface snapshot committed (A5) | CI holds the completeness claim offline; the fetch stays manual and is named in the release checklist |
 
@@ -597,12 +695,16 @@ phase An" before the next begins.
   never documented, and three claims that nothing held — all fixed here
   and recorded in §18.
 
-- **A2 — error classes and the result shape.** The closed vocabulary of
-  §6.2 with the `classes` gate holding it from both sides; `internal/render`
-  so `content` and `structuredContent` stop being the same bytes;
-  `FAVRO_ENABLE_DESTRUCTIVE`; both logging leaks in §9 removed — the
-  query string and the startup line's organization id — with the test
-  that would have caught them.
+- **A2 — error classes and the result shape. Done.** The closed
+  vocabulary of §6.2, with the `classes` gate holding it and the document
+  to each other from both sides; `internal/render` so `content` and
+  `structuredContent` stop being the same bytes, wired in at `addTool`
+  rather than across 83 handlers; `FAVRO_ENABLE_DESTRUCTIVE`, gated from
+  the annotation so there is no second list; and the logging leaks in §9
+  removed with the test that would have caught them — which found a
+  third one nobody had recorded, the `organizationId` header, pinned by
+  an existing assertion. §17's first open decision is settled in §6.2:
+  `unverified` was written out as a message and rejected.
 - **A3 — layout.** `internal/server` split into `internal/tools` /
   `internal/service` / `internal/server`; `internal/favro` split into wire
   types and `internal/favroapi`;
@@ -641,10 +743,13 @@ under `[Unreleased]`. Tags are cut by the maintainer, never proposed.
 
 ## 17. Open decisions
 
-1. **Does `unverified` (§6.2) earn its place as an error class?** It
-   describes a real state this platform produces, but a class the model
-   cannot act on differently from success is noise. Decide in A2, by
-   trying to write the message.
+1. ~~**Does `unverified` (§6.2) earn its place as an error class?**~~
+   **Decided in A2: no.** Writing the message settled it. An error class
+   renders on a result with `IsError` set, which says the call failed —
+   and a caller that retries on that repeats a write that may already
+   have landed, so the class would cause the damage it warned about.
+   It also carries nothing per call, because this server does not read
+   back. §6.2 has the reasoning and what to do instead.
 2. **Does the `.plugin` bundle stay once `.mcpb` exists?** Two bundles is
    two manifests to keep honest. Answer in A7; the current lean is yes,
    because the plugin is how this server is actually installed.
@@ -692,8 +797,8 @@ it; **asserted**, meaning believed and not yet held by anything.
 
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
-| 2026-09-13 | The SDK writes the same bytes into `content` and `structuredContent` when a tool declares an output schema | Read `mcp/server.go:398–435` in the module cache: the marshalled output becomes `StructuredContent`, and when `res.Content` is nil the same serialized JSON is added as a `TextContent` block | **Verified here.** Every tool in this repository returns a typed output and a nil result, so every one of them is in that state. Standard §2 forbids it: the two halves must both be present and must not be the same bytes. A2 fixes it |
-| 2026-09-13 | The debug request log cannot reconstruct its subject | Read `internal/favro/client.go:587–601`: it logs `req.URL.RawQuery`, and Favro's query strings carry `cardCommonId`, `widgetCommonId` and `sequentialId` | **Verified here — the claim is false.** Standard §4's rule is that a log must not identify or reconstruct the subject; an id in a query string does both. A2 removes it and adds the test |
+| 2026-09-13 | The SDK writes the same bytes into `content` and `structuredContent` when a tool declares an output schema | Read `mcp/server.go:398–435` in the module cache: the marshalled output becomes `StructuredContent`, and when `res.Content` is nil the same serialized JSON is added as a `TextContent` block | **Verified here.** Every tool in this repository returns a typed output and a nil result, so every one of them is in that state. Standard §2 forbids it: the two halves must both be present and must not be the same bytes. Fixed in A2 at `addTool`, so the fix is one function rather than 83 handlers that each have to remember |
+| 2026-09-13 | The debug request log cannot reconstruct its subject | Read `internal/favro/client.go:587–601`: it logs `req.URL.RawQuery`, and Favro's query strings carry `cardCommonId`, `widgetCommonId` and `sequentialId` | **Verified here — the claim is false.** Standard §4's rule is that a log must not identify or reconstruct the subject; an id in a query string does both. A2 logs the parameter names instead, which is the part a debug line is for |
 | 2026-09-13 | "Never put tenant data in commits, PRs, docs or tool descriptions" is enforced | Searched the repository for a gate, a test or a CI step holding it. There is none; gitleaks is not configured either | **Verified here — unheld.** The loudest rule in CLAUDE.md is the one nothing can fail. A1 |
 | 2026-09-13 | Favro's documented endpoint surface | Fetched favro.com/developer. 22 endpoints this client does not implement: `/webhooks` ×3, `/organizations` write ×2, SCIM v1.1 ×10 and v2.0 ×12 (counted from that fetch) | **Asserted, pending A5.** The fetch went through a summarising reader, which is exactly the "reference page's prose" the standard warns about. A5 re-derives the snapshot per section and the count becomes a gate's output rather than a sentence here |
 | 2026-09-13 | The sibling gate set | Read all four `Makefile`s and both gate registries (`scripts/gates`) | **Adopted.** 14 gates plus `transcript` and `live-cover` where a live driver exists. Note the standard's own warning: reading a `check:` target list is not an audit of what runs, since several siblings run gates as ordinary Go tests |
@@ -710,4 +815,10 @@ it; **asserted**, meaning believed and not yet held by anything.
 | 2026-09-13 | `BSC-123`, the example card reference in tool descriptions and fixtures, is invented | The leak gate flags anything shaped like a card reference, and this prefix is exempted by name — which is only safe if the prefix is not a real board's. Nothing in the repository could answer that, so the maintainer was asked | **Verified with the maintainer.** It belongs to no board of theirs. Recorded beside the exemption, because an exemption whose premise lives only in a conversation is the kind that gets "cleaned up" later by somebody who cannot check it |
 | 2026-09-13 | The public history carries nothing about a tenant | Ran `gates leaks history` over every blob and commit message — the first time this repository's history has been scanned. Three session transcripts survive from a removed recording tool; counted the Favro shapes in them directly: zero ids, zero app links, zero credentials | **Verified here.** The rule holds, with the caveat in §9: the transcripts carry the maintainer's address, which git authorship publishes anyway, and the history cannot be rewritten without breaking released tags |
 | 2026-09-13 | A leak gate's first run is mostly false positives | Ran it: 4 findings, then 17 from the staleness gate. Three leak findings were real (a fixture address at a registrable domain, a build artifact left in the tree, and this gate's own binary), one was a Go identifier read as a value; of the staleness findings, three were real and fourteen were the extractor's | **Verified here, and consistent with the standard's warning.** The tuning is written into both gates as comments naming what each narrowing is for, because a path check that has not been tuned tells you about your regexp rather than your documentation |
+| 2026-09-13 | The debug line's remaining leak was the query string | Wrote the test §9 asked for — capture every record at `LevelDebug`, drive a request whose token and filters are all markers, assert no marker appears anywhere — and ran it against the fixed code | **Verified here — the claim was false.** It failed on the first run, on the `organizationId` *header*: `Token.Apply` sets it on every request and `redactHeaders` redacted only `Authorization`. A test in the repository asserted it passed through unredacted, so the behaviour was not an oversight, it was pinned. Redacted now, and the pinned assertion reads the other way |
+| 2026-09-13 | The query string was the whole of the URL leak | Ran `/security-review` over A2's diff. It reported no exploitable finding, and noted below its own bar that `req.URL.Path` was still logged whole | **Verified here — the claim was false.** Every get-one endpoint is `/cards/{cardId}`, so the path carried the same ids the query did. `TestDebugLogNeverCarriesTheSubject` had passed throughout, because it drove a list endpoint where the ids are all in the query — the test proved the rule for one call site and the sentence claimed it for all of them. Fixed, and the test drives a get-one call now |
+| 2026-09-13 | A unit test against `httptest` exercises the path the server really sends | The first `redactPathIDs` rejected any digit in a segment. Unit tests passed; the live check printed `path=/api/{id}/cards/{id}` | **Verified here — the claim was false.** `httptest`'s base URL has no version segment, so the test asserted against a shape production never produces and `v1` was being redacted as an identifier. The rule takes lowercase alphanumerics now, and the test has a row for the real path. Nothing leaked — this one cost only the usefulness of the log — but it is the same blind spot as the row above, found the same day, in the fix for it |
+| 2026-09-13 | `unverified` earns a place in the error vocabulary | §17's instruction: decide by writing the message. Wrote it — `[unverified] Favro returned 200 and the write was not read back` — and followed what a caller does with it | **Verified here — rejected.** An error class renders with `IsError` set, which says the call failed; a caller that retries on that posts the comment twice. It also carries nothing per call, because this server never reads back, so the flag is constant per tool — and a constant per tool is a tool description, which is where it already is. §6.2 records the reasoning |
+| 2026-09-13 | Twelve tools are destructive | Counted the tools annotated `DestructiveHint: true` while building the registration gate | **Verified here — the claim was false; there are thirteen.** §8 had carried the hand-typed count since it was written. The gate now reads the annotation at registration and the test derives the same set from the live surface, so neither a count nor a list of names is written down anywhere |
+| 2026-09-13 | A gate that skips the file it guards is checking the right thing | Ran the new `classes` gate: it reported six of the nine classes as emitted by nothing | **Verified here — the claim was false, and it was this gate's own first finding about itself.** It skipped `class.go` wholesale to avoid counting the declarations, and `Classify` — where six of the nine are returned from — is in that file. It now skips the const block and the `Classes` slice and walks everything else |
 | 2026-09-13 | Favro has no OAuth for its REST API | Reference page documents HTTP Basic with email + API token only; no authorization endpoint is published | **Verified here.** §17b row 1 |

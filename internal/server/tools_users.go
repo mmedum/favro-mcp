@@ -18,8 +18,8 @@ type getUserInput struct {
 	UserID string `json:"user_id" jsonschema:"the Favro user id"`
 }
 
-func registerUsers(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerUsers(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listUsersToolName,
 		Description: "List members of the Favro organization the API token is scoped to. " +
 			"Returns one page; pass `page` (1-indexed) plus the `request_id` from the " +
@@ -27,7 +27,7 @@ func registerUsers(srv *mcp.Server, client *favro.Client) {
 		Annotations: readOnly("List Favro users"),
 	}, wrapList(client.ListUsers))
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name:        getUserToolName,
 		Description: "Get a single Favro user by id. Read-only.",
 		Annotations: readOnly("Get Favro user"),

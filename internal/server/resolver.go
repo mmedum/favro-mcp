@@ -3,7 +3,6 @@ package server
 import (
 	"cmp"
 	"context"
-	"errors"
 	"net/url"
 	"slices"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/mmedum/favro-mcp/internal/cache"
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 // Resolver bridges name-based lookups to Favro's id-based world.
@@ -440,7 +440,7 @@ func (r *Resolver) ResolveWidget(ctx context.Context, name, collectionID string,
 // resolve a widget first. Matches the codebase's other
 // errMissing<X> sentinels (errMissingID, errMissingWidgetCommonID,
 // errMissingCardCommonID).
-var errMissingResolveWidgetCommonID = errors.New("favro: widget_common_id is required for resolving columns")
+var errMissingResolveWidgetCommonID = classed(render.ClassInvalid, "favro: widget_common_id is required for resolving columns")
 
 func (r *Resolver) listColumnsForWidget(ctx context.Context, widgetCommonID string, forceRefresh bool) ([]favro.Column, bool, error) {
 	q := url.Values{}

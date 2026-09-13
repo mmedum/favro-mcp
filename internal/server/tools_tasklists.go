@@ -49,8 +49,8 @@ type deleteTasklistInput struct {
 	TaskListID string `json:"task_list_id" jsonschema:"the Favro taskListId to delete"`
 }
 
-func registerTasklists(srv *mcp.Server, client *favro.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
+func registerTasklists(reg *registry, client *favro.Client) {
+	addTool(reg, &mcp.Tool{
 		Name: listTasklistsToolName,
 		Description: "List the checklists on a Favro card. Favro calls them \"tasklists\"; " +
 			"their items are \"tasks\" (see favro_list_tasks). `card_common_id` is REQUIRED " +
@@ -66,7 +66,7 @@ func registerTasklists(srv *mcp.Server, client *favro.Client) {
 		return nil, newListOutput(env), nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name:        getTasklistToolName,
 		Description: "Get a single Favro checklist by its taskListId. Read-only.",
 		Annotations: readOnly("Get Favro tasklist"),
@@ -78,7 +78,7 @@ func registerTasklists(srv *mcp.Server, client *favro.Client) {
 		return nil, tl, nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: createTasklistToolName,
 		Description: "Add a checklist to a Favro card. Pass `tasks` to seed it with items in " +
 			"the same request rather than calling favro_create_task per item. " +
@@ -109,7 +109,7 @@ func registerTasklists(srv *mcp.Server, client *favro.Client) {
 		return nil, out, nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: updateTasklistToolName,
 		Description: "Rename or reorder a Favro checklist. Its items are managed separately " +
 			"via favro_create_task / favro_update_task / favro_delete_task. Pass " +
@@ -135,7 +135,7 @@ func registerTasklists(srv *mcp.Server, client *favro.Client) {
 		return nil, out, nil
 	})
 
-	mcp.AddTool(srv, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: deleteTasklistToolName,
 		Description: "Delete a Favro checklist and every item in it. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Pass `dry_run: true` to preview.",
