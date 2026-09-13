@@ -114,8 +114,10 @@ describes — **live verification against a real organization before the
 commit**: build, reconnect the MCP server, exercise the new tools, fix
 what the wire contract actually turns out to be.
 
-Commit at each milestone with a message that says what and why. A phase
-ends with the working tree modified and waits for an explicit "start
+A phase ends with a commit — not a modified working tree — so the work
+survives a cleared session and the diff can be reviewed as a unit. Say
+what and why in the message. Pushing, opening the pull request and
+tagging stay with the maintainer; ask. Then wait for an explicit "start
 phase N" before the next one begins.
 
 ## Docs and releases
