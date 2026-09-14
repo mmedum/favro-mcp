@@ -135,6 +135,10 @@ parity: ## `make check` and ci.yml run the same things
 plugin: ## the committed plugin manifest, against the files the packer will stage
 	@$(GO) run ./scripts/gates plugin
 
+.PHONY: rule8
+rule8: build ## no tool input takes an organization_id
+	@$(GO) run ./scripts/gates rule8 $(BIN)
+
 .PHONY: mcpb
 mcpb: ## the committed Claude Desktop manifest, against the files the packer will stage
 	@$(GO) run ./scripts/gates mcpb
@@ -169,7 +173,7 @@ package-mcpb: ## build a snapshot .mcpb bundle (requires goreleaser)
 	goreleaser release --snapshot --clean --skip=publish
 
 .PHONY: check
-check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields transcript live-cover parity plugin mcpb schema-diff smoke staleness ## everything CI runs
+check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields transcript live-cover parity plugin mcpb rule8 schema-diff smoke staleness ## everything CI runs
 
 .PHONY: clean
 clean: ## remove build artifacts

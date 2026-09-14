@@ -1,6 +1,6 @@
 {
   "server": "favro-mcp",
-  "version": "v1.1.2-8-ga973b81-dirty (a973b81)",
+  "version": "v1.1.2-15-ge776619-dirty (e776619)",
   "sdk": "v1.7.0",
   "tools": [
     {
@@ -4830,18 +4830,9 @@
         "readOnlyHint": true,
         "title": "Get Favro organization"
       },
-      "description": "Get a single Favro organization by id. Read-only.",
+      "description": "Get the Favro organization this server is bound to — its name, id and membership. Takes no input: the server is single-org, binds one organization at startup, and Favro routes this call by a header rather than by the id in the path. Use `favro_list_organizations` to see every organization the token can reach. Read-only.",
       "inputSchema": {
         "additionalProperties": false,
-        "properties": {
-          "organization_id": {
-            "description": "the Favro organization id (24-char hex)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "organization_id"
-        ],
         "type": "object"
       },
       "name": "favro_get_organization",

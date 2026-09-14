@@ -225,7 +225,7 @@ func TestToolErrorsCarryAClass(t *testing.T) {
 
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      getOrgToolName,
-		Arguments: map[string]any{"organization_id": "no-such-organization"},
+		Arguments: map[string]any{},
 	})
 	if err := err; err != nil {
 		t.Fatalf("an error from Favro is a tool result, not a protocol error: %v", err)

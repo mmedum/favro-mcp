@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -120,26 +121,28 @@ func TestMCP_GetOrganization_HappyPath(t *testing.T) {
 	t.Parallel()
 
 	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The bound organization, not one the caller named. Favro routes
+		// this call by the organizationId header and ignores the path
+		// segment, so a tool that took an id handed back whatever the
+		// header said while looking as though it had honoured the input.
 		// require.* would call t.FailNow from the handler goroutine,
 		// which is unsafe; t.Errorf returns control to the handler.
-		if r.URL.Path != "/organizations/org-zzz" {
+		if r.URL.Path != "/organizations/synthetic-organization" {
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(favro.Organization{
-			OrganizationID: "org-zzz",
+			OrganizationID: "synthetic-organization",
 			Name:           "Looked Up",
 		})
 	}))
 
 	cs := connectInMemoryWith(t, c)
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: getOrgToolName,
-		Arguments: map[string]any{
-			"organization_id": "org-zzz",
-		},
+		Name:      getOrgToolName,
+		Arguments: map[string]any{},
 	})
-	if err := err; err != nil {
+	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if res.IsError {
@@ -147,15 +150,46 @@ func TestMCP_GetOrganization_HappyPath(t *testing.T) {
 	}
 
 	out := decodeStructured[favro.Organization](t, res)
-	if got := out.OrganizationID; got != "org-zzz" {
-		t.Errorf("out.OrganizationID = %v, want %v", got, "org-zzz")
+	if got := out.OrganizationID; got != "synthetic-organization" {
+		t.Errorf("out.OrganizationID = %v, want the bound organization", got)
 	}
 	if got := out.Name; got != "Looked Up" {
 		t.Errorf("out.Name = %v, want %v", got, "Looked Up")
 	}
 }
 
-func TestMCP_GetOrganization_MissingID_ReturnsToolError(t *testing.T) {
+// The tool must not take an organization_id. Hard rule 8 says no tool
+// does, and this one did — required, and inert, because Favro routes by
+// header. `gates rule8` holds the whole surface; this holds the one tool
+// the rule was actually broken by.
+func TestMCP_GetOrganization_TakesNoOrganizationID(t *testing.T) {
 	t.Parallel()
-	assertMissingRequiredFieldFails(t, getOrgToolName, "organization_id")
+
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(favro.Organization{OrganizationID: "synthetic-organization"})
+	}))
+	cs := connectInMemoryWith(t, c)
+
+	tools, err := cs.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, tool := range tools.Tools {
+		if tool.Name != getOrgToolName {
+			continue
+		}
+		// Through JSON rather than the SDK's schema type, which is `any`
+		// here: the question is what a client receives on the wire.
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "organization_id") {
+			t.Error("favro_get_organization declares an organization_id input; Favro ignores it " +
+				"and this server is bound to one organization")
+		}
+		return
+	}
+	t.Fatalf("%s is not registered; this test is reading nothing", getOrgToolName)
 }
