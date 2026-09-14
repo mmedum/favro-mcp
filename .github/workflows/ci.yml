@@ -46,7 +46,7 @@ jobs:
           path: coverage.out
 
   # Not `needs: test`. Only the coverage floor depends on the matrix, and
-  # it has its own job below; the other eight gates read the repository
+  # it has its own job below; the other ten gates read the repository
   # and the built binary, so making all of them wait for a three-OS race
   # run put the whole matrix's wall clock in front of every one of them.
   gates:
@@ -71,6 +71,10 @@ jobs:
         run: go run ./scripts/gates pins
       - name: error vocabulary
         run: go run ./scripts/gates classes
+      - name: API coverage
+        run: go run ./scripts/gates api-coverage
+      - name: API fields
+        run: go run ./scripts/gates api-fields
       - name: make check and CI agree
         run: go run ./scripts/gates parity
       - name: plugin manifest

@@ -18,6 +18,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - `internal/render`: the readable half of every tool result, and the closed error vocabulary — `invalid`, `not_found`, `auth`, `conflict`, `unavailable`, `unsupported`, `forbidden`, `rate_limited`, `ambiguous`.
 - `classes` gate: the vocabulary in `internal/render/class.go` and the table in `docs/architecture.md` §6.2 must name each other, and a class no code returns fails too.
 - `internal/config`: every `FAVRO_*` setting resolved once at startup, with the values it could not read reported rather than silently defaulted.
+- `favro_list_webhooks` and `favro_delete_webhook`. There is deliberately no tool to create one: Favro's are *outgoing* webhooks, pointing at a URL that must outlive this process. The signing secret Favro returns is not modelled, so it cannot reach a result.
+- `testdata/api-surface.json`, written by `make api-diff` from favro.com/developer: 88 endpoints and 15 resource field tables. `api-coverage` and `api-fields` gates hold it against `testdata/api-coverage.tsv` and `testdata/api-fields-waived.tsv` offline, in both directions, so an endpoint or field nobody decided about fails the build.
+- `Card.sheetPosition`, `CardAttachment.thumbnailURL` and `CustomField.widgetCommonId` are modelled. The last is the field that says which widget a custom field is enabled on — writing to a field the widget has not enabled is accepted and ignored, and nothing in a response said so before.
 - depguard rules holding the package dependency direction, one per package, naming what it may not import, plus a rule denying testify and go-difflib.
 - `internal/service/diff.go`: a unified-diff generator, held to `diff -u` itself by test rather than to a golden. Its search is bounded by edit distance, so a one-line change at each end of a long description stays a small diff.
 
@@ -41,6 +44,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - The thirteen delete-style tools are no longer in `tools/list` by default; set `FAVRO_ENABLE_DESTRUCTIVE=true` to register them. Breaking, and deliberately so: a client-side prompt is not a safety layer, because a host in an auto-approve permission mode runs a tool annotated `destructiveHint` without asking and the MCP spec says clients treat tool annotations as untrusted. No tool input changed, and one environment variable restores the previous surface.
 
 ### Fixed
+- `favro_get_card`, `favro_list_cards` and `favro_get_card_full` failed with a protocol error on any card carrying a Vote, Members, Tags, Status or Multiple-select custom field. `json.RawMessage` is `[]byte`, so schema inference described those values as arrays of integers 0-255 and the SDK rejected the real payload. Found by a live read; no fixture could have caught it, because a fixture that sends what the schema claims agrees with the bug.
 - The server exited 1 whenever a host closed the stdio pipe, which every host logs as a crash. The SDK reports a disconnect as JSON-RPC −32004 with the EOF only as message text, so `errors.Is(err, io.EOF)` never matched it; the code is matched now.
 - Test fixtures used an address at a registrable domain (`e.com`); they use `example.test`.
 - README documents `FAVRO_LOG_LEVEL` and `FAVRO_MCP_SKIP_VALIDATE`, which the binary has always read.

@@ -118,4 +118,5 @@ func Register(srv *mcp.Server, client *favroapi.Client, opts Options) {
 	registerTasklists(reg, client)
 	registerDependencies(reg, client)
 	registerActivities(reg, client)
+	registerWebhooks(reg, client)
 }

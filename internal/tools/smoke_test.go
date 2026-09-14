@@ -43,6 +43,10 @@ const (
 	smokeOrgID         = "fixture-org-1"
 	smokeTaskID        = "tk-1"
 	smokeTaskListID    = "tl-1"
+	smokeWebhookID     = "wh-1"
+	// A value shaped like a signing secret and belonging to nobody; the
+	// point of it is that it must never appear in a tool result.
+	smokeWebhookSecret = "synthetic-webhook-signing-secret"
 )
 
 // smokeToolInputs is the minimal argument set for every registered
@@ -112,6 +116,9 @@ var smokeToolInputs = map[string]map[string]any{
 	createTagToolName: {"name": smokeTagName, "dry_run": true},
 	updateTagToolName: {"tag_id": smokeTagID, "name": "renamed", "dry_run": true},
 	deleteTagToolName: {"tag_id": smokeTagID, "dry_run": true},
+
+	listWebhooksToolName:  {},
+	deleteWebhookToolName: {"webhook_id": smokeWebhookID, "dry_run": true},
 	updateTagsToolName: {
 		"updates": []map[string]any{{"tag_id": smokeTagID, "name": "renamed"}},
 		"dry_run": true,
@@ -363,6 +370,14 @@ func smokeResponseFor(r *http.Request) (string, bool) {
 		return "", false
 	}
 	if len(segments) == 1 {
+		// /webhooks is the one collection Favro answers with a bare
+		// array rather than the paginated envelope. The fixture has to
+		// match the API, not the pattern — modelling it as an envelope
+		// is what let the first version of the client pass here and
+		// fail against the live endpoint.
+		if segments[0] == "webhooks" {
+			return "[" + entity + "]", true
+		}
 		return smokePage(entity), true
 	}
 	return entity, true
@@ -384,6 +399,13 @@ var smokeEntities = map[string]string{
 	"groups":       `{"groupId":"` + smokeGroupID + `","name":"Fixture Group"}`,
 	"tasks":        `{"taskId":"` + smokeTaskID + `","taskListId":"` + smokeTaskListID + `","name":"Fixture Task"}`,
 	"tasklists":    `{"taskListId":"` + smokeTaskListID + `","cardCommonId":"` + smokeCardCommonID + `","name":"Fixture List"}`,
+	// The webhook fixture carries a secret on purpose: the wire type
+	// has no field for it, so this is what proves a value Favro sends
+	// cannot reach a tool result. TestWebhookSecretIsNeverDecoded
+	// asserts on it.
+	"webhooks": `{"webhookId":"` + smokeWebhookID + `","widgetCommonId":"` + smokeWidgetID + `",` +
+		`"name":"Fixture Webhook","postToUrl":"https://receiver.invalid/hook",` +
+		`"secret":"` + smokeWebhookSecret + `","options":{"columnId":"` + smokeColumnID + `","notifications":["Card created"]}}`,
 }
 
 // smokePage wraps one entity in the paginated envelope Favro returns

@@ -39,7 +39,11 @@ type Card struct {
 	// the JSON unmarshal on any non-integer value.
 	Position     float64 `json:"position,omitempty"`
 	ListPosition float64 `json:"listPosition,omitempty"`
-	IsArchived   bool    `json:"archived,omitempty"`
+	// SheetPosition is the card's place in a sheet view. Documented on
+	// the card and previously modelled only on the write requests, so a
+	// read dropped it — found by `gates api-fields`.
+	SheetPosition float64 `json:"sheetPosition,omitempty"`
+	IsArchived    bool    `json:"archived,omitempty"`
 	// IsLane signals that this "card" is the meta-row representing
 	// a Favro lane (a horizontal grouping inside a board); regular
 	// cards have IsLane=false.
@@ -158,6 +162,10 @@ func (c Card) CustomFields() []CardCustomFieldValue {
 type CardAttachment struct {
 	Name    string `json:"name"`
 	FileURL string `json:"fileURL,omitempty"`
+	// ThumbnailURL is Favro's preview of the attachment, where it has
+	// one. Presigned like FileURL, so it is re-minted on every read and
+	// is not a stable identifier — see CanonicalAttachmentURL.
+	ThumbnailURL string `json:"thumbnailURL,omitempty"`
 }
 
 // CardFavroAttachment is one intra-Favro link from this card to

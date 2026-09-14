@@ -252,6 +252,8 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 		deleteDependencyToolName,
 		deleteAllDependenciesToolName,
 		listCardActivitiesToolName,
+		listWebhooksToolName,
+		deleteWebhookToolName,
 	} {
 		if !slices.Contains(names, want) {
 			t.Errorf("tools/list must advertise every registered tool; %s is missing", want)
@@ -279,7 +281,7 @@ func TestMCP_ToolsList_NoUnlistedTools(t *testing.T) {
 
 // registeredToolCount is the number of tools New() registers. Bump it
 // together with the name list in TestMCP_ToolsList_IncludesFavroPing.
-const registeredToolCount = 83
+const registeredToolCount = 85
 
 func TestMCP_FavroPing_ReturnsExpectedFields(t *testing.T) {
 	t.Parallel()

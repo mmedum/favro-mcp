@@ -2,7 +2,7 @@
 
 **Status, 2026-09-13.** Released: v1.1.2. The server's own feature phases
 (0–9) are complete and shipped. Of the alignment programme in §16, phases
-**A0–A4 are done and unreleased**; A5–A8 are not started. Where a
+**A0–A5 are done and unreleased**; A6–A8 are not started. Where a
 sentence below describes something that does not exist, it says so and
 names the phase that builds it.
 
@@ -31,8 +31,10 @@ nothing at all.
 
 ## 1. Mission and scope
 
-A Go MCP server exposing Favro's REST API to a model over stdio, as 83
-typed tools (measured 2026-09-13; the standard's §7b says re-measure or date it).
+A Go MCP server exposing Favro's REST API to a model over stdio, as 85
+typed tools (measured 2026-09-14; the staleness gate re-measures it
+against the binary on every `make check`, so this sentence cannot drift
+without failing).
 
 It is not a thin REST wrapper. Favro's API is id-shaped in a way a model
 cannot navigate: a card is addressed by `cardId` in one widget and by
@@ -430,7 +432,7 @@ is the other one.
 
 ## 8. Tool surface
 
-83 tools (2026-09-13). The full reference is `docs/TOOLS.md`; the README
+85 tools (2026-09-14). The full reference is `docs/TOOLS.md`; the README
 keeps only the five worth reaching for first. Conventions that hold
 across all of them:
 
@@ -759,17 +761,27 @@ phase An" before the next begins.
   line at the end of a hunk, and it dropped the
   `\ No newline at end of file` marker, which is the one thing a diff
   cannot recover from the lines alone.
-- **A5 — API compliance.** `gates api-diff` fetches favro.com/developer
-  and writes `testdata/api-surface.json`; `testdata/api-coverage.tsv`
-  carries one verdict per endpoint by hand; `api-coverage` and
-  `api-fields` run offline in `check`. Then the gaps: webhooks
-  (three endpoints), any per-id endpoint not modelled, SCIM written off
-  as one categorical row, organizations write endpoints written off.
-  Every new endpoint verified live before the commit.
-  **Webhooks were parked by an explicit decision in phase 9** ("deferred
-  indefinitely", alongside an HTTP transport). The alignment ask reopens
-  that: a coverage gate forces a verdict, and "out" needs a reason better
-  than "not yet". §17.4 is where it gets decided, not here.
+- **A5 — API compliance. Done.** `gates api-diff` fetches
+  favro.com/developer and writes `testdata/api-surface.json` — 88
+  endpoints and 15 resource field tables, machine-owned, network, never
+  in `check`. `testdata/api-coverage.tsv` carries one verdict per
+  endpoint by hand and `testdata/api-fields-waived.tsv` one per
+  unmodelled field; `api-coverage` and `api-fields` hold both to the
+  snapshot offline in every `check`, from both directions.
+
+  Webhooks came back as the split verdict §17.4 expected: `GET` and
+  `DELETE` are implemented, `POST` is not, because it registers an
+  *outgoing* webhook — Favro's own section title — pointing at a URL
+  that has to outlive this process. The signing secret Favro returns on
+  every read is deliberately not modelled: the strongest way not to
+  leak a value to a model is to have no field for it.
+
+  The gates found four things nothing else had. §18 has them; the two
+  worth naming here are `CustomField.widgetCommonId`, which is the
+  missing half of §7.4's custom-field footgun and arrives on every row,
+  and a schema defect that made `favro_get_card` and `favro_list_cards`
+  fail outright against real data.
+
 - **A6 — live driver and evals.** `scripts/livefavro` driving the built
   binary against a real organization through `internal/redact`; the
   `transcript` gate; `internal/livecover` and the `live-cover` gate;
@@ -808,15 +820,15 @@ under `[Unreleased]`. Tags are cut by the maintainer, never proposed.
    fan-out is the only genuinely concurrent orchestration in the
    repository, and concurrency owned by a protocol handler is
    concurrency nothing can test without a protocol session.
-4. **Do webhooks come back?** They were deferred indefinitely in phase 9,
-   with an HTTP transport, because nothing consumes a callback: this
-   server is a stdio process a host starts and stops, and a webhook needs
-   an endpoint that outlives it. `GET /webhooks` and `DELETE /webhooks/{id}`
-   do not need one — listing and removing what somebody else registered is
-   ordinary read-and-write work — and `POST` is the half that implies a
-   receiver. The likely answer is therefore a split verdict rather than a
-   single row, which is exactly the kind of distinction a per-endpoint
-   record can hold and a prose paragraph cannot. Decide in A5.
+4. ~~**Do webhooks come back?**~~ **Decided in A5: two of the three.**
+   `GET /webhooks` and `DELETE /webhooks/{id}` are implemented —
+   listing and removing what somebody else registered needs no
+   receiver. `POST` is not: Favro calls them *outgoing* webhooks, and
+   it would point Favro at a URL that has to outlive a stdio process a
+   host starts and stops. The split is a row apiece in
+   `testdata/api-coverage.tsv`, which is the kind of distinction a
+   per-endpoint record holds and a prose paragraph cannot — the
+   argument for the record, made by using it.
 
 ## 17b. Deviations from the shared Go MCP server standard
 
@@ -854,7 +866,10 @@ it; **asserted**, meaning believed and not yet held by anything.
 (`internal/favroapi/client.go`; it was under `internal/favro` until A3
 split the wire types out): it logs `req.URL.RawQuery`, and Favro's query strings carry `cardCommonId`, `widgetCommonId` and `sequentialId` | **Verified here — the claim is false.** Standard §4's rule is that a log must not identify or reconstruct the subject; an id in a query string does both. A2 logs the parameter names instead, which is the part a debug line is for |
 | 2026-09-13 | "Never put tenant data in commits, PRs, docs or tool descriptions" is enforced | Searched the repository for a gate, a test or a CI step holding it. There is none; gitleaks is not configured either | **Verified here — unheld.** The loudest rule in CLAUDE.md is the one nothing can fail. A1 |
-| 2026-09-13 | Favro's documented endpoint surface | Fetched favro.com/developer. 22 endpoints this client does not implement: `/webhooks` ×3, `/organizations` write ×2, SCIM v1.1 ×10 and v2.0 ×12 (counted from that fetch) | **Asserted, pending A5.** The fetch went through a summarising reader, which is exactly the "reference page's prose" the standard warns about. A5 re-derives the snapshot per section and the count becomes a gate's output rather than a sentence here |
+| 2026-09-14 | Favro's documented endpoint surface: 22 unimplemented, being `/webhooks` ×3, `/organizations` write ×2, SCIM v1.1 ×10 and v2.0 ×12 | A5 fetched the page itself and parsed it per section rather than through a summarising reader | **Verified here — the claim was false twice over.** SCIM v1.1 has 11 endpoints, not 10, so the real total was 28 and not 22; and the sentence's own breakdown summed to 27, so it disagreed with itself. 88 endpoints in all. The count is `gates api-diff`'s output now, not a sentence anybody can mistype |
+| 2026-09-14 | An endpoint-level coverage record is enough | Built `api-coverage`, then built `api-fields` beside it because the first cannot see inside a response | **Verified here — it is not.** An endpoint can be implemented while the type behind it silently drops half of what Favro sends: `encoding/json` ignores what it does not recognise, which is what makes reads tolerant and also what makes the gap invisible. Of 124 documented fields, four were unmodelled. One was `CustomField.widgetCommonId`, the field that says which widget a field is enabled on — the missing half of §7.4's sharpest footgun, and present on all 100 rows the live organization returns |
+| 2026-09-14 | `GET /webhooks` paginates like every other Favro collection | Wired it through the shared paginated helper, wrote a fixture in the envelope shape, and the unit tests passed. Then called it live | **Verified here — the claim was false.** It answers with a bare JSON array; an organization with none returns `[]`. The reference says so plainly — "The response will be an array of configured webhooks" — and the fixture written to match the assumption agreed with the assumption. §2.1 again, and the clearest small example of it in this repository |
+| 2026-09-14 | Tool output schemas describe what the tools return | A live read of a card carrying a Members custom field returned a protocol error, not a result | **Verified here — the claim was false, and had been since custom fields shipped.** `json.RawMessage` is `[]byte`, so schema inference described `value`, `link`, `timeline` and `reports` as arrays of integers 0–255, and the SDK validates every result against that. Any card with a Vote, Members, Tags, Status or Multiple-select value failed outright. No fixture could catch it: a fixture that sends what the schema claims agrees with the bug. Fixed in `addTool`, the one registration point, and the regression test sends the shape Favro actually sends |
 | 2026-09-13 | The sibling gate set | Read all four `Makefile`s and both gate registries (`scripts/gates`) | **Adopted.** 14 gates plus `transcript` and `live-cover` where a live driver exists. Note the standard's own warning: reading a `check:` target list is not an audit of what runs, since several siblings run gates as ordinary Go tests |
 | 2026-09-13 | Actions are pinned | Read `.github/workflows/*.yml`: every action is a floating major tag (`actions/checkout@v7`, …) and `govulncheck` installs `@latest` | **Verified here — unpinned.** GitHub's own guidance is that a full-length commit SHA is the only immutable reference. A1 |
 | 2026-09-13 | 83 tools | Counted registered tool-name constants; the README and `docs/TOOLS.md` both say 83 | **Verified here, today.** The standard's §7b: re-measure at each release or date it. A1's staleness gate takes the count over from this sentence |
