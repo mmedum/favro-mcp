@@ -107,6 +107,11 @@ is current before starting work that a later phase is going to move.**
   hand-written verdicts the offline gates hold it against. **Every
   Favro endpoint and every documented field needs a decision**, even if
   the decision is "out" with a reason.
+- `scripts/livefavro/` — the live driver: `make live` runs every tool
+  against a real organization. Every mutating step carries `dry_run`.
+  It prints only through `internal/redact`, and the `transcript` gate
+  fails the build if anything else reaches the terminal. **Do not commit
+  a transcript** — the redactor removes ids and addresses, not names.
 - `scripts/gates/` — this repository's own checks, as Go. **One language,
   and no shell** (standard §1). A new gate goes in the registry in
   `main.go`, gets a test, and asserts a floor on how much it read.
@@ -126,8 +131,9 @@ make help      # every target, with what it does
 
 `make check` is the whole gate: fmt-check, vet, tidy, lint, cover, vuln,
 licenses, secrets, leaks, pins, classes, api-coverage, api-fields,
-parity, plugin, schema-diff, smoke, staleness. The eleven gates among
-those are `scripts/gates`, one Go binary with a registry, and `gates parity` fails if `make check` and
+transcript, live-cover, parity, plugin, schema-diff, smoke, staleness.
+The thirteen gates among those are `scripts/gates`, one Go binary with a
+registry, and `gates parity` fails if `make check` and
 `ci.yml` stop running the same set — so adding a gate means adding it in
 both places, and the registry's `gate: true` flag is what says a gate
 belongs in both.

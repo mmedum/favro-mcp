@@ -111,6 +111,18 @@ api-coverage: ## every documented Favro endpoint has a verdict, and the reverse
 api-fields: ## every documented field is modelled, or waived with a reason
 	@$(GO) run ./scripts/gates api-fields
 
+.PHONY: live
+live: build ## drive the built binary against a real organization (needs credentials)
+	@$(GO) run ./scripts/livefavro
+
+.PHONY: transcript
+transcript: ## the live driver prints only through the redactor
+	@$(GO) run ./scripts/gates transcript
+
+.PHONY: live-cover
+live-cover: ## the live driver exercises every tool and option, or waives it
+	@$(GO) run ./scripts/gates live-cover
+
 .PHONY: classes
 classes: ## the closed error vocabulary, against the document that names it
 	@$(GO) run ./scripts/gates classes
@@ -149,7 +161,7 @@ package-plugin: ## build a snapshot favro-mcp.plugin (requires goreleaser)
 	$(GO) run ./scripts/gates plugin-pack
 
 .PHONY: check
-check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields parity plugin schema-diff smoke staleness ## everything CI runs
+check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields transcript live-cover parity plugin schema-diff smoke staleness ## everything CI runs
 
 .PHONY: clean
 clean: ## remove build artifacts
