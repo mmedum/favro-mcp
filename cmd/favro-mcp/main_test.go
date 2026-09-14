@@ -425,3 +425,52 @@ func TestUsageDocumentsDestructiveFlag(t *testing.T) {
 		t.Errorf("buf.String() does not contain %q", config.EnvEnableDestructive)
 	}
 }
+
+// A mistyped subcommand must not start the server. `flag` stops at the
+// first non-flag argument and returns nil, so the stray word stays in
+// the list where nothing reads it and the default path runs — which
+// reads as a hang, because the server blocks on stdin and says nothing,
+// and exits 0, so a script driving this binary takes a typo for success.
+//
+// Behaviour rather than a predicate: run() is what falls through, so a
+// test of a `looksLikeSubcommand` helper would pass with the guard
+// deleted. Two sibling servers have the fix and exactly that gap.
+func TestRun_UnknownCommand_FailsWithoutStartingTheServer(t *testing.T) {
+	isolateCredentials(t)
+	restoreDefaultLogger(t)
+
+	for _, arg := range []string{"zzz-bogus", "aut", "Doctor", "serve"} {
+		var stdout, stderr bytes.Buffer
+		err := run([]string{arg}, strings.NewReader(""), &stdout, &stderr)
+		if err == nil {
+			t.Errorf("run(%q) returned nil; a typo must not exit 0", arg)
+			continue
+		}
+		if !strings.Contains(err.Error(), "unknown command") {
+			t.Errorf("run(%q) failed with %v; want an unknown-command error", arg, err)
+		}
+		if !strings.Contains(stderr.String(), arg) {
+			t.Errorf("run(%q) did not name the argument it rejected", arg)
+		}
+		if strings.Contains(stderr.String(), "favro-mcp starting") {
+			t.Errorf("run(%q) started the server", arg)
+		}
+	}
+}
+
+// And every documented invocation still reaches what it should. A guard
+// keyed on a leading dash is one typo away from rejecting a real flag.
+func TestRun_DocumentedInvocationsStillReachTheirCommand(t *testing.T) {
+	isolateCredentials(t)
+	restoreDefaultLogger(t)
+
+	for _, arg := range []string{"--version", "-V", "version", "help", "--help", "-h"} {
+		var stdout, stderr bytes.Buffer
+		if err := run([]string{arg}, strings.NewReader(""), &stdout, &stderr); err != nil {
+			t.Errorf("run(%q) = %v; a documented invocation must still work", arg, err)
+		}
+		if stdout.Len() == 0 {
+			t.Errorf("run(%q) printed nothing to stdout", arg)
+		}
+	}
+}
