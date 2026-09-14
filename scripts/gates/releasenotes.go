@@ -57,8 +57,31 @@ func releaseNotes(w io.Writer, args []string) error {
 	if section == "" {
 		return fmt.Errorf("no CHANGELOG.md section for version %s", version)
 	}
-	_, err = fmt.Fprintln(w, section)
+	_, err = fmt.Fprintln(w, promoteHeadings(section))
 	return err
+}
+
+// promoteHeadings lifts each section heading one rank.
+//
+// GitHub renders the tag name as the page's h1, so a changelog's `###
+// Added` lands as an h3 under it and skips h2 — which screen readers
+// announce as a missing level. The changelog itself is right: `###` is
+// correct under its own `## [1.2.3]`. Only the release page differs.
+//
+// Fences are tracked because a `###` inside a code block is content.
+func promoteHeadings(section string) string {
+	lines := strings.Split(section, "\n")
+	inFence := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inFence = !inFence
+			continue
+		}
+		if !inFence && strings.HasPrefix(line, "###") {
+			lines[i] = line[1:]
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // changelogSection extracts one version's body from a Keep a Changelog

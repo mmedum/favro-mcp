@@ -9,6 +9,15 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ## [Unreleased]
 
 ### Added
+- `forbidigo` forbids `fmt.Print*` and naming `os.Stdout` outside `main`. Hard rule 3 restates an MCP spec MUST NOT — a stdio server must write nothing to stdout that is not a valid MCP message — and nothing enforced it: the tree was clean, so a stray print would have corrupted the JSON-RPC stream with no check failing. Found by a contributor sweep across the sibling servers.
+
+## [2.0.0] - 2026-09-14
+
+Adopts the shared Go MCP server standard the four sibling servers run:
+fifteen gates, a Claude Desktop bundle, and a signed release. Three
+breaking changes to the tool surface — see Removed and Changed.
+
+### Added
 - `docs/architecture.md`: the design, the platform constraints, the evidence log, and the A0–A8 plan that aligns this repository with the shared Go MCP server standard the four sibling servers run.
 - `--dump-schemas` prints the whole tool surface as JSON, and `schemas.json` is committed: `make schemas` writes it, the `schema-diff` gate verifies it is current, so a wire change shows up in the pull request's diff rather than only on the machine that ran the gate.
 - `rule8` gate: no tool input declares an `organization_id`. Hard rule 8 has said the server is single-org since it shipped and was held by nothing; `favro_get_organization` broke it. The list comes from the binary's own schema dump, so a tool added later is held by having been registered.
@@ -196,7 +205,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/mmedum/favro-mcp/compare/v1.1.2...v2.0.0
 [1.1.2]: https://github.com/mmedum/favro-mcp/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/mmedum/favro-mcp/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/mmedum/favro-mcp/compare/v1.0.0...v1.1.0

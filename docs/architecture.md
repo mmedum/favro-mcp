@@ -1,6 +1,6 @@
 # Architecture — favro-mcp
 
-**Status, 2026-09-14.** Released: v1.1.2. The server's own feature phases
+**Status, 2026-09-14.** Released: v2.0.0. The server's own feature phases
 (0–9) are complete and shipped. Of the alignment programme in §16,
 **every phase is done and unreleased except A6's evals**, which need a
 model API key and are deliberately not stubbed. Where a
