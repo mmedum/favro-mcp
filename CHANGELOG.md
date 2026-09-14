@@ -13,6 +13,10 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [2.0.0] - 2026-09-14
 
+Adopts the shared Go MCP server standard the four sibling servers run:
+fifteen gates, a Claude Desktop bundle, and a signed release. Three
+breaking changes to the tool surface — see Removed and Changed.
+
 ### Added
 - `docs/architecture.md`: the design, the platform constraints, the evidence log, and the A0–A8 plan that aligns this repository with the shared Go MCP server standard the four sibling servers run.
 - `--dump-schemas` prints the whole tool surface as JSON, and `schemas.json` is committed: `make schemas` writes it, the `schema-diff` gate verifies it is current, so a wire change shows up in the pull request's diff rather than only on the machine that ran the gate.
