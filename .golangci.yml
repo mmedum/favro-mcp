@@ -32,8 +32,22 @@ linters:
     - tparallel
     # Import discipline
     - depguard
+    - forbidigo
 
   settings:
+    # The MCP stdio transport is normative: a server MUST NOT write
+    # anything to stdout that is not a valid MCP message, and MAY write
+    # to stderr for logging. Hard rule 3 restates that; this enforces it,
+    # matching the destination rather than the function name — a
+    # fmt.Fprintf to os.Stdout corrupts the stream identically.
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^fmt\.Print.*$
+          msg: stdout carries only MCP JSON-RPC frames; print through the helpers in cmd/favro-mcp/io.go
+        - pattern: ^os\.Stdout$
+          msg: stdout carries only MCP JSON-RPC frames; take an io.Writer instead
+
     gocyclo:
       min-complexity: 10
 
@@ -116,6 +130,11 @@ linters:
         linters:
           - gocyclo
           - gosec
+      # scripts/ is maintainer tooling run at a terminal; printing is
+      # its job and none of it ships.
+      - path: ^scripts/
+        linters:
+          - forbidigo
       # scripts/gates is maintainer-only tooling and never ships: every
       # gate reads files under the repository root and shells out to
       # git, which is precisely what gosec's G204/G304/G306/G70x warn
