@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -65,10 +66,17 @@ func TestEveryAllowedPrefixIsUsed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Without `\b`, and matched in Go afterwards. git's -E is POSIX ERE
+	// on macOS, where `\b` is a GNU extension that matches nothing — so
+	// this found no files, git exited 1 for "no matches", and the test
+	// reported the repository as unreadable. It passed on Linux.
 	out, err := exec.Command("git", "-C", root, "grep", "-l", "-E",
-		`\b(`+strings.Join(prefixes(), "|")+`)-[0-9]`).Output()
+		`(`+strings.Join(prefixes(), "|")+`)-[0-9]`).Output()
 	if err != nil {
-		t.Fatalf("git grep: %v", err)
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+			t.Fatalf("git grep: %v", err)
+		}
 	}
 	if len(strings.TrimSpace(string(out))) == 0 {
 		t.Fatal("git grep found no citations at all; this check is not reading the repository")

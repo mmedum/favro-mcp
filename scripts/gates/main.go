@@ -22,6 +22,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -275,6 +276,32 @@ func gitLines(root string, args ...string) ([]string, error) {
 	return lines, nil
 }
 
+// gitGrepFixed returns the lines of non-test Go source containing a
+// fixed substring.
+//
+// Fixed, and filtered by a Go regexp afterwards, rather than handing the
+// pattern to git. `git grep -E` is POSIX ERE on macOS, where `\s` and
+// `\b` are GNU extensions that match nothing — so a pattern using them
+// finds no lines at all, git exits 1 meaning "no matches", and a checker
+// reads that as a broken repository. Two gates and a test were written
+// that way and every one of them passed on Linux.
+//
+// Exit status 1 is "no matches", not a failure. The floors above each
+// caller are what turn an empty result into an error, and they say
+// something more useful than "exit status 1".
+func gitGrepFixed(root, needle string) ([]string, error) {
+	out, err := exec.Command("git", "-C", root, "grep", "-h", "-F", needle,
+		"--", "*.go", ":!*_test.go").Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("git grep for %q: %w", needle, err)
+	}
+	return strings.Split(string(out), "\n"), nil
+}
+
 // envConstDecl matches the canonical declaration of a FAVRO_* setting:
 // an exported Env… constant holding the name. These are the names the
 // server reads, declared in one place per package.
@@ -290,22 +317,19 @@ var envConstDecl = regexp.MustCompile(`(?m)^\s*Env[A-Za-z]*\s*=\s*"(FAVRO_[A-Z_]
 // broke the grep would otherwise read as "this server has no settings"
 // and pass both gates.
 func sourceEnvNames(root string) (map[string]bool, error) {
-	out, err := exec.Command("git", "-C", root, "grep", "-ho", `"FAVRO_[A-Z_]*"`,
-		"--", "*.go", ":!*_test.go").Output()
+	// One grep for a fixed substring; both patterns are applied here,
+	// where the regexp engine is Go's on every platform.
+	lines, err := gitGrepFixed(root, "FAVRO_")
 	if err != nil {
-		return nil, fmt.Errorf("git grep for environment names: %w", err)
+		return nil, err
 	}
+	joined := strings.Join(lines, "\n")
+
 	names := map[string]bool{}
-	for _, m := range envName.FindAllStringSubmatch(string(out), -1) {
+	for _, m := range envName.FindAllStringSubmatch(joined, -1) {
 		names[m[1]] = true
 	}
-
-	declared, err := exec.Command("git", "-C", root, "grep", "-hE", `^\s*Env[A-Za-z]*\s*=\s*"FAVRO_`,
-		"--", "*.go", ":!*_test.go").Output()
-	if err != nil {
-		return nil, fmt.Errorf("git grep for environment declarations: %w", err)
-	}
-	want := envConstDecl.FindAllStringSubmatch(string(declared), -1)
+	want := envConstDecl.FindAllStringSubmatch(joined, -1)
 	if len(want) == 0 {
 		return nil, fmt.Errorf("no exported Env… constant declares a FAVRO_* name; this check is " +
 			"not reading the source")
