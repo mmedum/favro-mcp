@@ -11,6 +11,8 @@
 //	favro-mcp auth status    show user/org (token never printed)
 //	favro-mcp auth logout    delete keyring entries
 //	favro-mcp auth which     print where active credentials came from
+//	favro-mcp doctor         check credentials, binding and API reachability
+//	favro-mcp doctor --show-ids  the same report, unredacted, for your own screen
 //
 // All logs go to stderr; stdout is reserved for the MCP protocol stream.
 package main
@@ -52,6 +54,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) err
 		switch args[0] {
 		case "auth":
 			return runAuth(args[1:], stdin, stderr)
+		case "doctor":
+			return runDoctor(context.Background(), cfg, stdout, args[1:])
 		case "version", "--version", "-V":
 			printVersion(stdout)
 			return nil
@@ -226,6 +230,8 @@ Usage:
   favro-mcp auth status    Show the active user / organization (token never printed).
   favro-mcp auth logout    Delete keyring entries.
   favro-mcp auth which     Show whether the active credentials come from env or keyring.
+  favro-mcp doctor         Check credentials, organization binding and API reachability.
+                           Output is redacted for pasting; --show-ids prints ids in full.
 
 Environment:
   %s          Favro user email (Basic Auth username).

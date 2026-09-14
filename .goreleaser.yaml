@@ -15,6 +15,11 @@ builds:
       - CGO_ENABLED=0
     flags:
       - -trimpath
+    # The commit's own timestamp rather than the build's, so rebuilding
+    # the same tag produces byte-identical archives. With -trimpath
+    # above, that is what makes `sha256sum -c` on a rebuild mean
+    # anything at all.
+    mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
       - -s -w
       - -X github.com/mmedum/favro-mcp/internal/version.Tag={{ .Tag }}
@@ -30,8 +35,29 @@ builds:
       - goos: windows
         goarch: arm64
 
+universal_binaries:
+  - id: universal
+    # A bundle manifest picks a binary by platform and has no key for the
+    # architecture, so macOS needs one binary that runs on both.
+    ids: [favro-mcp]
+    # Kept, not replaced: the per-architecture archives stay as they are,
+    # so nobody downloading for macOS has to choose between three files.
+    replace: false
+    hooks:
+      # The one point in the pipeline where every binary exists and
+      # checksums.txt has not been written yet. That is what MAKES it
+      # possible for the bundle to be in that file, and therefore under
+      # the signature. It is not what puts it there — see
+      # checksum.extra_files below. It needs nothing but the Go
+      # toolchain, so `make package-mcpb` rehearses it locally as is.
+      post: go run ./scripts/gates mcpb-pack {{ .Version }} dist
+
 archives:
   - id: favro-mcp
+    # Only the per-architecture builds. Without this the universal binary
+    # would be archived too, and a fourth macOS download on the release
+    # page is a choice nobody should have to make.
+    ids: [favro-mcp]
     formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
@@ -46,6 +72,38 @@ archives:
 
 checksum:
   name_template: checksums.txt
+  # The bundle is not a goreleaser artifact — a hook dropped it into
+  # dist/, and goreleaser hashes the artifacts IT built. Naming it here
+  # is what puts it in checksums.txt, and checksums.txt is the file
+  # cosign signs, so this is what makes the bundle verifiable at all.
+  # Without it the bundle ships unsigned while looking no different.
+  extra_files:
+    - glob: ./dist/*.mcpb
+
+# One SBOM per archive, so somebody deploying a binary they did not build
+# can see what is inside it.
+sboms:
+  - artifacts: archive
+
+# Sign the checksum file with a keyless Sigstore certificate tied to the
+# workflow's OIDC identity: there is no private key to hold or leak.
+#
+# One bundle, not a separate signature and certificate: cosign 3 made
+# --bundle required, and with it the old --output-signature and
+# --output-certificate are ignored.
+#
+# This step cannot be rehearsed locally — it needs an OIDC token that
+# only CI has — so watch the first release run after any change to it.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.bundle"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "--yes"
+      - "${artifact}"
+    artifacts: checksum
+    output: true
 
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
@@ -63,3 +121,7 @@ release:
   draft: false
   mode: replace
   name_template: "{{ .ProjectName }} {{ .Tag }}"
+  # Checksummed above and uploaded here. Both, or the bundle either
+  # ships unsigned or is hashed and never published.
+  extra_files:
+    - glob: ./dist/*.mcpb

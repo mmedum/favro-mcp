@@ -5,8 +5,24 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+// releasableVersion is the shape a tag has to take to reach this
+// command. It is the third of three places holding the same rule, and
+// the only one that survives an edit to the workflow.
+//
+// The reason is not hygiene. This argument is a git ref name; git
+// permits `$`, `(`, `)`, backtick, `;` and `{}` in one, and `${IFS}`
+// supplies the space git forbids. The release job it runs in holds
+// `id-token: write`, so a tag carrying a command substitution is a tag
+// that can mint this repository's Sigstore identity and have a tampered
+// artifact signed under it — after which every verification step README
+// documents passes. The workflow passes the tag through the environment
+// now and its trigger no longer admits those characters; this refuses
+// them even if both are changed back.
+var releasableVersion = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$`)
 
 // releaseNotes prints one version's CHANGELOG section, which the release
 // workflow passes to GoReleaser as the release-notes header. The
@@ -23,6 +39,10 @@ import (
 func releaseNotes(w io.Writer, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: gates release-notes VERSION")
+	}
+	if !releasableVersion.MatchString(args[0]) {
+		return fmt.Errorf("%q is not a release version; expected vMAJOR.MINOR.PATCH with an "+
+			"optional alphanumeric pre-release suffix", args[0])
 	}
 	root, err := moduleRoot()
 	if err != nil {

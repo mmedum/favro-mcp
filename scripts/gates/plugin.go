@@ -1,20 +1,17 @@
 package main
 
 import (
-	"archive/zip"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
-	"time"
 )
 
 // The plugin bundle: one zip that registers this server in a Claude Code
@@ -378,8 +375,17 @@ func pluginPack(w io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
+	entries := make([]bundleFile, 0, len(files))
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		entries = append(entries, bundleFile{name: name, body: files[name]})
+	}
 	out := filepath.Join(root, bundleName)
-	if err := writeZip(out, files, executable); err != nil {
+	if err := writeZipAt(out, entries, func(name string) fs.FileMode {
+		if executable[name] {
+			return 0o755
+		}
+		return 0o644
+	}); err != nil {
 		return err
 	}
 	info, err := os.Stat(out)
@@ -412,22 +418,21 @@ func stageBundle(root, dist string) (files map[string][]byte, executable map[str
 		return nil, nil, "", err
 	}
 
-	manifest, err := readJSON(filepath.Join(root, manifestPath))
+	// Through stampVersion rather than a decode-and-re-encode: Go sorts
+	// map keys, so re-marshalling shipped a manifest alphabetised out of
+	// whatever order it was written in, and the encoder escapes < > and
+	// &. Both are legal JSON and neither is what anyone wrote.
+	rawManifest, err := os.ReadFile(filepath.Join(root, manifestPath))
 	if err != nil {
 		return nil, nil, "", err
 	}
-	if v, _ := manifest["version"].(string); v != placeholderVersion {
-		return nil, nil, "", fmt.Errorf("%s says version %q, not the placeholder; refusing to pack a "+
-			"manifest that was edited by hand", manifestPath, v)
-	}
-	manifest["version"] = version
-	stampedManifest, err := json.MarshalIndent(manifest, "", "  ")
+	stampedManifest, err := stampVersion(rawManifest, version, manifestPath)
 	if err != nil {
 		return nil, nil, "", err
 	}
 
 	files = map[string][]byte{}
-	files[".claude-plugin/plugin.json"] = append(stampedManifest, '\n')
+	files[".claude-plugin/plugin.json"] = stampedManifest
 	for _, name := range []string{".mcp.json", "LICENSE", "NOTICE", "README.md"} {
 		src := filepath.Join(root, name)
 		if name == ".mcp.json" {
@@ -467,43 +472,6 @@ func stageBundle(root, dist string) (files map[string][]byte, executable map[str
 	return files, executable, version, nil
 }
 
-// versionsAgree asks the staged binary for the host platform what
-// version it thinks it is, and requires it to match the one being
-// stamped into the manifest.
-//
-// The bundle claims a version in five places — its filename, the archive
-// filenames, the manifest inside it, the binary's own --version, and
-// checksums.txt — and a sibling shipped one that agreed in four of them.
-// Only one of the five can be checked from here, and it is the one a
-// user actually sees at runtime.
-//
-// A snapshot build is exempt because goreleaser stamps the binary from
-// the last tag and names the archive after the next patch, so the two
-// legitimately differ; on a real tag they are the same string. Skipping
-// when no staged binary matches the host is deliberate too: a foreign
-// architecture cannot be executed, and refusing to pack for that reason
-// would be a gate failing on where it ran.
-func versionsAgree(binaries map[string]string, version string) error {
-	if strings.Contains(version, "snapshot") {
-		return nil
-	}
-	host := runtime.GOOS + "-" + runtime.GOARCH
-	path, ok := binaries[host]
-	if !ok {
-		return nil
-	}
-	out, err := exec.Command(path, "--version").Output()
-	if err != nil {
-		return fmt.Errorf("%s --version: %w", path, err)
-	}
-	if reported := strings.TrimSpace(string(out)); !strings.Contains(reported, version) {
-		return fmt.Errorf("the manifest would say %s and the %s binary reports %q; a bundle whose "+
-			"binary disagrees with its manifest is indistinguishable from a correct one until "+
-			"somebody runs it", version, host, reported)
-	}
-	return nil
-}
-
 // builtBinaries maps goos-goarch to the path GoReleaser built, read from
 // its own manifest rather than by globbing: the layout under dist/
 // carries a build id and an amd64 variant suffix, and a glob that
@@ -540,41 +508,4 @@ func builtBinaries(path string) (map[string]string, error) {
 		return nil, fmt.Errorf("%s lists no binaries", path)
 	}
 	return out, nil
-}
-
-// zipModTime is a fixed timestamp for every entry. Identical inputs
-// should give a byte-identical archive, and leaving it unset writes
-// zeroes that display as the impossible 1980-00-00.
-var zipModTime = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-
-func writeZip(out string, files map[string][]byte, executable map[string]bool) error {
-	if err := os.Remove(out); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	f, err := os.Create(out)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-
-	zw := zip.NewWriter(f)
-	for _, name := range slices.Sorted(maps.Keys(files)) {
-		header := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: zipModTime}
-		mode := os.FileMode(0o644)
-		if executable[name] {
-			mode = 0o755
-		}
-		header.SetMode(mode)
-		w, err := zw.CreateHeader(header)
-		if err != nil {
-			return err
-		}
-		if _, err := w.Write(files[name]); err != nil {
-			return err
-		}
-	}
-	if err := zw.Close(); err != nil {
-		return err
-	}
-	return f.Close()
 }

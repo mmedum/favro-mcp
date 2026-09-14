@@ -20,6 +20,12 @@ token. See [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 ## Installation
 
+### Claude Desktop bundle
+
+Each tagged release publishes a `favro-mcp_<version>.mcpb` on the [GitHub Releases page](https://github.com/mmedum/favro-mcp/releases). Opening it installs the server into Claude Desktop and prompts for the three values it needs — your Favro email, an API token, and the organization id — so there is no config file to hand-edit.
+
+The bundle carries a macOS universal binary, a Windows amd64 binary, and both Linux architectures behind a launcher that picks at startup. It is listed in `checksums.txt` and covered by the release signature; see [Verifying a download](#verifying-a-download).
+
 ### Cowork plugin (recommended)
 
 Each tagged release publishes a single multi-arch `favro-mcp.plugin` zip on the [GitHub Releases page](https://github.com/mmedum/favro-mcp/releases). The bundle contains binaries for darwin amd64/arm64 and linux amd64/arm64, plus a launcher shim that picks the right one at runtime.
@@ -52,6 +58,26 @@ Requires Go 1.27, the version `go.mod` declares. Under the default
 `GOTOOLCHAIN=auto` an older toolchain downloads it on demand; under
 `GOTOOLCHAIN=local` the build fails instead of downgrading.
 
+## Verifying a download
+
+Every release carries `checksums.txt`, an SBOM per archive, a keyless [cosign](https://docs.sigstore.dev/) signature over the checksum file, and build provenance attested by GitHub. The `.mcpb` bundle is in `checksums.txt` with the archives, so one signature covers all of it.
+
+```bash
+# 1. The file is what the release says it is.
+sha256sum -c checksums.txt --ignore-missing
+
+# 2. The checksum file came from this repository's release workflow.
+cosign verify-blob checksums.txt \
+  --bundle checksums.txt.bundle \
+  --certificate-identity-regexp '^https://github\.com/mmedum/favro-mcp/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# 3. Which workflow, at which commit, built a given artifact.
+gh attestation verify favro-mcp_<version>_<os>_<arch>.tar.gz --repo mmedum/favro-mcp
+```
+
+Builds are reproducible: `-trimpath` plus the commit's own timestamp, so rebuilding a tag gives byte-identical archives.
+
 ## Authentication
 
 The server uses Favro's HTTP Basic Auth (user email + API token), scoped to one Favro organization at startup. Tools never accept `organization_id` — pass it once via env var or keyring and forget about it.
@@ -80,11 +106,15 @@ favro-mcp auth login       # interactive: masked token input, writes to keyring
 favro-mcp auth status      # show user/org (token never printed)
 favro-mcp auth logout      # delete keyring entries
 favro-mcp auth which       # print active credential source: env or keyring
+favro-mcp doctor           # check credentials, org binding and API reachability
+favro-mcp doctor --show-ids  # the same, unredacted, for your own screen
 favro-mcp --version        # print version + commit
 favro-mcp --dry-run        # process-wide override: forces all writes into dry-run
 ```
 
 `favro-mcp auth login` is the one-shot setup for the keyring path. Re-run it to rotate the token.
+
+`favro-mcp doctor` is the first thing to run when something does not work. It reports the build, which source the credentials came from, whether Favro accepts them, and whether the organization id names one the token can actually see — the failure that otherwise shows up as every tool returning `not_found`. Its output replaces ids and addresses with stable placeholders so it can be pasted into an issue; `--show-ids` prints the real values for your own screen, and says so.
 
 ### MCP host configuration
 
@@ -147,8 +177,11 @@ The ones worth knowing first:
 
 ## Troubleshooting
 
+Run `favro-mcp doctor` first — it answers most of the rows below directly, and its output is safe to paste into an issue.
+
 | Symptom | Diagnosis & fix |
 | --- | --- |
+| Every tool returns `[not_found]`, but the credentials are accepted | `FAVRO_ORGANIZATION_ID` names an organization this token cannot see. `favro-mcp doctor` reports this as a failed organization binding; `favro-mcp doctor --show-ids` lists the ids the token *can* see. |
 | `authentication failed — check FAVRO_USER_EMAIL and FAVRO_API_TOKEN env vars` on startup | Either no credentials configured, or the token was revoked / rotated. Run `favro-mcp auth which` to confirm which source the server is reading, then re-run `favro-mcp auth login` (keyring path) or update the env vars. |
 | `FAVRO_ORGANIZATION_ID is required` on startup | The server is single-org by design — it needs to know which org to scope every request to before it can start. Set `FAVRO_ORGANIZATION_ID` (or include it in `auth login`) and restart. |
 | HTTP 429 / `rate limit exceeded` | Hit the per-org Favro rate limit. The client retries once honoring `Retry-After` (capped at 30s) and then surfaces a typed error with `retry_after_seconds`. Use `favro_rate_limit_status` to inspect the most recent `X-RateLimit-*` headers without spending another call. |

@@ -71,3 +71,45 @@ func TestReleaseNotesNeedsAVersion(t *testing.T) {
 		t.Error("a version with no section should fail loudly")
 	}
 }
+
+// A tag name reaches a `run:` block in the release job, and that job
+// holds id-token: write. Git permits $ ( ) ` ; and {} in a ref name, so
+// a tag can carry a command substitution, and ${IFS} supplies the space
+// git forbids. The workflow passes the tag through the environment now
+// and its trigger no longer admits those characters; this is the layer
+// that holds if either is changed back.
+func TestReleaseNotesRefusesATagThatIsNotAVersion(t *testing.T) {
+	for _, tag := range []string{
+		"v1.2.3-$(id)",
+		"v1.2.3-`id`",
+		"v1.2.3-a;id",
+		"v1.2.3-${IFS}x",
+		"v1.2.3-a b",
+		"v1.2.3-a/../b",
+		"v1.2.3-a|tee",
+		"",
+	} {
+		var out sink
+		err := releaseNotes(&out, []string{tag})
+		if err == nil {
+			t.Errorf("release-notes accepted %q as a version", tag)
+			continue
+		}
+		if !strings.Contains(err.Error(), "not a release version") {
+			t.Errorf("release-notes rejected %q for the wrong reason: %v", tag, err)
+		}
+	}
+}
+
+// And it still accepts the shapes a real release uses. These reach the
+// changelog lookup, which is where an unknown version legitimately
+// fails — so the only thing asserted is that they get that far.
+func TestReleaseNotesAcceptsRealVersionShapes(t *testing.T) {
+	for _, tag := range []string{"v1.1.2", "1.1.2", "v2.0.0-rc1", "v2.0.0-beta.1"} {
+		var out sink
+		if err := releaseNotes(&out, []string{tag}); err != nil &&
+			strings.Contains(err.Error(), "not a release version") {
+			t.Errorf("release-notes rejected the legitimate version %q", tag)
+		}
+	}
+}
