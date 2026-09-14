@@ -82,8 +82,10 @@ func TestEveryAllowedPrefixIsUsed(t *testing.T) {
 		t.Fatal("git grep found no citations at all; this check is not reading the repository")
 	}
 	for prefix := range allowedRefPrefixes {
+		// No `\b`: POSIX ERE has no such escape, so on macOS this matched
+		// nothing and every prefix looked unused.
 		if err := exec.Command("git", "-C", root, "grep", "-q", "-E",
-			`\b`+prefix+`-[0-9]`).Run(); err != nil {
+			prefix+`-[0-9]`).Run(); err != nil {
 			t.Errorf("allowedRefPrefixes has %q (%s) and nothing in the repository uses it; "+
 				"delete the entry rather than leaving a hole open",
 				prefix, allowedRefPrefixes[prefix])

@@ -176,6 +176,9 @@ jobs:
           # extractor being handed nothing.
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_CONFIG: .gitleaks.toml
+          # Required since the action's v2: it reads the PR to scan only
+          # the commits in it.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   coverage:
     name: coverage
