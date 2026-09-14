@@ -132,7 +132,7 @@ make help      # every target, with what it does
 `make check` is the whole gate: fmt-check, vet, tidy, lint, cover, vuln,
 licenses, secrets, leaks, pins, classes, api-coverage, api-fields,
 transcript, live-cover, parity, plugin, schema-diff, smoke, staleness.
-The fourteen gates among those are `scripts/gates`, one Go binary with a
+The fifteen gates among those are `scripts/gates`, one Go binary with a
 registry, and `gates parity` fails if `make check` and
 `ci.yml` stop running the same set — so adding a gate means adding it in
 both places, and the registry's `gate: true` flag is what says a gate

@@ -69,7 +69,7 @@ var smokeToolInputs = map[string]map[string]any{
 
 	// ---- Reads ----
 	listOrgsToolName:         {},
-	getOrgToolName:           {"organization_id": smokeOrgID},
+	getOrgToolName:           {},
 	listUsersToolName:        {},
 	getUserToolName:          {"user_id": smokeUserID},
 	listCollectionsToolName:  {},

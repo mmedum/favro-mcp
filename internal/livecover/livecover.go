@@ -56,7 +56,6 @@ const (
 	AnyCustomFieldID  Placeholder = "{custom_field_id}"
 	AnyGroupID        Placeholder = "{group_id}"
 	AnyCommentID      Placeholder = "{comment_id}"
-	AnyOrganizationID Placeholder = "{organization_id}"
 	AnyTaskID         Placeholder = "{task_id}"
 	AnyTaskListID     Placeholder = "{task_list_id}"
 	// AnySequentialID is a number rather than an id string — the
@@ -71,7 +70,7 @@ const (
 var Placeholders = []Placeholder{
 	AnyCollectionID, AnyWidgetCommonID, AnyColumnID, AnyCardID,
 	AnyCardCommonID, AnyUserID, AnyTagID, AnyCustomFieldID,
-	AnyGroupID, AnyCommentID, AnyOrganizationID,
+	AnyGroupID, AnyCommentID,
 	AnyTaskID, AnyTaskListID, AnySequentialID,
 }
 

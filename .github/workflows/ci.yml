@@ -46,7 +46,7 @@ jobs:
           path: coverage.out
 
   # Not `needs: test`. Only the coverage floor depends on the matrix, and
-  # it has its own job below; the other thirteen gates read the repository
+  # it has its own job below; the other fourteen gates read the repository
   # and the built binary, so making all of them wait for a three-OS race
   # run put the whole matrix's wall clock in front of every one of them.
   gates:
@@ -85,6 +85,8 @@ jobs:
         run: go run ./scripts/gates plugin
       - name: mcpb manifest
         run: go run ./scripts/gates mcpb
+      - name: rule 8
+        run: go run ./scripts/gates rule8 bin/favro-mcp
       - name: schema diff
         run: go run ./scripts/gates schema-diff bin/favro-mcp
       - name: stdio smoke

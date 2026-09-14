@@ -112,6 +112,10 @@ func init() {
 			run: pluginGate, args: "", gate: true,
 			doc: "the committed plugin manifest against the files the packer stages",
 		},
+		"rule8": {
+			run: rule8, args: "[BIN]", gate: true,
+			doc: "no tool input takes an organization_id; the server is single-org",
+		},
 		"mcpb": {
 			run: mcpbGate, args: "", gate: true,
 			doc: "the committed Claude Desktop manifest against the files the packer stages",

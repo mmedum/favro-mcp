@@ -289,7 +289,6 @@ var wireKeys = map[livecover.Placeholder][]string{
 	livecover.AnyCustomFieldID:  {"customFieldId"},
 	livecover.AnyGroupID:        {"groupId"},
 	livecover.AnyCommentID:      {"commentId"},
-	livecover.AnyOrganizationID: {"organizationId"},
 	livecover.AnyTaskID:         {"taskId"},
 	livecover.AnyTaskListID:     {"taskListId"},
 	livecover.AnySequentialID:   {"sequentialId"},

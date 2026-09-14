@@ -24,7 +24,7 @@ See the [README](../README.md) for install, auth and troubleshooting.
 | `favro_ping` | 1 | Read-only liveness check. Returns server version, the bound Favro organization id, and the active credential source (`env` or `keyring`). Does **not** contact Favro — it's a local diagnostic. |
 | `favro_rate_limit_status` | 2 | Read-only. Reports the most recently observed Favro rate-limit headers (`X-RateLimit-Limit/Remaining/Reset/Delay`, plus `Retry-After` on 429). Does **not** contact Favro — surfaces what the client already saw on prior requests so the caller can decide whether to slow down. A non-zero `throttle_delay_seconds` is the early warning: Favro is already stalling responses to refill the token bucket, and starts rejecting with 429 once the needed stall would exceed 10s. |
 | `favro_list_organizations` | 3 | Read-only. Lists Favro organizations the API token can see. Optional `page` (1-indexed); surfaces `next_page` for explicit pagination — never auto-aggregates. |
-| `favro_get_organization` | 3 | Read-only. Returns a single Favro organization by id. |
+| `favro_get_organization` | 3 | Read-only. Returns the organization this server is bound to. Takes no input: Favro routes this call by a header and ignores the id in the path. |
 | `favro_list_users` | 3 | Read-only. Lists members of the bound Favro organization. Optional `page` + `request_id`. |
 | `favro_get_user` | 3 | Read-only. Returns a single Favro user by id. |
 | `favro_list_collections` | 3 | Read-only. Lists collections in the bound Favro organization. Optional `page` + `request_id`. |

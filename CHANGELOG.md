@@ -11,6 +11,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ### Added
 - `docs/architecture.md`: the design, the platform constraints, the evidence log, and the A0–A8 plan that aligns this repository with the shared Go MCP server standard the four sibling servers run.
 - `--dump-schemas` prints the whole tool surface as JSON, and `schemas.json` is committed: `make schemas` writes it, the `schema-diff` gate verifies it is current, so a wire change shows up in the pull request's diff rather than only on the machine that ran the gate.
+- `rule8` gate: no tool input declares an `organization_id`. Hard rule 8 has said the server is single-org since it shipped and was held by nothing; `favro_get_organization` broke it. The list comes from the binary's own schema dump, so a tool added later is held by having been registered.
 - `scripts/gates`, one Go binary holding nine checks that run in both `make check` and CI: the per-package coverage floor (80%), `leaks`, `pins`, `classes`, `parity`, `plugin`, `schema-diff`, `smoke` and `staleness`. Each has tests and each reports how much it read.
 - `leaks` scans the working tree for tenant data — addresses, 24-hex Favro ids, keyed organization ids and tokens, app links, card references — and `leaks history` scans every blob and commit message. The rule has been in CLAUDE.md since phase 3 with nothing enforcing it.
 - gitleaks, go-licenses and CodeQL in CI; `.gitleaks.toml`; `.githooks/pre-commit` (via `make hooks`) runs gofmt, vet and the leak scan before a commit.
@@ -37,7 +38,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ### Changed
 - `CLAUDE.md` restructured to the sibling shape — mission, hard rules, where things go, definition of done — and now points at `docs/architecture.md` for anything it used to summarise.
-- `make ci` is now `make check`, and `gates parity` fails if it and `ci.yml` stop running the same set — every one of `check`'s twenty-one prerequisites, not just the gates, matched by what each recipe runs rather than by target name.
+- `make ci` is now `make check`, and `gates parity` fails if it and `ci.yml` stop running the same set — every one of `check`'s twenty-two prerequisites, not just the gates, matched by what each recipe runs rather than by target name.
 - Every GitHub Action is pinned to a full commit SHA with the version in a trailing comment, and every tool it installs is pinned to one exact version; `gates pins` holds both, plus the workflow-level `shell: bash` the Windows runner needs.
 - govulncheck runs in source mode again, pinned to v1.8.0. The binary-mode workaround existed because v1.7.0's analysis could not parse the Go 1.27 stdlib; v1.8.0 can, and source mode analyses call paths rather than a symbol table.
 - `scripts/changelog-section.sh` and `scripts/package-plugin.sh` are now `gates release-notes` and `gates plugin-pack`. The packer gains what the shell version could not have: the launcher's platform table is the table the gate reads, so a renamed binary fails on the commit that renames it rather than for every user of that platform.
@@ -56,6 +57,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - A binary installed with `go install` reports its real version. `go install` applies no ldflags, so it said `dev (unknown)` and no bug report from one could be tied to a build; it falls back to the module version and VCS revision Go embeds, and `doctor` names which of the three sources answered.
 
 ### Removed
+- `favro_get_organization` no longer takes `organization_id`; it returns the organization the server is bound to. Breaking, and the input never worked: Favro documents it as "the id of the organization to be retrieved. Required." and then ignores it, routing by the `organizationId` header instead — so any value, a malformed one included, returned the bound organization. A model asking for one organization was handed another with a 200 and nothing to indicate it. Use `favro_list_organizations` to see what the token can reach.
 - The fourteen delete-style tools are no longer in `tools/list` by default; set `FAVRO_ENABLE_DESTRUCTIVE=true` to register them. Breaking, and deliberately so: a client-side prompt is not a safety layer, because a host in an auto-approve permission mode runs a tool annotated `destructiveHint` without asking and the MCP spec says clients treat tool annotations as untrusted. No tool input changed, and one environment variable restores the previous surface.
 
 ### Fixed

@@ -375,10 +375,8 @@ func optionSteps() []Step {
 		},
 		{
 			Tool: "favro_get_organization",
-			Args: map[string]any{
-				"organization_id": AnyOrganizationID,
-			},
-			Why: "reads",
+			Args: map[string]any{},
+			Why:  "reads",
 		},
 		{
 			Tool: "favro_get_tag",
