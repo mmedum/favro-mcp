@@ -7,11 +7,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"
 	"golang.org/x/term"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/internal/config"
 )
 
 // TestMain installs go-keyring's in-memory mock before any test in this
@@ -67,7 +67,9 @@ func isolateCredentials(t *testing.T) {
 // public path `favro-mcp auth login` uses.
 func saveKeyringToken(t *testing.T, tok auth.Token) {
 	t.Helper()
-	require.NoError(t, auth.KeyringSource{}.Save(context.Background(), tok))
+	if err := (auth.KeyringSource{}.Save(context.Background(), tok)); err != nil {
+		t.Fatalf("auth.KeyringSource{}.Save(context.Background(), tok): %v", err)
+	}
 }
 
 // restoreDefaultLogger puts slog's process-wide default back when the
@@ -83,7 +85,7 @@ func restoreDefaultLogger(t *testing.T) {
 // default logger afterwards.
 func isolateLogging(t *testing.T) {
 	t.Helper()
-	t.Setenv(envLogLevel, "debug")
+	t.Setenv(config.EnvLogLevel, "debug")
 	restoreDefaultLogger(t)
 }
 

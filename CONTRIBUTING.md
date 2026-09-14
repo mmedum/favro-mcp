@@ -1,12 +1,21 @@
 # Contributing to favro-mcp
 
+The reference material lives in `docs/`: [development.md](./docs/development.md)
+for the gates and the test conventions, [configuration.md](./docs/configuration.md)
+for every setting, [security.md](./docs/security.md) for the trust
+boundaries, and [architecture.md](./docs/architecture.md) for why any of
+it is shaped the way it is. This file is the short version — how to get
+set up and what a pull request needs.
+
 ## Development setup
 
 ```
 git clone https://github.com/mmedum/favro-mcp.git
 cd favro-mcp
 make build       # build ./bin/favro-mcp
-make ci          # lint + test + vet + vulncheck
+make check       # everything CI runs: fmt, vet, tidy, lint, cover, vuln,
+                 # licenses, secrets, leaks, pins, parity, plugin,
+                 # schema-diff, smoke, staleness
 make test        # unit tests with race detector
 make lint        # golangci-lint + gofumpt diff + goimports
 make build       # build ./bin/favro-mcp

@@ -2,9 +2,9 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"
 )
 
@@ -23,74 +23,103 @@ func resetKeyring(t *testing.T) {
 
 func TestKeyringSource_Name(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "keyring", KeyringSource{}.Name())
+	if got := (KeyringSource{}.Name()); got != "keyring" {
+		t.Errorf("KeyringSource{}.Name() = %v, want %v", got, "keyring")
+	}
 }
 
 func TestKeyringSource_RoundTrip(t *testing.T) {
 	resetKeyring(t)
 
 	src := KeyringSource{}
-	original := Token{Email: "u@e.com", APIToken: "tok-xyz", OrganizationID: "org-1"}
+	original := Token{Email: "u@example.test", APIToken: "tok-xyz", OrganizationID: "org-1"}
 
-	require.NoError(t, src.Save(context.Background(), original))
+	if err := src.Save(context.Background(), original); err != nil {
+		t.Fatalf("src.Save(context.Background(), original): %v", err)
+	}
 
 	got, err := src.Load(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, original, got)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := got; got != original {
+		t.Errorf("got = %v, want %v", got, original)
+	}
 }
 
 func TestKeyringSource_Load_NoActivePointer_ReturnsNotConfigured(t *testing.T) {
 	resetKeyring(t)
 
 	_, err := KeyringSource{}.Load(context.Background())
-	require.ErrorIs(t, err, errNotConfigured,
-		"empty keyring must surface errNotConfigured so resolution can fall through")
+	if !errors.Is(err, errNotConfigured) {
+		t.Fatalf("got %v, want errNotConfigured", err)
+	}
 }
 
 func TestKeyringSource_Load_DanglingPointer_ReturnsNotConfigured(t *testing.T) {
 	resetKeyring(t)
 
-	// Active pointer says "u@e.com" but no payload entry exists.
-	require.NoError(t, keyring.Set(keyringActiveService, keyringActiveAccount, "u@e.com"))
+	// Active pointer says "u@example.test" but no payload entry exists.
+	if err := keyring.Set(keyringActiveService, keyringActiveAccount, "u@example.test"); err != nil {
+		t.Fatalf("keyring.Set(keyringActiveService, keyringActiveAccount, \"u@example.test\"): %v", err)
+	}
 
 	_, err := KeyringSource{}.Load(context.Background())
-	require.ErrorIs(t, err, errNotConfigured,
-		"a pointer with no matching payload should still resolve as not configured")
+	if !errors.Is(err, errNotConfigured) {
+		t.Fatalf("got %v, want errNotConfigured", err)
+	}
 }
 
 func TestKeyringSource_Load_CorruptPayload_Errors(t *testing.T) {
 	resetKeyring(t)
 
-	require.NoError(t, keyring.Set(keyringActiveService, keyringActiveAccount, "u@e.com"))
-	require.NoError(t, keyring.Set(keyringService, "u@e.com", "not-json"))
+	if err := keyring.Set(keyringActiveService, keyringActiveAccount, "u@example.test"); err != nil {
+		t.Fatalf("keyring.Set(keyringActiveService, keyringActiveAccount, \"u@example.test\"): %v", err)
+	}
+	if err := keyring.Set(keyringService, "u@example.test", "not-json"); err != nil {
+		t.Fatalf("keyring.Set(keyringService, \"u@example.test\", \"not-json\"): %v", err)
+	}
 
 	_, err := KeyringSource{}.Load(context.Background())
-	require.Error(t, err)
-	require.NotErrorIs(t, err, errNotConfigured,
-		"a corrupt payload is a real failure, not a missing source")
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if errors.Is(err, errNotConfigured) {
+		t.Fatalf("got %v, want anything but errNotConfigured", err)
+	}
 }
 
 func TestKeyringSource_Save_RejectsIncompleteToken(t *testing.T) {
 	resetKeyring(t)
 
-	err := KeyringSource{}.Save(context.Background(), Token{Email: "u@e.com"})
+	err := KeyringSource{}.Save(context.Background(), Token{Email: "u@example.test"})
 	var mfe *missingFieldError
-	require.ErrorAs(t, err, &mfe, "Save must validate before writing anything")
+	if !errors.As(err, &mfe) {
+		t.Fatalf("got %v, want mfe", err)
+	}
 }
 
 func TestKeyringSource_Delete_Idempotent(t *testing.T) {
 	resetKeyring(t)
 
 	// Delete on empty keyring is a no-op.
-	require.NoError(t, KeyringSource{}.Delete(context.Background()))
+	if err := (KeyringSource{}.Delete(context.Background())); err != nil {
+		t.Fatalf("KeyringSource{}.Delete(context.Background()): %v", err)
+	}
 
 	// After Save then Delete, Load returns errNotConfigured again.
 	src := KeyringSource{}
-	require.NoError(t, src.Save(context.Background(), Token{
-		Email: "u@e.com", APIToken: "t", OrganizationID: "o",
-	}))
-	require.NoError(t, src.Delete(context.Background()))
+	if err := src.Save(context.Background(), Token{
+		Email: "u@example.test", APIToken: "t", OrganizationID: "o",
+	}); err != nil {
+		t.Fatalf("src.Save(context.Background(), Token{\n\tEmail:\t\"u@example.test\", APIToken: \"t\", OrganizationID: \"o\",\n}): %v", err)
+	}
+	if err := src.Delete(context.Background()); err != nil {
+		t.Fatalf("src.Delete(context.Background()): %v", err)
+	}
 
 	_, err := src.Load(context.Background())
-	require.ErrorIs(t, err, errNotConfigured)
+	if !errors.Is(err, errNotConfigured) {
+		t.Fatalf("got %v, want errNotConfigured", err)
+	}
 }

@@ -1,95 +1,37 @@
-// Package server wires the auth subsystem and the MCP SDK into a
-// configured *mcp.Server, ready to Run over any transport.
+// Package server is the schema dump, plus the four-line constructor
+// that builds an *mcp.Server ready to Run over any transport.
+//
+// That is an honest description of its size: New does almost nothing,
+// because what the server exposes is internal/tools, what those tools
+// orchestrate is internal/service, and what talks to Favro is
+// internal/favroapi. What keeps the package worth having is
+// DumpSchemas, which drives an in-memory client session against the
+// surface — a client belongs here rather than inside the package whose
+// job is to describe a server.
 package server
 
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/favroapi"
+	"github.com/mmedum/favro-mcp/internal/tools"
 )
 
-// serverName is the MCP Implementation name advertised on the protocol
-// handshake. Hosts use it for de-duplication and display, so it stays
-// stable across versions.
-const serverName = "favro-mcp"
+// Options is what the process knows and the tool surface depends on.
+// An alias rather than a copy, so cmd/favro-mcp keeps one name for it
+// and there is no second struct to keep in step.
+type Options = tools.Options
 
-// New returns an *mcp.Server with every registered tool. The Favro
-// client is plumbed into handlers that need it; source is the
-// credential-source name ("env" / "keyring") surfaced by favro_ping;
-// version is embedded as MCP Implementation.Version.
-//
-// A single Resolver is constructed here and shared across every
-// resolver tool so the cache state is process-wide; ad-hoc
-// resolvers per-tool would each maintain their own cache and burn
-// the rate-limit budget on parallel cold-start fetches.
-func New(client *favro.Client, source, version string) *mcp.Server {
+// New returns an *mcp.Server with every tool opts admits. The Favro
+// client is plumbed into the handlers that need it; everything else the
+// surface depends on travels in opts, which is what keeps the
+// credential-source name and the version from being two adjacent
+// strings nothing would notice being swapped.
+func New(client *favroapi.Client, opts Options) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{
-		Name:    serverName,
-		Version: version,
+		Name:    tools.ServerName,
+		Version: opts.Version,
 	}, nil)
-
-	resolver := NewResolver(client)
-
-	registerPing(srv, client, source, version)
-	registerRateLimitStatus(srv, client)
-	registerOrganizations(srv, client)
-	registerUsers(srv, client)
-	registerCollections(srv, client)
-	registerWidgets(srv, client)
-	registerColumns(srv, client)
-	registerCards(srv, client)
-	registerComments(srv, client)
-	registerTags(srv, client)
-	registerCustomFields(srv, client)
-	registerGroups(srv, client)
-	registerResolveTag(srv, resolver)
-	registerResolveUser(srv, resolver)
-	registerResolveCollection(srv, resolver)
-	registerResolveWidget(srv, resolver)
-	registerResolveColumn(srv, resolver)
-	registerResolveCustomField(srv, resolver)
-	registerResolveGroup(srv, resolver)
-	registerSearchCards(srv, resolver)
-	registerGetCardFull(srv, resolver)
-	registerCreateTag(srv, resolver)
-	registerDeleteTag(srv, resolver)
-	registerUpdateTag(srv, resolver)
-	registerUpdateTags(srv, resolver)
-	registerCreateComment(srv, resolver)
-	registerUpdateComment(srv, resolver)
-	registerDeleteComment(srv, resolver)
-	registerCreateCard(srv, resolver)
-	registerUpdateCard(srv, resolver)
-	registerArchiveCard(srv, resolver)
-	registerUnarchiveCard(srv, resolver)
-	registerMoveCard(srv, resolver)
-	registerDeleteCard(srv, resolver)
-	registerCreateCollection(srv, resolver)
-	registerUpdateCollection(srv, resolver)
-	registerDeleteCollection(srv, resolver)
-	registerCreateWidget(srv, resolver)
-	registerUpdateWidget(srv, resolver)
-	registerDeleteWidget(srv, resolver)
-	registerCreateColumn(srv, resolver)
-	registerUpdateColumn(srv, resolver)
-	registerDeleteColumn(srv, resolver)
-	registerCreateGroup(srv, resolver)
-	registerUpdateGroup(srv, resolver)
-	registerDeleteGroup(srv, resolver)
-	registerSetCardCustomField(srv, resolver)
-	registerAppendCardDescription(srv, resolver)
-	registerPrependCardDescription(srv, resolver)
-	registerReplaceInCardDescription(srv, resolver)
-	registerAddCommentToCard(srv, resolver)
-	registerAddTagToCard(srv, resolver)
-	registerRemoveTagFromCard(srv, resolver)
-	registerUploadAttachment(srv, resolver)
-	registerUploadCommentAttachment(srv, resolver)
-	registerRemoveAttachment(srv, resolver)
-	registerTasks(srv, client)
-	registerTasklists(srv, client)
-	registerDependencies(srv, client)
-	registerActivities(srv, client)
-
+	tools.Register(srv, client, opts)
 	return srv
 }

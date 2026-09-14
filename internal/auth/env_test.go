@@ -2,9 +2,9 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 // staticLookup builds a Lookup func over a fixed map for deterministic
@@ -16,7 +16,9 @@ func staticLookup(env map[string]string) func(string) string {
 
 func TestEnvSource_Name(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "env", EnvSource{}.Name())
+	if got := (EnvSource{}.Name()); got != "env" {
+		t.Errorf("EnvSource{}.Name() = %v, want %v", got, "env")
+	}
 }
 
 func TestEnvSource_Load(t *testing.T) {
@@ -37,25 +39,25 @@ func TestEnvSource_Load(t *testing.T) {
 		{
 			name: "all set -> Token",
 			env: map[string]string{
-				EnvUserEmail:      "u@e.com",
+				EnvUserEmail:      "u@example.test",
 				EnvAPIToken:       "tok",
 				EnvOrganizationID: "org-1",
 			},
-			wantToken: Token{Email: "u@e.com", APIToken: "tok", OrganizationID: "org-1"},
+			wantToken: Token{Email: "u@example.test", APIToken: "tok", OrganizationID: "org-1"},
 		},
 		{
 			name: "whitespace is trimmed",
 			env: map[string]string{
-				EnvUserEmail:      "  u@e.com  ",
+				EnvUserEmail:      "  u@example.test  ",
 				EnvAPIToken:       " tok ",
 				EnvOrganizationID: " org-1 ",
 			},
-			wantToken: Token{Email: "u@e.com", APIToken: "tok", OrganizationID: "org-1"},
+			wantToken: Token{Email: "u@example.test", APIToken: "tok", OrganizationID: "org-1"},
 		},
 		{
 			name: "partial -> missingFieldError, not errNotConfigured",
 			env: map[string]string{
-				EnvUserEmail: "u@e.com",
+				EnvUserEmail: "u@example.test",
 				EnvAPIToken:  "tok",
 				// no FAVRO_ORGANIZATION_ID
 			},
@@ -79,16 +81,30 @@ func TestEnvSource_Load(t *testing.T) {
 
 			switch {
 			case tc.wantErr != nil:
-				require.ErrorIs(t, err, tc.wantErr)
-				require.Equal(t, Token{}, tok)
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("got %v, want tc.wantErr", err)
+				}
+				if got := tok; got != (Token{}) {
+					t.Errorf("tok = %v, want %v", got, Token{})
+				}
 			case tc.wantMissing != nil:
 				var mfe *missingFieldError
-				require.ErrorAs(t, err, &mfe, "expected *missingFieldError")
-				require.Equal(t, tc.wantMissing, mfe.fields)
-				require.Equal(t, Token{}, tok)
+				if !errors.As(err, &mfe) {
+					t.Fatalf("got %v, want mfe", err)
+				}
+				if got := mfe.fields; !reflect.DeepEqual(got, tc.wantMissing) {
+					t.Errorf("mfe.fields = %v, want %v", got, tc.wantMissing)
+				}
+				if got := tok; got != (Token{}) {
+					t.Errorf("tok = %v, want %v", got, Token{})
+				}
 			default:
-				require.NoError(t, err)
-				require.Equal(t, tc.wantToken, tok)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
+				if got := tok; got != tc.wantToken {
+					t.Errorf("tok = %v, want %v", got, tc.wantToken)
+				}
 			}
 		})
 	}

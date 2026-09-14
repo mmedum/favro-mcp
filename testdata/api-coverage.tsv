@@ -1,0 +1,88 @@
+# One verdict per endpoint in testdata/api-surface.json, by hand.
+#
+# The snapshot is machine-owned: `make api-diff` refetches it from
+# favro.com/developer and nothing else writes it. This file is the other
+# half — what this server does about each endpoint — and `gates
+# api-coverage` holds the two to each other in both directions, offline,
+# in every `make check`.
+#
+# Columns, tab-separated: METHOD  PATH  VERDICT  DETAIL
+#
+#   implemented  DETAIL names the internal/favroapi methods that issue
+#                it. The gate checks each one exists, so the verdict is
+#                falsifiable rather than a claim.
+#   out          DETAIL is why, in a sentence. A verdict of "not yet" is
+#                not a reason; if it is only unbuilt, say so and say
+#                what would change the answer.
+#
+# A PATH ending in * covers every endpoint under that prefix, and a
+# METHOD of * covers every verb, so a family decided together is one
+# row. The gate still checks each endpoint is matched exactly once, so
+# a categorical row that quietly covers nothing fails rather than
+# reading like one that covers twenty.
+GET	/api/v1/cards	implemented	ListCards
+POST	/api/v1/cards	implemented	CreateCard
+GET	/api/v1/cards/:cardId	implemented	GetCard,GetCardWithDescriptionFormat
+PUT	/api/v1/cards/:cardId	implemented	UpdateCard,ArchiveCard,UnarchiveCard,MoveCard,RemoveAttachment
+DELETE	/api/v1/cards/:cardId	implemented	DeleteCard
+GET	/api/v1/cards/:cardId/activities	implemented	ListCardActivities
+POST	/api/v1/cards/:cardId/attachment	implemented	UploadAttachment
+GET	/api/v1/cards/:cardId/dependencies	implemented	ListDependencies
+POST	/api/v1/cards/:cardId/dependencies	implemented	CreateDependencies
+PUT	/api/v1/cards/:cardId/dependencies	implemented	ReplaceDependencies
+DELETE	/api/v1/cards/:cardId/dependencies	implemented	DeleteAllDependencies
+PATCH	/api/v1/cards/:cardId/dependencies/:dependencyCardId	implemented	UpdateDependency
+DELETE	/api/v1/cards/:cardId/dependencies/:dependencyCardId	implemented	DeleteDependency
+GET	/api/v1/collections	implemented	ListCollections
+POST	/api/v1/collections	implemented	CreateCollection
+GET	/api/v1/collections/:collectionId	implemented	GetCollection
+PUT	/api/v1/collections/:collectionId	implemented	UpdateCollection
+DELETE	/api/v1/collections/:collectionId	implemented	DeleteCollection
+GET	/api/v1/columns	implemented	ListColumns
+POST	/api/v1/columns	implemented	CreateColumn
+GET	/api/v1/columns/:columnId	implemented	GetColumn
+PUT	/api/v1/columns/:columnId	implemented	UpdateColumn
+DELETE	/api/v1/columns/:columnId	implemented	DeleteColumn
+GET	/api/v1/comments	implemented	ListComments
+POST	/api/v1/comments	implemented	CreateComment
+GET	/api/v1/comments/:commentId	implemented	GetComment
+PUT	/api/v1/comments/:commentId	implemented	UpdateComment
+DELETE	/api/v1/comments/:commentId	implemented	DeleteComment
+POST	/api/v1/comments/:commentId/attachment	implemented	UploadCommentAttachment
+GET	/api/v1/customfields	implemented	ListCustomFields
+GET	/api/v1/customfields/:customfieldId	implemented	GetCustomField
+GET	/api/v1/groups	implemented	ListGroups
+POST	/api/v1/groups	implemented	CreateGroup
+GET	/api/v1/groups/:groupId	implemented	GetGroup
+PUT	/api/v1/groups/:groupId	implemented	UpdateGroup
+DELETE	/api/v1/groups/:groupId	implemented	DeleteGroup
+GET	/api/v1/organizations	implemented	ListOrganizations
+GET	/api/v1/organizations/:organizationId	implemented	GetOrganization
+POST	/api/v1/organizations	out	Creates a Favro organization. This server binds one organization at startup (§8) and a token scoped to one tenant has no business minting another; there is no model workflow that ends in a new organization.
+PUT	/api/v1/organizations/:organizationId	out	Renames the organization and rewrites its membership and roles. Both are tenant administration rather than work inside a tenant, and the blast radius is every user of the org — the one write where a model's mistake cannot be scoped by a widget or a card.
+GET	/api/v1/tags	implemented	ListTags
+POST	/api/v1/tags	implemented	CreateTag
+GET	/api/v1/tags/:tagId	implemented	GetTag
+PUT	/api/v1/tags/:tagId	implemented	UpdateTag,UpdateTags
+DELETE	/api/v1/tags/:tagId	implemented	DeleteTag
+GET	/api/v1/tasklists	implemented	ListTasklists
+POST	/api/v1/tasklists	implemented	CreateTasklist
+GET	/api/v1/tasklists/:taskListId	implemented	GetTasklist
+PUT	/api/v1/tasklists/:taskListId	implemented	UpdateTasklist
+DELETE	/api/v1/tasklists/:taskListId	implemented	DeleteTasklist
+GET	/api/v1/tasks	implemented	ListTasks
+POST	/api/v1/tasks	implemented	CreateTask
+GET	/api/v1/tasks/:taskId	implemented	GetTask
+PUT	/api/v1/tasks/:taskId	implemented	UpdateTask
+DELETE	/api/v1/tasks/:taskId	implemented	DeleteTask
+GET	/api/v1/users	implemented	ListUsers
+GET	/api/v1/users/:userId	implemented	GetUser
+GET	/api/v1/widgets	implemented	ListWidgets
+POST	/api/v1/widgets	implemented	CreateWidget
+GET	/api/v1/widgets/:widgetCommonId	implemented	GetWidget
+PUT	/api/v1/widgets/:widgetCommonId	implemented	UpdateWidget
+DELETE	/api/v1/widgets/:widgetCommonId	implemented	DeleteWidget
+GET	/api/v1/webhooks	implemented	ListWebhooks
+DELETE	/api/v1/webhooks/:webhookId	implemented	DeleteWebhook
+POST	/api/v1/webhooks	out	Registers an OUTGOING webhook: Favro posts card events to a URL the caller supplies. This server is a stdio process a host starts and stops, so it can never be that URL, and a tool that points Favro at somebody else's endpoint is a tool for configuring a system this server has no part in. Listing and deleting are implemented because removing what somebody else registered needs no receiver. Revisit if an HTTP transport ever lands.
+*	/api/scim/*	out	SCIM user provisioning, both versions, every verb. A different product surface with a different audience — an identity provider syncing directory state on a schedule — and a different auth model from the API token this server holds. Nothing a model doing work inside Favro reaches for, and writing the same sentence twenty-three times would make the file longer without making the decision better.

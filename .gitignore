@@ -11,8 +11,10 @@
 coverage.out
 coverage.html
 
-# Plugin packaging
+# Bundle packaging. The .mcpb lands in dist/, which is ignored above;
+# this covers a packer pointed somewhere else.
 *.plugin
+*.mcpb
 
 # IDE
 .idea/
@@ -37,3 +39,7 @@ Thumbs.db
 # Go module cache (handled by setup-go in CI)
 go.work
 go.work.sum
+
+# `go build ./scripts/gates` drops a binary here under the directory name.
+/gates
+/.gates

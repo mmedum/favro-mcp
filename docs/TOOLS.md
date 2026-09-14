@@ -3,6 +3,16 @@
 Every tool `favro-mcp` registers, what it does, and the inputs that matter.
 Read-only tools never accept `dry_run`; every mutating tool does.
 
+Page numbers are 1-indexed: omit `page` or pass `1` for the first page.
+Pass the `next_page` value from a response rather than counting, because
+paging also requires the `request_id` from that same response.
+
+The rows marked **Destructive** are not registered unless
+`FAVRO_ENABLE_DESTRUCTIVE=true` is set in the server's environment.
+Without it they are absent from `tools/list` rather than guarded: a host
+in an auto-approve permission mode runs a tool without prompting, so
+being unregistered is the only guarantee.
+
 The **Phase** column records which build phase shipped the tool. `parity`
 marks tools added by the API-parity pass that re-checked this client against
 Favro's published REST docs.
@@ -14,7 +24,7 @@ See the [README](../README.md) for install, auth and troubleshooting.
 | `favro_ping` | 1 | Read-only liveness check. Returns server version, the bound Favro organization id, and the active credential source (`env` or `keyring`). Does **not** contact Favro — it's a local diagnostic. |
 | `favro_rate_limit_status` | 2 | Read-only. Reports the most recently observed Favro rate-limit headers (`X-RateLimit-Limit/Remaining/Reset/Delay`, plus `Retry-After` on 429). Does **not** contact Favro — surfaces what the client already saw on prior requests so the caller can decide whether to slow down. A non-zero `throttle_delay_seconds` is the early warning: Favro is already stalling responses to refill the token bucket, and starts rejecting with 429 once the needed stall would exceed 10s. |
 | `favro_list_organizations` | 3 | Read-only. Lists Favro organizations the API token can see. Optional `page` (1-indexed); surfaces `next_page` for explicit pagination — never auto-aggregates. |
-| `favro_get_organization` | 3 | Read-only. Returns a single Favro organization by id. |
+| `favro_get_organization` | 3 | Read-only. Returns the organization this server is bound to. Takes no input: Favro routes this call by a header and ignores the id in the path. |
 | `favro_list_users` | 3 | Read-only. Lists members of the bound Favro organization. Optional `page` + `request_id`. |
 | `favro_get_user` | 3 | Read-only. Returns a single Favro user by id. |
 | `favro_list_collections` | 3 | Read-only. Lists collections in the bound Favro organization. Optional `page` + `request_id`. |
@@ -94,3 +104,5 @@ See the [README](../README.md) for install, auth and troubleshooting.
 | `favro_delete_dependency` | parity | **Destructive.** Removes one dependency link. The cards themselves are untouched. Pass `dry_run: true` to preview. |
 | `favro_delete_all_dependencies` | parity | **Destructive.** Removes every dependency link from a card. Pass `dry_run: true` to preview. |
 | `favro_list_card_activities` | parity | Read-only. Reads a card's activity history — who changed what, and when. Answers "when did this move to Done", "who reassigned this", "what changed since Friday". `card_id` is the per-widget id, NOT `card_common_id`. Narrow with `since` / `until` (ISO 8601) rather than paging through everything. Which fields an entry carries depends on its `type`; `by_user_id` resolves via `favro_get_user`. Optional `page` + `request_id`. |
+| `favro_list_webhooks` | A5 | Read-only. Lists the outgoing webhooks configured in the organization — the addresses Favro posts card events to. Optional `widget_common_id` narrows to one board; also accepts `page` + `request_id`. The signing secret Favro returns is **not** modelled and never reaches the result: it authenticates deliveries to whoever consumes them. |
+| `favro_delete_webhook` | A5 | **Destructive.** Deletes an outgoing webhook by `webhook_id`. Favro stops posting card events to that address immediately and whatever was consuming them stops receiving them — this server cannot tell you what that is. There is deliberately no tool to create one: a webhook needs a receiver that outlives this process, and a stdio server is not one (see `testdata/api-coverage.tsv`). Pass `dry_run: true` to preview. |
