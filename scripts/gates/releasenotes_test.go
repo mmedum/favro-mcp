@@ -113,3 +113,36 @@ func TestReleaseNotesAcceptsRealVersionShapes(t *testing.T) {
 		}
 	}
 }
+
+// GitHub renders the tag name as the release page's h1, so an unaltered
+// `### Added` lands as an h3 and skips a rank. The changelog itself is
+// correct — `###` sits under its own `## [1.2.3]` — so the shift belongs
+// here, on the way out, and nowhere else.
+func TestReleaseNotesPromotesHeadingsOneRank(t *testing.T) {
+	got := promoteHeadings("### Added\n- a thing\n\n### Fixed\n- another")
+	if strings.Contains(got, "###") {
+		t.Errorf("a heading was left at h3:\n%s", got)
+	}
+	for _, want := range []string{"## Added", "## Fixed"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	// h2 must not become h1: that would collide with the tag name.
+	if strings.Contains(promoteHeadings("## Already"), "\n# ") ||
+		strings.HasPrefix(promoteHeadings("## Already"), "# ") {
+		t.Error("an h2 was promoted to h1, which collides with the tag heading")
+	}
+}
+
+// A `###` inside a fenced block is content, not a heading.
+func TestReleaseNotesLeavesFencedContentAlone(t *testing.T) {
+	in := "### Added\n- a thing\n\n```sh\n### not a heading\n```\n"
+	got := promoteHeadings(in)
+	if !strings.Contains(got, "## Added") {
+		t.Error("the real heading was not promoted")
+	}
+	if !strings.Contains(got, "### not a heading") {
+		t.Errorf("content inside a fence was rewritten:\n%s", got)
+	}
+}
