@@ -25,9 +25,10 @@
 // would catch the rest of the sentence too. That is the same reasoning
 // §9 gives for the leak gate, and it has the same consequence here.
 //
-// So a verbose transcript carries real names. Measured on a run against
-// a real organization: 56 KB of output, zero ids, zero addresses, zero
-// links — and 54 names. That is acceptable for what this is, a
+// So a verbose transcript carries real names. Measured on a complete
+// run against a real organization — 104 steps, 56,902 bytes, 88 values
+// replaced: zero ids, zero addresses, zero links, and 54 names. That is
+// acceptable for what this is, a
 // maintainer's terminal showing them an organization they already have
 // a token for. It is not acceptable in a file, and the leak gate cannot
 // catch it, because names are words. **Do not commit a transcript.**
