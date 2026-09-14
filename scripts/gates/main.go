@@ -67,6 +67,18 @@ func init() {
 			run: pins, args: "", gate: true,
 			doc: "every action is a SHA and every tool version is exact",
 		},
+		"api-diff": {
+			run: apiDiff, args: "",
+			doc: "refetch the Favro API surface snapshot (network; maintainer only)",
+		},
+		"api-coverage": {
+			run: apiCoverage, args: "", gate: true,
+			doc: "every documented Favro endpoint has a verdict, and every verdict an endpoint",
+		},
+		"api-fields": {
+			run: apiFields, args: "", gate: true,
+			doc: "every documented field is modelled by a wire type, or waived with a reason",
+		},
 		"classes": {
 			run: classes, args: "", gate: true,
 			doc: "the closed error vocabulary and the document that names it",

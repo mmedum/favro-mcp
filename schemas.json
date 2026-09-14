@@ -1,6 +1,6 @@
 {
   "server": "favro-mcp",
-  "version": "v1.1.2-6-g4232b12-dirty (4232b12)",
+  "version": "v1.1.2-8-ga973b81-dirty (a973b81)",
   "sdk": "v1.7.0",
   "tools": [
     {
@@ -136,6 +136,9 @@
                           "type": "string"
                         },
                         "name": {
+                          "type": "string"
+                        },
+                        "thumbnailURL": {
                           "type": "string"
                         }
                       },
@@ -430,6 +433,9 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "thumbnailURL": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -476,56 +482,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -556,56 +522,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -694,6 +620,9 @@
               },
               "sequentialIdPrefix": {
                 "type": "string"
+              },
+              "sheetPosition": {
+                "type": "number"
               },
               "startDate": {
                 "type": "string"
@@ -957,6 +886,9 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "thumbnailURL": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -1003,56 +935,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -1083,56 +975,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -1221,6 +1073,9 @@
               },
               "sequentialIdPrefix": {
                 "type": "string"
+              },
+              "sheetPosition": {
+                "type": "number"
               },
               "startDate": {
                 "type": "string"
@@ -1447,6 +1302,9 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "thumbnailURL": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -1493,56 +1351,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -1573,56 +1391,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -1711,6 +1489,9 @@
               },
               "sequentialIdPrefix": {
                 "type": "string"
+              },
+              "sheetPosition": {
+                "type": "number"
               },
               "startDate": {
                 "type": "string"
@@ -2189,6 +1970,9 @@
                       "type": "string"
                     },
                     "name": {
+                      "type": "string"
+                    },
+                    "thumbnailURL": {
                       "type": "string"
                     }
                   },
@@ -3722,6 +3506,81 @@
         "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
+        "title": "Delete Favro webhook"
+      },
+      "description": "Delete an outgoing webhook by `webhook_id`. Favro stops posting card events to that address immediately, and whatever was consuming them stops receiving them — this server cannot tell you what that is, so confirm with a human before removing a webhook you did not create. Resolve the id with `favro_list_webhooks`. Pass `dry_run: true` to preview.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "type": "boolean"
+          },
+          "webhook_id": {
+            "description": "the webhookId to delete, from favro_list_webhooks",
+            "type": "string"
+          }
+        },
+        "required": [
+          "webhook_id"
+        ],
+        "type": "object"
+      },
+      "name": "favro_delete_webhook",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
+            "type": "boolean"
+          },
+          "predicted_state_diff": {
+            "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
+            "type": "string"
+          },
+          "request_body": {
+            "description": "the JSON body that would have been sent, decoded into a structured object (populated when dry_run is true)"
+          },
+          "result": {
+            "additionalProperties": false,
+            "description": "the resource returned by Favro (populated when dry_run is false)",
+            "type": [
+              "null",
+              "object"
+            ]
+          },
+          "would_call": {
+            "additionalProperties": false,
+            "description": "the HTTP request that would have been sent (populated when dry_run is true)",
+            "properties": {
+              "method": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "method",
+              "url"
+            ],
+            "type": [
+              "null",
+              "object"
+            ]
+          }
+        },
+        "required": [
+          "dry_run"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "readOnlyHint": false,
         "title": "Delete Favro widget"
       },
       "description": "Delete a Favro widget by its widgetCommonId. Destructive — MCP hosts may warn before auto-confirming. Cards on the widget are removed; columns on the widget become inaccessible. Pass `collection_id` to remove the widget from just that collection; omitting it deletes every instance across all collections the widget belongs to. On success the widget / column / search-cards caches are invalidated. Pass `dry_run: true` to preview.",
@@ -3853,6 +3712,9 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "thumbnailURL": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -3899,56 +3761,16 @@
                     "array"
                   ]
                 },
-                "link": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
-                "reports": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
-                "timeline": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
+                "link": true,
+                "reports": true,
+                "timeline": true,
                 "total": {
                   "type": [
                     "null",
                     "number"
                   ]
                 },
-                "value": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                }
+                "value": true
               },
               "required": [
                 "customFieldId"
@@ -3979,56 +3801,16 @@
                     "array"
                   ]
                 },
-                "link": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
-                "reports": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
-                "timeline": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
+                "link": true,
+                "reports": true,
+                "timeline": true,
                 "total": {
                   "type": [
                     "null",
                     "number"
                   ]
                 },
-                "value": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                }
+                "value": true
               },
               "required": [
                 "customFieldId"
@@ -4117,6 +3899,9 @@
           },
           "sequentialIdPrefix": {
             "type": "string"
+          },
+          "sheetPosition": {
+            "type": "number"
           },
           "startDate": {
             "type": "string"
@@ -4245,6 +4030,9 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "thumbnailURL": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -4290,6 +4078,9 @@
                         "type": "string"
                       },
                       "name": {
+                        "type": "string"
+                      },
+                      "thumbnailURL": {
                         "type": "string"
                       }
                     },
@@ -4363,56 +4154,16 @@
                     "array"
                   ]
                 },
-                "link": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
-                "reports": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
-                "timeline": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
+                "link": true,
+                "reports": true,
+                "timeline": true,
                 "total": {
                   "type": [
                     "null",
                     "number"
                   ]
                 },
-                "value": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                }
+                "value": true
               },
               "required": [
                 "customFieldId"
@@ -4443,56 +4194,16 @@
                     "array"
                   ]
                 },
-                "link": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
-                "reports": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
-                "timeline": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
+                "link": true,
+                "reports": true,
+                "timeline": true,
                 "total": {
                   "type": [
                     "null",
                     "number"
                   ]
                 },
-                "value": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                }
+                "value": true
               },
               "required": [
                 "customFieldId"
@@ -4619,17 +4330,7 @@
                 "name": {
                   "type": "string"
                 },
-                "raw": {
-                  "items": {
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
+                "raw": true,
                 "type": {
                   "type": "string"
                 }
@@ -4674,6 +4375,9 @@
           },
           "sequentialIdPrefix": {
             "type": "string"
+          },
+          "sheetPosition": {
+            "type": "number"
           },
           "startDate": {
             "type": "string"
@@ -4921,6 +4625,9 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "thumbnailURL": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -5029,6 +4736,9 @@
             "type": "string"
           },
           "type": {
+            "type": "string"
+          },
+          "widgetCommonId": {
             "type": "string"
           }
         },
@@ -5726,6 +5436,9 @@
                       },
                       "name": {
                         "type": "string"
+                      },
+                      "thumbnailURL": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -5772,56 +5485,16 @@
                           "array"
                         ]
                       },
-                      "link": {
-                        "items": {
-                          "maximum": 255,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "type": [
-                          "null",
-                          "array"
-                        ]
-                      },
-                      "reports": {
-                        "items": {
-                          "maximum": 255,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "type": [
-                          "null",
-                          "array"
-                        ]
-                      },
-                      "timeline": {
-                        "items": {
-                          "maximum": 255,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "type": [
-                          "null",
-                          "array"
-                        ]
-                      },
+                      "link": true,
+                      "reports": true,
+                      "timeline": true,
                       "total": {
                         "type": [
                           "null",
                           "number"
                         ]
                       },
-                      "value": {
-                        "items": {
-                          "maximum": 255,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "type": [
-                          "null",
-                          "array"
-                        ]
-                      }
+                      "value": true
                     },
                     "required": [
                       "customFieldId"
@@ -5852,56 +5525,16 @@
                           "array"
                         ]
                       },
-                      "link": {
-                        "items": {
-                          "maximum": 255,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "type": [
-                          "null",
-                          "array"
-                        ]
-                      },
-                      "reports": {
-                        "items": {
-                          "maximum": 255,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "type": [
-                          "null",
-                          "array"
-                        ]
-                      },
-                      "timeline": {
-                        "items": {
-                          "maximum": 255,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "type": [
-                          "null",
-                          "array"
-                        ]
-                      },
+                      "link": true,
+                      "reports": true,
+                      "timeline": true,
                       "total": {
                         "type": [
                           "null",
                           "number"
                         ]
                       },
-                      "value": {
-                        "items": {
-                          "maximum": 255,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "type": [
-                          "null",
-                          "array"
-                        ]
-                      }
+                      "value": true
                     },
                     "required": [
                       "customFieldId"
@@ -5990,6 +5623,9 @@
                 },
                 "sequentialIdPrefix": {
                   "type": "string"
+                },
+                "sheetPosition": {
+                  "type": "number"
                 },
                 "startDate": {
                   "type": "string"
@@ -6366,6 +6002,9 @@
                       },
                       "name": {
                         "type": "string"
+                      },
+                      "thumbnailURL": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -6512,6 +6151,9 @@
                   "type": "string"
                 },
                 "type": {
+                  "type": "string"
+                },
+                "widgetCommonId": {
                   "type": "string"
                 }
               },
@@ -7210,6 +6852,86 @@
       "annotations": {
         "idempotentHint": false,
         "readOnlyHint": true,
+        "title": "List Favro outgoing webhooks"
+      },
+      "description": "List the outgoing webhooks configured in the organization — the addresses Favro posts card events to. Optional `widget_common_id` narrows to one board. Favro returns every webhook at once — this is the one collection it does not paginate — so there is no `page`. The signing secret is deliberately NOT returned: it is what authenticates deliveries to whoever consumes them. There is no tool to create a webhook, because a webhook needs a receiver that outlives this process and a stdio server is not one; use this to see what exists and `favro_delete_webhook` to remove it. Read-only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "widget_common_id": {
+            "description": "only the webhooks of this widget; omit for every webhook in the organization",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "favro_list_webhooks",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "how many came back; Favro does not paginate this endpoint, so this is all of them",
+            "type": "integer"
+          },
+          "webhooks": {
+            "description": "every outgoing webhook, or those of one widget",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "options": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "columnId": {
+                      "type": "string"
+                    },
+                    "columnIds": true,
+                    "notifications": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": [
+                        "null",
+                        "array"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                "postToUrl": {
+                  "type": "string"
+                },
+                "webhookId": {
+                  "type": "string"
+                },
+                "widgetCommonId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "webhookId"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "webhooks",
+          "count"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true,
         "title": "List Favro widgets"
       },
       "description": "List Favro widgets (boards) in the organization the API token is scoped to. Pass `collection_id` to scope the result to a single collection. Pass `archived: true` to include archived widgets. Returns one page; pass `page` (1-indexed) plus the `request_id` from the prior response to retrieve subsequent pages. Read-only.",
@@ -7474,6 +7196,9 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "thumbnailURL": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -7520,56 +7245,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -7600,56 +7285,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -7738,6 +7383,9 @@
               },
               "sequentialIdPrefix": {
                 "type": "string"
+              },
+              "sheetPosition": {
+                "type": "number"
               },
               "startDate": {
                 "type": "string"
@@ -8129,6 +7777,9 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "thumbnailURL": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -8175,56 +7826,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -8255,56 +7866,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -8393,6 +7964,9 @@
               },
               "sequentialIdPrefix": {
                 "type": "string"
+              },
+              "sheetPosition": {
+                "type": "number"
               },
               "startDate": {
                 "type": "string"
@@ -8562,6 +8136,9 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "thumbnailURL": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -8608,56 +8185,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -8688,56 +8225,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -8826,6 +8323,9 @@
               },
               "sequentialIdPrefix": {
                 "type": "string"
+              },
+              "sheetPosition": {
+                "type": "number"
               },
               "startDate": {
                 "type": "string"
@@ -10020,6 +9520,9 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "thumbnailURL": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -10066,56 +9569,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -10146,56 +9609,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -10284,6 +9707,9 @@
               },
               "sequentialIdPrefix": {
                 "type": "string"
+              },
+              "sheetPosition": {
+                "type": "number"
               },
               "startDate": {
                 "type": "string"
@@ -10448,6 +9874,9 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "thumbnailURL": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -10494,56 +9923,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -10574,56 +9963,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -10712,6 +10061,9 @@
               },
               "sequentialIdPrefix": {
                 "type": "string"
+              },
+              "sheetPosition": {
+                "type": "number"
               },
               "startDate": {
                 "type": "string"
@@ -10966,6 +10318,9 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "thumbnailURL": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -11012,56 +10367,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -11092,56 +10407,16 @@
                         "array"
                       ]
                     },
-                    "link": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "reports": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
-                    "timeline": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    },
+                    "link": true,
+                    "reports": true,
+                    "timeline": true,
                     "total": {
                       "type": [
                         "null",
                         "number"
                       ]
                     },
-                    "value": {
-                      "items": {
-                        "maximum": 255,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": [
-                        "null",
-                        "array"
-                      ]
-                    }
+                    "value": true
                   },
                   "required": [
                     "customFieldId"
@@ -11230,6 +10505,9 @@
               },
               "sequentialIdPrefix": {
                 "type": "string"
+              },
+              "sheetPosition": {
+                "type": "number"
               },
               "startDate": {
                 "type": "string"
@@ -11769,6 +11047,9 @@
                       "type": "string"
                     },
                     "name": {
+                      "type": "string"
+                    },
+                    "thumbnailURL": {
                       "type": "string"
                     }
                   },
@@ -12831,6 +12112,9 @@
               },
               "name": {
                 "type": "string"
+              },
+              "thumbnailURL": {
+                "type": "string"
               }
             },
             "required": [
@@ -12929,6 +12213,9 @@
                 "type": "string"
               },
               "name": {
+                "type": "string"
+              },
+              "thumbnailURL": {
                 "type": "string"
               }
             },

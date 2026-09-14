@@ -152,3 +152,59 @@ func TestMCP_GetCard_MissingID_ReturnsToolError(t *testing.T) {
 	t.Parallel()
 	assertMissingRequiredFieldFails(t, getCardToolName, "card_id")
 }
+
+// TestCardCustomFieldValuesPassOutputValidation is the regression test
+// for a bug no fixture could have caught.
+//
+// Card.customFields carries json.RawMessage fields, which are []byte in
+// Go, so schema inference described them as arrays of integers 0-255.
+// The SDK validates every result against that schema, so any card with
+// a Vote, Members, Tags, Status or Multiple-select custom field — whose
+// value is an array of ids — failed with a protocol error instead of
+// returning. It survived every test here because the fixtures sent what
+// the schema claimed; a live read against a real organization is what
+// found it.
+//
+// So the payload below is deliberately the shape Favro actually sends:
+// ids as strings, an object for a timeline, an object for a link.
+func TestCardCustomFieldValuesPassOutputValidation(t *testing.T) {
+	t.Parallel()
+
+	const body = `{"limit":100,"page":0,"pages":1,"requestId":"r-1","entities":[{
+		"cardId":"ci-1","cardCommonId":"cc-1","name":"A card","widgetCommonId":"w-1",
+		"customFields":[
+			{"customFieldId":"cf-members","value":["u-1","u-2"]},
+			{"customFieldId":"cf-status","value":["item-1"]},
+			{"customFieldId":"cf-link","link":{"url":"https://example.test","text":"docs"}},
+			{"customFieldId":"cf-timeline","timeline":{"startDate":"2026-01-01","dueDate":"2026-02-01","showTime":false}},
+			{"customFieldId":"cf-time","total":3600,"reports":{"u-1":{"value":3600}}},
+			{"customFieldId":"cf-progress","value":{"percentage":40}}
+		]}]}`
+
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	cs := connectInMemoryWith(t, c)
+
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      listCardsToolName,
+		Arguments: map[string]any{"widget_common_id": "w-1"},
+	})
+	// A schema violation surfaces as a protocol error, not a tool
+	// error, so this is the assertion that would have failed.
+	if err != nil {
+		t.Fatalf("a card carrying real custom-field values must validate: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %v", res.Content)
+	}
+
+	out := decodeStructured[listOutput[favro.Card]](t, res)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := len(out.Items[0].CustomFields()); got != 6 {
+		t.Errorf("len(CustomFields()) = %d, want 6", got)
+	}
+}

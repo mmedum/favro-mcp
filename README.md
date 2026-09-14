@@ -7,7 +7,7 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for [Favro](https://favro.com), written in Go.
 
-It speaks MCP over stdio and exposes Favro's REST API as 83 typed tools. Beyond
+It speaks MCP over stdio and exposes Favro's REST API as 85 typed tools. Beyond
 plain CRUD, it ships workflow tools built for natural-language use — search,
 name→ID resolution, surgical description edits — so an LLM can act on Favro
 without spending its rate-limit budget on lookup round-trips. Every mutating
@@ -131,7 +131,7 @@ For sandboxed or pre-autonomy testing, `--dry-run` on the binary forces dry-run 
 
 ## Tools
 
-83 tools covering every Favro REST resource, plus workflow tools built for
+85 tools covering every Favro REST resource, plus workflow tools built for
 natural-language use. See **[docs/TOOLS.md](./docs/TOOLS.md)** for the full
 reference.
 

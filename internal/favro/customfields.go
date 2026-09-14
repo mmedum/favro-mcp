@@ -22,8 +22,17 @@ package favro
 // for primitive types it's absent (omitempty drops the JSON field).
 // Fields outside this struct are ignored on decode.
 type CustomField struct {
-	CustomFieldID    string            `json:"customFieldId"`
-	OrganizationID   string            `json:"organizationId,omitempty"`
+	CustomFieldID  string `json:"customFieldId"`
+	OrganizationID string `json:"organizationId,omitempty"`
+	// WidgetCommonID is the widget this field is enabled on.
+	//
+	// It is the missing half of §7.4's sharpest footgun: custom fields
+	// are org-global, but they are enabled per widget, and writing to a
+	// field the card's widget has not enabled is accepted and silently
+	// ignored. Without this, nothing in a response says which widgets a
+	// field applies to. Found by `gates api-fields`, which is the kind
+	// of gap a field list catches and an endpoint list cannot.
+	WidgetCommonID   string            `json:"widgetCommonId,omitempty"`
 	Type             string            `json:"type"`
 	Name             string            `json:"name"`
 	Enabled          bool              `json:"enabled,omitempty"`
