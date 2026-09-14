@@ -79,6 +79,14 @@ func init() {
 			run: apiFields, args: "", gate: true,
 			doc: "every documented field is modelled by a wire type, or waived with a reason",
 		},
+		"transcript": {
+			run: transcript, args: "", gate: true,
+			doc: "the live driver prints only through the redactor",
+		},
+		"live-cover": {
+			run: liveCover, args: "", gate: true,
+			doc: "the live driver exercises every tool and option, or waives it",
+		},
 		"classes": {
 			run: classes, args: "", gate: true,
 			doc: "the closed error vocabulary and the document that names it",

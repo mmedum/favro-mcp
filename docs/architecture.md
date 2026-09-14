@@ -2,7 +2,8 @@
 
 **Status, 2026-09-13.** Released: v1.1.2. The server's own feature phases
 (0–9) are complete and shipped. Of the alignment programme in §16, phases
-**A0–A5 are done and unreleased**; A6–A8 are not started. Where a
+**A0–A5 are done and unreleased**, and A6 all but its evals; A7 and A8
+are not started. Where a
 sentence below describes something that does not exist, it says so and
 names the phase that builds it.
 
@@ -208,12 +209,12 @@ internal/render/          the readable half of every result, never the same
                           error vocabulary. Imports nothing
 internal/tools/           the MCP surface, one file per area
 internal/server/          SDK wiring; schema dump through an in-memory session
-internal/redact/          the one redactor the live driver prints through (A6)
+internal/redact/          the one redactor the live driver prints through
 internal/livecover/       what "the driver covers the surface" means, so the
-                          gate and the driver cannot disagree           (A6)
+                          gate and the driver cannot disagree
 internal/version/         the build stamp
 scripts/gates/            this repository's own checks, as Go
-scripts/livefavro/        drives the built binary against a real org    (A6)
+scripts/livefavro/        drives the built binary against a real org
 scripts/evals/            drives a model through the tools and scores it (A6)
 testdata/                 synthetic fixtures, goldens, the API snapshot
 docs/
@@ -486,8 +487,19 @@ recorded.
 This rule is older than this document and was stated in CLAUDE.md from
 Phase 3 with **nothing holding it**. A1 added the `leaks` gate over the
 working tree and `leaks history` over every blob and commit message; A6
-adds the `transcript` gate so the live driver cannot print except through
-the one redactor. Per the standard, the gate cannot be patterns alone —
+added the `transcript` gate, so the live driver cannot print except
+through the one redactor.
+
+**What the redactor cannot do, measured rather than assumed.** Every
+shape it catches is anchored on something a tenant's data is and this
+server's values are not — a 24-hex run, an address, a link, a signed
+attachment URL. A card's *name* is none of those, and a pattern that
+caught it would catch the sentence around it. A verbose run against a
+real organization produced 56 KB with zero ids, zero addresses and zero
+links in it — and 54 names. That is right for a maintainer's terminal,
+showing them an organization they already hold a token for, and wrong
+in a file: the leak gate cannot catch a name either, because a name is
+words. A transcript is not committed. Per the standard, the gate cannot be patterns alone —
 an organization name is ordinary words — so it anchors on shapes the
 server's own values cannot take: an `@` with a dot-suffixed domain, a
 24-hex id of the length Favro mints, a literal keyword immediately before
@@ -803,10 +815,19 @@ phase An" before the next begins.
   and a schema defect that made `favro_get_card` and `favro_list_cards`
   fail outright against real data.
 
-- **A6 — live driver and evals.** `scripts/livefavro` driving the built
-  binary against a real organization through `internal/redact`; the
-  `transcript` gate; `internal/livecover` and the `live-cover` gate;
-  `scripts/evals`.
+- **A6 — live driver. Done, except the evals.** `scripts/livefavro`
+  drives the built binary against a real organization through
+  `internal/redact`; `internal/livecover` holds the steps, so the
+  `live-cover` gate and the driver read the same list; the `transcript`
+  gate holds the redaction. 122 steps, 104 passing against a real
+  organization and 18 skipped for ids it does not have.
+
+  **`scripts/evals` is not built**, and deliberately not stubbed. It
+  needs a model API key, none is available here, and a harness that has
+  never run is the thing this repository's own standard argues against
+  on every other page — a check nobody has watched fail is not yet a
+  check. It stays on this list rather than being marked done.
+
 - **A7 — distribution.** The `.mcpb` bundle packed in Go, SBOM, cosign,
   attestation, reproducible timestamps, `doctor`, issue forms.
 - **A8 — documentation.** `docs/configuration.md`, `docs/development.md`,
@@ -887,6 +908,10 @@ it; **asserted**, meaning believed and not yet held by anything.
 (`internal/favroapi/client.go`; it was under `internal/favro` until A3
 split the wire types out): it logs `req.URL.RawQuery`, and Favro's query strings carry `cardCommonId`, `widgetCommonId` and `sequentialId` | **Verified here — the claim is false.** Standard §4's rule is that a log must not identify or reconstruct the subject; an id in a query string does both. A2 logs the parameter names instead, which is the part a debug line is for |
 | 2026-09-13 | "Never put tenant data in commits, PRs, docs or tool descriptions" is enforced | Searched the repository for a gate, a test or a CI step holding it. There is none; gitleaks is not configured either | **Verified here — unheld.** The loudest rule in CLAUDE.md is the one nothing can fail. A1 |
+| 2026-09-14 | A live driver that runs clean is a live driver that covered something | Ran the first version: 75 of 98 steps passed and it reported a tidy result | **Verified here — the claim was false.** The steps ran in alphabetical order, so every write was attempted before the reads that would have supplied it an id, and 15 were skipped for want of one. A driver can report a clean run having exercised the eight tools that take no arguments. The seed sequence is hand-written now, because the dependencies are Favro's: columns are per widget, comments per card, and a card listing needs a widget to scope it |
+| 2026-09-14 | The transcript gate catches prints that do not redact | Wrote it to look for writes to os.Stdout, and its own floor failed: one write found in the whole driver | **Verified here — the claim was false.** The driver wraps the terminal in a `bufio.Writer` once and every print goes through the field, which a syntactic rule cannot follow. The rule that works needs no dataflow: check who may *name* os.Stdout or os.Stderr. Three functions may; everything else has to go through the printer, and the printer redacts. The floor is what caught it — a gate finding one write would otherwise have passed |
+| 2026-09-14 | A defect fixed once stays fixed | The live driver wrote invalid UTF-8 into its own transcript | **Verified here — the claim was false, by me, in the same week.** `clip` truncated at a byte offset and split a rune, which is exactly the defect A4 had already found and fixed in `internal/render` — reintroduced by writing the obvious three lines again in a new file. Neither the tests nor the gates caught it; decoding the transcript did |
+| 2026-09-14 | The live driver covers the tool surface | Built `live-cover` and ran it | **Verified here — 74 of 332 options had no step**, across every tool with more than its required arguments. Covering the alternatives brought it to 309, and the 23 that remain are waived with a reason: 22 are `favro_set_card_custom_field`'s per-type value inputs, where the legal one depends on a field type the driver cannot know. The number is the gate's output now, so the claim cannot decay silently as the surface grows |
 | 2026-09-14 | Favro's documented endpoint surface: 22 unimplemented, being `/webhooks` ×3, `/organizations` write ×2, SCIM v1.1 ×10 and v2.0 ×12 | A5 fetched the page itself and parsed it per section rather than through a summarising reader | **Verified here — the claim was false twice over.** SCIM v1.1 has 11 endpoints, not 10, so the real total was 28 and not 22; and the sentence's own breakdown summed to 27, so it disagreed with itself. 88 endpoints in all. The count is `gates api-diff`'s output now, not a sentence anybody can mistype |
 | 2026-09-14 | An endpoint-level coverage record is enough | Built `api-coverage`, then built `api-fields` beside it because the first cannot see inside a response | **Verified here — it is not.** An endpoint can be implemented while the type behind it silently drops half of what Favro sends: `encoding/json` ignores what it does not recognise, which is what makes reads tolerant and also what makes the gap invisible. Of 124 documented fields, four were unmodelled. One was `CustomField.widgetCommonId`, the field that says which widget a field is enabled on — the missing half of §7.4's sharpest footgun, and present on all 100 rows the live organization returns |
 | 2026-09-14 | `GET /webhooks` paginates like every other Favro collection | Wired it through the shared paginated helper, wrote a fixture in the envelope shape, and the unit tests passed. Then called it live | **Verified here — the claim was false.** It answers with a bare JSON array; an organization with none returns `[]`. The reference says so plainly — "The response will be an array of configured webhooks" — and the fixture written to match the assumption agreed with the assumption. §2.1 again, and the clearest small example of it in this repository |

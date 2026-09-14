@@ -22,6 +22,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - `testdata/api-surface.json`, written by `make api-diff` from favro.com/developer: 88 endpoints and 15 resource field tables. `api-coverage` and `api-fields` gates hold it against `testdata/api-coverage.tsv` and `testdata/api-fields-waived.tsv` offline, in both directions, so an endpoint or field nobody decided about fails the build.
 - `Card.sheetPosition`, `CardAttachment.thumbnailURL` and `CustomField.widgetCommonId` are modelled. The last is the field that says which widget a custom field is enabled on — writing to a field the widget has not enabled is accepted and ignored, and nothing in a response said so before.
 - depguard rules holding the package dependency direction, one per package, naming what it may not import, plus a rule denying testify and go-difflib.
+- `scripts/livefavro`: drives the built binary against a real organization, 122 steps over every tool, printing only through `internal/redact`. Every mutating step carries `dry_run`, so it writes nothing.
+- `internal/redact`: stable placeholders for the values a transcript must not carry. The same id reads as the same `{id 1}` throughout a run, so an id can still be followed across calls.
+- `transcript` and `live-cover` gates: the first fails if anything in the driver reaches the terminal without redacting, the second if any tool or option has no step. 309 of 332 options covered, 23 waived with a reason.
 - `internal/service/diff.go`: a unified-diff generator, held to `diff -u` itself by test rather than to a golden. Its search is bounded by edit distance, so a one-line change at each end of a long description stays a small diff.
 
 ### Changed
