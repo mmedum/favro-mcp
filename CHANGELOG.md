@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `forbidigo` forbids `fmt.Print*` and naming `os.Stdout` outside `main`. Hard rule 3 restates an MCP spec MUST NOT — a stdio server must write nothing to stdout that is not a valid MCP message — and nothing enforced it: the tree was clean, so a stray print would have corrupted the JSON-RPC stream with no check failing. Found by a contributor sweep across the sibling servers.
+
 ## [2.0.0] - 2026-09-14
 
 ### Added
