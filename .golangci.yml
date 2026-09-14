@@ -29,7 +29,6 @@ linters:
     # Security
     - gosec
     # Test hygiene
-    - testifylint
     - tparallel
     # Import discipline
     - depguard
@@ -57,11 +56,49 @@ linters:
 
     depguard:
       rules:
-        no-testify-assert:
+        # The dependency direction of §5, for the part of it the
+        # compiler does not already hold.
+        #
+        # server -> tools -> service -> favroapi -> favro, with config,
+        # cache, auth and render as leaves. Most of that direction is
+        # self-enforcing: an import that runs uphill between two of
+        # those packages is an import cycle, and `go build` rejects it
+        # with a better message than depguard would. Writing those out
+        # anyway would be four rules that can never fire, which is the
+        # thing this repository's own standard argues against.
+        #
+        # What is left is the three that can fire, because none of them
+        # is a cycle: a leaf reaching sideways to another leaf, and the
+        # MCP SDK reaching below the tool layer.
+        favro-imports-nothing:
+          list-mode: lax
+          files:
+            - "**/internal/favro/*.go"
+          deny:
+            - pkg: "github.com/mmedum/favro-mcp/internal"
+              desc: "internal/favro is the wire vocabulary and imports nothing from this module; a type that needs a dependency belongs in the package that has one"
+        render-is-a-leaf:
+          list-mode: lax
+          files:
+            - "**/internal/render/*.go"
+          deny:
+            - pkg: "github.com/mmedum/favro-mcp/internal"
+              desc: "internal/render holds the error vocabulary that internal/favroapi imports, so it cannot import anything back — an error names its own class through the Classed interface"
+        no-mcp-below-the-tool-layer:
+          list-mode: lax
+          files:
+            - "**/internal/favroapi/*.go"
+            - "**/internal/service/*.go"
+          deny:
+            - pkg: "github.com/modelcontextprotocol/go-sdk"
+              desc: "internal/favroapi is a REST client and internal/service returns plain Go values; the MCP surface is internal/tools, and keeping the SDK out of both is what makes them testable without a protocol session"
+        no-assertion-library:
           list-mode: lax
           deny:
-            - pkg: "github.com/stretchr/testify/assert"
-              desc: "use github.com/stretchr/testify/require instead — assert lets tests continue past failures and produces confusing diagnostics"
+            - pkg: "github.com/stretchr/testify"
+              desc: "tests here use the stdlib: if got != want { t.Errorf(…) }. A4 removed testify; it survives in go.mod only as another module's indirect requirement"
+            - pkg: "github.com/pmezard/go-difflib"
+              desc: "internal/service/diff.go generates the unified diff, and is held to diff(1) by test"
         no-default-http-client:
           list-mode: lax
           deny:
@@ -79,6 +116,25 @@ linters:
         linters:
           - gocyclo
           - gosec
+      # scripts/gates is maintainer-only tooling and never ships: every
+      # gate reads files under the repository root and shells out to
+      # git, which is precisely what gosec's G204/G304/G306/G70x warn
+      # about. Here that is the job rather than a finding. gocyclo goes
+      # with it because a gate is a list of rules, and splitting one
+      # into six functions to satisfy a complexity count makes the rules
+      # harder to read than the number is worth. Scoped to this
+      # directory, so the server's own code keeps both linters.
+      - path: ^scripts/gates/
+        linters:
+          - gosec
+        # Named, so the exclusion is the one the comment argues for.
+        # Disabling all of gosec here would also switch off G101, the
+        # hardcoded-credential rule, in the one package that carries
+        # credential-shaped strings on purpose.
+        text: "(G204|G304|G306|G70[0-9])"
+      - path: ^scripts/gates/
+        linters:
+          - gocyclo
 
 formatters:
   enable:

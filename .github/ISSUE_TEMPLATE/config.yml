@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security issue
+    url: https://github.com/mmedum/favro-mcp/security/advisories/new
+    about: Report privately. Never in a public issue — see SECURITY.md.
+  - name: Tool reference
+    url: https://github.com/mmedum/favro-mcp/blob/main/docs/TOOLS.md
+    about: Every tool, its inputs and what it returns.

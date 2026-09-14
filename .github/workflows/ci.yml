@@ -12,119 +12,190 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-jobs:
-  lint:
-    name: lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          check-latest: true
-      - name: golangci-lint
-        # @v8+ ships golangci-lint v2.x; @v6 / @v7 bundle a v1.x binary
-        # built with Go 1.24, which can't read a config targeting Go 1.27+.
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: latest
-          args: --timeout=5m
+# Without this the Windows runner parses every `run` line as PowerShell,
+# which tokenizes a flag value like `coverage.out` strangely enough that
+# Go sees `.out` as an extra package argument. `gates pins` requires it
+# in every workflow.
+defaults:
+  run:
+    shell: bash
 
-  test-unit:
-    name: test-unit (${{ matrix.os }})
+jobs:
+  test:
+    name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           check-latest: true
       - name: go test
-        # Force bash on every OS — PowerShell (the Windows default) tokenizes
-        # the `coverage.out` value strangely and Go ends up seeing `.out` as
-        # an extra package argument. bash is available on all GH runners.
-        shell: bash
-        run: go test -race -coverprofile=coverage.out ./...
+        run: go test -race -coverpkg=./internal/...,./cmd/... -coverprofile=coverage.out -covermode=atomic ./...
       - name: upload coverage
         if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
           path: coverage.out
 
-  test-mcp:
-    name: test-mcp
+  # Not `needs: test`. Only the coverage floor depends on the matrix, and
+  # it has its own job below; the other fourteen gates read the repository
+  # and the built binary, so making all of them wait for a three-OS race
+  # run put the whole matrix's wall clock in front of every one of them.
+  gates:
+    name: gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      # The schema diff builds the binary as it was at the last tag, and
+      # the staleness gate reads the range since that tag, so this
+      # checkout needs the tags and the history rather than one commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           check-latest: true
-      - name: in-memory MCP transport tests
-        run: go test -race -run 'TestMCP' ./internal/server/...
+      - run: make build
+      - name: leak scan
+        run: go run ./scripts/gates leaks
+      - name: workflow pins
+        run: go run ./scripts/gates pins
+      - name: error vocabulary
+        run: go run ./scripts/gates classes
+      - name: API coverage
+        run: go run ./scripts/gates api-coverage
+      - name: API fields
+        run: go run ./scripts/gates api-fields
+      - name: live driver redacts
+        run: go run ./scripts/gates transcript
+      - name: live driver covers the surface
+        run: go run ./scripts/gates live-cover
+      - name: make check and CI agree
+        run: go run ./scripts/gates parity
+      - name: plugin manifest
+        run: go run ./scripts/gates plugin
+      - name: mcpb manifest
+        run: go run ./scripts/gates mcpb
+      - name: rule 8
+        run: go run ./scripts/gates rule8 bin/favro-mcp
+      - name: schema diff
+        run: go run ./scripts/gates schema-diff bin/favro-mcp
+      - name: stdio smoke
+        run: go run ./scripts/gates smoke bin/favro-mcp
+      - name: staleness
+        run: go run ./scripts/gates staleness bin/favro-mcp
+      - name: upload schemas
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: schemas
+          path: schemas.json
 
-  vulncheck:
-    name: vulncheck
+  cover:
+    name: cover
     runs-on: ubuntu-latest
+    needs: test
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           check-latest: true
-      - name: install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: build scan target
-        run: go build -o bin/favro-mcp ./cmd/favro-mcp
-      - name: govulncheck
-        # Binary mode, not source mode. govulncheck's source analysis runs on
-        # x/tools' go/types, which as of x/vuln v1.7.0 (x/tools v0.49.0) tops
-        # out at go1.26 and errors out on the go1.27 stdlib. Binary mode reads
-        # the built artifact's symbol table instead, so it works on 1.27 today
-        # and scans exactly what ships. Revert to `govulncheck ./...` once
-        # x/vuln ships an x/tools that understands 1.27.
-        run: govulncheck -mode=binary bin/favro-mcp
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage
+      - name: coverage floor
+        run: go run ./scripts/gates coverage coverage.out 80
 
-  build:
-    name: build
+  static:
+    name: static
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           check-latest: true
+      - name: gofmt
+        run: go run ./scripts/gates fmt-check
+      - run: go vet ./...
+      - name: go.mod is tidy
+        run: go mod tidy -diff
       - name: go mod verify
         run: go mod verify
-      - name: go mod tidy diff
-        run: go mod tidy -diff
-      - name: install goreleaser
-        uses: goreleaser/goreleaser-action@v7
+      # @v8+ ships golangci-lint v2.x; @v6 / @v7 bundle a v1.x binary
+      # built with Go 1.24, which cannot read a config targeting Go 1.27+.
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          install-only: true
-      - name: snapshot build
-        run: goreleaser build --snapshot --clean
+          version: v2.13.2
+          args: --timeout=5m
+      # Source mode, which x/vuln understands on Go 1.27 as of v1.8.0;
+      # v1.7.0's analysis topped out at go1.26 and this repository ran
+      # binary mode to work around it.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: licences
+        # segmentio/asm is ignored by path rather than by licence name:
+        # it relicensed to MIT-0 in v1.2.1, which go-licenses v1.6.0's
+        # classifier does not recognise, so it reports an empty name that
+        # no --allowed_licenses value can match. See the Makefile.
+        run: go run github.com/google/go-licenses@v1.6.0 check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC --ignore github.com/segmentio/asm
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          # The action installs the tool, so pinning the action pins a
+          # wrapper and not the scanner. `gates pins` holds this to the
+          # same version the Makefile runs, or a commit can pass one and
+          # fail the other — it compares with the leading `v` stripped
+          # from both, which is what lets this one be written without it.
+          #
+          # And it MUST be written without it: the action prepends `v`
+          # itself, so `v8.30.1` fetched .../download/vv8.30.1/ and got a
+          # 404. The job then failed in twelve seconds with a Node stack
+          # trace about a missing `file` parameter, which is the tar
+          # extractor being handed nothing.
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # Required since the action's v2: it reads the PR to scan only
+          # the commits in it.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   coverage:
     name: coverage
     runs-on: ubuntu-latest
-    needs: test-unit
+    needs: test
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage
-      - name: codecov
-        uses: codecov/codecov-action@v7
+      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: coverage.out
           fail_ci_if_error: false

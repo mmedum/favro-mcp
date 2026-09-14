@@ -2,6 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -9,9 +13,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/internal/config"
 )
 
 // TestRun_Version_PrintsToStdout pins the discipline that --version
@@ -23,10 +28,16 @@ func TestRun_Version_PrintsToStdout(t *testing.T) {
 	stdin := strings.NewReader("")
 	var stdout, stderr bytes.Buffer
 
-	require.NoError(t, run([]string{"--version"}, stdin, &stdout, &stderr))
+	if err := run([]string{"--version"}, stdin, &stdout, &stderr); err != nil {
+		t.Fatalf("run([]string{\"--version\"}, stdin, &stdout, &stderr): %v", err)
+	}
 
-	require.Contains(t, stdout.String(), "favro-mcp")
-	require.Empty(t, stderr.String(), "version flag must not emit diagnostics to stderr")
+	if !strings.Contains(stdout.String(), "favro-mcp") {
+		t.Errorf("stdout.String() does not contain %q", "favro-mcp")
+	}
+	if len(stderr.String()) != 0 {
+		t.Errorf("version flag must not emit diagnostics to stderr: got %v", stderr.String())
+	}
 }
 
 func TestRun_Help_PrintsToStdout(t *testing.T) {
@@ -35,9 +46,13 @@ func TestRun_Help_PrintsToStdout(t *testing.T) {
 	stdin := strings.NewReader("")
 	var stdout, stderr bytes.Buffer
 
-	require.NoError(t, run([]string{"--help"}, stdin, &stdout, &stderr))
+	if err := run([]string{"--help"}, stdin, &stdout, &stderr); err != nil {
+		t.Fatalf("run([]string{\"--help\"}, stdin, &stdout, &stderr): %v", err)
+	}
 
-	require.Contains(t, stdout.String(), "favro-mcp — Model Context Protocol server for Favro")
+	if !strings.Contains(stdout.String(), "favro-mcp — Model Context Protocol server for Favro") {
+		t.Errorf("stdout.String() does not contain %q", "favro-mcp — Model Context Protocol server for Favro")
+	}
 }
 
 func TestRun_AuthSubcommand_Routed(t *testing.T) {
@@ -47,9 +62,15 @@ func TestRun_AuthSubcommand_Routed(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	// `auth help` should hit the auth dispatcher and emit usage to stderr.
-	require.NoError(t, run([]string{"auth", "help"}, stdin, &stdout, &stderr))
-	require.Empty(t, stdout.String(), "auth subcommands must not write to stdout")
-	require.Contains(t, stderr.String(), "favro-mcp auth")
+	if err := run([]string{"auth", "help"}, stdin, &stdout, &stderr); err != nil {
+		t.Fatalf("run([]string{\"auth\", \"help\"}, stdin, &stdout, &stderr): %v", err)
+	}
+	if len(stdout.String()) != 0 {
+		t.Errorf("auth subcommands must not write to stdout: got %v", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "favro-mcp auth") {
+		t.Errorf("stderr.String() does not contain %q", "favro-mcp auth")
+	}
 }
 
 func TestRun_UnknownAuthSubcommand_Errors(t *testing.T) {
@@ -59,54 +80,34 @@ func TestRun_UnknownAuthSubcommand_Errors(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	err := run([]string{"auth", "no-such-thing"}, stdin, &stdout, &stderr)
-	require.Error(t, err)
-	require.Contains(t, stderr.String(), "unknown subcommand")
-}
-
-func TestParseLogLevel(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name       string
-		in         string
-		want       slog.Level
-		recognized bool
-	}{
-		{"empty defaults to info", "", slog.LevelInfo, true},
-		{"info", "info", slog.LevelInfo, true},
-		{"debug", "debug", slog.LevelDebug, true},
-		{"warn", "warn", slog.LevelWarn, true},
-		{"warning alias", "warning", slog.LevelWarn, true},
-		{"error", "error", slog.LevelError, true},
-		{"unknown falls back to info", "loud", slog.LevelInfo, false},
+	if err == nil {
+		t.Fatal("err should have failed")
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, recognized := parseLogLevel(tc.in)
-			require.Equal(t, tc.want, got)
-			require.Equal(t, tc.recognized, recognized)
-		})
+	if !strings.Contains(stderr.String(), "unknown subcommand") {
+		t.Errorf("stderr.String() does not contain %q", "unknown subcommand")
 	}
 }
 
 func TestConfigureLogging_UnrecognizedLevel_WarnsOnStderr(t *testing.T) {
-	t.Setenv(envLogLevel, "loud")
+	t.Setenv(config.EnvLogLevel, "loud")
 	restoreDefaultLogger(t)
 
 	var stderr bytes.Buffer
 	configureLogging(&stderr)
 
-	require.Contains(t, stderr.String(), "unrecognized log level")
-	require.Contains(t, stderr.String(), "loud", "the rejected value belongs in the warning")
+	if !strings.Contains(stderr.String(), "unrecognized "+config.EnvLogLevel) {
+		t.Errorf("stderr.String() does not contain %q", "unrecognized "+config.EnvLogLevel)
+	}
+	if !strings.Contains(stderr.String(), "loud") {
+		t.Errorf("the rejected value belongs in the warning: %q missing", "loud")
+	}
 }
 
 // TestConfigureLogging_LevelFromEnv covers the two things the env var
 // promises: the value is case- and whitespace-insensitive, and it
 // really filters records below the threshold.
 func TestConfigureLogging_LevelFromEnv(t *testing.T) {
-	t.Setenv(envLogLevel, "  ERROR ")
+	t.Setenv(config.EnvLogLevel, "  ERROR ")
 	restoreDefaultLogger(t)
 
 	var stderr bytes.Buffer
@@ -114,38 +115,62 @@ func TestConfigureLogging_LevelFromEnv(t *testing.T) {
 	slog.Info("below-threshold")
 	slog.Error("at-threshold")
 
-	require.NotContains(t, stderr.String(), "below-threshold")
-	require.Contains(t, stderr.String(), "at-threshold")
-	require.NotContains(t, stderr.String(), "unrecognized log level")
+	if strings.Contains(stderr.String(), "below-threshold") {
+		t.Errorf("stderr.String() unexpectedly contains %q", "below-threshold")
+	}
+	if !strings.Contains(stderr.String(), "at-threshold") {
+		t.Errorf("stderr.String() does not contain %q", "at-threshold")
+	}
+	if strings.Contains(stderr.String(), "unrecognized log level") {
+		t.Errorf("stderr.String() unexpectedly contains %q", "unrecognized log level")
+	}
 }
 
 func TestMissingCredsHint_NamesEveryCredentialEnvVar(t *testing.T) {
 	t.Parallel()
 
 	hint := missingCredsHint()
-	require.Contains(t, hint, auth.EnvUserEmail)
-	require.Contains(t, hint, auth.EnvAPIToken)
-	require.Contains(t, hint, auth.EnvOrganizationID)
-	require.Contains(t, hint, "auth login", "the hint must offer the keyring path too")
+	if !strings.Contains(hint, auth.EnvUserEmail) {
+		t.Errorf("hint does not contain %q", auth.EnvUserEmail)
+	}
+	if !strings.Contains(hint, auth.EnvAPIToken) {
+		t.Errorf("hint does not contain %q", auth.EnvAPIToken)
+	}
+	if !strings.Contains(hint, auth.EnvOrganizationID) {
+		t.Errorf("hint does not contain %q", auth.EnvOrganizationID)
+	}
+	if !strings.Contains(hint, "auth login") {
+		t.Errorf("the hint must offer the keyring path too: %q missing", "auth login")
+	}
 }
 
 func TestRunServer_UnknownFlag_ErrorsWithUsage(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	err := runServer([]string{"--no-such-flag"}, &stderr)
+	err := runServer([]string{"--no-such-flag"}, config.Load(), io.Discard, &stderr)
 
-	require.Error(t, err)
-	require.Contains(t, stderr.String(), "no-such-flag")
-	require.Contains(t, stderr.String(), "Usage:")
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if !strings.Contains(stderr.String(), "no-such-flag") {
+		t.Errorf("stderr.String() does not contain %q", "no-such-flag")
+	}
+	if !strings.Contains(stderr.String(), "Usage:") {
+		t.Errorf("stderr.String() does not contain %q", "Usage:")
+	}
 }
 
 func TestRunServer_HelpFlag_PrintsUsageWithoutError(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	require.NoError(t, runServer([]string{"-h"}, &stderr))
-	require.Contains(t, stderr.String(), "Usage:")
+	if err := runServer([]string{"-h"}, config.Load(), io.Discard, &stderr); err != nil {
+		t.Fatalf("runServer([]string{\"-h\"}, config.Load(), io.Discard, &stderr): %v", err)
+	}
+	if !strings.Contains(stderr.String(), "Usage:") {
+		t.Errorf("stderr.String() does not contain %q", "Usage:")
+	}
 }
 
 func TestRunServer_NoCredentials_ErrorsBeforeContactingFavro(t *testing.T) {
@@ -153,11 +178,17 @@ func TestRunServer_NoCredentials_ErrorsBeforeContactingFavro(t *testing.T) {
 	var logs bytes.Buffer
 	captureLogs(t, &logs)
 
-	err := runServer(nil, io.Discard)
+	err := runServer(nil, config.Load(), io.Discard, io.Discard)
 
-	require.Error(t, err)
-	require.Contains(t, logs.String(), "could not resolve Favro credentials")
-	require.Contains(t, logs.String(), auth.EnvAPIToken, "the failure must name what to set")
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if !strings.Contains(logs.String(), "could not resolve Favro credentials") {
+		t.Errorf("logs.String() does not contain %q", "could not resolve Favro credentials")
+	}
+	if !strings.Contains(logs.String(), auth.EnvAPIToken) {
+		t.Errorf("the failure must name what to set: %q missing", auth.EnvAPIToken)
+	}
 }
 
 // TestRunServer_PartialEnvCredentials_Errors pins the env-binding rule:
@@ -171,12 +202,17 @@ func TestRunServer_PartialEnvCredentials_Errors(t *testing.T) {
 	var logs bytes.Buffer
 	captureLogs(t, &logs)
 
-	err := runServer(nil, io.Discard)
+	err := runServer(nil, config.Load(), io.Discard, io.Discard)
 
-	require.Error(t, err)
-	require.Contains(t, logs.String(), "could not resolve Favro credentials")
-	require.NotContains(t, logs.String(), keyringOnlyCredentials().OrganizationID,
-		"a partial env set must not fall through to the keyring")
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if !strings.Contains(logs.String(), "could not resolve Favro credentials") {
+		t.Errorf("logs.String() does not contain %q", "could not resolve Favro credentials")
+	}
+	if strings.Contains(logs.String(), keyringOnlyCredentials().OrganizationID) {
+		t.Errorf("a partial env set must not fall through to the keyring: %q present", keyringOnlyCredentials().OrganizationID)
+	}
 }
 
 func TestRunServer_DryRunFlag_AnnouncedAtStartup(t *testing.T) {
@@ -186,8 +222,12 @@ func TestRunServer_DryRunFlag_AnnouncedAtStartup(t *testing.T) {
 
 	// Startup still fails at credential resolution; what matters here is
 	// that --dry-run parsed and was announced before that point.
-	require.Error(t, runServer([]string{"--dry-run"}, io.Discard))
-	require.Contains(t, logs.String(), "all mutating Favro requests will short-circuit")
+	if runServer([]string{"--dry-run"}, config.Load(), io.Discard, io.Discard) == nil {
+		t.Fatal("runServer([]string{\"--dry-run\"}, config.Load(), io.Discard, io.Discard) should have failed")
+	}
+	if !strings.Contains(logs.String(), "all mutating Favro requests will short-circuit") {
+		t.Errorf("logs.String() does not contain %q", "all mutating Favro requests will short-circuit")
+	}
 }
 
 func TestRun_NoArgs_TakesTheServerPath(t *testing.T) {
@@ -199,9 +239,15 @@ func TestRun_NoArgs_TakesTheServerPath(t *testing.T) {
 
 	err := run(nil, stdin, &stdout, &stderr)
 
-	require.Error(t, err)
-	require.Empty(t, stdout.String(), "stdout stays reserved for the MCP protocol stream")
-	require.Contains(t, stderr.String(), "could not resolve Favro credentials")
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if len(stdout.String()) != 0 {
+		t.Errorf("stdout stays reserved for the MCP protocol stream: got %v", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "could not resolve Favro credentials") {
+		t.Errorf("stderr.String() does not contain %q", "could not resolve Favro credentials")
+	}
 }
 
 // envRunMainForTest marks the re-executed child process in
@@ -228,6 +274,203 @@ func TestMain_ExitsNonZeroOnStartupFailure(t *testing.T) {
 	err := cmd.Run()
 
 	var exitErr *exec.ExitError
-	require.ErrorAs(t, err, &exitErr)
-	require.Equal(t, 1, exitErr.ExitCode())
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("got %v, want exitErr", err)
+	}
+	if got := exitErr.ExitCode(); got != 1 {
+		t.Errorf("exitErr.ExitCode() = %v, want %v", got, 1)
+	}
+}
+
+// --dump-schemas is what the schema-diff and staleness gates read, and
+// both run in CI where there is no keyring and no token. It also has to
+// show the whole surface: a dump that omitted a tool would hide exactly
+// the change — a tool disappearing — that the diff exists to catch.
+func TestDumpSchemasNeedsNoCredentials(t *testing.T) {
+	t.Setenv(auth.EnvUserEmail, "")
+	t.Setenv(auth.EnvAPIToken, "")
+	t.Setenv(auth.EnvOrganizationID, "")
+
+	var stdout, stderr bytes.Buffer
+	if err := run([]string{"--dump-schemas"}, nil, &stdout, &stderr); err != nil {
+		t.Fatalf("run([]string{\"--dump-schemas\"}, nil, &stdout, &stderr): %v", err)
+	}
+
+	var dump struct {
+		Server string `json:"server"`
+		Tools  []struct {
+			Name        string         `json:"name"`
+			Description string         `json:"description"`
+			InputSchema map[string]any `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &dump); err != nil {
+		t.Fatalf("json.Unmarshal(stdout.Bytes(), &dump): %v", err)
+	}
+	if got := dump.Server; got != "favro-mcp" {
+		t.Errorf("dump.Server = %v, want %v", got, "favro-mcp")
+	}
+
+	names := make(map[string]bool, len(dump.Tools))
+	for _, tool := range dump.Tools {
+		if len(tool.Description) == 0 {
+			t.Fatalf("%s has no description", tool.Name)
+		}
+		if len(tool.InputSchema) == 0 {
+			t.Fatalf("%s has no input schema", tool.Name)
+		}
+		names[tool.Name] = true
+	}
+	// A read tool, a write tool and a destructive one. The last is the
+	// reason this assertion names tools at all: once destructive tools
+	// register only behind an environment flag, a dump built the easy
+	// way stops listing them and nothing else would say so.
+	for _, want := range []string{"favro_ping", "favro_list_cards", "favro_create_card", "favro_delete_card"} {
+		if !names[want] {
+			t.Errorf("--dump-schemas omits %s", want)
+		}
+	}
+}
+
+// cleanDisconnect decides whether this process exits 0 or 1, and it got
+// that wrong for every ordinary disconnect until the smoke gate caught
+// it: the SDK reports a closed stdio session as JSON-RPC -32004 with the
+// EOF only as message text, so errors.Is(err, io.EOF) never matched and
+// every host logged an ordinary shutdown as a crash.
+func TestCleanDisconnect(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		err   error
+		clean bool
+	}{
+		{"a server that stopped on its own", nil, true},
+		{"the context was cancelled", context.Canceled, true},
+		{"a wrapped cancellation", fmt.Errorf("run: %w", context.Canceled), true},
+		{"a plain EOF", io.EOF, true},
+		{"the server closing, as the SDK reports it", &jsonrpc.Error{Code: -32004, Message: "server is closing"}, true},
+		{"the client closing", &jsonrpc.Error{Code: -32003, Message: "client is closing"}, true},
+		{"the server closing, wrapped", fmt.Errorf("run: %w", &jsonrpc.Error{Code: -32004}), true},
+		// Everything else still has to reach the exit code. A protocol
+		// error that is not a disconnect is a real failure, and so is
+		// anything the transport reports.
+		{"a JSON-RPC error that is not a disconnect", &jsonrpc.Error{Code: -32600, Message: "invalid request"}, false},
+		{"an ordinary failure", errors.New("the transport broke"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := cleanDisconnect(tc.err); got != tc.clean {
+				t.Errorf("cleanDisconnect(tc.err) = %v, want %v", got, tc.clean)
+			}
+		})
+	}
+}
+
+// TestStartupLineNamesNoTenant is the second half of what §9 says A2
+// owes. The startup line logged the organization id at INFO, which
+// named the tenant in the first line of every session — not at debug,
+// not behind a flag, in every log anyone has ever collected from this
+// server.
+//
+// The assertion is over everything that was logged, not over the one
+// line: the rule is that no forbidden value reaches a log at any
+// level.
+func TestStartupLineNamesNoTenant(t *testing.T) {
+	requireNonTTYStdin(t)
+	isolateCredentials(t)
+	var logs bytes.Buffer
+	captureLogs(t, &logs)
+
+	tok := testCredentials()
+	t.Setenv(auth.EnvUserEmail, tok.Email)
+	t.Setenv(auth.EnvAPIToken, tok.APIToken)
+	t.Setenv(auth.EnvOrganizationID, tok.OrganizationID)
+	t.Setenv(config.EnvSkipValidate, "1")
+
+	// stdin is /dev/null under `go test`, so the stdio transport sees
+	// EOF at once and the server shuts down cleanly. The run is only
+	// here to get past credential resolution and emit the line.
+	if err := runServer(nil, config.Load(), io.Discard, io.Discard); err != nil {
+		t.Fatalf("runServer(nil, config.Load(), io.Discard, io.Discard): %v", err)
+	}
+
+	out := logs.String()
+	if !strings.Contains(out, "favro-mcp starting") {
+		t.Errorf("logged nothing, so this test proved nothing: %q missing", "favro-mcp starting")
+	}
+	if !strings.Contains(out, "credential_source") {
+		t.Errorf("the line still has to be worth logging: %q missing", "credential_source")
+	}
+
+	if strings.Contains(out, tok.OrganizationID) {
+		t.Errorf("the organization id names the tenant: %q present", tok.OrganizationID)
+	}
+	if strings.Contains(out, tok.Email) {
+		t.Errorf("out unexpectedly contains %q", tok.Email)
+	}
+	if strings.Contains(out, tok.APIToken) {
+		t.Errorf("out unexpectedly contains %q", tok.APIToken)
+	}
+}
+
+// TestUsageDocumentsDestructiveFlag keeps --help honest: a tool surface
+// that changes with an environment variable is undiscoverable if the
+// variable is not listed.
+func TestUsageDocumentsDestructiveFlag(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	printUsage(&buf)
+	if !strings.Contains(buf.String(), config.EnvEnableDestructive) {
+		t.Errorf("buf.String() does not contain %q", config.EnvEnableDestructive)
+	}
+}
+
+// A mistyped subcommand must not start the server. `flag` stops at the
+// first non-flag argument and returns nil, so the stray word stays in
+// the list where nothing reads it and the default path runs — which
+// reads as a hang, because the server blocks on stdin and says nothing,
+// and exits 0, so a script driving this binary takes a typo for success.
+//
+// Behaviour rather than a predicate: run() is what falls through, so a
+// test of a `looksLikeSubcommand` helper would pass with the guard
+// deleted. Two sibling servers have the fix and exactly that gap.
+func TestRun_UnknownCommand_FailsWithoutStartingTheServer(t *testing.T) {
+	isolateCredentials(t)
+	restoreDefaultLogger(t)
+
+	for _, arg := range []string{"zzz-bogus", "aut", "Doctor", "serve"} {
+		var stdout, stderr bytes.Buffer
+		err := run([]string{arg}, strings.NewReader(""), &stdout, &stderr)
+		if err == nil {
+			t.Errorf("run(%q) returned nil; a typo must not exit 0", arg)
+			continue
+		}
+		if !strings.Contains(err.Error(), "unknown command") {
+			t.Errorf("run(%q) failed with %v; want an unknown-command error", arg, err)
+		}
+		if !strings.Contains(stderr.String(), arg) {
+			t.Errorf("run(%q) did not name the argument it rejected", arg)
+		}
+		if strings.Contains(stderr.String(), "favro-mcp starting") {
+			t.Errorf("run(%q) started the server", arg)
+		}
+	}
+}
+
+// And every documented invocation still reaches what it should. A guard
+// keyed on a leading dash is one typo away from rejecting a real flag.
+func TestRun_DocumentedInvocationsStillReachTheirCommand(t *testing.T) {
+	isolateCredentials(t)
+	restoreDefaultLogger(t)
+
+	for _, arg := range []string{"--version", "-V", "version", "help", "--help", "-h"} {
+		var stdout, stderr bytes.Buffer
+		if err := run([]string{arg}, strings.NewReader(""), &stdout, &stderr); err != nil {
+			t.Errorf("run(%q) = %v; a documented invocation must still work", arg, err)
+		}
+		if stdout.Len() == 0 {
+			t.Errorf("run(%q) printed nothing to stdout", arg)
+		}
+	}
 }

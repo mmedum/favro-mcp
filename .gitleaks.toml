@@ -1,0 +1,39 @@
+# gitleaks configuration.
+#
+# gitleaks catches things with a credential's shape: a token, a key, a
+# password. It cannot catch an organization's name or a card title,
+# because those are ordinary words — that is what `gates leaks` is for,
+# and the two are complementary rather than alternatives.
+#
+# The same version runs here and in CI; `gates pins` fails if the
+# Makefile's pin and the workflow's GITLEAKS_VERSION disagree, because a
+# commit that passes one and fails the other is a debugging session
+# nobody can reproduce locally.
+
+title = "favro-mcp"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "favro-api-token"
+description = "A Favro API token assigned to the variable that holds one"
+# Anchored on the keyword rather than on the value's shape: Favro's
+# tokens are base62 with no prefix, so nothing about the value alone
+# distinguishes one from any other word of that length.
+regex = '''(?i)(favro[_-]?api[_-]?token|FAVRO_API_TOKEN)["']?\s*[:=]\s*["']?([A-Za-z0-9._\-]{16,})'''
+secretGroup = 2
+keywords = ["favro_api_token", "favro-api-token", "favroapitoken"]
+
+[allowlist]
+description = "Fixtures, and the scanners that must contain the shapes they catch"
+paths = [
+  '''go\.sum''',
+  '''scripts/gates/leaks\.go''',
+  '''\.gitleaks\.toml''',
+]
+regexes = [
+  # Every invented value in this repository carries one of these words,
+  # which is the same convention `gates leaks` reads.
+  '''(?i)(synthetic|fixture|nosuch|unknown|example|scratch|placeholder|redacted)''',
+]

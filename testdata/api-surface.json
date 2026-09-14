@@ -1,0 +1,647 @@
+{
+  "source": "https://favro.com/developer/",
+  "fetched_at": "2026-09-14",
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/api/scim/v1/Groups",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scim/v1/Groups",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/scim/v1/Groups/:groupId",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scim/v1/Groups/:groupId",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/scim/v1/Groups/:groupId",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/scim/v1/Groups/:groupId",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scim/v1/Users",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scim/v1/Users",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/scim/v1/Users/:userId",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scim/v1/Users/:userId",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/scim/v1/Users/:userId",
+      "section": "SCIM v1.1 Provisioning"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scim/v2/Groups",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scim/v2/Groups",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/scim/v2/Groups/:groupId",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scim/v2/Groups/:groupId",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/scim/v2/Groups/:groupId",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/scim/v2/Groups/:groupId",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scim/v2/Users",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scim/v2/Users",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/scim/v2/Users/:userId",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scim/v2/Users/:userId",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/scim/v2/Users/:userId",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/scim/v2/Users/:userId",
+      "section": "SCIM v2.0 Provisioning"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/cards",
+      "section": "Cards"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/cards",
+      "section": "Cards"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/cards/:cardId",
+      "section": "Cards"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/cards/:cardId",
+      "section": "Cards"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/cards/:cardId",
+      "section": "Cards"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/cards/:cardId/activities",
+      "section": "Activities"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/cards/:cardId/attachment",
+      "section": "Attachments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/cards/:cardId/dependencies",
+      "section": "Dependencies"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/cards/:cardId/dependencies",
+      "section": "Dependencies"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/cards/:cardId/dependencies",
+      "section": "Dependencies"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/cards/:cardId/dependencies",
+      "section": "Dependencies"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/cards/:cardId/dependencies/:dependencyCardId",
+      "section": "Dependencies"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/cards/:cardId/dependencies/:dependencyCardId",
+      "section": "Dependencies"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/collections",
+      "section": "Collections"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/collections",
+      "section": "Collections"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/collections/:collectionId",
+      "section": "Collections"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/collections/:collectionId",
+      "section": "Collections"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/collections/:collectionId",
+      "section": "Collections"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/columns",
+      "section": "Columns"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/columns",
+      "section": "Columns"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/columns/:columnId",
+      "section": "Columns"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/columns/:columnId",
+      "section": "Columns"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/columns/:columnId",
+      "section": "Columns"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/comments",
+      "section": "Comments"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/comments",
+      "section": "Comments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/comments/:commentId",
+      "section": "Comments"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/comments/:commentId",
+      "section": "Comments"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/comments/:commentId",
+      "section": "Comments"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/comments/:commentId/attachment",
+      "section": "Attachments"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customfields",
+      "section": "Custom fields"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customfields/:customfieldId",
+      "section": "Custom fields"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/groups",
+      "section": "Groups"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/groups",
+      "section": "Groups"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/groups/:groupId",
+      "section": "Groups"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/groups/:groupId",
+      "section": "Groups"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/groups/:groupId",
+      "section": "Groups"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/organizations",
+      "section": "Organizations"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/organizations",
+      "section": "Organizations"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/organizations/:organizationId",
+      "section": "Organizations"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/organizations/:organizationId",
+      "section": "Organizations"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tags",
+      "section": "Tags"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tags",
+      "section": "Tags"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tags/:tagId",
+      "section": "Tags"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tags/:tagId",
+      "section": "Tags"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/tags/:tagId",
+      "section": "Tags"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tasklists",
+      "section": "Tasklists"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tasklists",
+      "section": "Tasklists"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tasklists/:taskListId",
+      "section": "Tasklists"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tasklists/:taskListId",
+      "section": "Tasklists"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/tasklists/:taskListId",
+      "section": "Tasklists"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tasks",
+      "section": "Tasks"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tasks",
+      "section": "Tasks"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tasks/:taskId",
+      "section": "Tasks"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tasks/:taskId",
+      "section": "Tasks"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/tasks/:taskId",
+      "section": "Tasks"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users",
+      "section": "Users"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/:userId",
+      "section": "Users"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/webhooks",
+      "section": "Outgoing webhooks"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/webhooks",
+      "section": "Outgoing webhooks"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/webhooks/:webhookId",
+      "section": "Outgoing webhooks"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/widgets",
+      "section": "Widgets"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/widgets",
+      "section": "Widgets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/widgets/:widgetCommonId",
+      "section": "Widgets"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/widgets/:widgetCommonId",
+      "section": "Widgets"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/widgets/:widgetCommonId",
+      "section": "Widgets"
+    }
+  ],
+  "resources": [
+    {
+      "section": "Activities",
+      "fields": [
+        "type",
+        "source",
+        "cardId",
+        "cardCommonId",
+        "cardName",
+        "organizationId",
+        "widgetCommonId",
+        "widgetName",
+        "columnId",
+        "columnName",
+        "customFieldName",
+        "customFieldValue",
+        "taskName",
+        "commentId",
+        "time",
+        "byUserId"
+      ]
+    },
+    {
+      "section": "Attachments",
+      "fields": [
+        "name",
+        "fileURL",
+        "thumbnailURL"
+      ]
+    },
+    {
+      "section": "Cards",
+      "fields": [
+        "cardId",
+        "organizationId",
+        "widgetCommonId",
+        "todoListUserId",
+        "todoListCompleted",
+        "columnId",
+        "laneId",
+        "parentCardId",
+        "isLane",
+        "archived",
+        "position",
+        "listPosition",
+        "sheetPosition",
+        "cardCommonId",
+        "name",
+        "detailedDescription",
+        "tags",
+        "sequentialId",
+        "startDate",
+        "dueDate",
+        "assignments",
+        "numComments",
+        "tasksTotal",
+        "tasksDone",
+        "attachments",
+        "dependencies",
+        "customFields",
+        "timeOnBoard",
+        "timeOnColumns",
+        "favroAttachments"
+      ]
+    },
+    {
+      "section": "Collections",
+      "fields": [
+        "collectionId",
+        "organizationId",
+        "name",
+        "sharedToUsers",
+        "publicSharing",
+        "background",
+        "archived",
+        "fullMembersCanAddWidgets"
+      ]
+    },
+    {
+      "section": "Columns",
+      "fields": [
+        "columnId",
+        "organizationId",
+        "widgetCommonId",
+        "name",
+        "position",
+        "cardCount",
+        "timeSum",
+        "estimationSum"
+      ]
+    },
+    {
+      "section": "Comments",
+      "fields": [
+        "commentId",
+        "organizationId",
+        "cardCommonId",
+        "comment",
+        "userId",
+        "created",
+        "lastUpdated",
+        "attachments"
+      ]
+    },
+    {
+      "section": "Custom fields",
+      "fields": [
+        "organizationId",
+        "customFieldId",
+        "widgetCommonId",
+        "type",
+        "name",
+        "enabled",
+        "customFieldItems"
+      ]
+    },
+    {
+      "section": "Groups",
+      "fields": [
+        "groupId",
+        "organizationId",
+        "name",
+        "creatorUserId",
+        "memberCount",
+        "members"
+      ]
+    },
+    {
+      "section": "Organizations",
+      "fields": [
+        "organizationId",
+        "name",
+        "sharedToUsers"
+      ]
+    },
+    {
+      "section": "Outgoing webhooks",
+      "fields": [
+        "webhookId",
+        "widgetCommonId",
+        "name",
+        "postToUrl",
+        "secret",
+        "options"
+      ]
+    },
+    {
+      "section": "Tags",
+      "fields": [
+        "tagId",
+        "organizationId",
+        "name",
+        "color"
+      ]
+    },
+    {
+      "section": "Tasklists",
+      "fields": [
+        "taskListId",
+        "cardCommonId",
+        "organizationId",
+        "name",
+        "position"
+      ]
+    },
+    {
+      "section": "Tasks",
+      "fields": [
+        "taskId",
+        "taskListId",
+        "cardCommonId",
+        "organizationId",
+        "name",
+        "completed",
+        "position"
+      ]
+    },
+    {
+      "section": "Users",
+      "fields": [
+        "userId",
+        "name",
+        "email",
+        "organizationRole"
+      ]
+    },
+    {
+      "section": "Widgets",
+      "fields": [
+        "widgetCommonId",
+        "organizationId",
+        "collectionIds",
+        "name",
+        "type",
+        "breakdownCardCommonId",
+        "color",
+        "ownerRole",
+        "editRole"
+      ]
+    }
+  ]
+}

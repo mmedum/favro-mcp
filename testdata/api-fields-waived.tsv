@@ -1,0 +1,10 @@
+# Documented fields this server deliberately does not model, and why.
+#
+# `gates api-fields` compares every field in the reference against the
+# json tags on the wire type, and a field with neither a tag nor a row
+# here fails. A row that waives a field which IS modelled, or which
+# Favro no longer documents, fails too — a waiver that waives nothing
+# reads exactly like a decision.
+#
+# Columns, tab-separated: SECTION\tFIELD\tREASON
+Outgoing webhooks	secret	The key that signs the X-Favro-Webhook header on every delivery. Anyone holding it can forge an event to whoever consumes that webhook, so this server does not parse it: the strongest way not to leak a value to a model is to have no field for it. TestWebhookSecretIsNeverDecoded asserts it never reaches a result.

@@ -7,7 +7,7 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for [Favro](https://favro.com), written in Go.
 
-It speaks MCP over stdio and exposes Favro's REST API as 83 typed tools. Beyond
+It speaks MCP over stdio and exposes Favro's REST API as 85 typed tools. Beyond
 plain CRUD, it ships workflow tools built for natural-language use — search,
 name→ID resolution, surgical description edits — so an LLM can act on Favro
 without spending its rate-limit budget on lookup round-trips. Every mutating
@@ -19,6 +19,12 @@ tool supports `dry_run`.
 token. See [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 ## Installation
+
+### Claude Desktop bundle
+
+Each tagged release publishes a `favro-mcp_<version>.mcpb` on the [GitHub Releases page](https://github.com/mmedum/favro-mcp/releases). Opening it installs the server into Claude Desktop and prompts for the three values it needs — your Favro email, an API token, and the organization id — so there is no config file to hand-edit.
+
+The bundle carries a macOS universal binary, a Windows amd64 binary, and both Linux architectures behind a launcher that picks at startup. It is listed in `checksums.txt` and covered by the release signature; see [Verifying a download](#verifying-a-download).
 
 ### Cowork plugin (recommended)
 
@@ -52,6 +58,26 @@ Requires Go 1.27, the version `go.mod` declares. Under the default
 `GOTOOLCHAIN=auto` an older toolchain downloads it on demand; under
 `GOTOOLCHAIN=local` the build fails instead of downgrading.
 
+## Verifying a download
+
+Every release carries `checksums.txt`, an SBOM per archive, a keyless [cosign](https://docs.sigstore.dev/) signature over the checksum file, and build provenance attested by GitHub. The `.mcpb` bundle is in `checksums.txt` with the archives, so one signature covers all of it.
+
+```bash
+# 1. The file is what the release says it is.
+sha256sum -c checksums.txt --ignore-missing
+
+# 2. The checksum file came from this repository's release workflow.
+cosign verify-blob checksums.txt \
+  --bundle checksums.txt.bundle \
+  --certificate-identity-regexp '^https://github\.com/mmedum/favro-mcp/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# 3. Which workflow, at which commit, built a given artifact.
+gh attestation verify favro-mcp_<version>_<os>_<arch>.tar.gz --repo mmedum/favro-mcp
+```
+
+Builds are reproducible: `-trimpath` plus the commit's own timestamp, so rebuilding a tag gives byte-identical archives.
+
 ## Authentication
 
 The server uses Favro's HTTP Basic Auth (user email + API token), scoped to one Favro organization at startup. Tools never accept `organization_id` — pass it once via env var or keyring and forget about it.
@@ -65,6 +91,14 @@ Two sources, checked in order; the first one that produces a complete `(email, t
 1. **Environment variables** — `FAVRO_USER_EMAIL`, `FAVRO_API_TOKEN`, `FAVRO_ORGANIZATION_ID`.
 2. **OS keyring** — populated once via `favro-mcp auth login` (cross-platform: macOS Keychain, Windows Credential Manager, Linux Secret Service).
 
+Three more variables change how the server runs rather than who it runs as:
+
+| Variable | Effect |
+| --- | --- |
+| `FAVRO_LOG_LEVEL` | `debug` / `info` (default) / `warn` / `error`. Logs go to stderr; stdout carries only the MCP protocol stream. |
+| `FAVRO_MCP_SKIP_VALIDATE` | When set to anything non-empty, skips the startup call that checks the credentials against Favro. For offline testing; the server then fails on the first real tool call instead of at startup. |
+| `FAVRO_ENABLE_DESTRUCTIVE` | Set to `true` to register the delete-style tools. Off by default, and "off" means they are absent from `tools/list` rather than guarded — a host in an auto-approve mode runs a tool without prompting, so not registering it is the only guarantee. Anything the value cannot be read as `true` leaves them off. |
+
 ### `auth` subcommands
 
 ```
@@ -72,11 +106,15 @@ favro-mcp auth login       # interactive: masked token input, writes to keyring
 favro-mcp auth status      # show user/org (token never printed)
 favro-mcp auth logout      # delete keyring entries
 favro-mcp auth which       # print active credential source: env or keyring
+favro-mcp doctor           # check credentials, org binding and API reachability
+favro-mcp doctor --show-ids  # the same, unredacted, for your own screen
 favro-mcp --version        # print version + commit
 favro-mcp --dry-run        # process-wide override: forces all writes into dry-run
 ```
 
 `favro-mcp auth login` is the one-shot setup for the keyring path. Re-run it to rotate the token.
+
+`favro-mcp doctor` is the first thing to run when something does not work. It reports the build, which source the credentials came from, whether Favro accepts them, and whether the organization id names one the token can actually see — the failure that otherwise shows up as every tool returning `not_found`. Its output replaces ids and addresses with stable placeholders so it can be pasted into an issue; `--show-ids` prints the real values for your own screen, and says so.
 
 ### MCP host configuration
 
@@ -123,7 +161,7 @@ For sandboxed or pre-autonomy testing, `--dry-run` on the binary forces dry-run 
 
 ## Tools
 
-83 tools covering every Favro REST resource, plus workflow tools built for
+85 tools covering every Favro REST resource, plus workflow tools built for
 natural-language use. See **[docs/TOOLS.md](./docs/TOOLS.md)** for the full
 reference.
 
@@ -139,8 +177,11 @@ The ones worth knowing first:
 
 ## Troubleshooting
 
+Run `favro-mcp doctor` first — it answers most of the rows below directly, and its output is safe to paste into an issue.
+
 | Symptom | Diagnosis & fix |
 | --- | --- |
+| Every tool returns `[not_found]`, but the credentials are accepted | `FAVRO_ORGANIZATION_ID` names an organization this token cannot see. `favro-mcp doctor` reports this as a failed organization binding; `favro-mcp doctor --show-ids` lists the ids the token *can* see. |
 | `authentication failed — check FAVRO_USER_EMAIL and FAVRO_API_TOKEN env vars` on startup | Either no credentials configured, or the token was revoked / rotated. Run `favro-mcp auth which` to confirm which source the server is reading, then re-run `favro-mcp auth login` (keyring path) or update the env vars. |
 | `FAVRO_ORGANIZATION_ID is required` on startup | The server is single-org by design — it needs to know which org to scope every request to before it can start. Set `FAVRO_ORGANIZATION_ID` (or include it in `auth login`) and restart. |
 | HTTP 429 / `rate limit exceeded` | Hit the per-org Favro rate limit. The client retries once honoring `Retry-After` (capped at 30s) and then surfaces a typed error with `retry_after_seconds`. Use `favro_rate_limit_status` to inspect the most recent `X-RateLimit-*` headers without spending another call. |
@@ -151,9 +192,22 @@ The ones worth knowing first:
 | Linux launcher doesn't run from the plugin | The launcher is a bash script. If your shell can't exec it, point your `.mcp.json` directly at `${CLAUDE_PLUGIN_ROOT}/bin/linux-amd64/favro-mcp` (or `linux-arm64`) instead. |
 | Windows | The bundled `bin/favro-mcp.cmd` shim exec's `bin\windows-amd64\favro-mcp.exe`. Windows hosts resolve `${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp` to the `.cmd` automatically via PATHEXT, so the standard `.mcp.json` config in [MCP host configuration](#mcp-host-configuration) works as-is. If your host doesn't honor PATHEXT, point `command` at `${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp.cmd` (or directly at `bin/windows-amd64/favro-mcp.exe`). |
 
+## Documentation
+
+| | |
+|---|---|
+| [docs/TOOLS.md](./docs/TOOLS.md) | Every tool, its inputs and what it returns. |
+| [docs/configuration.md](./docs/configuration.md) | Every setting, the commands, and what happens at startup. |
+| [docs/security.md](./docs/security.md) | Trust boundaries, what reaches a log, and what limits what. |
+| [docs/development.md](./docs/development.md) | The gates, the test conventions, and how a release is cut. |
+| [docs/architecture.md](./docs/architecture.md) | The design, the decided constraints, the evidence log and the phase plan. |
+| [SECURITY.md](./SECURITY.md) | Reporting a vulnerability. |
+
 ## Development
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+See [docs/development.md](./docs/development.md) for the gates and the
+test conventions, and [CONTRIBUTING.md](./CONTRIBUTING.md) for how to
+get set up and open a pull request.
 
 ## License
 

@@ -2,13 +2,12 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 )
 
 // fakeFavro is the minimal subset of the Favro API behavior the
@@ -44,7 +43,7 @@ func fakeFavro(t *testing.T, status int) *httptest.Server {
 }
 
 func goodToken() Token {
-	return Token{Email: "u@e.com", APIToken: "tok", OrganizationID: "org-1"}
+	return Token{Email: "u@example.test", APIToken: "tok", OrganizationID: "org-1"}
 }
 
 func TestValidator_OK(t *testing.T) {
@@ -53,7 +52,9 @@ func TestValidator_OK(t *testing.T) {
 	srv := fakeFavro(t, http.StatusOK)
 	v := &Validator{BaseURL: srv.URL, Client: srv.Client()}
 
-	require.NoError(t, v.Validate(context.Background(), goodToken()))
+	if err := v.Validate(context.Background(), goodToken()); err != nil {
+		t.Fatalf("v.Validate(context.Background(), goodToken()): %v", err)
+	}
 }
 
 func TestValidator_AuthFailed(t *testing.T) {
@@ -67,7 +68,9 @@ func TestValidator_AuthFailed(t *testing.T) {
 			v := &Validator{BaseURL: srv.URL, Client: srv.Client()}
 
 			err := v.Validate(context.Background(), goodToken())
-			require.ErrorIs(t, err, ErrAuthFailed)
+			if !errors.Is(err, ErrAuthFailed) {
+				t.Fatalf("got %v, want ErrAuthFailed", err)
+			}
 		})
 	}
 }
@@ -79,11 +82,15 @@ func TestValidator_OtherStatus_WrappedError(t *testing.T) {
 	v := &Validator{BaseURL: srv.URL, Client: srv.Client()}
 
 	err := v.Validate(context.Background(), goodToken())
-	require.Error(t, err)
-	require.NotErrorIs(t, err, ErrAuthFailed,
-		"5xx must not be reported as auth failure — it confuses the operator")
-	require.Contains(t, err.Error(), "500",
-		"error message should name the status code, got %q", err.Error())
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if errors.Is(err, ErrAuthFailed) {
+		t.Fatalf("got %v, want anything but ErrAuthFailed", err)
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error message should name the status code, got %q: %q missing", err.Error(), "500")
+	}
 }
 
 func TestValidator_RejectsIncompleteToken_NoNetworkCall(t *testing.T) {
@@ -96,11 +103,15 @@ func TestValidator_RejectsIncompleteToken_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	v := &Validator{BaseURL: srv.URL, Client: srv.Client()}
-	err := v.Validate(context.Background(), Token{Email: "u@e.com"}) // missing token + org
+	err := v.Validate(context.Background(), Token{Email: "u@example.test"}) // missing token + org
 
 	var mfe *missingFieldError
-	require.ErrorAs(t, err, &mfe)
-	require.False(t, called, "must short-circuit before contacting Favro when token is incomplete")
+	if !errors.As(err, &mfe) {
+		t.Fatalf("got %v, want mfe", err)
+	}
+	if called {
+		t.Error("must short-circuit before contacting Favro when token is incomplete")
+	}
 }
 
 func TestValidator_NetworkError_Wrapped(t *testing.T) {
@@ -113,9 +124,12 @@ func TestValidator_NetworkError_Wrapped(t *testing.T) {
 	v := &Validator{BaseURL: srv.URL, Client: &http.Client{Timeout: 250 * time.Millisecond}}
 	err := v.Validate(context.Background(), goodToken())
 
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "contact Favro",
-		"network errors should be wrapped with a 'contact Favro' prefix, got %q", err.Error())
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if !strings.Contains(err.Error(), "contact Favro") {
+		t.Errorf("network errors should be wrapped with a 'contact Favro' prefix, got %q: %q missing", err.Error(), "contact Favro")
+	}
 }
 
 func TestValidator_AuthorizationHeaderIsBasic(t *testing.T) {
@@ -131,18 +145,26 @@ func TestValidator_AuthorizationHeaderIsBasic(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	v := &Validator{BaseURL: srv.URL, Client: srv.Client()}
-	require.NoError(t, v.Validate(context.Background(), goodToken()))
+	if err := v.Validate(context.Background(), goodToken()); err != nil {
+		t.Fatalf("v.Validate(context.Background(), goodToken()): %v", err)
+	}
 
-	require.True(t, strings.HasPrefix(seenAuth, "Basic "),
-		"Authorization header must be Basic Auth, got %q", seenAuth)
+	if !strings.HasPrefix(seenAuth, "Basic ") {
+		t.Errorf("Authorization header must be Basic Auth, got %q", seenAuth)
+	}
 }
 
 func TestDefaultValidator_HasReasonableDefaults(t *testing.T) {
 	t.Parallel()
 
 	v := DefaultValidator()
-	require.Equal(t, defaultBaseURL, v.BaseURL)
-	require.NotNil(t, v.Client)
-	require.Greater(t, v.Client.Timeout, time.Duration(0),
-		"DefaultValidator must set a non-zero client timeout so a wedged DNS lookup doesn't hold up startup")
+	if got := v.BaseURL; got != defaultBaseURL {
+		t.Errorf("v.BaseURL = %v, want %v", got, defaultBaseURL)
+	}
+	if v.Client == nil {
+		t.Fatal("v.Client is nil")
+	}
+	if v.Client.Timeout <= time.Duration(0) {
+		t.Errorf("DefaultValidator must set a non-zero client timeout so a wedged DNS lookup doesn't hold up startup: got %v, want greater than %v", v.Client.Timeout, time.Duration(0))
+	}
 }

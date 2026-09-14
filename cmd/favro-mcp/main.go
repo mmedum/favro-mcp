@@ -6,10 +6,13 @@
 //	favro-mcp                run as MCP server over stdio
 //	favro-mcp --version      print version + commit
 //	favro-mcp --dry-run      run server with all writes forced into dry-run
+//	favro-mcp --dump-schemas print the tool schemas as JSON and exit
 //	favro-mcp auth login     interactive credential capture
 //	favro-mcp auth status    show user/org (token never printed)
 //	favro-mcp auth logout    delete keyring entries
 //	favro-mcp auth which     print where active credentials came from
+//	favro-mcp doctor         check credentials, binding and API reachability
+//	favro-mcp doctor --show-ids  the same report, unredacted, for your own screen
 //
 // All logs go to stderr; stdout is reserved for the MCP protocol stream.
 package main
@@ -18,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -25,22 +29,15 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/config"
+	"github.com/mmedum/favro-mcp/internal/favroapi"
 	"github.com/mmedum/favro-mcp/internal/server"
 	"github.com/mmedum/favro-mcp/internal/version"
 )
-
-// envSkipValidate, when set to a non-empty value, suppresses the
-// startup live-validation HTTP call. Lets protocol-only integration
-// tests exercise the MCP surface without contacting Favro.
-const envSkipValidate = "FAVRO_MCP_SKIP_VALIDATE"
-
-// envLogLevel selects the slog level. Values are case-insensitive:
-// debug, info (default), warn, error.
-const envLogLevel = "FAVRO_LOG_LEVEL"
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
@@ -53,12 +50,14 @@ func main() {
 // where every diagnostic goes; stdout is reserved for the MCP
 // protocol stream when the server is running.
 func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-	configureLogging(stderr)
+	cfg := configureLogging(stderr)
 
 	if len(args) > 0 {
 		switch args[0] {
 		case "auth":
 			return runAuth(args[1:], stdin, stderr)
+		case "doctor":
+			return runDoctor(context.Background(), cfg, stdout, args[1:])
 		case "version", "--version", "-V":
 			printVersion(stdout)
 			return nil
@@ -66,55 +65,49 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) err
 			printUsage(stdout)
 			return nil
 		}
+
+		// A leading dash is the only thing separating a flag from a
+		// mistyped subcommand. Falling through starts the server, which
+		// reads as a hang — it blocks on stdin and says nothing — and
+		// exits 0, so a script driving this binary takes a typo for
+		// success.
+		if !strings.HasPrefix(args[0], "-") {
+			errf(stderr, "favro-mcp: unknown command %q\n\n", args[0])
+			printUsage(stderr)
+			return fmt.Errorf("unknown command: %s", args[0])
+		}
 	}
 
-	return runServer(args, stderr)
+	return runServer(args, cfg, stdout, stderr)
 }
 
-// configureLogging installs a stderr-bound slog default handler. Level
-// comes from FAVRO_LOG_LEVEL; unrecognized values fall back to info
-// and emit a warning once the handler is installed.
-func configureLogging(stderr io.Writer) {
-	raw := strings.ToLower(strings.TrimSpace(os.Getenv(envLogLevel)))
-	level, recognized := parseLogLevel(raw)
-	h := slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level})
-	slog.SetDefault(slog.New(h))
-	if !recognized {
-		// gosec G706 flags os.Getenv values flowing into log output, but
-		// env vars are trusted local config in our threat model.
-		slog.Warn("unrecognized log level — falling back to info", //nolint:gosec
-			"var", envLogLevel,
-			"value", raw,
-		)
+// configureLogging installs a stderr-bound slog default handler and
+// returns the settings it read on the way.
+//
+// The order is the whole reason this returns a Config rather than
+// logging what it found: the log level is one of the settings, so
+// anything config.Load could not read has to be warned about after the
+// handler exists, not while it is being chosen.
+func configureLogging(stderr io.Writer) config.Config {
+	cfg := config.Load()
+	slog.SetDefault(slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel})))
+	for _, w := range cfg.Warnings {
+		// gosec G706 flags env values flowing into log output, but env
+		// vars are trusted local config in our threat model.
+		slog.Warn(w) //nolint:gosec
 	}
-}
-
-// parseLogLevel maps a case-folded env value to a slog.Level. The
-// second return is false for unknown values (callers may want to
-// surface a warning).
-func parseLogLevel(s string) (slog.Level, bool) {
-	switch s {
-	case "", "info":
-		return slog.LevelInfo, true
-	case "debug":
-		return slog.LevelDebug, true
-	case "warn", "warning":
-		return slog.LevelWarn, true
-	case "error":
-		return slog.LevelError, true
-	default:
-		return slog.LevelInfo, false
-	}
+	return cfg
 }
 
 // runServer is the default path: resolve credentials, optionally
 // validate them live, build the MCP server, and run it over stdio.
 // stderr carries usage and flag-parse diagnostics; everything else
 // goes through the slog default handler run() already bound to it.
-func runServer(args []string, stderr io.Writer) error {
+func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Writer) error {
 	fs := flag.NewFlagSet("favro-mcp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // we print our own usage to stderr.
 	dryRun := fs.Bool("dry-run", false, "force every mutating tool into dry-run mode regardless of input")
+	dumpSchemas := fs.Bool("dump-schemas", false, "print the tool schemas as JSON and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			printUsage(stderr)
@@ -125,10 +118,18 @@ func runServer(args []string, stderr io.Writer) error {
 		return err
 	}
 
+	// Before credentials: the schema dump describes the surface, and the
+	// surface does not depend on who is calling. The schema-diff gate
+	// builds this binary at an old tag and asks it for its schemas, and
+	// that build has no keyring and no environment to read.
+	if *dumpSchemas {
+		return dumpSchemaSurface(context.Background(), stdout)
+	}
+
 	if *dryRun {
 		// Wired through Client.ForceDryRun below — every POST/PUT/
 		// DELETE/PATCH issued via the Favro client short-circuits and
-		// returns a *favro.DryRunRecord. Phase 5 adds the high-level
+		// returns a *favroapi.DryRunRecord. Phase 5 adds the high-level
 		// mutating tools that exercise this gate.
 		slog.Info("--dry-run set; all mutating Favro requests will short-circuit and return a DryRunRecord")
 	}
@@ -143,13 +144,18 @@ func runServer(args []string, stderr io.Writer) error {
 			"error", err)
 		return err
 	}
+	// The organization id is deliberately absent. It used to be here,
+	// which named the tenant in the first line of every session at the
+	// default log level — the kind of thing only a live run shows, and
+	// it showed it during A1's live check. favro_ping still returns it,
+	// because a tool result goes to the caller who asked; a log goes to
+	// whoever ends up holding the file.
 	slog.Info("favro-mcp starting",
 		"version", version.String(),
 		"credential_source", rt.Source,
-		"organization_id", rt.Token.OrganizationID,
 	)
 
-	if os.Getenv(envSkipValidate) == "" {
+	if !cfg.SkipValidate {
 		v := auth.DefaultValidator()
 		if err := v.Validate(ctx, rt.Token); err != nil {
 			slog.Error("Favro credentials rejected at startup", "error", err)
@@ -157,19 +163,68 @@ func runServer(args []string, stderr io.Writer) error {
 		}
 		slog.Debug("startup credentials validated against Favro")
 	} else {
-		slog.Warn("FAVRO_MCP_SKIP_VALIDATE is set — startup live validation disabled")
+		slog.Warn(config.EnvSkipValidate + " is set — startup live validation disabled")
 	}
 
-	client := favro.NewClient(rt.Token)
+	client := favroapi.NewClient(rt.Token)
 	client.ForceDryRun = *dryRun
 
-	srv := server.New(client, rt.Source, version.String())
-	if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
+	opts := server.Options{
+		Destructive:      cfg.Destructive,
+		CredentialSource: rt.Source,
+		Version:          version.String(),
+	}
+	if opts.Destructive {
+		slog.Warn(config.EnvEnableDestructive + " is set — delete-style tools are registered and can run unattended")
+	}
+
+	srv := server.New(client, opts)
+	if err := srv.Run(ctx, &mcp.StdioTransport{}); !cleanDisconnect(err) {
 		slog.Error("MCP server exited with error", "error", err)
 		return err
 	}
 	slog.Info("favro-mcp shut down cleanly")
 	return nil
+}
+
+// dumpSchemaSurface writes the whole tool surface to w. The client it
+// builds is never used to reach Favro — listing tools touches no
+// handler — so an empty token is the right one to pass: asking for
+// credentials here would make the gate that reads this need them too.
+// Destructive is on here regardless of the environment: this file is
+// the record of every schema this binary can serve, and whether a tool
+// is registered is a deployment decision rather than a wire one. A dump
+// that followed the flag would drop thirteen tools out of the committed
+// snapshot, and the schema-diff gate would then stop watching them for
+// the breaking changes it exists to catch.
+func dumpSchemaSurface(ctx context.Context, stdout io.Writer) error {
+	srv := server.New(favroapi.NewClient(auth.Token{}), server.Options{
+		Destructive:      true,
+		CredentialSource: "none",
+		Version:          version.String(),
+	})
+	return server.DumpSchemas(ctx, srv, stdout, version.String())
+}
+
+// cleanDisconnect reports whether the server stopped for an ordinary
+// reason: the context was cancelled, or the client went away.
+//
+// errors.Is(err, io.EOF) does not catch a client going away. The SDK
+// reports a closed connection as JSON-RPC -32004 with the EOF only as
+// message text, so an unmatched error made this process exit 1 every
+// time a host closed the pipe — which every host logs as a crash. The
+// code is matched, not the text: `jsonrpc.Error` is a public alias of
+// the SDK's wire type, so errors.As reaches it without sniffing a
+// string that is free to change.
+func cleanDisconnect(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
+		return true
+	}
+	var je *jsonrpc.Error
+	if errors.As(err, &je) {
+		return je.Code == -32004 || je.Code == -32003
+	}
+	return false
 }
 
 func printVersion(w io.Writer) {
@@ -183,10 +238,13 @@ Usage:
   favro-mcp                Run as MCP server over stdio.
   favro-mcp --dry-run      Run server; force every mutating tool into dry-run.
   favro-mcp --version      Print version and exit.
+  favro-mcp --dump-schemas Print the tool schemas as JSON and exit.
   favro-mcp auth login     Interactively store credentials in the OS keyring.
   favro-mcp auth status    Show the active user / organization (token never printed).
   favro-mcp auth logout    Delete keyring entries.
   favro-mcp auth which     Show whether the active credentials come from env or keyring.
+  favro-mcp doctor         Check credentials, organization binding and API reachability.
+                           Output is redacted for pasting; --show-ids prints ids in full.
 
 Environment:
   %s          Favro user email (Basic Auth username).
@@ -194,7 +252,9 @@ Environment:
   %s     Favro organization id; the server is single-org.
   %s           debug | info | warn | error  (default: info)
   %s   When set, skip the startup /organizations ping.
-`, auth.EnvUserEmail, auth.EnvAPIToken, auth.EnvOrganizationID, envLogLevel, envSkipValidate)
+  %s  Set to true to register the delete-style tools (default: off).
+`, auth.EnvUserEmail, auth.EnvAPIToken, auth.EnvOrganizationID,
+		config.EnvLogLevel, config.EnvSkipValidate, config.EnvEnableDestructive)
 }
 
 // missingCredsHint is the canonical "tell the user what to do next"

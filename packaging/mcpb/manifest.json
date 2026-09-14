@@ -1,0 +1,76 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "favro-mcp",
+  "display_name": "Favro",
+  "version": "0.0.0-placeholder",
+  "description": "Favro as MCP tools: read and write cards, collections, widgets, comments, custom fields and attachments, by name rather than by id.",
+  "long_description": "A single Go binary that speaks MCP over stdio, on your own machine, against your own Favro organization. macOS, Windows and Linux, on both architectures each. There is no server to host.\n\nYou need three things from Favro, and this install asks for all three: the email you sign in with, an API token, and the id of the organization to work in. Create the token in Favro under My Profile → API tokens. The organization id is the 24-character value in the URL when you open your organization in a browser — or install, run `favro-mcp doctor --show-ids` from a terminal, and it will list the ones your token can see.\n\nThe server is single-organization: it binds to that id at startup and no tool takes another. The delete-style tools are not registered unless FAVRO_ENABLE_DESTRUCTIVE is set, which the bundle does not set.",
+  "author": {
+    "name": "mmedum",
+    "url": "https://github.com/mmedum"
+  },
+  "homepage": "https://github.com/mmedum/favro-mcp",
+  "documentation": "https://github.com/mmedum/favro-mcp#readme",
+  "support": "https://github.com/mmedum/favro-mcp/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mmedum/favro-mcp"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "favro",
+    "project-management",
+    "mcp",
+    "stdio"
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/favro-mcp",
+    "mcp_config": {
+      "command": "${__dirname}/server/favro-mcp",
+      "args": [],
+      "env": {
+        "FAVRO_USER_EMAIL": "${user_config.user_email}",
+        "FAVRO_API_TOKEN": "${user_config.api_token}",
+        "FAVRO_ORGANIZATION_ID": "${user_config.organization_id}"
+      },
+      "platform_overrides": {
+        "linux": {
+          "command": "${__dirname}/server/linux-launch.sh"
+        },
+        "win32": {
+          "command": "${__dirname}/server/favro-mcp.exe"
+        }
+      }
+    }
+  },
+  "user_config": {
+    "user_email": {
+      "type": "string",
+      "title": "Favro email",
+      "description": "The address you sign in to Favro with. It is the username half of the API credentials.",
+      "required": true
+    },
+    "api_token": {
+      "type": "string",
+      "title": "Favro API token",
+      "description": "Create one in Favro under My Profile → API tokens. It is stored by Claude Desktop, not by this server.",
+      "sensitive": true,
+      "required": true
+    },
+    "organization_id": {
+      "type": "string",
+      "title": "Organization id",
+      "description": "The 24-character id of the organization to work in. This server binds to one and no tool takes another.",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  }
+}
