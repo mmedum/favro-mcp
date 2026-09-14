@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 )
 
 // This file is the tools/call counterpart to
@@ -239,23 +238,28 @@ func TestMCP_AllTools_SmokeCallable(t *testing.T) {
 	cs := connectInMemoryWith(t, c)
 
 	res, err := cs.ListTools(t.Context(), nil)
-	require.NoError(t, err)
-	require.NotEmpty(t, res.Tools)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(res.Tools) == 0 {
+		t.Fatal("res.Tools is empty")
+	}
 
 	advertised := make(map[string]bool, len(res.Tools))
 	for _, tool := range res.Tools {
 		advertised[tool.Name] = true
 	}
 	for name := range smokeToolInputs {
-		require.True(t, advertised[name],
-			"smokeToolInputs has a row for %q, which is no longer registered — remove it", name)
+		if !advertised[name] {
+			t.Errorf("smokeToolInputs has a row for %q, which is no longer registered — remove it", name)
+		}
 	}
 
 	for _, tool := range res.Tools {
 		args, ok := smokeToolInputs[tool.Name]
-		require.True(t, ok,
-			"tool %q is registered but has no smokeToolInputs row; add the minimal arguments "+
-				"needed to invoke it so it gets smoke coverage", tool.Name)
+		if !ok {
+			t.Errorf("tool %q is registered but has no smokeToolInputs row; add the minimal arguments \" +\n\t\"needed to invoke it so it gets smoke coverage", tool.Name)
+		}
 
 		t.Run(tool.Name, func(t *testing.T) {
 			t.Parallel()
@@ -264,10 +268,12 @@ func TestMCP_AllTools_SmokeCallable(t *testing.T) {
 				Name:      tool.Name,
 				Arguments: substituteSmokePlaceholders(args, filePath),
 			})
-			require.NoError(t, err, "transport-level failure calling %q", tool.Name)
-			require.False(t, res.IsError,
-				"%s returned a tool error on minimal input: %s",
-				tool.Name, serializedResponseString(t, res))
+			if err := err; err != nil {
+				t.Fatalf("transport-level failure calling %q: %v", tool.Name, err)
+			}
+			if res.IsError {
+				t.Errorf("%s returned a tool error on minimal input: %s", tool.Name, serializedResponseString(t, res))
+			}
 		})
 	}
 }
@@ -293,7 +299,9 @@ func substituteSmokePlaceholders(args map[string]any, filePath string) map[strin
 func writeSmokeAttachment(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "smoke.txt")
-	require.NoError(t, os.WriteFile(path, []byte("smoke"), 0o600))
+	if err := os.WriteFile(path, []byte("smoke"), 0o600); err != nil {
+		t.Fatalf("os.WriteFile(path, []byte(\"smoke\"), 0o600): %v", err)
+	}
 	return path
 }
 

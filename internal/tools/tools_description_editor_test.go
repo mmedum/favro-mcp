@@ -3,11 +3,11 @@ package tools
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 	"github.com/mmedum/favro-mcp/internal/favroapi"
@@ -51,15 +51,29 @@ func TestMCP_AppendCardDescription_HappyPath(t *testing.T) {
 		Name:      appendCardDescriptionToolName,
 		Arguments: map[string]any{"card_id": "ci-1", "text": "appended"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[service.EditorResult]](t, res)
-	require.False(t, out.DryRun)
-	require.NotNil(t, out.Result)
-	require.Equal(t, "# heading\n\nbody", out.Result.Old)
-	require.Equal(t, "# heading\n\nbody\n\nappended", out.Result.New)
-	require.Contains(t, out.Result.UnifiedDiff, "+appended")
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if out.Result == nil {
+		t.Fatal("out.Result is nil")
+	}
+	if got := out.Result.Old; got != "# heading\n\nbody" {
+		t.Errorf("out.Result.Old = %v, want %v", got, "# heading\n\nbody")
+	}
+	if got := out.Result.New; got != "# heading\n\nbody\n\nappended" {
+		t.Errorf("out.Result.New = %v, want %v", got, "# heading\n\nbody\n\nappended")
+	}
+	if !strings.Contains(out.Result.UnifiedDiff, "+appended") {
+		t.Errorf("out.Result.UnifiedDiff does not contain %q", "+appended")
+	}
 }
 
 func TestMCP_AppendCardDescription_DryRun_PreviewsDiff(t *testing.T) {
@@ -88,17 +102,35 @@ func TestMCP_AppendCardDescription_DryRun_PreviewsDiff(t *testing.T) {
 			"dry_run": true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[service.EditorResult]](t, res)
-	require.True(t, out.DryRun)
-	require.NotNil(t, out.Result, "editor tools must populate Result on dry-run too — the diff IS the value")
-	require.Contains(t, out.Result.New, "preview")
-	require.Contains(t, out.Result.UnifiedDiff, "+preview")
-	require.NotNil(t, out.WouldCall)
-	require.Equal(t, http.MethodPut, out.WouldCall.Method)
-	require.EqualValues(t, 0, puts.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if out.Result == nil {
+		t.Fatal("editor tools must populate Result on dry-run too — the diff IS the value")
+	}
+	if !strings.Contains(out.Result.New, "preview") {
+		t.Errorf("out.Result.New does not contain %q", "preview")
+	}
+	if !strings.Contains(out.Result.UnifiedDiff, "+preview") {
+		t.Errorf("out.Result.UnifiedDiff does not contain %q", "+preview")
+	}
+	if out.WouldCall == nil {
+		t.Fatal("out.WouldCall is nil")
+	}
+	if got := out.WouldCall.Method; got != http.MethodPut {
+		t.Errorf("out.WouldCall.Method = %v, want %v", got, http.MethodPut)
+	}
+	if got := puts.Load(); got != 0 {
+		t.Errorf("puts.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_AppendCardDescription_MissingCardID(t *testing.T) {
@@ -116,10 +148,14 @@ func TestMCP_PrependCardDescription_HappyPath(t *testing.T) {
 		Name:      prependCardDescriptionToolName,
 		Arguments: map[string]any{"card_id": "ci-1", "text": "prepended"},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[service.EditorResult]](t, res)
-	require.Equal(t, "prepended\n\nbody", out.Result.New)
+	if got := out.Result.New; got != "prepended\n\nbody" {
+		t.Errorf("out.Result.New = %v, want %v", got, "prepended\n\nbody")
+	}
 }
 
 func TestMCP_ReplaceInCardDescription_HappyPath(t *testing.T) {
@@ -136,12 +172,17 @@ func TestMCP_ReplaceInCardDescription_HappyPath(t *testing.T) {
 			"replace": "FOUND",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[service.EditorResult]](t, res)
-	require.Equal(t, "FOUND and find this", out.Result.New,
-		"default count: 1 must replace only the first match")
+	if got := out.Result.New; got != "FOUND and find this" {
+		t.Errorf("default count: 1 must replace only the first match: got %v, want %v", got, "FOUND and find this")
+	}
 }
 
 // TestMCP_ReplaceInCardDescription_NoMatch_RefusesPUT pins the
@@ -174,9 +215,15 @@ func TestMCP_ReplaceInCardDescription_NoMatch_RefusesPUT(t *testing.T) {
 			"replace": "x",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError, "no-match must surface as a tool error")
-	require.EqualValues(t, 0, puts.Load(), "no PUT must be issued when find matched nothing")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("no-match must surface as a tool error")
+	}
+	if got := puts.Load(); got != 0 {
+		t.Errorf("no PUT must be issued when find matched nothing: got %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_ReplaceInCardDescription_RegexBackref(t *testing.T) {
@@ -194,8 +241,12 @@ func TestMCP_ReplaceInCardDescription_RegexBackref(t *testing.T) {
 			"use_regex": true,
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[service.EditorResult]](t, res)
-	require.Equal(t, "beta alpha", out.Result.New)
+	if got := out.Result.New; got != "beta alpha" {
+		t.Errorf("out.Result.New = %v, want %v", got, "beta alpha")
+	}
 }

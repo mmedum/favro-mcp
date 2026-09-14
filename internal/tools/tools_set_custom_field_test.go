@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 	"github.com/mmedum/favro-mcp/internal/favroapi"
@@ -63,12 +62,20 @@ func TestMCP_SetCardCustomField_Text_HappyPath(t *testing.T) {
 			"text":            "hello",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.False(t, out.DryRun)
-	require.Equal(t, "ci-1", out.Result.CardID)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if got := out.Result.CardID; got != "ci-1" {
+		t.Errorf("out.Result.CardID = %v, want %v", got, "ci-1")
+	}
 }
 
 func TestMCP_SetCardCustomField_Number_HappyPath(t *testing.T) {
@@ -88,11 +95,18 @@ func TestMCP_SetCardCustomField_Number_HappyPath(t *testing.T) {
 			"number":          42,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"total":42`,
-		"Number writes travel in `total`, not `value`")
-	require.NotContains(t, body, `"value"`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"total":42`) {
+		t.Errorf("Number writes travel in `total`, not `value`: %q missing", `"total":42`)
+	}
+	if strings.Contains(body, `"value"`) {
+		t.Errorf("body unexpectedly contains %q", `"value"`)
+	}
 }
 
 func TestMCP_SetCardCustomField_Date_HappyPath(t *testing.T) {
@@ -111,8 +125,12 @@ func TestMCP_SetCardCustomField_Date_HappyPath(t *testing.T) {
 			"date":            "2026-05-06T00:00:00Z",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 }
 
 func TestMCP_SetCardCustomField_Checkbox_HappyPath(t *testing.T) {
@@ -131,8 +149,12 @@ func TestMCP_SetCardCustomField_Checkbox_HappyPath(t *testing.T) {
 			"checkbox":        true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 }
 
 func TestMCP_SetCardCustomField_SingleSelect_HappyPath(t *testing.T) {
@@ -159,10 +181,15 @@ func TestMCP_SetCardCustomField_SingleSelect_HappyPath(t *testing.T) {
 			"single_select_item_id": "item-1",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"value":["item-1"]`,
-		"select-flavored writes put item ids in `value`")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"value":["item-1"]`) {
+		t.Errorf("select-flavored writes put item ids in `value`: %q missing", `"value":["item-1"]`)
+	}
 }
 
 // TestMCP_SetCardCustomField_DryRun pins that the type-resolution
@@ -195,13 +222,23 @@ func TestMCP_SetCardCustomField_DryRun(t *testing.T) {
 			"dry_run":         true,
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.True(t, out.DryRun)
-	require.Contains(t, out.PredictedStateDiff, "Notes")
-	require.Contains(t, out.PredictedStateDiff, "Text")
-	require.EqualValues(t, 0, puts.Load(), "dry_run must short-circuit before any PUT")
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "Notes") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "Notes")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "Text") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "Text")
+	}
+	if got := puts.Load(); got != 0 {
+		t.Errorf("dry_run must short-circuit before any PUT: got %v, want %v", got, 0)
+	}
 }
 
 // TestMCP_SetCardCustomField_TypeMismatch pins that supplying the
@@ -223,9 +260,15 @@ func TestMCP_SetCardCustomField_TypeMismatch(t *testing.T) {
 			"text":            "wrong-shape",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "number")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
+	if !strings.Contains(strings.ToLower(serializedResponseString(t, res)), "number") {
+		t.Errorf("strings.ToLower(serializedResponseString(t, res)) does not contain %q", "number")
+	}
 }
 
 // TestMCP_SetCardCustomField_UnsupportedType pins that types outside
@@ -254,9 +297,15 @@ func TestMCP_SetCardCustomField_UnsupportedType(t *testing.T) {
 					"text":            "anything",
 				},
 			})
-			require.NoError(t, err)
-			require.True(t, res.IsError, "unsupported type %q must reject", deferred)
-			require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "cannot be set")
+			if err := err; err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if !res.IsError {
+				t.Errorf("unsupported type %q must reject", deferred)
+			}
+			if !strings.Contains(strings.ToLower(serializedResponseString(t, res)), "cannot be set") {
+				t.Errorf("strings.ToLower(serializedResponseString(t, res)) does not contain %q", "cannot be set")
+			}
 		})
 	}
 }
@@ -279,10 +328,15 @@ func TestMCP_SetCardCustomField_Members_HappyPath(t *testing.T) {
 			"remove_member_user_ids": []string{"u-3"},
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"members":{"addUserIds":["u-1","u-2"],"removeUserIds":["u-3"]}`,
-		"Members writes travel in a `members` object of add/remove deltas")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"members":{"addUserIds":["u-1","u-2"],"removeUserIds":["u-3"]}`) {
+		t.Errorf("Members writes travel in a `members` object of add/remove deltas: %q missing", `"members":{"addUserIds":["u-1","u-2"],"removeUserIds":["u-3"]}`)
+	}
 }
 
 // Favro's Members custom field takes add/remove deltas, so an
@@ -305,9 +359,15 @@ func TestMCP_SetCardCustomField_Members_EmptyDeltaRejected(t *testing.T) {
 			"add_member_user_ids": []string{},
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "at least one userid")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
+	if !strings.Contains(strings.ToLower(serializedResponseString(t, res)), "at least one userid") {
+		t.Errorf("strings.ToLower(serializedResponseString(t, res)) does not contain %q", "at least one userid")
+	}
 }
 
 func TestMCP_SetCardCustomField_Status_HappyPath(t *testing.T) {
@@ -330,10 +390,15 @@ func TestMCP_SetCardCustomField_Status_HappyPath(t *testing.T) {
 			"status_item_id":  "it-doing",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"value":["it-doing"]`,
-		"Status writes put the item id in `value` as a single-element array")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"value":["it-doing"]`) {
+		t.Errorf("Status writes put the item id in `value` as a single-element array: %q missing", `"value":["it-doing"]`)
+	}
 }
 
 func TestMCP_SetCardCustomField_MultipleSelect_HappyPath(t *testing.T) {
@@ -353,9 +418,15 @@ func TestMCP_SetCardCustomField_MultipleSelect_HappyPath(t *testing.T) {
 			"multi_select_item_ids": []string{"it-a", "it-b", "it-c"},
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"value":["it-a","it-b","it-c"]`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"value":["it-a","it-b","it-c"]`) {
+		t.Errorf("body does not contain %q", `"value":["it-a","it-b","it-c"]`)
+	}
 }
 
 func TestMCP_SetCardCustomField_Rating_HappyPath(t *testing.T) {
@@ -375,11 +446,18 @@ func TestMCP_SetCardCustomField_Rating_HappyPath(t *testing.T) {
 			"rating_value":    4,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"total":4`,
-		"Rating writes travel in `total`; Favro fixes the scale at 0-5")
-	require.NotContains(t, body, `"value"`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"total":4`) {
+		t.Errorf("Rating writes travel in `total`; Favro fixes the scale at 0-5: %q missing", `"total":4`)
+	}
+	if strings.Contains(body, `"value"`) {
+		t.Errorf("body unexpectedly contains %q", `"value"`)
+	}
 }
 
 // Favro documents Rating as an integer 0-5. Out-of-range values must
@@ -400,9 +478,15 @@ func TestMCP_SetCardCustomField_Rating_OutOfRange(t *testing.T) {
 			"rating_value":    9,
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "between 0 and 5")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
+	if !strings.Contains(strings.ToLower(serializedResponseString(t, res)), "between 0 and 5") {
+		t.Errorf("strings.ToLower(serializedResponseString(t, res)) does not contain %q", "between 0 and 5")
+	}
 }
 
 func TestMCP_SetCardCustomField_Link_HappyPath(t *testing.T) {
@@ -423,10 +507,15 @@ func TestMCP_SetCardCustomField_Link_HappyPath(t *testing.T) {
 			"link_text":       "Spec",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"link":{"url":"https://example.com/spec","text":"Spec"}`,
-		"Link writes travel in a `link` object")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"link":{"url":"https://example.com/spec","text":"Spec"}`) {
+		t.Errorf("Link writes travel in a `link` object: %q missing", `"link":{"url":"https://example.com/spec","text":"Spec"}`)
+	}
 }
 
 // Link without link_text omits the field entirely — pin so a
@@ -448,10 +537,18 @@ func TestMCP_SetCardCustomField_Link_NoLinkText(t *testing.T) {
 			"link_url":        "https://example.com/spec",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
-	require.Contains(t, body, `"link":{"url":"https://example.com/spec"}`)
-	require.NotContains(t, body, `"text"`, "link text must be omitted when link_text is empty")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
+	if !strings.Contains(body, `"link":{"url":"https://example.com/spec"}`) {
+		t.Errorf("body does not contain %q", `"link":{"url":"https://example.com/spec"}`)
+	}
+	if strings.Contains(body, `"text"`) {
+		t.Errorf("link text must be omitted when link_text is empty: %q present", `"text"`)
+	}
 }
 
 // TestMCP_SetCardCustomField_UnknownFieldID pins the
@@ -473,9 +570,15 @@ func TestMCP_SetCardCustomField_UnknownFieldID(t *testing.T) {
 			"text":            "x",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "not found")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
+	if !strings.Contains(strings.ToLower(serializedResponseString(t, res)), "not found") {
+		t.Errorf("strings.ToLower(serializedResponseString(t, res)) does not contain %q", "not found")
+	}
 }
 
 func TestMCP_SetCardCustomField_MissingRequiredFields(t *testing.T) {
@@ -508,13 +611,21 @@ func TestMCP_SetCardCustomField_Tags_HappyPath(t *testing.T) {
 			"remove_tag_ids":  []string{"t-2"},
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"tags":{"addTagIds":["t-1"],"removeTagIds":["t-2"]}`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"tags":{"addTagIds":["t-1"],"removeTagIds":["t-2"]}`) {
+		t.Errorf("body does not contain %q", `"tags":{"addTagIds":["t-1"],"removeTagIds":["t-2"]}`)
+	}
 	// Only the by-id forms are exposed: Favro's addTags takes names and
 	// creates unknown ones, which is the typo foot-gun the card-level
 	// tag tools hard-fail to prevent.
-	require.NotContains(t, body, `"addTags"`)
+	if strings.Contains(body, `"addTags"`) {
+		t.Errorf("body unexpectedly contains %q", `"addTags"`)
+	}
 }
 
 func TestMCP_SetCardCustomField_Timeline_HappyPath(t *testing.T) {
@@ -536,10 +647,15 @@ func TestMCP_SetCardCustomField_Timeline_HappyPath(t *testing.T) {
 			"timeline_show_time":  true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body,
-		`"timeline":{"startDate":"2026-01-01T00:00:00Z","dueDate":"2026-02-01T00:00:00Z","showTime":true}`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"timeline":{"startDate":"2026-01-01T00:00:00Z","dueDate":"2026-02-01T00:00:00Z","showTime":true}`) {
+		t.Errorf("body does not contain %q", `"timeline":{"startDate":"2026-01-01T00:00:00Z","dueDate":"2026-02-01T00:00:00Z","showTime":true}`)
+	}
 }
 
 // Favro requires both timeline bounds. A half-set Timeline must fail
@@ -560,9 +676,15 @@ func TestMCP_SetCardCustomField_Timeline_MissingBound(t *testing.T) {
 			"timeline_start_date": "2026-01-01T00:00:00Z",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "both required")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
+	if !strings.Contains(strings.ToLower(serializedResponseString(t, res)), "both required") {
+		t.Errorf("strings.ToLower(serializedResponseString(t, res)) does not contain %q", "both required")
+	}
 }
 
 func TestMCP_SetCardCustomField_Vote_HappyPath(t *testing.T) {
@@ -582,9 +704,15 @@ func TestMCP_SetCardCustomField_Vote_HappyPath(t *testing.T) {
 			"vote":            true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"value":true`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"value":true`) {
+		t.Errorf("body does not contain %q", `"value":true`)
+	}
 }
 
 // "Voting" is the spelling this client used before the write contract
@@ -607,9 +735,15 @@ func TestMCP_SetCardCustomField_Vote_LegacyTypeSpelling(t *testing.T) {
 			"vote":            false,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"value":false`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"value":false`) {
+		t.Errorf("body does not contain %q", `"value":false`)
+	}
 }
 
 func TestMCP_SetCardCustomField_Color_HappyPath(t *testing.T) {
@@ -629,9 +763,15 @@ func TestMCP_SetCardCustomField_Color_HappyPath(t *testing.T) {
 			"color":           "blue-300",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"color":"blue-300"`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"color":"blue-300"`) {
+		t.Errorf("body does not contain %q", `"color":"blue-300"`)
+	}
 }
 
 // Favro clears a Color field on an empty string, but an empty string
@@ -653,10 +793,18 @@ func TestMCP_SetCardCustomField_Color_ClearSentinel(t *testing.T) {
 			"color":           colorClearSentinel,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"value":""`)
-	require.NotContains(t, body, `"color"`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"value":""`) {
+		t.Errorf("body does not contain %q", `"value":""`)
+	}
+	if strings.Contains(body, `"color"`) {
+		t.Errorf("body unexpectedly contains %q", `"color"`)
+	}
 }
 
 func TestMCP_SetCardCustomField_Time_HappyPath(t *testing.T) {
@@ -677,7 +825,13 @@ func TestMCP_SetCardCustomField_Time_HappyPath(t *testing.T) {
 			"time_report_description": "pairing",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"addUserReports":[{"value":50400000,"description":"pairing"}]`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"addUserReports":[{"value":50400000,"description":"pairing"}]`) {
+		t.Errorf("body does not contain %q", `"addUserReports":[{"value":50400000,"description":"pairing"}]`)
+	}
 }

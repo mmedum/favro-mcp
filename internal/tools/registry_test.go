@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favroapi"
 	"github.com/mmedum/favro-mcp/internal/render"
@@ -26,7 +26,9 @@ func listToolsWith(t *testing.T, opts Options) map[string]*mcp.Tool {
 
 	cs := connectInMemoryOpts(t, favroapi.NewClient(fixtureToken()), opts)
 	res, err := cs.ListTools(t.Context(), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := make(map[string]*mcp.Tool, len(res.Tools))
 	for _, tool := range res.Tools {
@@ -58,22 +60,27 @@ func TestDestructiveToolsAreOptIn(t *testing.T) {
 	// print the same sentence otherwise, and this repository has
 	// thirteen — a number that is allowed to change, but not to become
 	// zero without somebody noticing.
-	require.GreaterOrEqual(t, len(destructive), 13,
-		"read %d destructive tools out of a surface of %d; the annotation-derived set cannot have shrunk that far",
-		len(destructive), len(all))
-	require.Greater(t, len(all), len(destructive), "the surface is not all deletes")
+	if len(destructive) < 13 {
+		t.Errorf("read %d destructive tools out of a surface of %d; the annotation-derived set cannot have shrunk that far: got %v, want at least %v", len(destructive), len(all), len(destructive), 13)
+	}
+	if len(all) <= len(destructive) {
+		t.Errorf("the surface is not all deletes: got %v, want greater than %v", len(all), len(destructive))
+	}
 
 	for _, name := range destructive {
-		require.NotContains(t, def, name,
-			"%s is annotated destructive but is registered without FAVRO_ENABLE_DESTRUCTIVE", name)
+		if _, present := def[name]; present {
+			t.Errorf("%s is annotated destructive but is registered without FAVRO_ENABLE_DESTRUCTIVE: %q present", name, name)
+		}
 	}
-	require.Len(t, def, len(all)-len(destructive),
-		"the default surface must differ from the full one by exactly the destructive tools")
+	if len(def) != len(all)-len(destructive) {
+		t.Fatalf("the default surface must differ from the full one by exactly the destructive tools: got %d", len(def))
+	}
 
 	for name := range all {
 		if _, gated := def[name]; !gated {
-			require.Contains(t, destructive, name,
-				"%s disappeared from the default surface without being annotated destructive", name)
+			if !slices.Contains(destructive, name) {
+				t.Errorf("%s disappeared from the default surface without being annotated destructive: %q missing", name, name)
+			}
 		}
 	}
 }
@@ -98,17 +105,20 @@ func TestEveryToolIsAnnotated(t *testing.T) {
 	t.Parallel()
 
 	all := listToolsWith(t, Options{Destructive: true})
-	require.GreaterOrEqual(t, len(all), 83,
-		"read %d tools; the surface cannot have shrunk that far", len(all))
+	if len(all) < 83 {
+		t.Errorf("read %d tools; the surface cannot have shrunk that far: got %v, want at least %v", len(all), len(all), 83)
+	}
 
 	for name, tool := range all {
-		require.NotNil(t, tool.Annotations,
-			"%s carries no annotations, so addTool's destructive gate has nothing to read and registers it unconditionally", name)
+		if tool.Annotations == nil {
+			t.Fatalf("%s carries no annotations, so addTool's destructive gate has nothing to read and registers it unconditionally", name)
+		}
 		if tool.Annotations.ReadOnlyHint {
 			continue
 		}
-		require.NotNil(t, tool.Annotations.DestructiveHint,
-			"%s mutates and left DestructiveHint nil; use mutating(title, …), which always sets it explicitly", name)
+		if tool.Annotations.DestructiveHint == nil {
+			t.Fatalf("%s mutates and left DestructiveHint nil; use mutating(title, …), which always sets it explicitly", name)
+		}
 	}
 }
 
@@ -125,25 +135,43 @@ func TestContentAndStructuredContentDiffer(t *testing.T) {
 		Name:      pingToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
-	require.NotEmpty(t, res.StructuredContent, "the machine half must be present")
-	require.Len(t, res.Content, 1, "the readable half must be present")
+	if res.StructuredContent == nil {
+		t.Fatal("the machine half must be present")
+	}
+	if len(res.Content) != 1 {
+		t.Fatalf("the readable half must be present: got %d", len(res.Content))
+	}
 
 	text, ok := res.Content[0].(*mcp.TextContent)
-	require.True(t, ok)
-	require.NotEmpty(t, text.Text)
+	if !ok {
+		t.Error("ok = false, want true")
+	}
+	if len(text.Text) == 0 {
+		t.Fatal("text.Text is empty")
+	}
 
 	structured, err := json.Marshal(res.StructuredContent)
-	require.NoError(t, err)
-	require.NotEqual(t, string(structured), text.Text,
-		"the two halves are the same bytes; the readable half is carrying nothing the machine half did not")
-	require.False(t, strings.HasPrefix(strings.TrimSpace(text.Text), "{"),
-		"the readable half is JSON, which is the other half again")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if text.Text == string(structured) {
+		t.Errorf("text.Text = %v, want anything else", text.Text)
+	}
+	if strings.HasPrefix(strings.TrimSpace(text.Text), "{") {
+		t.Error("the readable half is JSON, which is the other half again")
+	}
 
 	// It still has to say something true.
-	require.Contains(t, text.Text, "favro-mcp")
+	if !strings.Contains(text.Text, "favro-mcp") {
+		t.Errorf("text.Text does not contain %q", "favro-mcp")
+	}
 }
 
 // TestListToolContentSummarisesThePage covers the shape that matters
@@ -166,13 +194,23 @@ func TestListToolContentSummarisesThePage(t *testing.T) {
 		Name:      listOrgsToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	text := res.Content[0].(*mcp.TextContent).Text
-	require.Contains(t, text, "2 items")
-	require.Contains(t, text, "next_page")
-	require.Contains(t, text, "First", "the entries are named, or the readable half is a count")
+	if !strings.Contains(text, "2 items") {
+		t.Errorf("text does not contain %q", "2 items")
+	}
+	if !strings.Contains(text, "next_page") {
+		t.Errorf("text does not contain %q", "next_page")
+	}
+	if !strings.Contains(text, "First") {
+		t.Errorf("the entries are named, or the readable half is a count: %q missing", "First")
+	}
 }
 
 // TestToolErrorsCarryAClass is the closed vocabulary reaching the
@@ -189,20 +227,29 @@ func TestToolErrorsCarryAClass(t *testing.T) {
 		Name:      getOrgToolName,
 		Arguments: map[string]any{"organization_id": "no-such-organization"},
 	})
-	require.NoError(t, err, "an error from Favro is a tool result, not a protocol error")
-	require.True(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("an error from Favro is a tool result, not a protocol error: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
 
 	text := res.Content[0].(*mcp.TextContent).Text
-	require.True(t, strings.HasPrefix(text, "[forbidden] "),
-		"a 403 must render as [forbidden]; got %q", text)
+	if !strings.HasPrefix(text, "[forbidden] ") {
+		t.Errorf("a 403 must render as [forbidden]; got %q", text)
+	}
 
 	// And the prefix is always a declared class, whatever the error.
 	res, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      searchCardsToolName,
 		Arguments: map[string]any{"query": "anything"},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
 	requireDeclaredClassPrefix(t, res.Content[0].(*mcp.TextContent).Text)
 }
 
@@ -211,13 +258,21 @@ func TestToolErrorsCarryAClass(t *testing.T) {
 func requireDeclaredClassPrefix(t *testing.T, text string) {
 	t.Helper()
 
-	require.True(t, strings.HasPrefix(text, "["), "no class prefix on %q", text)
+	// Fatal, not Error: everything below indexes into text on the
+	// strength of these, so continuing past a failure turns a clear
+	// message into a slice-bounds panic.
+	if !strings.HasPrefix(text, "[") {
+		t.Fatalf("no class prefix on %q", text)
+	}
 	end := strings.Index(text, "] ")
-	require.Positive(t, end, "no class prefix on %q", text)
+	if end <= 0 {
+		t.Fatalf("no closing bracket on %q", text)
+	}
 
 	got := render.Class(text[1:end])
-	require.Contains(t, render.Classes, got,
-		"%q is not in the closed vocabulary; add it to render.Classes and docs/architecture.md §6.2 or use one that is there", got)
+	if !slices.Contains(render.Classes, got) {
+		t.Errorf("%q is not in the closed vocabulary; add it to render.Classes and docs/architecture.md §6.2, or use one that is already there", got)
+	}
 }
 
 // TestEverySentinelIsClassified reads the source of the packages that
@@ -235,7 +290,9 @@ func TestEverySentinelIsClassified(t *testing.T) {
 	var files []string
 	for _, dir := range []string{".", "../service"} {
 		matched, err := filepath.Glob(filepath.Join(dir, "*.go"))
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("err: %v", err)
+		}
 		files = append(files, matched...)
 	}
 
@@ -248,9 +305,13 @@ func TestEverySentinelIsClassified(t *testing.T) {
 		}
 		filesRead++
 		src, err := os.ReadFile(path)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("err: %v", err)
+		}
 		file, err := parser.ParseFile(fset, path, src, 0)
-		require.NoError(t, err)
+		if err := err; err != nil {
+			t.Fatalf("err: %v", err)
+		}
 
 		for _, decl := range file.Decls {
 			gen, ok := decl.(*ast.GenDecl)
@@ -268,17 +329,23 @@ func TestEverySentinelIsClassified(t *testing.T) {
 					}
 					checked++
 					call, ok := vs.Values[i].(*ast.CallExpr)
-					require.True(t, ok,
-						"%s: sentinel %s is not built by render.Sentinel", path, name.Name)
+					if !ok {
+						t.Errorf("%s: sentinel %s is not built by render.Sentinel", path, name.Name)
+					}
 					fn, ok := call.Fun.(*ast.SelectorExpr)
-					require.True(t, ok && fn.Sel.Name == "Sentinel",
-						"%s: sentinel %s must be render.Sentinel(render.Class…, …) so the boundary can render [class] without matching on its text",
-						path, name.Name)
-					require.Len(t, call.Args, 2)
+					if !ok || fn.Sel.Name != "Sentinel" {
+						t.Errorf("%s: sentinel %s must be render.Sentinel(render.Class…, …) so the boundary can render [class] without matching on its text", path, name.Name)
+					}
+					if len(call.Args) != 2 {
+						t.Fatalf("len(call.Args) = %d, want 2", len(call.Args))
+					}
 					sel, ok := call.Args[0].(*ast.SelectorExpr)
-					require.True(t, ok, "%s: %s does not name a render class", path, name.Name)
-					require.True(t, strings.HasPrefix(sel.Sel.Name, "Class"),
-						"%s: %s names %s, which is not a class constant", path, name.Name, sel.Sel.Name)
+					if !ok {
+						t.Errorf("%s: %s does not name a render class", path, name.Name)
+					}
+					if !strings.HasPrefix(sel.Sel.Name, "Class") {
+						t.Errorf("%s: %s names %s, which is not a class constant", path, name.Name, sel.Sel.Name)
+					}
 				}
 			}
 		}
@@ -286,8 +353,12 @@ func TestEverySentinelIsClassified(t *testing.T) {
 
 	// The floor, twice over: a glob that matched nothing and a package
 	// with no sentinels left both look like success.
-	require.GreaterOrEqual(t, filesRead, 40, "read only %d source files", filesRead)
-	require.GreaterOrEqual(t, checked, 14, "found only %d sentinels", checked)
+	if filesRead < 40 {
+		t.Errorf("read only %d source files: got %v, want at least %v", filesRead, filesRead, 40)
+	}
+	if checked < 14 {
+		t.Errorf("found only %d sentinels: got %v, want at least %v", checked, checked, 14)
+	}
 }
 
 // TestClassedErrorsSurviveWrapping is the property the sentinels are
@@ -310,6 +381,8 @@ func TestClassedErrorsSurviveWrapping(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		require.Equal(t, tc.want, render.Classify(tc.err), "wrapping lost the class of %v", tc.err)
+		if got := render.Classify(tc.err); got != tc.want {
+			t.Errorf("wrapping lost the class of %v: got %v, want %v", tc.err, got, tc.want)
+		}
 	}
 }

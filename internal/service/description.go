@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/pmezard/go-difflib/difflib"
 )
 
 // descriptionSeparator is the default joiner for append / prepend.
@@ -109,27 +107,6 @@ func literalReplaceN(old, find, replace string, count int) (string, int) {
 		return old, 0
 	}
 	return strings.Replace(old, find, replace, n), n
-}
-
-// unifiedDiff renders a 3-context-line unified diff between old and
-// new. cardID is interpolated into the From/To file headers so the
-// diff reads naturally when the LLM surfaces it to a human reviewer.
-func unifiedDiff(cardID, oldBody, newBody string) string {
-	d := difflib.UnifiedDiff{
-		A:        difflib.SplitLines(oldBody),
-		B:        difflib.SplitLines(newBody),
-		FromFile: cardID + " (before)",
-		ToFile:   cardID + " (after)",
-		Context:  3,
-	}
-	out, err := difflib.GetUnifiedDiffString(d)
-	if err != nil {
-		// Fall back to a raw delimiter diff so the tool can still
-		// return a useful answer; difflib's only error mode is a
-		// nil-input case that we don't reach.
-		return "--- before\n+++ after\n" + oldBody + "\n>>>\n" + newBody
-	}
-	return out
 }
 
 // NewEditorResult bundles the (old, new, diff) projection every

@@ -1,8 +1,11 @@
 package favroapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -27,4 +30,31 @@ func (f *failingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 type testEntity struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// requireJSONEq fails unless want and got are the same JSON document,
+// ignoring key order and whitespace.
+//
+// The request-body assertions need this and `==` will not do it: Go's
+// map iteration means encoding/json writes object keys in sorted order,
+// but the expected literals in these tests are written the way a person
+// reads them, and a body built by appending fields is not textually
+// equal to one built by a struct. Comparing the decoded values is the
+// only comparison that means "the same request".
+func requireJSONEq(t *testing.T, want, got string, why ...string) {
+	t.Helper()
+
+	var wantVal, gotVal any
+	if err := json.Unmarshal([]byte(want), &wantVal); err != nil {
+		t.Fatalf("the expected JSON does not parse: %v: %s", err, want)
+	}
+	if err := json.Unmarshal([]byte(got), &gotVal); err != nil {
+		t.Fatalf("the body is not JSON: %v: %s", err, got)
+	}
+	if !reflect.DeepEqual(wantVal, gotVal) {
+		// why is what the assertion was for, when the caller said —
+		// several of these exist to pin a marshalling detail that the
+		// bodies alone would not explain.
+		t.Errorf("request body: %s\n got %s\nwant %s", strings.Join(why, " "), got, want)
+	}
 }

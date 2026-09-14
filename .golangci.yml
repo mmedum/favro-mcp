@@ -29,7 +29,6 @@ linters:
     # Security
     - gosec
     # Test hygiene
-    - testifylint
     - tparallel
     # Import discipline
     - depguard
@@ -93,11 +92,13 @@ linters:
           deny:
             - pkg: "github.com/modelcontextprotocol/go-sdk"
               desc: "internal/favroapi is a REST client and internal/service returns plain Go values; the MCP surface is internal/tools, and keeping the SDK out of both is what makes them testable without a protocol session"
-        no-testify-assert:
+        no-assertion-library:
           list-mode: lax
           deny:
-            - pkg: "github.com/stretchr/testify/assert"
-              desc: "use github.com/stretchr/testify/require instead — assert lets tests continue past failures and produces confusing diagnostics"
+            - pkg: "github.com/stretchr/testify"
+              desc: "tests here use the stdlib: if got != want { t.Errorf(…) }. A4 removed testify; it survives in go.mod only as another module's indirect requirement"
+            - pkg: "github.com/pmezard/go-difflib"
+              desc: "internal/service/diff.go generates the unified diff, and is held to diff(1) by test"
         no-default-http-client:
           list-mode: lax
           deny:

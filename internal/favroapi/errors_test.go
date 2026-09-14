@@ -6,11 +6,10 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/render"
 )
@@ -23,10 +22,18 @@ func TestAuthError_Message_NeverIncludesCredentialsOrValues(t *testing.T) {
 	// "check your env vars" message for resources it just can't see.
 	err := &AuthError{Status: 401}
 	msg := err.Error()
-	require.Contains(t, msg, "FAVRO_USER_EMAIL", "should name the env var, not its value")
-	require.Contains(t, msg, "FAVRO_API_TOKEN", "should name the env var, not its value")
-	require.Contains(t, msg, fmt.Sprintf("%d", 401))
-	require.NotContains(t, msg, "@", "AuthError must not embed any email")
+	if !strings.Contains(msg, "FAVRO_USER_EMAIL") {
+		t.Errorf("should name the env var, not its value: %q missing", "FAVRO_USER_EMAIL")
+	}
+	if !strings.Contains(msg, "FAVRO_API_TOKEN") {
+		t.Errorf("should name the env var, not its value: %q missing", "FAVRO_API_TOKEN")
+	}
+	if !strings.Contains(msg, fmt.Sprintf("%d", 401)) {
+		t.Errorf("msg does not contain %q", fmt.Sprintf("%d", 401))
+	}
+	if strings.Contains(msg, "@") {
+		t.Errorf("AuthError must not embed any email: %q present", "@")
+	}
 }
 
 func TestForbiddenError_MessageVariants(t *testing.T) {
@@ -34,29 +41,51 @@ func TestForbiddenError_MessageVariants(t *testing.T) {
 
 	withPath := &ForbiddenError{Status: 403, Path: "/cards/missing-or-private"}
 	msg := withPath.Error()
-	require.Contains(t, msg, "/cards/missing-or-private")
-	require.Contains(t, msg, "403")
+	if !strings.Contains(msg, "/cards/missing-or-private") {
+		t.Errorf("msg does not contain %q", "/cards/missing-or-private")
+	}
+	if !strings.Contains(msg, "403") {
+		t.Errorf("msg does not contain %q", "403")
+	}
 	// Must NOT direct the caller at the auth env-vars — that's the
 	// misleading message we replaced (Phase 3.10 follow-up).
-	require.NotContains(t, msg, "FAVRO_USER_EMAIL")
-	require.NotContains(t, msg, "FAVRO_API_TOKEN")
-	require.NotContains(t, msg, "@")
+	if strings.Contains(msg, "FAVRO_USER_EMAIL") {
+		t.Errorf("msg unexpectedly contains %q", "FAVRO_USER_EMAIL")
+	}
+	if strings.Contains(msg, "FAVRO_API_TOKEN") {
+		t.Errorf("msg unexpectedly contains %q", "FAVRO_API_TOKEN")
+	}
+	if strings.Contains(msg, "@") {
+		t.Errorf("msg unexpectedly contains %q", "@")
+	}
 
 	noPath := &ForbiddenError{Status: 403}
-	require.Contains(t, noPath.Error(), "403")
-	require.NotContains(t, noPath.Error(), "FAVRO_USER_EMAIL")
+	if !strings.Contains(noPath.Error(), "403") {
+		t.Errorf("noPath.Error() does not contain %q", "403")
+	}
+	if strings.Contains(noPath.Error(), "FAVRO_USER_EMAIL") {
+		t.Errorf("noPath.Error() unexpectedly contains %q", "FAVRO_USER_EMAIL")
+	}
 }
 
 func TestRateLimitError_Message(t *testing.T) {
 	t.Parallel()
 
 	withRetry := &RateLimitError{Status: 429, RetryAfter: 5 * time.Second}
-	require.Contains(t, withRetry.Error(), "5s")
-	require.Contains(t, withRetry.Error(), "429")
+	if !strings.Contains(withRetry.Error(), "5s") {
+		t.Errorf("withRetry.Error() does not contain %q", "5s")
+	}
+	if !strings.Contains(withRetry.Error(), "429") {
+		t.Errorf("withRetry.Error() does not contain %q", "429")
+	}
 
 	noRetry := &RateLimitError{Status: 429}
-	require.Contains(t, noRetry.Error(), "429")
-	require.NotContains(t, noRetry.Error(), "retry after")
+	if !strings.Contains(noRetry.Error(), "429") {
+		t.Errorf("noRetry.Error() does not contain %q", "429")
+	}
+	if strings.Contains(noRetry.Error(), "retry after") {
+		t.Errorf("noRetry.Error() unexpectedly contains %q", "retry after")
+	}
 }
 
 func TestNotFoundError_MessageVariants(t *testing.T) {
@@ -76,7 +105,9 @@ func TestNotFoundError_MessageVariants(t *testing.T) {
 			t.Parallel()
 			msg := tc.err.Error()
 			for _, fragment := range tc.want {
-				require.Contains(t, msg, fragment)
+				if !strings.Contains(msg, fragment) {
+					t.Errorf("msg does not contain %q", fragment)
+				}
 			}
 		})
 	}
@@ -86,11 +117,17 @@ func TestValidationError_HandlesEmptyBody(t *testing.T) {
 	t.Parallel()
 
 	withBody := &ValidationError{Status: 400, Body: "field 'name' required"}
-	require.Contains(t, withBody.Error(), "name")
+	if !strings.Contains(withBody.Error(), "name") {
+		t.Errorf("withBody.Error() does not contain %q", "name")
+	}
 
 	noBody := &ValidationError{Status: 422}
-	require.Contains(t, noBody.Error(), "422")
-	require.False(t, strings.HasSuffix(noBody.Error(), ":"), "trailing colon when body is empty looks awkward")
+	if !strings.Contains(noBody.Error(), "422") {
+		t.Errorf("noBody.Error() does not contain %q", "422")
+	}
+	if strings.HasSuffix(noBody.Error(), ":") {
+		t.Error("trailing colon when body is empty looks awkward")
+	}
 }
 
 func TestTransientError_NamesAttempts(t *testing.T) {
@@ -98,8 +135,12 @@ func TestTransientError_NamesAttempts(t *testing.T) {
 
 	err := &TransientError{Status: 502, Attempts: 3}
 	msg := err.Error()
-	require.Contains(t, msg, "502")
-	require.Contains(t, msg, "3 attempts")
+	if !strings.Contains(msg, "502") {
+		t.Errorf("msg does not contain %q", "502")
+	}
+	if !strings.Contains(msg, "3 attempts") {
+		t.Errorf("msg does not contain %q", "3 attempts")
+	}
 }
 
 func TestAPIError_FallbackForUnknownStatus(t *testing.T) {
@@ -107,9 +148,15 @@ func TestAPIError_FallbackForUnknownStatus(t *testing.T) {
 
 	err := &APIError{Status: 418, Body: "I am a teapot", Path: "/teapot"}
 	msg := err.Error()
-	require.Contains(t, msg, "418")
-	require.Contains(t, msg, "/teapot")
-	require.Contains(t, msg, "teapot")
+	if !strings.Contains(msg, "418") {
+		t.Errorf("msg does not contain %q", "418")
+	}
+	if !strings.Contains(msg, "/teapot") {
+		t.Errorf("msg does not contain %q", "/teapot")
+	}
+	if !strings.Contains(msg, "teapot") {
+		t.Errorf("msg does not contain %q", "teapot")
+	}
 }
 
 // TestEveryErrorTypeNamesItsClass reads this file for the error types
@@ -144,18 +191,23 @@ func TestEveryErrorTypeNamesItsClass(t *testing.T) {
 	}
 
 	declared := declaredErrorTypes(t)
-	require.GreaterOrEqual(t, len(declared), 7,
-		"read %d error types out of errors.go", len(declared))
+	if len(declared) < 7 {
+		t.Errorf("read %d error types out of errors.go: got %v, want at least %v", len(declared), len(declared), 7)
+	}
 
 	for _, name := range declared {
 		want, ok := expected[name]
-		require.True(t, ok,
-			"errors.go declares %s and nothing here classifies it — it would reach render's ClassInvalid fallback silently", name)
-		require.Equal(t, want, render.Classify(samples[name]),
-			"%s does not classify as %s", name, want)
+		if !ok {
+			t.Errorf("errors.go declares %s and nothing here classifies it — it would reach render's ClassInvalid fallback silently", name)
+		}
+		if got := render.Classify(samples[name]); got != want {
+			t.Errorf("%s does not classify as %s: got %v, want %v", name, want, got, want)
+		}
 	}
 	for name := range expected {
-		require.Contains(t, declared, name, "%s is expected here but no longer declared", name)
+		if !slices.Contains(declared, name) {
+			t.Errorf("%s is expected here but no longer declared: %q missing", name, name)
+		}
 	}
 }
 
@@ -173,7 +225,9 @@ func TestAPIErrorClassByStatus(t *testing.T) {
 		http.StatusTeapot:           render.ClassInvalid,
 	}
 	for status, want := range cases {
-		require.Equal(t, want, (&APIError{Status: status}).ErrorClass(), "status %d", status)
+		if got := (&APIError{Status: status}).ErrorClass(); got != want {
+			t.Errorf("status %d: got %v, want %v", status, got, want)
+		}
 	}
 }
 
@@ -191,7 +245,9 @@ func TestRateLimitRetryAfterSeconds(t *testing.T) {
 		90 * time.Second:        90,
 	}
 	for in, want := range cases {
-		require.Equal(t, want, (&RateLimitError{RetryAfter: in}).RetryAfterSeconds(), "%s", in)
+		if got := (&RateLimitError{RetryAfter: in}).RetryAfterSeconds(); got != want {
+			t.Errorf("%s: got %v, want %v", in, got, want)
+		}
 	}
 }
 
@@ -200,7 +256,9 @@ func declaredErrorTypes(t *testing.T) []string {
 	t.Helper()
 
 	file, err := parser.ParseFile(token.NewFileSet(), "errors.go", nil, 0)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	var out []string
 	for _, decl := range file.Decls {

@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 )
 
 func newRespForRateLimitTest(headers map[string]string, status int, path string) *http.Response {
@@ -36,12 +34,24 @@ func TestParseRateLimitHeaders_AllHeadersPresent(t *testing.T) {
 	}, http.StatusOK, "/cards")
 
 	s := parseRateLimitHeaders(resp)
-	require.Equal(t, 1000, s.Limit)
-	require.Equal(t, 850, s.Remaining)
-	require.Equal(t, time.Unix(resetEpoch, 0).Unix(), s.Reset.Unix())
-	require.Equal(t, http.StatusOK, s.Status)
-	require.Equal(t, "/cards", s.Path)
-	require.Zero(t, s.RetryAfter, "Retry-After should only be populated on 429")
+	if got := s.Limit; got != 1000 {
+		t.Errorf("s.Limit = %v, want %v", got, 1000)
+	}
+	if got := s.Remaining; got != 850 {
+		t.Errorf("s.Remaining = %v, want %v", got, 850)
+	}
+	if got := s.Reset.Unix(); got != time.Unix(resetEpoch, 0).Unix() {
+		t.Errorf("s.Reset.Unix() = %v, want %v", got, time.Unix(resetEpoch, 0).Unix())
+	}
+	if got := s.Status; got != http.StatusOK {
+		t.Errorf("s.Status = %v, want %v", got, http.StatusOK)
+	}
+	if got := s.Path; got != "/cards" {
+		t.Errorf("s.Path = %v, want %v", got, "/cards")
+	}
+	if s.RetryAfter != 0 {
+		t.Errorf("s.RetryAfter = %v, want 0", s.RetryAfter)
+	}
 }
 
 func TestParseRateLimitHeaders_AbsentHeadersZero(t *testing.T) {
@@ -50,18 +60,32 @@ func TestParseRateLimitHeaders_AbsentHeadersZero(t *testing.T) {
 	//nolint:bodyclose // synthetic *http.Response, Body is nil — nothing to close
 	resp := newRespForRateLimitTest(nil, http.StatusOK, "/x")
 	s := parseRateLimitHeaders(resp)
-	require.Equal(t, 0, s.Limit)
-	require.Equal(t, -1, s.Remaining, "absent must stay distinguishable from 0")
-	require.True(t, s.Reset.IsZero())
-	require.Zero(t, s.RetryAfter)
+	if got := s.Limit; got != 0 {
+		t.Errorf("s.Limit = %v, want %v", got, 0)
+	}
+	if got := s.Remaining; got != -1 {
+		t.Errorf("absent must stay distinguishable from 0: got %v, want %v", got, -1)
+	}
+	if !s.Reset.IsZero() {
+		t.Error("s.Reset.IsZero() = false, want true")
+	}
+	if s.RetryAfter != 0 {
+		t.Errorf("s.RetryAfter = %v, want 0", s.RetryAfter)
+	}
 }
 
 func TestParseRetryAfter_SecondsForm(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, 5*time.Second, parseRetryAfter("5"))
-	require.Equal(t, 0*time.Second, parseRetryAfter(""))
-	require.Equal(t, 0*time.Second, parseRetryAfter("not-a-number"))
+	if got := parseRetryAfter("5"); got != 5*time.Second {
+		t.Errorf("parseRetryAfter(\"5\") = %v, want %v", got, 5*time.Second)
+	}
+	if got := parseRetryAfter(""); got != 0*time.Second {
+		t.Errorf("parseRetryAfter(\"\") = %v, want %v", got, 0*time.Second)
+	}
+	if got := parseRetryAfter("not-a-number"); got != 0*time.Second {
+		t.Errorf("parseRetryAfter(\"not-a-number\") = %v, want %v", got, 0*time.Second)
+	}
 }
 
 func TestParseRetryAfter_HTTPDateForm(t *testing.T) {
@@ -70,10 +94,14 @@ func TestParseRetryAfter_HTTPDateForm(t *testing.T) {
 	future := time.Now().Add(2 * time.Second).UTC().Format(http.TimeFormat)
 	got := parseRetryAfter(future)
 	// Allow some slack — clock may have advanced between format and parse.
-	require.True(t, got > 0 && got <= 3*time.Second, "want positive ≤ 3s, got %v", got)
+	if got <= 0 || got > 3*time.Second {
+		t.Errorf("want positive ≤ 3s, got %v", got)
+	}
 
 	past := time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat)
-	require.Zero(t, parseRetryAfter(past), "past timestamps must clamp to zero")
+	if parseRetryAfter(past) != 0 {
+		t.Errorf("parseRetryAfter(past) = %v, want 0", parseRetryAfter(past))
+	}
 }
 
 func TestRateLimitTracker_RecordAndLatest(t *testing.T) {
@@ -81,17 +109,27 @@ func TestRateLimitTracker_RecordAndLatest(t *testing.T) {
 
 	tr := &rateLimitTracker{}
 	_, ok := tr.latest()
-	require.False(t, ok, "fresh tracker has no snapshot")
+	if ok {
+		t.Error("fresh tracker has no snapshot")
+	}
 
 	first := RateLimitSnapshot{Limit: 100, Remaining: 99, Path: "/a", Status: 200, ObservedAt: time.Now()}
 	tr.record(first)
 	got, ok := tr.latest()
-	require.True(t, ok)
-	require.Equal(t, first, got)
+	if !ok {
+		t.Error("ok = false, want true")
+	}
+	if got := got; got != first {
+		t.Errorf("got = %v, want %v", got, first)
+	}
 
 	second := RateLimitSnapshot{Limit: 100, Remaining: 50, Path: "/b", Status: 200, ObservedAt: time.Now()}
 	tr.record(second)
 	got, ok = tr.latest()
-	require.True(t, ok)
-	require.Equal(t, second, got, "latest must reflect the most recent record")
+	if !ok {
+		t.Error("ok = false, want true")
+	}
+	if got := got; got != second {
+		t.Errorf("latest must reflect the most recent record: got %v, want %v", got, second)
+	}
 }

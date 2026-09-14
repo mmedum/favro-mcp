@@ -7,8 +7,6 @@ import (
 	"net"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 // selfClassed is the shape every error in this repository has: one that
@@ -48,7 +46,9 @@ func TestClassify(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.want, Classify(tc.err))
+			if got := Classify(tc.err); got != tc.want {
+				t.Errorf("Classify(tc.err) = %v, want %v", got, tc.want)
+			}
 		})
 	}
 }
@@ -60,10 +60,12 @@ func TestClassify(t *testing.T) {
 func TestClassifyWalksTheChain(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, ClassAmbiguous,
-		Classify(fmt.Errorf("%w (3 matches for %q)", selfClassed{ClassAmbiguous}, "a name")))
-	require.Equal(t, ClassNotFound,
-		Classify(fmt.Errorf("looking up: %w", selfClassed{ClassNotFound})))
+	if got := Classify(fmt.Errorf("%w (3 matches for %q)", selfClassed{ClassAmbiguous}, "a name")); got != ClassAmbiguous {
+		t.Errorf("Classify(fmt.Errorf(\"%%w (3 matches for %%q)\", selfClassed{ClassAmbiguous}, \"a name\")) = %v, want %v", got, ClassAmbiguous)
+	}
+	if got := Classify(fmt.Errorf("looking up: %w", selfClassed{ClassNotFound})); got != ClassNotFound {
+		t.Errorf("Classify(fmt.Errorf(\"looking up: %%w\", selfClassed{ClassNotFound})) = %v, want %v", got, ClassNotFound)
+	}
 }
 
 // TestClassifyNetworkError covers the layer below the typed errors: a
@@ -73,31 +75,47 @@ func TestClassifyNetworkError(t *testing.T) {
 	t.Parallel()
 
 	var netErr net.Error = &net.DNSError{Err: "no such host", IsNotFound: true}
-	require.Equal(t, ClassUnavailable, Classify(fmt.Errorf("get: %w", netErr)))
+	if got := Classify(fmt.Errorf("get: %w", netErr)); got != ClassUnavailable {
+		t.Errorf("Classify(fmt.Errorf(\"get: %%w\", netErr)) = %v, want %v", got, ClassUnavailable)
+	}
 }
 
 func TestError(t *testing.T) {
 	t.Parallel()
 
-	require.NoError(t, Error(nil))
-	require.Equal(t, "[not_found] sentinel", Error(selfClassed{ClassNotFound}).Error())
+	if err := Error(nil); err != nil {
+		t.Fatalf("Error(nil): %v", err)
+	}
+	if got := Error(selfClassed{ClassNotFound}).Error(); got != "[not_found] sentinel" {
+		t.Errorf("Error(selfClassed{ClassNotFound}).Error() = %v, want %v", got, "[not_found] sentinel")
+	}
 
 	// The one class with a machine-readable operand. It goes in the
 	// text because a failed call has no structuredContent to put it in,
 	// and it is asked of the error through an interface so that this
 	// package stays a leaf.
 	got := Error(retryAfter{ClassRateLimited, 90})
-	require.Contains(t, got.Error(), "[rate_limited]")
-	require.Contains(t, got.Error(), "retry_after_seconds=90")
+	if !strings.Contains(got.Error(), "[rate_limited]") {
+		t.Errorf("got.Error() does not contain %q", "[rate_limited]")
+	}
+	if !strings.Contains(got.Error(), "retry_after_seconds=90") {
+		t.Errorf("got.Error() does not contain %q", "retry_after_seconds=90")
+	}
 
 	// An error that reports no wait says nothing it does not know.
 	got = Error(retryAfter{ClassRateLimited, 0})
-	require.Contains(t, got.Error(), "[rate_limited]")
-	require.NotContains(t, got.Error(), "retry_after_seconds")
+	if !strings.Contains(got.Error(), "[rate_limited]") {
+		t.Errorf("got.Error() does not contain %q", "[rate_limited]")
+	}
+	if strings.Contains(got.Error(), "retry_after_seconds") {
+		t.Errorf("got.Error() unexpectedly contains %q", "retry_after_seconds")
+	}
 
 	// The operand is only meaningful on that one class.
 	got = Error(retryAfter{ClassUnavailable, 30})
-	require.Equal(t, "[unavailable] sentinel", got.Error())
+	if got := got.Error(); got != "[unavailable] sentinel" {
+		t.Errorf("got.Error() = %v, want %v", got, "[unavailable] sentinel")
+	}
 }
 
 // TestClassValuesAreWireSafe pins the spelling: a class is part of
@@ -107,9 +125,17 @@ func TestClassValuesAreWireSafe(t *testing.T) {
 
 	for _, c := range Classes {
 		s := string(c)
-		require.NotEmpty(t, s)
-		require.Equal(t, strings.ToLower(s), s, "class %q must be lowercase", c)
-		require.NotContains(t, s, " ", "class %q must not contain a space", c)
-		require.NotContains(t, s, "]", "class %q would break the [class] prefix", c)
+		if len(s) == 0 {
+			t.Fatal("s is empty")
+		}
+		if got := s; got != strings.ToLower(s) {
+			t.Errorf("class %q must be lowercase: got %v, want %v", c, got, strings.ToLower(s))
+		}
+		if strings.Contains(s, " ") {
+			t.Errorf("class %q must not contain a space: %q present", c, " ")
+		}
+		if strings.Contains(s, "]") {
+			t.Errorf("class %q would break the [class] prefix: %q present", c, "]")
+		}
 	}
 }

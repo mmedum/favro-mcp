@@ -2,9 +2,8 @@ package config
 
 import (
 	"log/slog"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestParseLogLevel(t *testing.T) {
@@ -25,8 +24,12 @@ func TestParseLogLevel(t *testing.T) {
 	}
 	for _, tc := range cases {
 		got, recognized := ParseLogLevel(tc.in)
-		require.Equal(t, tc.want, got, "level for %q", tc.in)
-		require.Equal(t, tc.recognized, recognized, "recognized for %q", tc.in)
+		if got := got; got != tc.want {
+			t.Errorf("level for %q: got %v, want %v", tc.in, got, tc.want)
+		}
+		if got := recognized; got != tc.recognized {
+			t.Errorf("recognized for %q: got %v, want %v", tc.in, got, tc.recognized)
+		}
 	}
 }
 
@@ -52,13 +55,18 @@ func TestLoadDestructive(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(EnvEnableDestructive, tc.env)
 			cfg := Load()
-			require.Equal(t, tc.want, cfg.Destructive)
+			if got := cfg.Destructive; got != tc.want {
+				t.Errorf("cfg.Destructive = %v, want %v", got, tc.want)
+			}
 			if tc.wantRawIn {
-				require.Len(t, cfg.Warnings, 1,
-					"an unreadable value must be reported, not silently dropped")
-				require.Contains(t, cfg.Warnings[0], tc.env)
-			} else {
-				require.Empty(t, cfg.Warnings)
+				if len(cfg.Warnings) != 1 {
+					t.Fatalf("an unreadable value must be reported, not silently dropped: got %d", len(cfg.Warnings))
+				}
+				if !strings.Contains(cfg.Warnings[0], tc.env) {
+					t.Errorf("cfg.Warnings[0] does not contain %q", tc.env)
+				}
+			} else if len(cfg.Warnings) != 0 {
+				t.Errorf("cfg.Warnings = %v, want empty", cfg.Warnings)
 			}
 		})
 	}
@@ -68,12 +76,20 @@ func TestLoadSkipValidateAndLevel(t *testing.T) {
 	t.Setenv(EnvSkipValidate, "")
 	t.Setenv(EnvLogLevel, "  ERROR ")
 	cfg := Load()
-	require.False(t, cfg.SkipValidate)
-	require.Equal(t, slog.LevelError, cfg.LogLevel, "the value is trimmed and case-folded")
-	require.Empty(t, cfg.Warnings)
+	if cfg.SkipValidate {
+		t.Error("cfg.SkipValidate = true, want false")
+	}
+	if got := cfg.LogLevel; got != slog.LevelError {
+		t.Errorf("the value is trimmed and case-folded: got %v, want %v", got, slog.LevelError)
+	}
+	if len(cfg.Warnings) != 0 {
+		t.Errorf("cfg.Warnings = %v, want empty", cfg.Warnings)
+	}
 
 	t.Setenv(EnvSkipValidate, "1")
-	require.True(t, Load().SkipValidate, "any non-empty value skips validation")
+	if !Load().SkipValidate {
+		t.Error("any non-empty value skips validation")
+	}
 }
 
 // TestWarningsNameTheVariable is what makes an unreadable setting
@@ -84,12 +100,24 @@ func TestWarningsNameTheVariable(t *testing.T) {
 	t.Setenv(EnvEnableDestructive, "perhaps")
 
 	warnings := Load().Warnings
-	require.Len(t, warnings, 2)
+	if len(warnings) != 2 {
+		t.Fatalf("len(warnings) = %d, want 2", len(warnings))
+	}
 
 	joined := warnings[0] + "\n" + warnings[1]
-	require.Contains(t, joined, EnvLogLevel)
-	require.Contains(t, joined, "loud")
-	require.Contains(t, joined, EnvEnableDestructive)
-	require.Contains(t, joined, "perhaps")
-	require.Contains(t, joined, "stay unregistered", "the warning has to say what the ignored value cost")
+	if !strings.Contains(joined, EnvLogLevel) {
+		t.Errorf("joined does not contain %q", EnvLogLevel)
+	}
+	if !strings.Contains(joined, "loud") {
+		t.Errorf("joined does not contain %q", "loud")
+	}
+	if !strings.Contains(joined, EnvEnableDestructive) {
+		t.Errorf("joined does not contain %q", EnvEnableDestructive)
+	}
+	if !strings.Contains(joined, "perhaps") {
+		t.Errorf("joined does not contain %q", "perhaps")
+	}
+	if !strings.Contains(joined, "stay unregistered") {
+		t.Errorf("the warning has to say what the ignored value cost: %q missing", "stay unregistered")
+	}
 }

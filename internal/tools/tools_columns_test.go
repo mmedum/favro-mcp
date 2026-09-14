@@ -3,10 +3,10 @@ package tools
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -34,15 +34,29 @@ func TestMCP_ListColumns_HappyPath(t *testing.T) {
 			"widget_common_id": "w-1",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[listOutput[favro.Column]](t, res)
-	require.Len(t, out.Items, 1)
-	require.Equal(t, "Doing", out.Items[0].Name)
-	require.Equal(t, 1, out.Items[0].Position)
-	require.NotNil(t, out.NextPage)
-	require.Equal(t, 2, *out.NextPage)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := out.Items[0].Name; got != "Doing" {
+		t.Errorf("out.Items[0].Name = %v, want %v", got, "Doing")
+	}
+	if got := out.Items[0].Position; got != 1 {
+		t.Errorf("out.Items[0].Position = %v, want %v", got, 1)
+	}
+	if out.NextPage == nil {
+		t.Fatal("out.NextPage is nil")
+	}
+	if got := *out.NextPage; got != 2 {
+		t.Errorf("*out.NextPage = %v, want %v", got, 2)
+	}
 }
 
 func TestMCP_ListColumns_MissingWidget_ReturnsToolError(t *testing.T) {
@@ -79,16 +93,21 @@ func TestMCP_ListColumns_SortsByPosition(t *testing.T) {
 			"widget_common_id": "w-1",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[listOutput[favro.Column]](t, res)
 	names := make([]string, len(out.Items))
 	for i, it := range out.Items {
 		names[i] = it.Name
 	}
-	require.Equal(t, []string{"Backlog", "Doing", "Review", "Done"}, names,
-		"items must be sorted by position ascending, not by Favro's default columnId order")
+	if got := names; !reflect.DeepEqual(got, ([]string{"Backlog", "Doing", "Review", "Done"})) {
+		t.Errorf("items must be sorted by position ascending, not by Favro's default columnId order: got %v, want %v", got, []string{"Backlog", "Doing", "Review", "Done"})
+	}
 }
 
 func TestMCP_ListColumns_FiltersByWidget(t *testing.T) {
@@ -108,9 +127,12 @@ func TestMCP_ListColumns_FiltersByWidget(t *testing.T) {
 			"widget_common_id": "w-xyz",
 		},
 	})
-	require.NoError(t, err)
-	require.Equal(t, "w-xyz", sawWidget,
-		"widget_common_id input must reach Favro as ?widgetCommonId=")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := sawWidget; got != "w-xyz" {
+		t.Errorf("widget_common_id input must reach Favro as ?widgetCommonId=: got %v, want %v", got, "w-xyz")
+	}
 }
 
 func TestMCP_GetColumn_HappyPath(t *testing.T) {
@@ -136,13 +158,23 @@ func TestMCP_GetColumn_HappyPath(t *testing.T) {
 			"column_id": "col-zzz",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[favro.Column](t, res)
-	require.Equal(t, "col-zzz", out.ColumnID)
-	require.Equal(t, "Done", out.Name)
-	require.Equal(t, 4, out.Position)
+	if got := out.ColumnID; got != "col-zzz" {
+		t.Errorf("out.ColumnID = %v, want %v", got, "col-zzz")
+	}
+	if got := out.Name; got != "Done" {
+		t.Errorf("out.Name = %v, want %v", got, "Done")
+	}
+	if got := out.Position; got != 4 {
+		t.Errorf("out.Position = %v, want %v", got, 4)
+	}
 }
 
 func TestMCP_GetColumn_MissingID_ReturnsToolError(t *testing.T) {

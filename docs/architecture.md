@@ -2,7 +2,7 @@
 
 **Status, 2026-09-13.** Released: v1.1.2. The server's own feature phases
 (0–9) are complete and shipped. Of the alignment programme in §16, phases
-**A0, A1, A2 and A3 are done and unreleased**; A4–A8 are not started. Where a
+**A0–A4 are done and unreleased**; A5–A8 are not started. Where a
 sentence below describes something that does not exist, it says so and
 names the phase that builds it.
 
@@ -245,10 +245,12 @@ what closed the hole §12 describes. The one shell file left is
 `.githooks/pre-commit`: three lines of git plumbing that exec a Go
 program.
 
-Dependencies, all pinned: `modelcontextprotocol/go-sdk` v1.7.0 (with
-`google/jsonschema-go`), `zalando/go-keyring` v0.2.8, `golang.org/x/sync`,
-`golang.org/x/term`. `stretchr/testify` and `pmezard/go-difflib` are test
-dependencies the siblings do not have; A4 removes them.
+Dependencies, all pinned, and after A4 the whole direct list:
+`modelcontextprotocol/go-sdk` v1.7.0 (with `google/jsonschema-go`),
+`zalando/go-keyring` v0.2.8, `golang.org/x/sync`, `golang.org/x/term`.
+`pmezard/go-difflib` is gone entirely; `stretchr/testify` survives in
+`go.mod` only as another module's indirect requirement, and depguard
+denies importing either.
 
 Toolchain: Go 1.27 (`go.mod` is the single source of truth — every CI job
 resolves via `go-version-file: go.mod`, and there is no N-1 matrix entry).
@@ -730,8 +732,33 @@ phase An" before the next begins.
   depguard holds the direction, with each rule checked by breaking it.
   `internal/render` became a leaf on the way, which let the client's
   typed errors name their own class and closed the gap A2 recorded.
-- **A4 — stdlib tests.** testify and go-difflib removed, package by
-  package, floor unchanged.
+- **A4 — stdlib tests. Done.** testify and go-difflib gone; 2,173
+  assertions rewritten to `if got != want { t.Errorf(…) }`, package by
+  package, the 80% floor unchanged.
+
+  The conversion was scripted, and the script edits by byte offset
+  rather than reprinting the AST, so every comment and blank line
+  survived and the diff shows only assertions. Three things it could not
+  decide were left to the compiler, which is a complete checker for
+  each: `require.Equal` on a slice does not compile as `!=` and became
+  `reflect.DeepEqual`; `require.Contains` on a slice or map does not
+  compile as `strings.Contains`; and a composite literal in an `if`
+  header does not parse without parentheses. Forty-seven assertions the
+  script declined are hand-written, most of them `JSONEq`, which is now
+  one helper in `internal/favroapi` that compares decoded values.
+
+  **go-difflib was not only a test dependency.** It generated the
+  `unified_diff` every description-editor tool returns, so replacing it
+  changed output a model reads. `internal/service/diff.go` is a Myers
+  diff with the common prefix and suffix trimmed first — which makes
+  append and prepend, two of the three callers, almost free — and
+  `TestUnifiedDiffMatchesGNUDiff` holds it to `diff -u` itself rather
+  than to a golden somebody typed. That comparison is what showed
+  go-difflib had been wrong in two ways for the life of this server:
+  it appended a synthetic empty line, which printed as a stray context
+  line at the end of a hunk, and it dropped the
+  `\ No newline at end of file` marker, which is the one thing a diff
+  cannot recover from the lines alone.
 - **A5 — API compliance.** `gates api-diff` fetches favro.com/developer
   and writes `testdata/api-surface.json`; `testdata/api-coverage.tsv`
   carries one verdict per endpoint by hand; `api-coverage` and
@@ -846,6 +873,10 @@ split the wire types out): it logs `req.URL.RawQuery`, and Favro's query strings
 | 2026-09-13 | The query string was the whole of the URL leak | Ran `/security-review` over A2's diff. It reported no exploitable finding, and noted below its own bar that `req.URL.Path` was still logged whole | **Verified here — the claim was false.** Every get-one endpoint is `/cards/{cardId}`, so the path carried the same ids the query did. `TestDebugLogNeverCarriesTheSubject` had passed throughout, because it drove a list endpoint where the ids are all in the query — the test proved the rule for one call site and the sentence claimed it for all of them. Fixed, and the test drives a get-one call now |
 | 2026-09-13 | A unit test against `httptest` exercises the path the server really sends | The first `redactPathIDs` rejected any digit in a segment. Unit tests passed; the live check printed `path=/api/{id}/cards/{id}` | **Verified here — the claim was false.** `httptest`'s base URL has no version segment, so the test asserted against a shape production never produces and `v1` was being redacted as an identifier. The rule takes lowercase alphanumerics now, and the test has a row for the real path. Nothing leaked — this one cost only the usefulness of the log — but it is the same blind spot as the row above, found the same day, in the fix for it |
 | 2026-09-13 | A package split is a mechanical change | Split `internal/favro` into wire types and a client with a line-based script first. It detached every doc comment from its declaration and misclassified declarations | **Verified here — the claim was false, at the first attempt.** Rewritten against `go/ast`, where a declaration carries its own `Doc`, and the classification became one rule — a `*Client` receiver — with five named exceptions rather than a regexp. The lesson is the standard's own: the tool that understands the language is the one to parse it with |
+| 2026-09-14 | go-difflib is a test dependency | §5 listed it beside testify as "test dependencies the siblings do not have". Read the callers before removing it: `unifiedDiff` is called by `NewEditorResult`, which every description-editor tool returns | **Verified here — the claim was false.** It generated the `unified_diff` a model reads, so removing it changed tool output rather than test code. Replaced with a Myers diff and held to `diff -u` by test |
+| 2026-09-14 | go-difflib produces a unified diff | Compared the replacement against `diff -u` on fourteen shapes, including an empty side and a body with no trailing newline | **Verified here — the claim was false, for the life of this server.** go-difflib's `SplitLines` appends a synthetic empty line, which printed as a stray context line at the end of the last hunk, and it omits `\ No newline at end of file` entirely. Thirty-three captured goldens showed 22 differences, every one of them difflib's. The replacement is byte-identical to `diff -u` |
+| 2026-09-14 | The new diff's search cap does what its comment says | Reviewed the Myers implementation against an independent DP LCS oracle and against `diff -u`, on ~676,000 generated cases | **Verified here — the implementation was right and the cap was wrong.** The comment said the cap fires when two bodies have almost nothing in common; the code tested `n+m`, the *size* of the trimmed middle. Two 3,000-line bodies differing by one line at each end — edit distance four — exceeded it and fell to the wholesale fallback: 75 KB of diff deleting every line and re-inserting it, handed to a model. It caps on edit distance now, which also bounds the trace's memory, and the fallback is reachable rather than dead. Prefix/suffix trimming hides this for append and prepend, so only an edit at both ends reaches it |
+| 2026-09-14 | A mechanical test conversion preserves what the tests assert | Converted 2,173 assertions by script, then mutated one behaviour per package and checked the tests still failed | **Verified here, with one real defect found.** Binding the expression under test to a variable named `got` shadowed an outer `got` in one test, turning `require.Equal(t, got, got2)` into `reflect.DeepEqual(got, got)` — an assertion that cannot fail. gocritic's `dupArg` caught it; a search for the same shape across every converted file found no others. The mutation checks are what make "the tests still pass" mean anything after a change of that size |
 | 2026-09-14 | A scripted rename touches only identifiers | A3 qualified references across the split with a word-boundary regexp. The security review, diffing each moved file against its old copy, found `req.Header.Set("favro.User-Agent", ua)` | **Verified here — the claim was false.** `User` is a wire type, and the regexp matched it inside a string literal, so every request went out with Go's default agent and a junk header. No test asserted the header, so the suite stayed green through the whole refactor. Fixed, and every string literal in the module was then parsed with `go/ast` and checked for a package qualifier — that one was the only real hit in ten |
 | 2026-09-13 | `unverified` earns a place in the error vocabulary | §17's instruction: decide by writing the message. Wrote it — `[unverified] Favro returned 200 and the write was not read back` — and followed what a caller does with it | **Verified here — rejected.** An error class renders with `IsError` set, which says the call failed; a caller that retries on that posts the comment twice. It also carries nothing per call, because this server never reads back, so the flag is constant per tool — and a constant per tool is a tool description, which is where it already is. §6.2 records the reasoning |
 | 2026-09-13 | Twelve tools are destructive | Counted the tools annotated `DestructiveHint: true` while building the registration gate | **Verified here — the claim was false; there are thirteen.** §8 had carried the hand-typed count since it was written. The gate now reads the annotation at registration and the test derives the same set from the live surface, so neither a count nor a list of names is written down anywhere |

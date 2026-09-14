@@ -2,11 +2,11 @@ package tools
 
 import (
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -23,12 +23,20 @@ func TestMCP_ListTasks_HappyPath(t *testing.T) {
 		Name:      listTasksToolName,
 		Arguments: map[string]any{"card_common_id": "cc-1"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
 
 	out := decodeStructured[listOutput[favro.Task]](t, res)
-	require.Len(t, out.Items, 1)
-	require.Equal(t, "do it", out.Items[0].Name)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := out.Items[0].Name; got != "do it" {
+		t.Errorf("out.Items[0].Name = %v, want %v", got, "do it")
+	}
 }
 
 func TestMCP_CreateTasklist_SeedsTasksInOneRequest(t *testing.T) {
@@ -49,14 +57,24 @@ func TestMCP_CreateTasklist_SeedsTasksInOneRequest(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
 
-	require.Contains(t, body, `"tasks":[{"name":"first"},{"name":"second","completed":true}]`)
+	if !strings.Contains(body, `"tasks":[{"name":"first"},{"name":"second","completed":true}]`) {
+		t.Errorf("body does not contain %q", `"tasks":[{"name":"first"},{"name":"second","completed":true}]`)
+	}
 
 	out := decodeStructured[writeOutput[favro.Tasklist]](t, res)
-	require.False(t, out.DryRun)
-	require.Equal(t, "tl-new", out.Result.TaskListID)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if got := out.Result.TaskListID; got != "tl-new" {
+		t.Errorf("out.Result.TaskListID = %v, want %v", got, "tl-new")
+	}
 }
 
 // Un-ticking an item must reach the wire as completed:false rather
@@ -75,9 +93,15 @@ func TestMCP_UpdateTask_UnTick(t *testing.T) {
 			"completed": false,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
-	require.Contains(t, body, `"completed":false`)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
+	if !strings.Contains(body, `"completed":false`) {
+		t.Errorf("body does not contain %q", `"completed":false`)
+	}
 }
 
 func TestMCP_ChecklistWrites_DryRun_NeverDispatch(t *testing.T) {
@@ -101,9 +125,15 @@ func TestMCP_ChecklistWrites_DryRun_NeverDispatch(t *testing.T) {
 		{deleteTasklistToolName, map[string]any{"task_list_id": "tl-1", "dry_run": true}},
 	} {
 		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tc.tool, Arguments: tc.args})
-		require.NoError(t, err)
-		require.False(t, res.IsError, "%s: %s", tc.tool, serializedResponseString(t, res))
+		if err := err; err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		if res.IsError {
+			t.Errorf("%s: %s", tc.tool, serializedResponseString(t, res))
+		}
 	}
 
-	require.Zero(t, calls.Load(), "dry-run must never reach Favro")
+	if calls.Load() != 0 {
+		t.Errorf("calls.Load() = %v, want 0", calls.Load())
+	}
 }

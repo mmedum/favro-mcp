@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -34,14 +33,26 @@ func TestMCP_ListComments_HappyPath(t *testing.T) {
 			"card_common_id": "card-c-1",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[listOutput[favro.Comment]](t, res)
-	require.Len(t, out.Items, 1)
-	require.Equal(t, "hello", out.Items[0].Body)
-	require.NotNil(t, out.NextPage)
-	require.Equal(t, 2, *out.NextPage)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := out.Items[0].Body; got != "hello" {
+		t.Errorf("out.Items[0].Body = %v, want %v", got, "hello")
+	}
+	if out.NextPage == nil {
+		t.Fatal("out.NextPage is nil")
+	}
+	if got := *out.NextPage; got != 2 {
+		t.Errorf("*out.NextPage = %v, want %v", got, 2)
+	}
 }
 
 func TestMCP_ListComments_FilterForwarded(t *testing.T) {
@@ -61,9 +72,12 @@ func TestMCP_ListComments_FilterForwarded(t *testing.T) {
 			"card_common_id": "card-c-xyz",
 		},
 	})
-	require.NoError(t, err)
-	require.Equal(t, "card-c-xyz", sawCard,
-		"card_common_id input must reach Favro as ?cardCommonId=")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := sawCard; got != "card-c-xyz" {
+		t.Errorf("card_common_id input must reach Favro as ?cardCommonId=: got %v, want %v", got, "card-c-xyz")
+	}
 }
 
 func TestMCP_ListComments_MissingCard_ReturnsToolError(t *testing.T) {
@@ -94,12 +108,20 @@ func TestMCP_GetComment_HappyPath(t *testing.T) {
 			"comment_id": "cm-zzz",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[favro.Comment](t, res)
-	require.Equal(t, "cm-zzz", out.CommentID)
-	require.Equal(t, "looked up", out.Body)
+	if got := out.CommentID; got != "cm-zzz" {
+		t.Errorf("out.CommentID = %v, want %v", got, "cm-zzz")
+	}
+	if got := out.Body; got != "looked up" {
+		t.Errorf("out.Body = %v, want %v", got, "looked up")
+	}
 }
 
 func TestMCP_GetComment_MissingID_ReturnsToolError(t *testing.T) {

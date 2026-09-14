@@ -7,7 +7,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"
 	"golang.org/x/term"
 
@@ -68,7 +67,9 @@ func isolateCredentials(t *testing.T) {
 // public path `favro-mcp auth login` uses.
 func saveKeyringToken(t *testing.T, tok auth.Token) {
 	t.Helper()
-	require.NoError(t, auth.KeyringSource{}.Save(context.Background(), tok))
+	if err := (auth.KeyringSource{}.Save(context.Background(), tok)); err != nil {
+		t.Fatalf("auth.KeyringSource{}.Save(context.Background(), tok): %v", err)
+	}
 }
 
 // restoreDefaultLogger puts slog's process-wide default back when the

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -30,10 +29,14 @@ func TestMCP_CreateColumn_HappyPath(t *testing.T) {
 			"name":             "Done",
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Column]](t, res)
-	require.Equal(t, "col-new", out.Result.ColumnID)
+	if got := out.Result.ColumnID; got != "col-new" {
+		t.Errorf("out.Result.ColumnID = %v, want %v", got, "col-new")
+	}
 }
 
 func TestMCP_CreateColumn_DryRun(t *testing.T) {
@@ -53,11 +56,17 @@ func TestMCP_CreateColumn_DryRun(t *testing.T) {
 			"dry_run":          true,
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Column]](t, res)
-	require.True(t, out.DryRun)
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_CreateColumn_MissingFields(t *testing.T) {
@@ -94,10 +103,14 @@ func TestMCP_UpdateColumn_HappyPath(t *testing.T) {
 		Name:      updateColumnToolName,
 		Arguments: map[string]any{"column_id": "col-1", "name": "renamed"},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Column]](t, res)
-	require.Equal(t, "renamed", out.Result.Name)
+	if got := out.Result.Name; got != "renamed" {
+		t.Errorf("out.Result.Name = %v, want %v", got, "renamed")
+	}
 }
 
 func TestMCP_UpdateColumn_MissingColumnID(t *testing.T) {
@@ -120,10 +133,14 @@ func TestMCP_DeleteColumn_HappyPath(t *testing.T) {
 		Name:      deleteColumnToolName,
 		Arguments: map[string]any{"column_id": "col-1"},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[struct{}]](t, res)
-	require.False(t, out.DryRun)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
 }
 
 func TestMCP_DeleteColumn_MissingColumnID(t *testing.T) {

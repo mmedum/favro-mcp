@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -32,15 +31,29 @@ func TestMCP_ListTags_HappyPath(t *testing.T) {
 		Name:      listTagsToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[listOutput[favro.Tag]](t, res)
-	require.Len(t, out.Items, 1)
-	require.Equal(t, "blocker", out.Items[0].Name)
-	require.Equal(t, "red", out.Items[0].Color)
-	require.NotNil(t, out.NextPage)
-	require.Equal(t, 2, *out.NextPage)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := out.Items[0].Name; got != "blocker" {
+		t.Errorf("out.Items[0].Name = %v, want %v", got, "blocker")
+	}
+	if got := out.Items[0].Color; got != "red" {
+		t.Errorf("out.Items[0].Color = %v, want %v", got, "red")
+	}
+	if out.NextPage == nil {
+		t.Fatal("out.NextPage is nil")
+	}
+	if got := *out.NextPage; got != 2 {
+		t.Errorf("*out.NextPage = %v, want %v", got, 2)
+	}
 }
 
 func TestMCP_GetTag_HappyPath(t *testing.T) {
@@ -65,13 +78,23 @@ func TestMCP_GetTag_HappyPath(t *testing.T) {
 			"tag_id": "t-zzz",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[favro.Tag](t, res)
-	require.Equal(t, "t-zzz", out.TagID)
-	require.Equal(t, "looked up", out.Name)
-	require.Equal(t, "lime", out.Color)
+	if got := out.TagID; got != "t-zzz" {
+		t.Errorf("out.TagID = %v, want %v", got, "t-zzz")
+	}
+	if got := out.Name; got != "looked up" {
+		t.Errorf("out.Name = %v, want %v", got, "looked up")
+	}
+	if got := out.Color; got != "lime" {
+		t.Errorf("out.Color = %v, want %v", got, "lime")
+	}
 }
 
 func TestMCP_GetTag_MissingID_ReturnsToolError(t *testing.T) {

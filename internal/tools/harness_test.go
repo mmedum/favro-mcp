@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
 	"github.com/mmedum/favro-mcp/internal/favroapi"
@@ -53,11 +53,18 @@ func assertMissingRequiredFieldFails(t *testing.T, toolName, fieldName string) {
 		Name:      toolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError, "missing %s must surface as a tool error", fieldName)
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), fieldName,
-		"the LLM-visible error must name the missing field")
-	require.Equal(t, 0, calls, "missing %s must short-circuit before any Favro call", fieldName)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Errorf("missing %s must surface as a tool error", fieldName)
+	}
+	if !strings.Contains(strings.ToLower(serializedResponseString(t, res)), fieldName) {
+		t.Errorf("the LLM-visible error must name the missing field: %q missing", fieldName)
+	}
+	if got := calls; got != 0 {
+		t.Errorf("missing %s must short-circuit before any Favro call: got %v, want %v", fieldName, got, 0)
+	}
 }
 
 // favroFixture wires a *favroapi.Client to an httptest.Server backed by
@@ -137,7 +144,9 @@ func connectInMemoryOpts(t *testing.T, favroClient *favroapi.Client, opts Option
 	}()
 
 	cs, err := client.Connect(ctx, clientT, nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = cs.Close()
 		<-done
@@ -151,13 +160,15 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 	cs := connectInMemory(t)
 
 	res, err := cs.ListTools(t.Context(), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	var names []string
 	for _, tool := range res.Tools {
 		names = append(names, tool.Name)
 	}
-	require.Subset(t, names, []string{
+	for _, want := range []string{
 		pingToolName,
 		rateLimitToolName,
 		listOrgsToolName,
@@ -241,7 +252,11 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 		deleteDependencyToolName,
 		deleteAllDependenciesToolName,
 		listCardActivitiesToolName,
-	}, "tools/list must advertise every registered tool; got %v", names)
+	} {
+		if !slices.Contains(names, want) {
+			t.Errorf("tools/list must advertise every registered tool; %s is missing", want)
+		}
+	}
 }
 
 // TestMCP_ToolsList_NoUnlistedTools is the other half of the subset
@@ -253,11 +268,13 @@ func TestMCP_ToolsList_NoUnlistedTools(t *testing.T) {
 	cs := connectInMemory(t)
 
 	res, err := cs.ListTools(t.Context(), nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
-	require.Len(t, res.Tools, registeredToolCount,
-		"a tool was registered or removed without updating registeredToolCount "+
-			"and the tools/list coverage assertion above")
+	if len(res.Tools) != registeredToolCount {
+		t.Fatalf("a tool was registered or removed without updating registeredToolCount \" +\n\t\"and the tools/list coverage assertion above: got %d", len(res.Tools))
+	}
 }
 
 // registeredToolCount is the number of tools New() registers. Bump it
@@ -273,14 +290,26 @@ func TestMCP_FavroPing_ReturnsExpectedFields(t *testing.T) {
 		Name:      pingToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "favro_ping must not return as a tool error")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("favro_ping must not return as a tool error")
+	}
 
 	out := decodeStructured[PingOutput](t, res)
-	require.Equal(t, ServerName, out.Server)
-	require.Equal(t, "v0.1.0-test", out.Version)
-	require.Equal(t, favroapitest.Token().OrganizationID, out.OrganizationID)
-	require.Equal(t, "env", out.CredentialSource)
+	if got := out.Server; got != ServerName {
+		t.Errorf("out.Server = %v, want %v", got, ServerName)
+	}
+	if got := out.Version; got != "v0.1.0-test" {
+		t.Errorf("out.Version = %v, want %v", got, "v0.1.0-test")
+	}
+	if got := out.OrganizationID; got != favroapitest.Token().OrganizationID {
+		t.Errorf("out.OrganizationID = %v, want %v", got, favroapitest.Token().OrganizationID)
+	}
+	if got := out.CredentialSource; got != "env" {
+		t.Errorf("out.CredentialSource = %v, want %v", got, "env")
+	}
 }
 
 // TestMCP_FavroPing_OutputContainsNoSecrets is the safety net for the
@@ -296,17 +325,22 @@ func TestMCP_FavroPing_OutputContainsNoSecrets(t *testing.T) {
 		Name:      pingToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	tok := fixtureToken()
 	full := serializedResponseString(t, res)
 
-	require.NotContains(t, full, tok.Email,
-		"ping response leaked email: %q", full)
-	require.NotContains(t, full, tok.APIToken,
-		"ping response leaked API token: %q", full)
-	require.NotContains(t, strings.ToLower(full), "authorization",
-		"ping response includes the word 'authorization', which suggests a header leaked: %q", full)
+	if strings.Contains(full, tok.Email) {
+		t.Errorf("ping response leaked email: %q: %q present", full, tok.Email)
+	}
+	if strings.Contains(full, tok.APIToken) {
+		t.Errorf("ping response leaked API token: %q: %q present", full, tok.APIToken)
+	}
+	if strings.Contains(strings.ToLower(full), "authorization") {
+		t.Errorf("ping response includes the word 'authorization', which suggests a header leaked: %q: %q present", full, "authorization")
+	}
 }
 
 func TestMCP_RateLimitStatus_NoObservationsYet(t *testing.T) {
@@ -318,12 +352,20 @@ func TestMCP_RateLimitStatus_NoObservationsYet(t *testing.T) {
 		Name:      rateLimitToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[RateLimitOutput](t, res)
-	require.False(t, out.HaveSeen)
-	require.Equal(t, -1, out.Remaining, "Remaining must distinguish 'not seen' from 'zero'")
+	if out.HaveSeen {
+		t.Error("out.HaveSeen = true, want false")
+	}
+	if got := out.Remaining; got != -1 {
+		t.Errorf("Remaining must distinguish 'not seen' from 'zero': got %v, want %v", got, -1)
+	}
 }
 
 func TestMCP_RateLimitStatus_AfterObservation(t *testing.T) {
@@ -338,7 +380,9 @@ func TestMCP_RateLimitStatus_AfterObservation(t *testing.T) {
 
 	// Drive a single request so the client records a snapshot.
 	resp, err := favroClient.Do(context.Background(), http.MethodGet, "/anything", nil, nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	t.Cleanup(func() {
 		if resp != nil {
 			_ = resp.Body.Close()
@@ -350,28 +394,52 @@ func TestMCP_RateLimitStatus_AfterObservation(t *testing.T) {
 		Name:      rateLimitToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, callRes.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if callRes.IsError {
+		t.Error("callRes.IsError = true, want false")
+	}
 
 	out := decodeStructured[RateLimitOutput](t, callRes)
-	require.True(t, out.HaveSeen)
-	require.Equal(t, 1000, out.Limit)
-	require.Equal(t, 987, out.Remaining)
-	require.Equal(t, "/anything", out.LastPath)
-	require.Equal(t, http.StatusOK, out.LastStatus)
-	require.NotZero(t, out.LastObservedUnix)
-	require.NotEmpty(t, out.LastObservedAgo)
+	if !out.HaveSeen {
+		t.Error("out.HaveSeen = false, want true")
+	}
+	if got := out.Limit; got != 1000 {
+		t.Errorf("out.Limit = %v, want %v", got, 1000)
+	}
+	if got := out.Remaining; got != 987 {
+		t.Errorf("out.Remaining = %v, want %v", got, 987)
+	}
+	if got := out.LastPath; got != "/anything" {
+		t.Errorf("out.LastPath = %v, want %v", got, "/anything")
+	}
+	if got := out.LastStatus; got != http.StatusOK {
+		t.Errorf("out.LastStatus = %v, want %v", got, http.StatusOK)
+	}
+	if out.LastObservedUnix == 0 {
+		t.Error("out.LastObservedUnix = 0, want non-zero")
+	}
+	if len(out.LastObservedAgo) == 0 {
+		t.Fatal("out.LastObservedAgo is empty")
+	}
 }
 
 // decodeStructured pulls the typed Output out of a CallToolResult.
 // The SDK serializes structured output into res.StructuredContent.
 func decodeStructured[T any](t *testing.T, res *mcp.CallToolResult) T {
 	t.Helper()
-	require.NotNil(t, res.StructuredContent, "expected structured output, got nil")
+	if res.StructuredContent == nil {
+		t.Fatal("expected structured output, got nil")
+	}
 	raw, err := json.Marshal(res.StructuredContent)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	var out T
-	require.NoError(t, json.Unmarshal(raw, &out))
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("json.Unmarshal(raw, &out): %v", err)
+	}
 	return out
 }
 
@@ -381,6 +449,8 @@ func decodeStructured[T any](t *testing.T, res *mcp.CallToolResult) T {
 func serializedResponseString(t *testing.T, res *mcp.CallToolResult) string {
 	t.Helper()
 	raw, err := json.Marshal(res)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	return string(raw)
 }

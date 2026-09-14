@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -34,13 +33,23 @@ func TestMCP_AddCommentToCard_ByCardCommonID(t *testing.T) {
 			"comment":        "hi",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[addCommentToCardResult]](t, res)
-	require.NotNil(t, out.Result.Comment)
-	require.Equal(t, "cm-1", out.Result.Comment.CommentID)
-	require.False(t, out.Result.Ambiguous)
+	if out.Result.Comment == nil {
+		t.Fatal("out.Result.Comment is nil")
+	}
+	if got := out.Result.Comment.CommentID; got != "cm-1" {
+		t.Errorf("out.Result.Comment.CommentID = %v, want %v", got, "cm-1")
+	}
+	if out.Result.Ambiguous {
+		t.Error("out.Result.Ambiguous = true, want false")
+	}
 }
 
 func TestMCP_AddCommentToCard_ByCardID_ResolvesCommonID(t *testing.T) {
@@ -75,8 +84,12 @@ func TestMCP_AddCommentToCard_ByCardID_ResolvesCommonID(t *testing.T) {
 			"comment": "x",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 }
 
 func TestMCP_AddCommentToCard_NoIdentity(t *testing.T) {
@@ -91,8 +104,12 @@ func TestMCP_AddCommentToCard_NoIdentity(t *testing.T) {
 			"comment": "no identity",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
 }
 
 func TestMCP_AddCommentToCard_SearchQuery_RequiresScope(t *testing.T) {
@@ -108,8 +125,12 @@ func TestMCP_AddCommentToCard_SearchQuery_RequiresScope(t *testing.T) {
 			"comment":      "x",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
 }
 
 func TestMCP_AddCommentToCard_SearchQuery_NoMatch(t *testing.T) {
@@ -130,8 +151,12 @@ func TestMCP_AddCommentToCard_SearchQuery_NoMatch(t *testing.T) {
 			"comment":          "x",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
 }
 
 // TestMCP_AddCommentToCard_SearchQuery_Ambiguous pins the
@@ -167,14 +192,26 @@ func TestMCP_AddCommentToCard_SearchQuery_Ambiguous(t *testing.T) {
 			"comment":          "x",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[addCommentToCardResult]](t, res)
-	require.True(t, out.Result.Ambiguous)
-	require.Len(t, out.Result.Candidates, 2)
-	require.Nil(t, out.Result.Comment)
-	require.EqualValues(t, 0, posts.Load(), "ambiguous match must NOT post a comment")
+	if !out.Result.Ambiguous {
+		t.Error("out.Result.Ambiguous = false, want true")
+	}
+	if len(out.Result.Candidates) != 2 {
+		t.Fatalf("len(out.Result.Candidates) = %d, want 2", len(out.Result.Candidates))
+	}
+	if out.Result.Comment != nil {
+		t.Errorf("out.Result.Comment = %v, want nil", out.Result.Comment)
+	}
+	if got := posts.Load(); got != 0 {
+		t.Errorf("ambiguous match must NOT post a comment: got %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_AddCommentToCard_MissingComment(t *testing.T) {
@@ -187,6 +224,8 @@ func TestMCP_AddCommentToCard_MissingComment(t *testing.T) {
 func decodeBody[T any](t *testing.T, r *http.Request) T {
 	t.Helper()
 	var out T
-	require.NoError(t, json.NewDecoder(r.Body).Decode(&out))
+	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
+		t.Fatalf("json.NewDecoder(r.Body).Decode(&out): %v", err)
+	}
 	return out
 }

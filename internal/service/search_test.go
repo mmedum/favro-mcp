@@ -3,15 +3,15 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -53,7 +53,9 @@ func TestStripMarkdown_CornerCases(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := stripMarkdown(tc.in)
-			require.Equal(t, tc.want, got)
+			if got := got; got != tc.want {
+				t.Errorf("got = %v, want %v", got, tc.want)
+			}
 		})
 	}
 }
@@ -82,10 +84,14 @@ func TestTokenize(t *testing.T) {
 			t.Parallel()
 			got := tokenize(tc.in)
 			if len(tc.want) == 0 {
-				require.Empty(t, got)
+				if len(got) != 0 {
+					t.Errorf("got = %v, want empty", got)
+				}
 				return
 			}
-			require.Equal(t, tc.want, got)
+			if got := got; !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("got = %v, want %v", got, tc.want)
+			}
 		})
 	}
 }
@@ -146,8 +152,12 @@ func TestScoreCard_ScoreScale(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := scoreCardLower(tc.cardName, tc.body, q, tokens)
-			require.GreaterOrEqual(t, got, tc.wantRange[0])
-			require.LessOrEqual(t, got, tc.wantRange[1])
+			if got < tc.wantRange[0] {
+				t.Errorf("got = %v, want at least %v", got, tc.wantRange[0])
+			}
+			if got > tc.wantRange[1] {
+				t.Errorf("got = %v, want at most %v", got, tc.wantRange[1])
+			}
 		})
 	}
 }
@@ -162,8 +172,9 @@ func TestScoreCard_NameBeatsBodyOnly(t *testing.T) {
 	bodyOnly := scoreCardLower("Lookup", "talks about printing", q, tokens)
 
 	// Name match (1.0+0.6) must outscore body-only match (0.5+0.5).
-	require.Greater(t, nameOnly, bodyOnly,
-		"name-match score must beat body-only score so search results respect title authority")
+	if nameOnly <= bodyOnly {
+		t.Errorf("name-match score must beat body-only score so search results respect title authority: got %v, want greater than %v", nameOnly, bodyOnly)
+	}
 }
 
 func TestScoreCard_DistinctTokenHits(t *testing.T) {
@@ -173,8 +184,9 @@ func TestScoreCard_DistinctTokenHits(t *testing.T) {
 	tokens := tokenize("printing")
 	a := scoreCardLower("Lookup", "printing once", "printing", tokens)
 	b := scoreCardLower("Lookup", "printing twice printing thrice printing", "printing", tokens)
-	require.InDelta(t, a, b, 0.0001,
-		"repeated token occurrences must not inflate the score (distinct hits only)")
+	if math.Abs(b-a) > 0.0001 {
+		t.Errorf("b = %v, want %v within 0.0001", b, a)
+	}
 }
 
 func TestScoreCard_MultiTokenPartialOverlap(t *testing.T) {
@@ -182,12 +194,16 @@ func TestScoreCard_MultiTokenPartialOverlap(t *testing.T) {
 
 	q := "printing pass workflow"
 	tokens := tokenize(q)
-	require.Len(t, tokens, 3)
+	if len(tokens) != 3 {
+		t.Fatalf("len(tokens) = %d, want 3", len(tokens))
+	}
 
 	// Only "printing" hits in body — 1 of 3 tokens.
 	got := scoreCardLower("Lookup", "discusses printing strategy", q, tokens)
 	// Token-overlap component: 0.5 × 1/3 ≈ 0.1667
-	require.InDelta(t, 0.5/3, got, 0.0001)
+	if math.Abs(got-0.5/3) > 0.0001 {
+		t.Errorf("got = %v, want %v within 0.0001", got, 0.5/3)
+	}
 }
 
 // ============================================================
@@ -252,15 +268,23 @@ func TestExtractSnippet(t *testing.T) {
 			t.Parallel()
 			got := extractSnippet(tc.body, strings.ToLower(tc.body), tc.query, tc.maxLen)
 			if tc.wantEmpty {
-				require.Empty(t, got)
+				if len(got) != 0 {
+					t.Errorf("got = %v, want empty", got)
+				}
 				return
 			}
-			require.Contains(t, got, tc.wantContain)
+			if !strings.Contains(got, tc.wantContain) {
+				t.Errorf("got does not contain %q", tc.wantContain)
+			}
 			if tc.wantPrefix != "" {
-				require.True(t, strings.HasPrefix(got, tc.wantPrefix))
+				if !strings.HasPrefix(got, tc.wantPrefix) {
+					t.Error("strings.HasPrefix(got, tc.wantPrefix) = false, want true")
+				}
 			}
 			if tc.wantSuffix != "" {
-				require.True(t, strings.HasSuffix(got, tc.wantSuffix))
+				if !strings.HasSuffix(got, tc.wantSuffix) {
+					t.Error("strings.HasSuffix(got, tc.wantSuffix) = false, want true")
+				}
 			}
 		})
 	}
@@ -289,9 +313,12 @@ func TestSearchCacheKey(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := searchCacheKey(tc.scope, tc.scopeID, tc.includeArchived)
-			require.Equal(t, tc.want, got)
-			require.True(t, strings.HasPrefix(got, searchCardCacheKeyPrefix),
-				"every search cache key must start with the namespace prefix so InvalidatePrefix sweeps them all")
+			if got := got; got != tc.want {
+				t.Errorf("got = %v, want %v", got, tc.want)
+			}
+			if !strings.HasPrefix(got, searchCardCacheKeyPrefix) {
+				t.Error("every search cache key must start with the namespace prefix so InvalidatePrefix sweeps them all")
+			}
 		})
 	}
 }
@@ -383,10 +410,18 @@ func TestSearchCards_EmptyQueryShortCircuits(t *testing.T) {
 	})
 
 	got, cached, err := r.SearchCards(context.Background(), "", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.Empty(t, got)
-	require.False(t, cached)
-	require.EqualValues(t, 0, calls.Load(), "empty query must not touch Favro")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got = %v, want empty", got)
+	}
+	if cached {
+		t.Error("cached = true, want false")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("empty query must not touch Favro: got %v, want %v", got, 0)
+	}
 }
 
 func TestSearchCards_ForcesMarkdownDescriptionFormat(t *testing.T) {
@@ -397,12 +432,17 @@ func TestSearchCards_ForcesMarkdownDescriptionFormat(t *testing.T) {
 	})
 
 	_, _, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	q := lastQuery()
-	require.Equal(t, "markdown", q["descriptionFormat"],
-		"every search must force descriptionFormat=markdown so the markdown stripper sees the format it expects")
-	require.Equal(t, "w-1", q["widgetCommonId"])
+	if got := q["descriptionFormat"]; got != "markdown" {
+		t.Errorf("every search must force descriptionFormat=markdown so the markdown stripper sees the format it expects: got %v, want %v", got, "markdown")
+	}
+	if got := q["widgetCommonId"]; got != "w-1" {
+		t.Errorf("q[\"widgetCommonId\"] = %v, want %v", got, "w-1")
+	}
 }
 
 func TestSearchCards_WidgetScopePaginates(t *testing.T) {
@@ -415,12 +455,20 @@ func TestSearchCards_WidgetScopePaginates(t *testing.T) {
 	r, calls, lastQuery := newSearchFixture(t, pages)
 
 	got, _, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 2, "widget scope must paginate fully")
-	require.EqualValues(t, 2, calls.Load(), "two pages → two /cards calls")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("widget scope must paginate fully: got %d", len(got))
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("two pages → two /cards calls: got %v, want %v", got, 2)
+	}
 
 	q := lastQuery()
-	require.Equal(t, "w-1", q["widgetCommonId"])
+	if got := q["widgetCommonId"]; got != "w-1" {
+		t.Errorf("q[\"widgetCommonId\"] = %v, want %v", got, "w-1")
+	}
 }
 
 func TestSearchCards_CacheMissThenHit(t *testing.T) {
@@ -431,21 +479,39 @@ func TestSearchCards_CacheMissThenHit(t *testing.T) {
 	})
 
 	_, cached, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.False(t, cached)
-	require.EqualValues(t, 1, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cached {
+		t.Error("cached = true, want false")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 
 	_, cached2, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.True(t, cached2, "second identical search must hit the scoped cache")
-	require.EqualValues(t, 1, calls.Load(), "no extra HTTP call on warm cache")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !cached2 {
+		t.Error("second identical search must hit the scoped cache")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("no extra HTTP call on warm cache: got %v, want %v", got, 1)
+	}
 
 	// Different query against same cached scope — still a cache hit at
 	// the card-list layer; the search runs locally.
 	_, cached3, err := r.SearchCards(context.Background(), "pass", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.True(t, cached3, "different query, same scope must still be a cache hit")
-	require.EqualValues(t, 1, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !cached3 {
+		t.Error("different query, same scope must still be a cache hit")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 }
 
 func TestSearchCards_ForceRefreshBypassesCache(t *testing.T) {
@@ -456,13 +522,23 @@ func TestSearchCards_ForceRefreshBypassesCache(t *testing.T) {
 	})
 
 	_, _, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 
 	_, cached, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, true)
-	require.NoError(t, err)
-	require.False(t, cached, "force_refresh must report uncached")
-	require.EqualValues(t, 2, calls.Load(), "force_refresh must trigger a second HTTP call")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cached {
+		t.Error("force_refresh must report uncached")
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("force_refresh must trigger a second HTTP call: got %v, want %v", got, 2)
+	}
 }
 
 func TestSearchCards_TTLExpiryRefetches(t *testing.T) {
@@ -476,15 +552,25 @@ func TestSearchCards_TTLExpiryRefetches(t *testing.T) {
 	r.searchCardCache.Now = func() time.Time { return now }
 
 	_, _, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 
 	now = now.Add(searchCardCacheTTL + time.Second)
 
 	_, cached, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.False(t, cached, "expired entry must miss the cache")
-	require.EqualValues(t, 2, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cached {
+		t.Error("expired entry must miss the cache")
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("calls.Load() = %v, want %v", got, 2)
+	}
 }
 
 func TestSearchCards_MinScoreFilter(t *testing.T) {
@@ -501,9 +587,13 @@ func TestSearchCards_MinScoreFilter(t *testing.T) {
 
 	// min_score=1.5 must drop the body-phrase (1.0) candidate.
 	got, _, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 1.5, false)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	for _, c := range got {
-		require.GreaterOrEqual(t, c.Score, 1.5, "min_score must filter low-score hits")
+		if c.Score < 1.5 {
+			t.Errorf("min_score must filter low-score hits: got %v, want at least %v", c.Score, 1.5)
+		}
 	}
 }
 
@@ -519,12 +609,22 @@ func TestSearchCards_RankingOrder(t *testing.T) {
 	})
 
 	got, _, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 3)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3", len(got))
+	}
 	// name+body (2.6) > name-match (1.6) > body-only (1.0)
-	require.Equal(t, "name+body", got[0].CardID)
-	require.Equal(t, "name-match", got[1].CardID)
-	require.Equal(t, "body-only", got[2].CardID)
+	if got := got[0].CardID; got != "name+body" {
+		t.Errorf("got[0].CardID = %v, want %v", got, "name+body")
+	}
+	if got := got[1].CardID; got != "name-match" {
+		t.Errorf("got[1].CardID = %v, want %v", got, "name-match")
+	}
+	if got := got[2].CardID; got != "body-only" {
+		t.Errorf("got[2].CardID = %v, want %v", got, "body-only")
+	}
 }
 
 func TestSearchCards_SnippetAndArchivedFlag(t *testing.T) {
@@ -538,15 +638,27 @@ func TestSearchCards_SnippetAndArchivedFlag(t *testing.T) {
 	})
 
 	got, _, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 1, "archived card must be excluded when include_archived=false")
-	require.Equal(t, "c1", got[0].CardID)
-	require.Contains(t, got[0].Snippet, "printing", "snippet must contain the matched query token")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("archived card must be excluded when include_archived=false: got %d", len(got))
+	}
+	if got := got[0].CardID; got != "c1" {
+		t.Errorf("got[0].CardID = %v, want %v", got, "c1")
+	}
+	if !strings.Contains(got[0].Snippet, "printing") {
+		t.Errorf("snippet must contain the matched query token: %q missing", "printing")
+	}
 
 	// include_archived=true brings the archived card into the result.
 	got, _, err = r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", true, 0, 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 2)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
 }
 
 func TestSearchCards_LimitDefaultAndCap(t *testing.T) {
@@ -559,12 +671,20 @@ func TestSearchCards_LimitDefaultAndCap(t *testing.T) {
 	r, _, _ := newSearchFixture(t, [][]favro.Card{cards})
 
 	got, _, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 10, "limit <= 0 must default to 10")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 10 {
+		t.Fatalf("limit <= 0 must default to 10: got %d", len(got))
+	}
 
 	got, _, err = r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 9999, 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 50, "limit > 50 must be capped at 50")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 50 {
+		t.Fatalf("limit > 50 must be capped at 50: got %d", len(got))
+	}
 }
 
 func TestSearchCards_InvalidateCacheHook(t *testing.T) {
@@ -575,13 +695,23 @@ func TestSearchCards_InvalidateCacheHook(t *testing.T) {
 	})
 
 	_, _, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 
 	r.InvalidateSearchCardCache()
 
 	_, cached, err := r.SearchCards(context.Background(), "printing", SearchScopeWidget, "w-1", false, 0, 0, false)
-	require.NoError(t, err)
-	require.False(t, cached, "cache must miss after invalidate")
-	require.EqualValues(t, 2, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cached {
+		t.Error("cache must miss after invalidate")
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("calls.Load() = %v, want %v", got, 2)
+	}
 }

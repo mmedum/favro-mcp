@@ -3,11 +3,11 @@ package tools
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 	"github.com/mmedum/favro-mcp/internal/service"
@@ -62,16 +62,32 @@ func TestMCP_GetCardFull_HappyPath(t *testing.T) {
 		Name:      getCardFullToolName,
 		Arguments: map[string]any{"card_id": "c-1"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool must succeed; got %s", serializedResponseString(t, res))
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool must succeed; got %s", serializedResponseString(t, res))
+	}
 
 	out := decodeStructured[service.FullCard](t, res)
-	require.Equal(t, "Print visitor passes", out.Name)
-	require.Equal(t, "Sprint Board", out.WidgetName)
-	require.Equal(t, "Done", out.ColumnName)
-	require.Equal(t, []string{"Engineering"}, out.CollectionNames)
-	require.Len(t, out.ResolvedTags, 1)
-	require.Equal(t, "frontend", out.ResolvedTags[0].Name)
+	if got := out.Name; got != "Print visitor passes" {
+		t.Errorf("out.Name = %v, want %v", got, "Print visitor passes")
+	}
+	if got := out.WidgetName; got != "Sprint Board" {
+		t.Errorf("out.WidgetName = %v, want %v", got, "Sprint Board")
+	}
+	if got := out.ColumnName; got != "Done" {
+		t.Errorf("out.ColumnName = %v, want %v", got, "Done")
+	}
+	if got := out.CollectionNames; !reflect.DeepEqual(got, ([]string{"Engineering"})) {
+		t.Errorf("out.CollectionNames = %v, want %v", got, []string{"Engineering"})
+	}
+	if len(out.ResolvedTags) != 1 {
+		t.Fatalf("len(out.ResolvedTags) = %d, want 1", len(out.ResolvedTags))
+	}
+	if got := out.ResolvedTags[0].Name; got != "frontend" {
+		t.Errorf("out.ResolvedTags[0].Name = %v, want %v", got, "frontend")
+	}
 }
 
 // TestMCP_GetCardFull_IdentityRequired pins that the SDK-layer
@@ -93,12 +109,24 @@ func TestMCP_GetCardFull_IdentityRequired(t *testing.T) {
 		Name:      getCardFullToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError, "missing identity must surface as a tool error")
-	require.Equal(t, 0, calls, "missing identity must short-circuit before any Favro call")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("missing identity must surface as a tool error")
+	}
+	if got := calls; got != 0 {
+		t.Errorf("missing identity must short-circuit before any Favro call: got %v, want %v", got, 0)
+	}
 
 	full := strings.ToLower(serializedResponseString(t, res))
-	require.Contains(t, full, "card_id")
-	require.Contains(t, full, "card_common_id")
-	require.Contains(t, full, "sequential_id")
+	if !strings.Contains(full, "card_id") {
+		t.Errorf("full does not contain %q", "card_id")
+	}
+	if !strings.Contains(full, "card_common_id") {
+		t.Errorf("full does not contain %q", "card_common_id")
+	}
+	if !strings.Contains(full, "sequential_id") {
+		t.Errorf("full does not contain %q", "sequential_id")
+	}
 }

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 	"github.com/mmedum/favro-mcp/internal/service"
@@ -35,13 +34,23 @@ func TestMCP_ResolveUser_HappyPath(t *testing.T) {
 		Name:      resolveUserToolName,
 		Arguments: map[string]any{"name": "alic"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[resolveOutput[service.ResolvedUser]](t, res)
-	require.Len(t, out.Candidates, 1)
-	require.Equal(t, "u-1", out.Candidates[0].UserID)
-	require.Equal(t, "alice@example.invalid", out.Candidates[0].Email)
+	if len(out.Candidates) != 1 {
+		t.Fatalf("len(out.Candidates) = %d, want 1", len(out.Candidates))
+	}
+	if got := out.Candidates[0].UserID; got != "u-1" {
+		t.Errorf("out.Candidates[0].UserID = %v, want %v", got, "u-1")
+	}
+	if got := out.Candidates[0].Email; got != "alice@example.invalid" {
+		t.Errorf("out.Candidates[0].Email = %v, want %v", got, "alice@example.invalid")
+	}
 }
 
 // TestMCP_ResolveTools_MissingRequiredField pins the schema-layer
@@ -89,12 +98,20 @@ func TestMCP_ResolveCollection_HappyPath(t *testing.T) {
 		Name:      resolveCollectionToolName,
 		Arguments: map[string]any{"name": "doc"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[resolveOutput[service.ResolvedCollection]](t, res)
-	require.Len(t, out.Candidates, 1)
-	require.Equal(t, "c-1", out.Candidates[0].CollectionID)
+	if len(out.Candidates) != 1 {
+		t.Fatalf("len(out.Candidates) = %d, want 1", len(out.Candidates))
+	}
+	if got := out.Candidates[0].CollectionID; got != "c-1" {
+		t.Errorf("out.Candidates[0].CollectionID = %v, want %v", got, "c-1")
+	}
 }
 
 func TestMCP_ResolveWidget_HappyPath(t *testing.T) {
@@ -114,13 +131,23 @@ func TestMCP_ResolveWidget_HappyPath(t *testing.T) {
 		Name:      resolveWidgetToolName,
 		Arguments: map[string]any{"name": "sprint"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[resolveOutput[service.ResolvedWidget]](t, res)
-	require.Len(t, out.Candidates, 1)
-	require.Equal(t, "w-1", out.Candidates[0].WidgetCommonID)
-	require.Equal(t, "board", out.Candidates[0].Type)
+	if len(out.Candidates) != 1 {
+		t.Fatalf("len(out.Candidates) = %d, want 1", len(out.Candidates))
+	}
+	if got := out.Candidates[0].WidgetCommonID; got != "w-1" {
+		t.Errorf("out.Candidates[0].WidgetCommonID = %v, want %v", got, "w-1")
+	}
+	if got := out.Candidates[0].Type; got != "board" {
+		t.Errorf("out.Candidates[0].Type = %v, want %v", got, "board")
+	}
 }
 
 func TestMCP_ResolveColumn_HappyPath(t *testing.T) {
@@ -147,13 +174,23 @@ func TestMCP_ResolveColumn_HappyPath(t *testing.T) {
 			"name":             "doing",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[resolveOutput[service.ResolvedColumn]](t, res)
-	require.Len(t, out.Candidates, 1)
-	require.Equal(t, "col-1", out.Candidates[0].ColumnID)
-	require.Equal(t, 1, out.Candidates[0].Position)
+	if len(out.Candidates) != 1 {
+		t.Fatalf("len(out.Candidates) = %d, want 1", len(out.Candidates))
+	}
+	if got := out.Candidates[0].ColumnID; got != "col-1" {
+		t.Errorf("out.Candidates[0].ColumnID = %v, want %v", got, "col-1")
+	}
+	if got := out.Candidates[0].Position; got != 1 {
+		t.Errorf("out.Candidates[0].Position = %v, want %v", got, 1)
+	}
 }
 
 func TestMCP_ResolveCustomField_HappyPath(t *testing.T) {
@@ -173,13 +210,23 @@ func TestMCP_ResolveCustomField_HappyPath(t *testing.T) {
 		Name:      resolveCustomFieldToolName,
 		Arguments: map[string]any{"name": "prior"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[resolveOutput[service.ResolvedCustomField]](t, res)
-	require.Len(t, out.Candidates, 1)
-	require.Equal(t, "cf-1", out.Candidates[0].CustomFieldID)
-	require.Equal(t, "Single select", out.Candidates[0].Type)
+	if len(out.Candidates) != 1 {
+		t.Fatalf("len(out.Candidates) = %d, want 1", len(out.Candidates))
+	}
+	if got := out.Candidates[0].CustomFieldID; got != "cf-1" {
+		t.Errorf("out.Candidates[0].CustomFieldID = %v, want %v", got, "cf-1")
+	}
+	if got := out.Candidates[0].Type; got != "Single select" {
+		t.Errorf("out.Candidates[0].Type = %v, want %v", got, "Single select")
+	}
 }
 
 func TestMCP_ResolveGroup_HappyPath(t *testing.T) {
@@ -199,10 +246,18 @@ func TestMCP_ResolveGroup_HappyPath(t *testing.T) {
 		Name:      resolveGroupToolName,
 		Arguments: map[string]any{"name": "eng"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[resolveOutput[service.ResolvedGroup]](t, res)
-	require.Len(t, out.Candidates, 1)
-	require.Equal(t, "g-1", out.Candidates[0].GroupID)
+	if len(out.Candidates) != 1 {
+		t.Fatalf("len(out.Candidates) = %d, want 1", len(out.Candidates))
+	}
+	if got := out.Candidates[0].GroupID; got != "g-1" {
+		t.Errorf("out.Candidates[0].GroupID = %v, want %v", got, "g-1")
+	}
 }

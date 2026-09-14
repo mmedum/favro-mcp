@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -31,12 +30,20 @@ func TestMCP_UpdateTag_HappyPath(t *testing.T) {
 		Name:      updateTagToolName,
 		Arguments: map[string]any{"tag_id": "abc", "name": "renamed", "color": "red"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Tag]](t, res)
-	require.False(t, out.DryRun)
-	require.Equal(t, "renamed", out.Result.Name)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if got := out.Result.Name; got != "renamed" {
+		t.Errorf("out.Result.Name = %v, want %v", got, "renamed")
+	}
 }
 
 func TestMCP_UpdateTag_DryRun(t *testing.T) {
@@ -57,16 +64,32 @@ func TestMCP_UpdateTag_DryRun(t *testing.T) {
 			"dry_run": true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Tag]](t, res)
-	require.True(t, out.DryRun)
-	require.Equal(t, http.MethodPut, out.WouldCall.Method)
-	require.Contains(t, out.WouldCall.URL, "/tags/abc")
-	require.Contains(t, out.PredictedStateDiff, "renamed")
-	require.Contains(t, out.PredictedStateDiff, "red")
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := out.WouldCall.Method; got != http.MethodPut {
+		t.Errorf("out.WouldCall.Method = %v, want %v", got, http.MethodPut)
+	}
+	if !strings.Contains(out.WouldCall.URL, "/tags/abc") {
+		t.Errorf("out.WouldCall.URL does not contain %q", "/tags/abc")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "renamed") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "renamed")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "red") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "red")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_UpdateTag_NoChanges_DryRun(t *testing.T) {
@@ -79,12 +102,17 @@ func TestMCP_UpdateTag_NoChanges_DryRun(t *testing.T) {
 		Name:      updateTagToolName,
 		Arguments: map[string]any{"tag_id": "abc", "dry_run": true},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Tag]](t, res)
-	require.Contains(t, out.PredictedStateDiff, "no-op",
-		"a dry-run with no name/color set must report a no-op so the LLM doesn't think a change happened")
+	if !strings.Contains(out.PredictedStateDiff, "no-op") {
+		t.Errorf("a dry-run with no name/color set must report a no-op so the LLM doesn't think a change happened: %q missing", "no-op")
+	}
 }
 
 func TestMCP_UpdateTag_MissingTagID(t *testing.T) {

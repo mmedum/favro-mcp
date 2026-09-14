@@ -3,22 +3,23 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"math"
 	"net/http"
+	"reflect"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
 
 // scoreEpsilon is the comparison tolerance for resolver score
-// assertions. Scores are produced by literal returns in
-// scoreLowered (1.0 / 0.7 / 0.4) so they are exact in practice;
-// the InDelta wrapping guards against future changes to the score
-// scale that introduce arithmetic, and silences the testifylint
-// `float-compare` rule on require.Equal.
+// assertions. Scores come from literal returns in scoreLowered
+// (1.0 / 0.7 / 0.4), so they are exact in practice; comparing within
+// a tolerance guards against a future score scale that arrives at
+// them by arithmetic instead.
 const scoreEpsilon = 0.001
 
 // resolverFixture wires a Resolver to an httptest server backed by
@@ -67,19 +68,39 @@ func TestResolveTag_CacheMissThenHit(t *testing.T) {
 
 	// First call hits Favro and populates the cache.
 	got, cached, err := r.ResolveTag(context.Background(), "front", 0, false)
-	require.NoError(t, err)
-	require.False(t, cached, "first call must miss the cache")
-	require.Len(t, got, 1)
-	require.Equal(t, "t-1", got[0].TagID)
-	require.InDelta(t, 0.7, got[0].Score, scoreEpsilon)
-	require.EqualValues(t, 1, calls.Load(), "exactly one HTTP call on cold cache")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cached {
+		t.Error("first call must miss the cache")
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+	if got := got[0].TagID; got != "t-1" {
+		t.Errorf("got[0].TagID = %v, want %v", got, "t-1")
+	}
+	if math.Abs(got[0].Score-0.7) > scoreEpsilon {
+		t.Errorf("got[0].Score = %v, want %v within scoreEpsilon", got[0].Score, 0.7)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("exactly one HTTP call on cold cache: got %v, want %v", got, 1)
+	}
 
 	// Second call returns from cache.
 	got2, cached2, err := r.ResolveTag(context.Background(), "front", 0, false)
-	require.NoError(t, err)
-	require.True(t, cached2, "second call must hit the cache")
-	require.Equal(t, got, got2)
-	require.EqualValues(t, 1, calls.Load(), "no extra HTTP call on warm cache")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !cached2 {
+		t.Error("second call must hit the cache")
+	}
+	if !reflect.DeepEqual(got2, got) {
+		t.Errorf("the cached call returned something else:\n got %v\nwant %v", got2, got)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("no extra HTTP call on warm cache: got %v, want %v", got, 1)
+	}
 }
 
 func TestResolveTag_ForceRefreshBypassesCache(t *testing.T) {
@@ -90,14 +111,24 @@ func TestResolveTag_ForceRefreshBypassesCache(t *testing.T) {
 	})
 
 	_, _, err := r.ResolveTag(context.Background(), "blocker", 0, false)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 
 	// force_refresh=true should re-fetch even though the cache is warm.
 	_, cached, err := r.ResolveTag(context.Background(), "blocker", 0, true)
-	require.NoError(t, err)
-	require.False(t, cached, "force_refresh must bypass cache and report uncached")
-	require.EqualValues(t, 2, calls.Load(), "force_refresh must trigger a second HTTP call")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cached {
+		t.Error("force_refresh must bypass cache and report uncached")
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("force_refresh must trigger a second HTTP call: got %v, want %v", got, 2)
+	}
 }
 
 func TestResolveTag_InvalidateCache(t *testing.T) {
@@ -108,15 +139,25 @@ func TestResolveTag_InvalidateCache(t *testing.T) {
 	})
 
 	_, _, err := r.ResolveTag(context.Background(), "front", 0, false)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 
 	r.InvalidateTagCache()
 
 	_, cached, err := r.ResolveTag(context.Background(), "front", 0, false)
-	require.NoError(t, err)
-	require.False(t, cached, "cache must miss after invalidation")
-	require.EqualValues(t, 2, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cached {
+		t.Error("cache must miss after invalidation")
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("calls.Load() = %v, want %v", got, 2)
+	}
 }
 
 func TestResolveTag_TTLExpiryRefetches(t *testing.T) {
@@ -131,16 +172,26 @@ func TestResolveTag_TTLExpiryRefetches(t *testing.T) {
 	r.tagCache.Now = func() time.Time { return now }
 
 	_, _, err := r.ResolveTag(context.Background(), "front", 0, false)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 
 	// Advance past the TTL.
 	now = now.Add(tagCacheTTL + time.Second)
 
 	_, cached, err := r.ResolveTag(context.Background(), "front", 0, false)
-	require.NoError(t, err)
-	require.False(t, cached, "expired entry must miss the cache")
-	require.EqualValues(t, 2, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cached {
+		t.Error("expired entry must miss the cache")
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("calls.Load() = %v, want %v", got, 2)
+	}
 }
 
 func TestResolveTag_FetchesAllPages(t *testing.T) {
@@ -152,9 +203,15 @@ func TestResolveTag_FetchesAllPages(t *testing.T) {
 	})
 
 	got, _, err := r.ResolveTag(context.Background(), "front", 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 2, "both pages must be merged into the cache")
-	require.EqualValues(t, 2, calls.Load(), "must fetch every page on cold cache")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("both pages must be merged into the cache: got %d", len(got))
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("must fetch every page on cold cache: got %v, want %v", got, 2)
+	}
 }
 
 func TestResolveTag_RankingScoreScale(t *testing.T) {
@@ -170,16 +227,32 @@ func TestResolveTag_RankingScoreScale(t *testing.T) {
 	})
 
 	got, _, err := r.ResolveTag(context.Background(), "front", 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 3, "no-match entries must be filtered out")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("no-match entries must be filtered out: got %d", len(got))
+	}
 
 	// Ordered by score descending: exact (1.0) > prefix (0.7) > substring (0.4)
-	require.Equal(t, "exact", got[0].TagID)
-	require.InDelta(t, 1.0, got[0].Score, scoreEpsilon)
-	require.Equal(t, "prefix", got[1].TagID)
-	require.InDelta(t, 0.7, got[1].Score, scoreEpsilon)
-	require.Equal(t, "substring", got[2].TagID)
-	require.InDelta(t, 0.4, got[2].Score, scoreEpsilon)
+	if got := got[0].TagID; got != "exact" {
+		t.Errorf("got[0].TagID = %v, want %v", got, "exact")
+	}
+	if math.Abs(got[0].Score-1.0) > scoreEpsilon {
+		t.Errorf("got[0].Score = %v, want %v within scoreEpsilon", got[0].Score, 1.0)
+	}
+	if got := got[1].TagID; got != "prefix" {
+		t.Errorf("got[1].TagID = %v, want %v", got, "prefix")
+	}
+	if math.Abs(got[1].Score-0.7) > scoreEpsilon {
+		t.Errorf("got[1].Score = %v, want %v within scoreEpsilon", got[1].Score, 0.7)
+	}
+	if got := got[2].TagID; got != "substring" {
+		t.Errorf("got[2].TagID = %v, want %v", got, "substring")
+	}
+	if math.Abs(got[2].Score-0.4) > scoreEpsilon {
+		t.Errorf("got[2].Score = %v, want %v within scoreEpsilon", got[2].Score, 0.4)
+	}
 }
 
 func TestResolveTag_TieBreakerByName(t *testing.T) {
@@ -196,11 +269,21 @@ func TestResolveTag_TieBreakerByName(t *testing.T) {
 	// All three contain "prefix" as a substring (score 0.4); tie-break
 	// must be by name ascending so the order is deterministic.
 	got, _, err := r.ResolveTag(context.Background(), "prefix", 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 3)
-	require.Equal(t, "t-alpha", got[0].TagID)
-	require.Equal(t, "t-mid", got[1].TagID)
-	require.Equal(t, "t-zeta", got[2].TagID)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3", len(got))
+	}
+	if got := got[0].TagID; got != "t-alpha" {
+		t.Errorf("got[0].TagID = %v, want %v", got, "t-alpha")
+	}
+	if got := got[1].TagID; got != "t-mid" {
+		t.Errorf("got[1].TagID = %v, want %v", got, "t-mid")
+	}
+	if got := got[2].TagID; got != "t-zeta" {
+		t.Errorf("got[2].TagID = %v, want %v", got, "t-zeta")
+	}
 }
 
 func TestResolveTag_LimitDefaultAndCap(t *testing.T) {
@@ -214,16 +297,28 @@ func TestResolveTag_LimitDefaultAndCap(t *testing.T) {
 	r, _ := resolverFixture(t, [][]favro.Tag{tags})
 
 	got, _, err := r.ResolveTag(context.Background(), "match", 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 10, "limit <= 0 must use default of 10")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 10 {
+		t.Fatalf("limit <= 0 must use default of 10: got %d", len(got))
+	}
 
 	got, _, err = r.ResolveTag(context.Background(), "match", 9999, false)
-	require.NoError(t, err)
-	require.Len(t, got, 50, "limit > 50 must be capped at 50")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 50 {
+		t.Fatalf("limit > 50 must be capped at 50: got %d", len(got))
+	}
 
 	got, _, err = r.ResolveTag(context.Background(), "match", 3, false)
-	require.NoError(t, err)
-	require.Len(t, got, 3)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3", len(got))
+	}
 }
 
 func TestResolveTag_EmptyQueryReturnsNoMatches(t *testing.T) {
@@ -234,8 +329,12 @@ func TestResolveTag_EmptyQueryReturnsNoMatches(t *testing.T) {
 	})
 
 	got, _, err := r.ResolveTag(context.Background(), "", 0, false)
-	require.NoError(t, err)
-	require.Empty(t, got, "empty query is not a wildcard — must return no matches")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("empty query is not a wildcard — must return no matches: got %v", got)
+	}
 }
 
 // ============================================================
@@ -253,13 +352,27 @@ func TestResolveUser_HappyPath(t *testing.T) {
 	})
 
 	got, cached, err := r.ResolveUser(context.Background(), "alic", 0, false)
-	require.NoError(t, err)
-	require.False(t, cached)
-	require.Len(t, got, 1)
-	require.Equal(t, "u-1", got[0].UserID)
-	require.Equal(t, "alice@example.invalid", got[0].Email)
-	require.InDelta(t, 0.7, got[0].Score, scoreEpsilon)
-	require.EqualValues(t, 1, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cached {
+		t.Error("cached = true, want false")
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+	if got := got[0].UserID; got != "u-1" {
+		t.Errorf("got[0].UserID = %v, want %v", got, "u-1")
+	}
+	if got := got[0].Email; got != "alice@example.invalid" {
+		t.Errorf("got[0].Email = %v, want %v", got, "alice@example.invalid")
+	}
+	if math.Abs(got[0].Score-0.7) > scoreEpsilon {
+		t.Errorf("got[0].Score = %v, want %v within scoreEpsilon", got[0].Score, 0.7)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 }
 
 // TestResolveUser_MatchesAgainstEmail pins the contract that an
@@ -281,14 +394,26 @@ func TestResolveUser_MatchesAgainstEmail(t *testing.T) {
 	// "engin" is a prefix of u-2's name "engineer" (0.7) and a
 	// substring (NOT prefix) of u-1's email "j-engineering@..." (0.4).
 	got, _, err := r.ResolveUser(context.Background(), "engin", 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 2)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
 	// u-2 wins because its name has prefix match (0.7); u-1 only
 	// substring-matches via email (0.4).
-	require.Equal(t, "u-2", got[0].UserID)
-	require.InDelta(t, 0.7, got[0].Score, scoreEpsilon)
-	require.Equal(t, "u-1", got[1].UserID)
-	require.InDelta(t, 0.4, got[1].Score, scoreEpsilon)
+	if got := got[0].UserID; got != "u-2" {
+		t.Errorf("got[0].UserID = %v, want %v", got, "u-2")
+	}
+	if math.Abs(got[0].Score-0.7) > scoreEpsilon {
+		t.Errorf("got[0].Score = %v, want %v within scoreEpsilon", got[0].Score, 0.7)
+	}
+	if got := got[1].UserID; got != "u-1" {
+		t.Errorf("got[1].UserID = %v, want %v", got, "u-1")
+	}
+	if math.Abs(got[1].Score-0.4) > scoreEpsilon {
+		t.Errorf("got[1].Score = %v, want %v within scoreEpsilon", got[1].Score, 0.4)
+	}
 }
 
 // ============================================================
@@ -306,12 +431,24 @@ func TestResolveCollection_HappyPath(t *testing.T) {
 	})
 
 	got, cached, err := r.ResolveCollection(context.Background(), "doc", 0, false)
-	require.NoError(t, err)
-	require.False(t, cached)
-	require.Len(t, got, 1)
-	require.Equal(t, "c-1", got[0].CollectionID)
-	require.InDelta(t, 0.7, got[0].Score, scoreEpsilon)
-	require.EqualValues(t, 1, calls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cached {
+		t.Error("cached = true, want false")
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+	if got := got[0].CollectionID; got != "c-1" {
+		t.Errorf("got[0].CollectionID = %v, want %v", got, "c-1")
+	}
+	if math.Abs(got[0].Score-0.7) > scoreEpsilon {
+		t.Errorf("got[0].Score = %v, want %v within scoreEpsilon", got[0].Score, 0.7)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 }
 
 // ============================================================
@@ -329,11 +466,21 @@ func TestResolveWidget_HappyPath(t *testing.T) {
 	})
 
 	got, _, err := r.ResolveWidget(context.Background(), "sprint", "", 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	require.Equal(t, "w-1", got[0].WidgetCommonID)
-	require.Equal(t, "board", got[0].Type)
-	require.Equal(t, []string{"c-1"}, got[0].CollectionIDs)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+	if got := got[0].WidgetCommonID; got != "w-1" {
+		t.Errorf("got[0].WidgetCommonID = %v, want %v", got, "w-1")
+	}
+	if got := got[0].Type; got != "board" {
+		t.Errorf("got[0].Type = %v, want %v", got, "board")
+	}
+	if got := got[0].CollectionIDs; !reflect.DeepEqual(got, ([]string{"c-1"})) {
+		t.Errorf("got[0].CollectionIDs = %v, want %v", got, []string{"c-1"})
+	}
 }
 
 // TestResolveWidget_FiltersByCollection pins the optional
@@ -352,10 +499,18 @@ func TestResolveWidget_FiltersByCollection(t *testing.T) {
 	})
 
 	got, _, err := r.ResolveWidget(context.Background(), "roadmap", "c-1", 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 2, "only widgets containing c-1 in their CollectionIDs must match")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("only widgets containing c-1 in their CollectionIDs must match: got %d", len(got))
+	}
 	ids := []string{got[0].WidgetCommonID, got[1].WidgetCommonID}
-	require.ElementsMatch(t, []string{"w-only-c1", "w-both"}, ids)
+	gotIDs := slices.Clone(ids)
+	slices.Sort(gotIDs)
+	if want := []string{"w-both", "w-only-c1"}; !slices.Equal(gotIDs, want) {
+		t.Errorf("ids = %v, want %v in any order", ids, want)
+	}
 }
 
 // ============================================================
@@ -374,12 +529,20 @@ func TestResolveColumn_HappyPath(t *testing.T) {
 	})
 
 	got, _, err := r.ResolveColumn(context.Background(), "w-1", "do", 0, false)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	// "do" prefix-matches "Doing" (0.7) and "Done" (0.7); substring of
 	// "To do" (0.4). Three candidates, prefix matches first.
-	require.Len(t, got, 3)
-	require.InDelta(t, 0.7, got[0].Score, scoreEpsilon)
-	require.EqualValues(t, 1, calls.Load())
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3", len(got))
+	}
+	if math.Abs(got[0].Score-0.7) > scoreEpsilon {
+		t.Errorf("got[0].Score = %v, want %v within scoreEpsilon", got[0].Score, 0.7)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 }
 
 // TestResolveColumn_RequiresWidgetCommonID pins the contract that
@@ -394,8 +557,12 @@ func TestResolveColumn_RequiresWidgetCommonID(t *testing.T) {
 	})))
 
 	_, _, err := r.ResolveColumn(context.Background(), "", "doing", 0, false)
-	require.Error(t, err)
-	require.ErrorIs(t, err, errMissingResolveWidgetCommonID)
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if !errors.Is(err, errMissingResolveWidgetCommonID) {
+		t.Fatalf("got %v, want errMissingResolveWidgetCommonID", err)
+	}
 }
 
 // TestResolveColumn_CacheKeyedPerWidget pins the contract that
@@ -432,15 +599,26 @@ func TestResolveColumn_CacheKeyedPerWidget(t *testing.T) {
 	r := NewResolver(c)
 
 	gotA, _, err := r.ResolveColumn(context.Background(), "w-A", "match", 0, false)
-	require.NoError(t, err)
-	require.Len(t, gotA, 1)
-	require.Equal(t, "col-A1", gotA[0].ColumnID)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(gotA) != 1 {
+		t.Fatalf("len(gotA) = %d, want 1", len(gotA))
+	}
+	if got := gotA[0].ColumnID; got != "col-A1" {
+		t.Errorf("gotA[0].ColumnID = %v, want %v", got, "col-A1")
+	}
 
 	gotB, _, err := r.ResolveColumn(context.Background(), "w-B", "match", 0, false)
-	require.NoError(t, err)
-	require.Len(t, gotB, 1)
-	require.Equal(t, "col-B1", gotB[0].ColumnID,
-		"different widget must surface its own columns, not a previously-cached widget's")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(gotB) != 1 {
+		t.Fatalf("len(gotB) = %d, want 1", len(gotB))
+	}
+	if got := gotB[0].ColumnID; got != "col-B1" {
+		t.Errorf("different widget must surface its own columns, not a previously-cached widget's: got %v, want %v", got, "col-B1")
+	}
 }
 
 // ============================================================
@@ -458,11 +636,21 @@ func TestResolveCustomField_HappyPath(t *testing.T) {
 	})
 
 	got, _, err := r.ResolveCustomField(context.Background(), "prior", 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	require.Equal(t, "cf-1", got[0].CustomFieldID)
-	require.Equal(t, "Single select", got[0].Type)
-	require.InDelta(t, 0.7, got[0].Score, scoreEpsilon)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+	if got := got[0].CustomFieldID; got != "cf-1" {
+		t.Errorf("got[0].CustomFieldID = %v, want %v", got, "cf-1")
+	}
+	if got := got[0].Type; got != "Single select" {
+		t.Errorf("got[0].Type = %v, want %v", got, "Single select")
+	}
+	if math.Abs(got[0].Score-0.7) > scoreEpsilon {
+		t.Errorf("got[0].Score = %v, want %v within scoreEpsilon", got[0].Score, 0.7)
+	}
 }
 
 // ============================================================
@@ -480,10 +668,18 @@ func TestResolveGroup_HappyPath(t *testing.T) {
 	})
 
 	got, _, err := r.ResolveGroup(context.Background(), "eng", 0, false)
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	require.Equal(t, "g-1", got[0].GroupID)
-	require.InDelta(t, 0.7, got[0].Score, scoreEpsilon)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+	if got := got[0].GroupID; got != "g-1" {
+		t.Errorf("got[0].GroupID = %v, want %v", got, "g-1")
+	}
+	if math.Abs(got[0].Score-0.7) > scoreEpsilon {
+		t.Errorf("got[0].Score = %v, want %v within scoreEpsilon", got[0].Score, 0.7)
+	}
 }
 
 // TestInvalidateCacheHooks pins the contract for the 6 non-tag
@@ -513,12 +709,18 @@ func TestInvalidateCacheHooks(t *testing.T) {
 			run: func(t *testing.T) (int, int) {
 				r, calls := resolverFixture(t, [][]favro.User{{{UserID: "u-1", Name: "Alice"}}})
 				_, _, err := r.ResolveUser(context.Background(), "alice", 0, false)
-				require.NoError(t, err)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
 				first := int(calls.Load())
 				r.invalidateUserCache()
 				_, cached, err := r.ResolveUser(context.Background(), "alice", 0, false)
-				require.NoError(t, err)
-				require.False(t, cached)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
+				if cached {
+					t.Error("cached = true, want false")
+				}
 				return first, int(calls.Load())
 			},
 		},
@@ -527,12 +729,18 @@ func TestInvalidateCacheHooks(t *testing.T) {
 			run: func(t *testing.T) (int, int) {
 				r, calls := resolverFixture(t, [][]favro.Collection{{{CollectionID: "c-1", Name: "Docs"}}})
 				_, _, err := r.ResolveCollection(context.Background(), "docs", 0, false)
-				require.NoError(t, err)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
 				first := int(calls.Load())
 				r.InvalidateCollectionCache()
 				_, cached, err := r.ResolveCollection(context.Background(), "docs", 0, false)
-				require.NoError(t, err)
-				require.False(t, cached)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
+				if cached {
+					t.Error("cached = true, want false")
+				}
 				return first, int(calls.Load())
 			},
 		},
@@ -541,12 +749,18 @@ func TestInvalidateCacheHooks(t *testing.T) {
 			run: func(t *testing.T) (int, int) {
 				r, calls := resolverFixture(t, [][]favro.Widget{{{WidgetCommonID: "w-1", Name: "Board"}}})
 				_, _, err := r.ResolveWidget(context.Background(), "board", "", 0, false)
-				require.NoError(t, err)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
 				first := int(calls.Load())
 				r.InvalidateWidgetCache()
 				_, cached, err := r.ResolveWidget(context.Background(), "board", "", 0, false)
-				require.NoError(t, err)
-				require.False(t, cached)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
+				if cached {
+					t.Error("cached = true, want false")
+				}
 				return first, int(calls.Load())
 			},
 		},
@@ -555,12 +769,18 @@ func TestInvalidateCacheHooks(t *testing.T) {
 			run: func(t *testing.T) (int, int) {
 				r, calls := resolverFixture(t, [][]favro.Column{{{ColumnID: "col-1", WidgetCommonID: "w-1", Name: "Doing"}}})
 				_, _, err := r.ResolveColumn(context.Background(), "w-1", "doing", 0, false)
-				require.NoError(t, err)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
 				first := int(calls.Load())
 				r.InvalidateColumnCache("w-1")
 				_, cached, err := r.ResolveColumn(context.Background(), "w-1", "doing", 0, false)
-				require.NoError(t, err)
-				require.False(t, cached, "column cache must miss after invalidate for the same widget")
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
+				if cached {
+					t.Error("column cache must miss after invalidate for the same widget")
+				}
 				return first, int(calls.Load())
 			},
 		},
@@ -569,12 +789,18 @@ func TestInvalidateCacheHooks(t *testing.T) {
 			run: func(t *testing.T) (int, int) {
 				r, calls := resolverFixture(t, [][]favro.CustomField{{{CustomFieldID: "cf-1", Name: "Priority", Type: "Single select"}}})
 				_, _, err := r.ResolveCustomField(context.Background(), "prior", 0, false)
-				require.NoError(t, err)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
 				first := int(calls.Load())
 				r.invalidateCustomFieldCache()
 				_, cached, err := r.ResolveCustomField(context.Background(), "prior", 0, false)
-				require.NoError(t, err)
-				require.False(t, cached)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
+				if cached {
+					t.Error("cached = true, want false")
+				}
 				return first, int(calls.Load())
 			},
 		},
@@ -583,12 +809,18 @@ func TestInvalidateCacheHooks(t *testing.T) {
 			run: func(t *testing.T) (int, int) {
 				r, calls := resolverFixture(t, [][]favro.Group{{{GroupID: "g-1", Name: "Engineering"}}})
 				_, _, err := r.ResolveGroup(context.Background(), "eng", 0, false)
-				require.NoError(t, err)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
 				first := int(calls.Load())
 				r.InvalidateGroupCache()
 				_, cached, err := r.ResolveGroup(context.Background(), "eng", 0, false)
-				require.NoError(t, err)
-				require.False(t, cached)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
+				if cached {
+					t.Error("cached = true, want false")
+				}
 				return first, int(calls.Load())
 			},
 		},
@@ -598,8 +830,12 @@ func TestInvalidateCacheHooks(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			first, second := tc.run(t)
-			require.Equal(t, 1, first, "exactly one HTTP call before invalidate")
-			require.Equal(t, 2, second, "invalidate must force a re-fetch")
+			if got := first; got != 1 {
+				t.Errorf("exactly one HTTP call before invalidate: got %v, want %v", got, 1)
+			}
+			if got := second; got != 2 {
+				t.Errorf("invalidate must force a re-fetch: got %v, want %v", got, 2)
+			}
 		})
 	}
 }

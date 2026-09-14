@@ -6,8 +6,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestTTL_GetMiss_ReturnsZeroAndFalse(t *testing.T) {
@@ -15,8 +13,12 @@ func TestTTL_GetMiss_ReturnsZeroAndFalse(t *testing.T) {
 
 	var c TTL[string]
 	v, ok := c.Get("nope")
-	require.False(t, ok)
-	require.Empty(t, v)
+	if ok {
+		t.Error("ok = true, want false")
+	}
+	if len(v) != 0 {
+		t.Errorf("v = %v, want empty", v)
+	}
 }
 
 func TestTTL_SetAndGet(t *testing.T) {
@@ -26,8 +28,12 @@ func TestTTL_SetAndGet(t *testing.T) {
 	c.Set("k", 42, time.Minute)
 
 	v, ok := c.Get("k")
-	require.True(t, ok)
-	require.Equal(t, 42, v)
+	if !ok {
+		t.Error("ok = false, want true")
+	}
+	if got := v; got != 42 {
+		t.Errorf("v = %v, want %v", got, 42)
+	}
 }
 
 func TestTTL_ExpiredEntry_TreatedAsMiss_AndEvicted(t *testing.T) {
@@ -45,9 +51,15 @@ func TestTTL_ExpiredEntry_TreatedAsMiss_AndEvicted(t *testing.T) {
 	clock.Store(&later)
 
 	v, ok := c.Get("k")
-	require.False(t, ok, "expired entry must read as a miss")
-	require.Empty(t, v)
-	require.Equal(t, 0, c.Len(), "Get must lazily evict the expired entry")
+	if ok {
+		t.Error("expired entry must read as a miss")
+	}
+	if len(v) != 0 {
+		t.Errorf("v = %v, want empty", v)
+	}
+	if got := c.Len(); got != 0 {
+		t.Errorf("Get must lazily evict the expired entry: got %v, want %v", got, 0)
+	}
 }
 
 func TestTTL_ZeroTTL_NeverExpiresByTime(t *testing.T) {
@@ -64,8 +76,12 @@ func TestTTL_ZeroTTL_NeverExpiresByTime(t *testing.T) {
 	clock.Store(&far)
 
 	v, ok := c.Get("k")
-	require.True(t, ok, "ttl<=0 must mean never expire")
-	require.Equal(t, "v", v)
+	if !ok {
+		t.Error("ttl<=0 must mean never expire")
+	}
+	if got := v; got != "v" {
+		t.Errorf("v = %v, want %v", got, "v")
+	}
 }
 
 func TestTTL_Invalidate(t *testing.T) {
@@ -77,11 +93,17 @@ func TestTTL_Invalidate(t *testing.T) {
 
 	c.Invalidate("a")
 	_, ok := c.Get("a")
-	require.False(t, ok)
+	if ok {
+		t.Error("ok = true, want false")
+	}
 
 	v, ok := c.Get("b")
-	require.True(t, ok)
-	require.Equal(t, 2, v)
+	if !ok {
+		t.Error("ok = false, want true")
+	}
+	if got := v; got != 2 {
+		t.Errorf("v = %v, want %v", got, 2)
+	}
 }
 
 func TestTTL_InvalidatePrefix(t *testing.T) {
@@ -94,16 +116,26 @@ func TestTTL_InvalidatePrefix(t *testing.T) {
 	c.Set("org-2:tags:q", "q", time.Minute)
 
 	n := c.InvalidatePrefix("org-1:tags:")
-	require.Equal(t, 2, n)
+	if got := n; got != 2 {
+		t.Errorf("n = %v, want %v", got, 2)
+	}
 
 	_, ok := c.Get("org-1:tags:x")
-	require.False(t, ok)
+	if ok {
+		t.Error("ok = true, want false")
+	}
 	_, ok = c.Get("org-1:tags:y")
-	require.False(t, ok)
+	if ok {
+		t.Error("ok = true, want false")
+	}
 	_, ok = c.Get("org-1:users:z")
-	require.True(t, ok, "non-matching keys must be untouched")
+	if !ok {
+		t.Error("non-matching keys must be untouched")
+	}
 	_, ok = c.Get("org-2:tags:q")
-	require.True(t, ok, "different-org keys must be untouched")
+	if !ok {
+		t.Error("different-org keys must be untouched")
+	}
 }
 
 func TestTTL_InvalidatePrefix_EmptyPrefixClearsAll(t *testing.T) {
@@ -114,8 +146,12 @@ func TestTTL_InvalidatePrefix_EmptyPrefixClearsAll(t *testing.T) {
 	c.Set("b", 2, time.Minute)
 
 	n := c.InvalidatePrefix("")
-	require.Equal(t, 2, n)
-	require.Equal(t, 0, c.Len())
+	if got := n; got != 2 {
+		t.Errorf("n = %v, want %v", got, 2)
+	}
+	if got := c.Len(); got != 0 {
+		t.Errorf("c.Len() = %v, want %v", got, 0)
+	}
 }
 
 func TestTTL_Clear(t *testing.T) {
@@ -125,7 +161,9 @@ func TestTTL_Clear(t *testing.T) {
 	c.Set("a", 1, time.Minute)
 	c.Set("b", 2, time.Minute)
 	c.Clear()
-	require.Equal(t, 0, c.Len())
+	if got := c.Len(); got != 0 {
+		t.Errorf("c.Len() = %v, want %v", got, 0)
+	}
 }
 
 func TestTTL_Sweep_RemovesOnlyExpired(t *testing.T) {
@@ -144,8 +182,12 @@ func TestTTL_Sweep_RemovesOnlyExpired(t *testing.T) {
 	clock.Store(&later)
 
 	n := c.Sweep()
-	require.Equal(t, 1, n, "only the short-TTL entry should sweep")
-	require.Equal(t, 2, c.Len())
+	if got := n; got != 1 {
+		t.Errorf("only the short-TTL entry should sweep: got %v, want %v", got, 1)
+	}
+	if got := c.Len(); got != 2 {
+		t.Errorf("c.Len() = %v, want %v", got, 2)
+	}
 }
 
 func TestTTL_Concurrent_NoDataRace(t *testing.T) {

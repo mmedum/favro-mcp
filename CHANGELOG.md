@@ -18,7 +18,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - `internal/render`: the readable half of every tool result, and the closed error vocabulary — `invalid`, `not_found`, `auth`, `conflict`, `unavailable`, `unsupported`, `forbidden`, `rate_limited`, `ambiguous`.
 - `classes` gate: the vocabulary in `internal/render/class.go` and the table in `docs/architecture.md` §6.2 must name each other, and a class no code returns fails too.
 - `internal/config`: every `FAVRO_*` setting resolved once at startup, with the values it could not read reported rather than silently defaulted.
-- depguard rules holding the package dependency direction, one per package, naming what it may not import.
+- depguard rules holding the package dependency direction, one per package, naming what it may not import, plus a rule denying testify and go-difflib.
+- `internal/service/diff.go`: a unified-diff generator, held to `diff -u` itself by test rather than to a golden. Its search is bounded by edit distance, so a one-line change at each end of a long description stays a small diff.
 
 ### Changed
 - `CLAUDE.md` restructured to the sibling shape — mission, hard rules, where things go, definition of done — and now points at `docs/architecture.md` for anything it used to summarise.
@@ -32,6 +33,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - Package layout split to the shape the sibling servers use: `internal/favro` is the wire types alone and `internal/favroapi` the REST client; `internal/server` is split into `internal/tools` (the MCP surface), `internal/service` (resolution, search, the full-card fan-out, description editing) and `internal/server` (SDK wiring, two files). Direction runs one way — `server` → `tools` → `service` → `favroapi` → `favro` — with `config`, `cache`, `auth` and `render` as leaves.
 - `internal/favroapi`'s typed errors name their own class, rather than having one read off them by a switch in `internal/render`. An eighth error type can no longer reach the fallback class in silence.
 - The Resolver's cache invalidation is exported API (`InvalidateTagCache` and the rest). A write tool in another package has to call it, and the rule that it must was already the load-bearing one.
+- Tests use the stdlib rather than testify: 2,173 assertions rewritten to `if got != want { t.Errorf(…) }`. `pmezard/go-difflib` is gone and `stretchr/testify` is no longer a direct dependency.
+- The `unified_diff` that description-editor tools return is a correct unified diff now. go-difflib appended a synthetic empty line, which showed as a stray context line at the end of a hunk, and omitted `\ No newline at end of file`; both are fixed, so the output matches `diff -u` byte for byte.
 - List tools are now genuinely 1-indexed, as their schema has always said. `page` went to Favro untouched and Favro counts from zero, so asking for page 1 returned the second page and the first was never seen — a valid page of real results with rows silently absent. `page` and `next_page` in responses count from one to match.
 
 ### Removed

@@ -3,12 +3,12 @@ package tools
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -35,12 +35,20 @@ func TestMCP_CreateCard_HappyPath(t *testing.T) {
 			"widget_common_id": "w-1",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.False(t, out.DryRun)
-	require.Equal(t, "ci-new", out.Result.CardID)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if got := out.Result.CardID; got != "ci-new" {
+		t.Errorf("out.Result.CardID = %v, want %v", got, "ci-new")
+	}
 }
 
 func TestMCP_CreateCard_DryRun(t *testing.T) {
@@ -61,16 +69,32 @@ func TestMCP_CreateCard_DryRun(t *testing.T) {
 			"dry_run":          true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.True(t, out.DryRun)
-	require.Equal(t, http.MethodPost, out.WouldCall.Method)
-	require.Contains(t, out.WouldCall.URL, "/cards")
-	require.Contains(t, out.PredictedStateDiff, "preview")
-	require.Contains(t, out.PredictedStateDiff, "w-1")
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := out.WouldCall.Method; got != http.MethodPost {
+		t.Errorf("out.WouldCall.Method = %v, want %v", got, http.MethodPost)
+	}
+	if !strings.Contains(out.WouldCall.URL, "/cards") {
+		t.Errorf("out.WouldCall.URL does not contain %q", "/cards")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "preview") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "preview")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "w-1") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "w-1")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_CreateCard_MissingName(t *testing.T) {
@@ -113,8 +137,12 @@ func TestMCP_CreateCard_InvalidatesSearchCacheOnSuccess(t *testing.T) {
 			"widget_common_id": "w-1",
 		},
 	})
-	require.NoError(t, err)
-	require.EqualValues(t, 1, listCalls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := listCalls.Load(); got != 1 {
+		t.Errorf("listCalls.Load() = %v, want %v", got, 1)
+	}
 
 	// Re-search — must hit the cache.
 	_, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
@@ -124,8 +152,12 @@ func TestMCP_CreateCard_InvalidatesSearchCacheOnSuccess(t *testing.T) {
 			"widget_common_id": "w-1",
 		},
 	})
-	require.NoError(t, err)
-	require.EqualValues(t, 1, listCalls.Load(), "second search must hit the cache")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := listCalls.Load(); got != 1 {
+		t.Errorf("second search must hit the cache: got %v, want %v", got, 1)
+	}
 
 	// Dry-run create — must NOT invalidate.
 	_, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
@@ -136,7 +168,9 @@ func TestMCP_CreateCard_InvalidatesSearchCacheOnSuccess(t *testing.T) {
 			"dry_run":          true,
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	_, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: searchCardsToolName,
 		Arguments: map[string]any{
@@ -144,9 +178,12 @@ func TestMCP_CreateCard_InvalidatesSearchCacheOnSuccess(t *testing.T) {
 			"widget_common_id": "w-1",
 		},
 	})
-	require.NoError(t, err)
-	require.EqualValues(t, 1, listCalls.Load(),
-		"dry_run create_card must NOT invalidate the search-cards cache")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := listCalls.Load(); got != 1 {
+		t.Errorf("dry_run create_card must NOT invalidate the search-cards cache: got %v, want %v", got, 1)
+	}
 
 	// Live create — must invalidate.
 	_, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
@@ -156,7 +193,9 @@ func TestMCP_CreateCard_InvalidatesSearchCacheOnSuccess(t *testing.T) {
 			"widget_common_id": "w-1",
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	_, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: searchCardsToolName,
 		Arguments: map[string]any{
@@ -164,9 +203,12 @@ func TestMCP_CreateCard_InvalidatesSearchCacheOnSuccess(t *testing.T) {
 			"widget_common_id": "w-1",
 		},
 	})
-	require.NoError(t, err)
-	require.EqualValues(t, 2, listCalls.Load(),
-		"live create_card must invalidate the search-cards cache so the next search re-fetches")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := listCalls.Load(); got != 2 {
+		t.Errorf("live create_card must invalidate the search-cards cache so the next search re-fetches: got %v, want %v", got, 2)
+	}
 }
 
 func TestMCP_UpdateCard_HappyPath(t *testing.T) {
@@ -191,11 +233,17 @@ func TestMCP_UpdateCard_HappyPath(t *testing.T) {
 			"name":    "renamed",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.Equal(t, "renamed", out.Result.Name)
+	if got := out.Result.Name; got != "renamed" {
+		t.Errorf("out.Result.Name = %v, want %v", got, "renamed")
+	}
 }
 
 func TestMCP_UpdateCard_DryRun(t *testing.T) {
@@ -216,16 +264,32 @@ func TestMCP_UpdateCard_DryRun(t *testing.T) {
 			"dry_run":     true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.True(t, out.DryRun)
-	require.Equal(t, http.MethodPut, out.WouldCall.Method)
-	require.Contains(t, out.WouldCall.URL, "/cards/ci-1")
-	require.Contains(t, out.PredictedStateDiff, "renamed")
-	require.Contains(t, out.PredictedStateDiff, "+2 tag")
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := out.WouldCall.Method; got != http.MethodPut {
+		t.Errorf("out.WouldCall.Method = %v, want %v", got, http.MethodPut)
+	}
+	if !strings.Contains(out.WouldCall.URL, "/cards/ci-1") {
+		t.Errorf("out.WouldCall.URL does not contain %q", "/cards/ci-1")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "renamed") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "renamed")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "+2 tag") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "+2 tag")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_UpdateCard_NoChanges_DryRun(t *testing.T) {
@@ -238,12 +302,17 @@ func TestMCP_UpdateCard_NoChanges_DryRun(t *testing.T) {
 		Name:      updateCardToolName,
 		Arguments: map[string]any{"card_id": "ci-1", "dry_run": true},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.Contains(t, out.PredictedStateDiff, "no-op",
-		"a dry-run with no fields set must report a no-op")
+	if !strings.Contains(out.PredictedStateDiff, "no-op") {
+		t.Errorf("a dry-run with no fields set must report a no-op: %q missing", "no-op")
+	}
 }
 
 func TestMCP_UpdateCard_MissingCardID(t *testing.T) {
@@ -267,11 +336,17 @@ func TestMCP_ArchiveCard_HappyPath(t *testing.T) {
 		Name:      archiveCardToolName,
 		Arguments: map[string]any{"card_id": "ci-1"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.True(t, out.Result.IsArchived)
+	if !out.Result.IsArchived {
+		t.Error("out.Result.IsArchived = false, want true")
+	}
 }
 
 func TestMCP_ArchiveCard_DryRun(t *testing.T) {
@@ -287,11 +362,17 @@ func TestMCP_ArchiveCard_DryRun(t *testing.T) {
 		Name:      archiveCardToolName,
 		Arguments: map[string]any{"card_id": "ci-1", "dry_run": true},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.True(t, out.DryRun)
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_ArchiveCard_MissingCardID(t *testing.T) {
@@ -315,11 +396,17 @@ func TestMCP_UnarchiveCard_HappyPath(t *testing.T) {
 		Name:      unarchiveCardToolName,
 		Arguments: map[string]any{"card_id": "ci-1"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.False(t, out.Result.IsArchived)
+	if out.Result.IsArchived {
+		t.Error("out.Result.IsArchived = true, want false")
+	}
 }
 
 func TestMCP_UnarchiveCard_MissingCardID(t *testing.T) {
@@ -346,11 +433,17 @@ func TestMCP_MoveCard_HappyPath(t *testing.T) {
 			"column_id": "col-2",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.Equal(t, "col-2", out.Result.ColumnID)
+	if got := out.Result.ColumnID; got != "col-2" {
+		t.Errorf("out.Result.ColumnID = %v, want %v", got, "col-2")
+	}
 }
 
 func TestMCP_MoveCard_DryRun(t *testing.T) {
@@ -371,13 +464,23 @@ func TestMCP_MoveCard_DryRun(t *testing.T) {
 			"dry_run":          true,
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.True(t, out.DryRun)
-	require.Contains(t, out.PredictedStateDiff, "w-2")
-	require.Contains(t, out.PredictedStateDiff, "col-2")
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "w-2") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "w-2")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "col-2") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "col-2")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 // TestMCP_MoveCard_EmptyMove_SurfacesFavroError pins the contract
@@ -398,9 +501,15 @@ func TestMCP_MoveCard_EmptyMove_SurfacesFavroError(t *testing.T) {
 			"card_id": "ci-1",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError, "fully-empty move must surface as a tool error")
-	require.EqualValues(t, 0, calls.Load(), "must short-circuit before any Favro call")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("fully-empty move must surface as a tool error")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("must short-circuit before any Favro call: got %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_MoveCard_MissingCardID(t *testing.T) {
@@ -427,12 +536,20 @@ func TestMCP_DeleteCard_HappyPath(t *testing.T) {
 		Name:      deleteCardToolName,
 		Arguments: map[string]any{"card_id": "ci-1"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.DeleteCardResponse]](t, res)
-	require.False(t, out.DryRun)
-	require.Equal(t, favro.DeleteCardResponse{"ci-1"}, *out.Result)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if got := *out.Result; !reflect.DeepEqual(got, (favro.DeleteCardResponse{"ci-1"})) {
+		t.Errorf("*out.Result = %v, want %v", got, favro.DeleteCardResponse{"ci-1"})
+	}
 }
 
 func TestMCP_DeleteCard_Everywhere(t *testing.T) {
@@ -454,11 +571,17 @@ func TestMCP_DeleteCard_Everywhere(t *testing.T) {
 			"everywhere": true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.DeleteCardResponse]](t, res)
-	require.Len(t, *out.Result, 2)
+	if len(*out.Result) != 2 {
+		t.Fatalf("len(*out.Result) = %d, want 2", len(*out.Result))
+	}
 }
 
 func TestMCP_DeleteCard_DryRun_Everywhere_StateDiff(t *testing.T) {
@@ -478,15 +601,26 @@ func TestMCP_DeleteCard_DryRun_Everywhere_StateDiff(t *testing.T) {
 			"dry_run":    true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.DeleteCardResponse]](t, res)
-	require.True(t, out.DryRun)
-	require.Contains(t, out.PredictedStateDiff, "EVERY widget",
-		"everywhere=true dry-run must announce the cross-widget purge loudly")
-	require.Contains(t, out.WouldCall.URL, "everywhere=true")
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "EVERY widget") {
+		t.Errorf("everywhere=true dry-run must announce the cross-widget purge loudly: %q missing", "EVERY widget")
+	}
+	if !strings.Contains(out.WouldCall.URL, "everywhere=true") {
+		t.Errorf("out.WouldCall.URL does not contain %q", "everywhere=true")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_DeleteCard_MissingCardID(t *testing.T) {

@@ -2,6 +2,7 @@ package favroapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,8 +13,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
 )
@@ -89,20 +88,38 @@ func TestDo_HappyPath_AppliesAuthAndOrgHeader(t *testing.T) {
 	c := newTestClient(srv)
 
 	resp, err := c.Do(context.Background(), http.MethodGet, "/cards", nil, nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	t.Cleanup(func() { drainAndClose(resp) })
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	if got := resp.StatusCode; got != http.StatusOK {
+		t.Errorf("resp.StatusCode = %v, want %v", got, http.StatusOK)
+	}
 
 	rec := h.seen()
-	require.Len(t, rec, 1)
-	require.Equal(t, http.MethodGet, rec[0].Method)
-	require.Equal(t, "/cards", rec[0].Path)
+	if len(rec) != 1 {
+		t.Fatalf("len(rec) = %d, want 1", len(rec))
+	}
+	if got := rec[0].Method; got != http.MethodGet {
+		t.Errorf("rec[0].Method = %v, want %v", got, http.MethodGet)
+	}
+	if got := rec[0].Path; got != "/cards" {
+		t.Errorf("rec[0].Path = %v, want %v", got, "/cards")
+	}
 
 	user, pass, ok := parseBasic(rec[0].Headers.Get("Authorization"))
-	require.True(t, ok, "Authorization header must be Basic")
-	require.Equal(t, "fixture@example.invalid", user)
-	require.Equal(t, "fixture-token", pass)
-	require.Equal(t, "fixture-org", rec[0].Headers.Get("organizationId"))
+	if !ok {
+		t.Error("Authorization header must be Basic")
+	}
+	if got := user; got != "fixture@example.invalid" {
+		t.Errorf("user = %v, want %v", got, "fixture@example.invalid")
+	}
+	if got := pass; got != "fixture-token" {
+		t.Errorf("pass = %v, want %v", got, "fixture-token")
+	}
+	if got := rec[0].Headers.Get("organizationId"); got != "fixture-org" {
+		t.Errorf("rec[0].Headers.Get(\"organizationId\") = %v, want %v", got, "fixture-org")
+	}
 }
 
 func TestDo_429WithinCap_RetriesOnce(t *testing.T) {
@@ -124,10 +141,16 @@ func TestDo_429WithinCap_RetriesOnce(t *testing.T) {
 	c := newTestClient(srv)
 
 	resp, err := c.Do(context.Background(), http.MethodGet, "/x", nil, nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	t.Cleanup(func() { drainAndClose(resp) })
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.EqualValues(t, 2, calls.Load(), "client should retry once on 429")
+	if got := resp.StatusCode; got != http.StatusOK {
+		t.Errorf("resp.StatusCode = %v, want %v", got, http.StatusOK)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("client should retry once on 429: got %v, want %v", got, 2)
+	}
 }
 
 func TestDo_429AboveCap_ReturnsRateLimitError(t *testing.T) {
@@ -144,8 +167,12 @@ func TestDo_429AboveCap_ReturnsRateLimitError(t *testing.T) {
 	resp, err := c.Do(context.Background(), http.MethodGet, "/x", nil, nil)
 	drainAndClose(resp) // resp is nil on error; drainAndClose is nil-safe and keeps bodyclose happy
 	var rl *RateLimitError
-	require.ErrorAs(t, err, &rl)
-	require.Equal(t, 120*time.Second, rl.RetryAfter)
+	if !errors.As(err, &rl) {
+		t.Fatalf("got %v, want rl", err)
+	}
+	if got := rl.RetryAfter; got != 120*time.Second {
+		t.Errorf("rl.RetryAfter = %v, want %v", got, 120*time.Second)
+	}
 }
 
 func TestDo_5xx_RetriesUpToBudgetThenTransientError(t *testing.T) {
@@ -168,10 +195,15 @@ func TestDo_5xx_RetriesUpToBudgetThenTransientError(t *testing.T) {
 	resp, err := c.Do(context.Background(), http.MethodGet, "/x", nil, nil)
 	drainAndClose(resp)
 	var te *TransientError
-	require.ErrorAs(t, err, &te)
-	require.Equal(t, transientMaxAttempts, te.Attempts)
-	require.EqualValues(t, transientMaxAttempts, calls.Load(),
-		"client should attempt %d times before giving up", transientMaxAttempts)
+	if !errors.As(err, &te) {
+		t.Fatalf("got %v, want te", err)
+	}
+	if got := te.Attempts; got != transientMaxAttempts {
+		t.Errorf("te.Attempts = %v, want %v", got, transientMaxAttempts)
+	}
+	if got := calls.Load(); got != transientMaxAttempts {
+		t.Errorf("client should attempt %d times before giving up: got %v, want %v", transientMaxAttempts, got, transientMaxAttempts)
+	}
 }
 
 func TestDo_401_ReturnsAuthErrorNoRetry(t *testing.T) {
@@ -189,9 +221,15 @@ func TestDo_401_ReturnsAuthErrorNoRetry(t *testing.T) {
 	resp, err := c.Do(context.Background(), http.MethodGet, "/x", nil, nil)
 	drainAndClose(resp)
 	var ae *AuthError
-	require.ErrorAs(t, err, &ae)
-	require.Equal(t, http.StatusUnauthorized, ae.Status)
-	require.EqualValues(t, 1, calls.Load(), "401 must never be retried")
+	if !errors.As(err, &ae) {
+		t.Fatalf("got %v, want ae", err)
+	}
+	if got := ae.Status; got != http.StatusUnauthorized {
+		t.Errorf("ae.Status = %v, want %v", got, http.StatusUnauthorized)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("401 must never be retried: got %v, want %v", got, 1)
+	}
 }
 
 // TestDo_403_ReturnsForbiddenErrorNotAuthError pins the contract
@@ -215,15 +253,25 @@ func TestDo_403_ReturnsForbiddenErrorNotAuthError(t *testing.T) {
 	drainAndClose(resp)
 
 	var fe *ForbiddenError
-	require.ErrorAs(t, err, &fe)
-	require.Equal(t, http.StatusForbidden, fe.Status)
-	require.Contains(t, fe.Path, "/cards/some-id")
+	if !errors.As(err, &fe) {
+		t.Fatalf("got %v, want fe", err)
+	}
+	if got := fe.Status; got != http.StatusForbidden {
+		t.Errorf("fe.Status = %v, want %v", got, http.StatusForbidden)
+	}
+	if !strings.Contains(fe.Path, "/cards/some-id") {
+		t.Errorf("fe.Path does not contain %q", "/cards/some-id")
+	}
 
 	// Must NOT also satisfy AuthError — the whole point of the split.
 	var ae *AuthError
-	require.NotErrorAs(t, err, &ae, "403 must not be classified as AuthError")
+	if errors.As(err, &ae) {
+		t.Fatalf("403 must not be classified as AuthError, got %v", err)
+	}
 
-	require.EqualValues(t, 1, calls.Load(), "403 must never be retried")
+	if got := calls.Load(); got != 1 {
+		t.Errorf("403 must never be retried: got %v, want %v", got, 1)
+	}
 }
 
 func TestDo_404_ReturnsNotFoundErrorNoRetry(t *testing.T) {
@@ -241,9 +289,15 @@ func TestDo_404_ReturnsNotFoundErrorNoRetry(t *testing.T) {
 	resp, err := c.Do(context.Background(), http.MethodGet, "/cards/missing", nil, nil)
 	drainAndClose(resp)
 	var nf *NotFoundError
-	require.ErrorAs(t, err, &nf)
-	require.Equal(t, "/cards/missing", nf.Path)
-	require.EqualValues(t, 1, calls.Load(), "404 must never be retried")
+	if !errors.As(err, &nf) {
+		t.Fatalf("got %v, want nf", err)
+	}
+	if got := nf.Path; got != "/cards/missing" {
+		t.Errorf("nf.Path = %v, want %v", got, "/cards/missing")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("404 must never be retried: got %v, want %v", got, 1)
+	}
 }
 
 func TestDo_400_ReturnsValidationErrorWithBody(t *testing.T) {
@@ -260,9 +314,15 @@ func TestDo_400_ReturnsValidationErrorWithBody(t *testing.T) {
 	resp, err := c.Do(context.Background(), http.MethodPost, "/cards", nil, map[string]any{"foo": "bar"})
 	drainAndClose(resp)
 	var ve *ValidationError
-	require.ErrorAs(t, err, &ve)
-	require.Equal(t, http.StatusBadRequest, ve.Status)
-	require.Contains(t, ve.Body, "name required")
+	if !errors.As(err, &ve) {
+		t.Fatalf("got %v, want ve", err)
+	}
+	if got := ve.Status; got != http.StatusBadRequest {
+		t.Errorf("ve.Status = %v, want %v", got, http.StatusBadRequest)
+	}
+	if !strings.Contains(ve.Body, "name required") {
+		t.Errorf("ve.Body does not contain %q", "name required")
+	}
 }
 
 func TestDo_RecordsRateLimitSnapshot(t *testing.T) {
@@ -279,13 +339,21 @@ func TestDo_RecordsRateLimitSnapshot(t *testing.T) {
 	c := newTestClient(srv)
 
 	resp, err := c.Do(context.Background(), http.MethodGet, "/x", nil, nil)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	t.Cleanup(func() { drainAndClose(resp) })
 
 	snap, ok := c.LatestRateLimit()
-	require.True(t, ok)
-	require.Equal(t, 1000, snap.Limit)
-	require.Equal(t, 997, snap.Remaining)
+	if !ok {
+		t.Error("ok = false, want true")
+	}
+	if got := snap.Limit; got != 1000 {
+		t.Errorf("snap.Limit = %v, want %v", got, 1000)
+	}
+	if got := snap.Remaining; got != 997 {
+		t.Errorf("snap.Remaining = %v, want %v", got, 997)
+	}
 }
 
 func TestDo_DryRun_OnMutatingMethod_ShortCircuits(t *testing.T) {
@@ -302,16 +370,30 @@ func TestDo_DryRun_OnMutatingMethod_ShortCircuits(t *testing.T) {
 
 	resp, err := c.Do(WithDryRun(context.Background()), http.MethodPost, "/cards", nil, map[string]any{"name": "x"})
 	drainAndClose(resp)
-	require.ErrorIs(t, err, ErrDryRun)
+	if !errors.Is(err, ErrDryRun) {
+		t.Fatalf("got %v, want ErrDryRun", err)
+	}
 
 	var rec *DryRunRecord
-	require.ErrorAs(t, err, &rec)
-	require.Equal(t, http.MethodPost, rec.Method)
-	require.Contains(t, rec.URL, "/cards")
-	require.Equal(t, "[REDACTED]", rec.Headers.Get("Authorization"))
-	require.NotEmpty(t, rec.Body, "body must be captured for review")
+	if !errors.As(err, &rec) {
+		t.Fatalf("got %v, want rec", err)
+	}
+	if got := rec.Method; got != http.MethodPost {
+		t.Errorf("rec.Method = %v, want %v", got, http.MethodPost)
+	}
+	if !strings.Contains(rec.URL, "/cards") {
+		t.Errorf("rec.URL does not contain %q", "/cards")
+	}
+	if got := rec.Headers.Get("Authorization"); got != "[REDACTED]" {
+		t.Errorf("rec.Headers.Get(\"Authorization\") = %v, want %v", got, "[REDACTED]")
+	}
+	if len(rec.Body) == 0 {
+		t.Fatal("body must be captured for review")
+	}
 
-	require.EqualValues(t, 0, calls.Load(), "dry-run must NOT contact the server")
+	if got := calls.Load(); got != 0 {
+		t.Errorf("dry-run must NOT contact the server: got %v, want %v", got, 0)
+	}
 }
 
 func TestDo_DryRun_OnGET_DoesNotShortCircuit(t *testing.T) {
@@ -328,9 +410,13 @@ func TestDo_DryRun_OnGET_DoesNotShortCircuit(t *testing.T) {
 	c := newTestClient(srv)
 
 	resp, err := c.Do(WithDryRun(context.Background()), http.MethodGet, "/cards", nil, nil)
-	require.NoError(t, err, "GETs are never dry-run")
+	if err := err; err != nil {
+		t.Fatalf("GETs are never dry-run: %v", err)
+	}
 	t.Cleanup(func() { drainAndClose(resp) })
-	require.EqualValues(t, 1, calls.Load())
+	if got := calls.Load(); got != 1 {
+		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
 }
 
 func TestDo_ForceDryRun_HonoredEvenWithoutContext(t *testing.T) {
@@ -348,8 +434,12 @@ func TestDo_ForceDryRun_HonoredEvenWithoutContext(t *testing.T) {
 
 	resp, err := c.Do(context.Background(), http.MethodDelete, "/cards/x", nil, nil)
 	drainAndClose(resp)
-	require.ErrorIs(t, err, ErrDryRun)
-	require.EqualValues(t, 0, calls.Load())
+	if !errors.Is(err, ErrDryRun) {
+		t.Fatalf("got %v, want ErrDryRun", err)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestRedactHeaders_Authorization(t *testing.T) {
@@ -361,13 +451,19 @@ func TestRedactHeaders_Authorization(t *testing.T) {
 	h.Set("Accept", "application/json")
 
 	out := redactHeaders(h)
-	require.Equal(t, "[REDACTED]", out["Authorization"])
+	if got := out["Authorization"]; got != "[REDACTED]" {
+		t.Errorf("out[\"Authorization\"] = %v, want %v", got, "[REDACTED]")
+	}
 	// organizationId names the tenant and rides on every request, so
 	// it is redacted too. This assertion used to read the other way,
 	// which is how the leak survived: the behaviour was not an
 	// oversight, it was pinned.
-	require.Equal(t, "[REDACTED]", out["Organizationid"])
-	require.Equal(t, "application/json", out["Accept"])
+	if got := out["Organizationid"]; got != "[REDACTED]" {
+		t.Errorf("out[\"Organizationid\"] = %v, want %v", got, "[REDACTED]")
+	}
+	if got := out["Accept"]; got != "application/json" {
+		t.Errorf("out[\"Accept\"] = %v, want %v", got, "application/json")
+	}
 }
 
 func TestJoinURL(t *testing.T) {
@@ -389,11 +485,17 @@ func TestJoinURL(t *testing.T) {
 			t.Parallel()
 			got, err := joinURL(tc.base, tc.path, tc.query)
 			if tc.wantErr {
-				require.Error(t, err)
+				if err == nil {
+					t.Fatal("err should have failed")
+				}
 				return
 			}
-			require.NoError(t, err)
-			require.Equal(t, tc.want, got)
+			if err := err; err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if got := got; got != tc.want {
+				t.Errorf("got = %v, want %v", got, tc.want)
+			}
 		})
 	}
 }
@@ -404,20 +506,30 @@ func TestEncodeBody(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
 		t.Parallel()
 		got, err := encodeBody(nil)
-		require.NoError(t, err)
-		require.Nil(t, got)
+		if err := err; err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		if got != nil {
+			t.Errorf("got = %v, want nil", got)
+		}
 	})
 	t.Run("raw bytes pass-through", func(t *testing.T) {
 		t.Parallel()
 		got, err := encodeBody([]byte(`{"raw":1}`))
-		require.NoError(t, err)
-		require.Equal(t, `{"raw":1}`, string(got))
+		if err := err; err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		if got := string(got); got != `{"raw":1}` {
+			t.Errorf("string(got) = %v, want %v", got, `{"raw":1}`)
+		}
 	})
 	t.Run("struct json-encoded", func(t *testing.T) {
 		t.Parallel()
 		got, err := encodeBody(map[string]string{"k": "v"})
-		require.NoError(t, err)
-		require.JSONEq(t, `{"k":"v"}`, string(got))
+		if err := err; err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		requireJSONEq(t, `{"k":"v"}`, string(got))
 	})
 }
 
@@ -436,11 +548,15 @@ func TestDo_ContextCancellation_StopsRetry(t *testing.T) {
 
 	resp, err := c.Do(ctx, http.MethodGet, "/x", nil, nil)
 	drainAndClose(resp)
-	require.Error(t, err)
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
 	// Either the first attempt errors with the context error, or the
 	// retry sleep returns it. Either way the surface error must wrap
 	// context.Canceled.
-	require.ErrorIs(t, err, context.Canceled)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v, want context.Canceled", err)
+	}
 }
 
 // parseBasic decodes a "Basic <base64(user:pass)>" header value.
@@ -499,19 +615,30 @@ func TestDryRun_WriteHelpers_NoRoundTrip(t *testing.T) {
 			c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
 
 			err := tc.run(c)
-			require.ErrorIs(t, err, ErrDryRun, "every mutating helper must short-circuit to ErrDryRun in dry-run mode")
+			if !errors.Is(err, ErrDryRun) {
+				t.Fatalf("got %v, want ErrDryRun", err)
+			}
 			var rec *DryRunRecord
-			require.ErrorAs(t, err, &rec, "ErrDryRun must wrap a *DryRunRecord")
-			require.NotEmpty(t, rec.Method)
-			require.Contains(t, rec.URL, "favro.invalid")
-			require.Equal(t, "[REDACTED]", rec.Headers.Get("Authorization"),
-				"DryRunRecord must redact the Authorization header so secrets cannot leak via tool output")
-			require.Equal(t, "[REDACTED]", rec.Headers.Get("organizationId"),
-				"DryRunRecord must redact the organization id, which names the tenant")
+			if !errors.As(err, &rec) {
+				t.Fatalf("got %v, want rec", err)
+			}
+			if len(rec.Method) == 0 {
+				t.Fatal("rec.Method is empty")
+			}
+			if !strings.Contains(rec.URL, "favro.invalid") {
+				t.Errorf("rec.URL does not contain %q", "favro.invalid")
+			}
+			if got := rec.Headers.Get("Authorization"); got != "[REDACTED]" {
+				t.Errorf("DryRunRecord must redact the Authorization header so secrets cannot leak via tool output: got %v, want %v", got, "[REDACTED]")
+			}
+			if got := rec.Headers.Get("organizationId"); got != "[REDACTED]" {
+				t.Errorf("DryRunRecord must redact the organization id, which names the tenant: got %v, want %v", got, "[REDACTED]")
+			}
 			// The record composes its headers through buildRequest, so
 			// an empty set here would mean that failed silently.
-			require.Equal(t, "application/json", rec.Headers.Get("Accept"),
-				"DryRunRecord must show the headers the real request would carry")
+			if got := rec.Headers.Get("Accept"); got != "application/json" {
+				t.Errorf("DryRunRecord must show the headers the real request would carry: got %v, want %v", got, "application/json")
+			}
 		})
 	}
 }
@@ -528,5 +655,7 @@ func TestDryRun_ForceDryRunOnClient_NoRoundTrip(t *testing.T) {
 	c.ForceDryRun = true
 
 	err := c.PostJSON(context.Background(), "/tags", map[string]any{"name": "x"}, nil)
-	require.ErrorIs(t, err, ErrDryRun)
+	if !errors.Is(err, ErrDryRun) {
+		t.Fatalf("got %v, want ErrDryRun", err)
+	}
 }

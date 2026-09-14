@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -31,12 +30,20 @@ func TestMCP_CreateComment_HappyPath(t *testing.T) {
 		Name:      createCommentToolName,
 		Arguments: map[string]any{"card_common_id": "cc-1", "comment": "hello"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Comment]](t, res)
-	require.False(t, out.DryRun)
-	require.Equal(t, "cm-1", out.Result.CommentID)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if got := out.Result.CommentID; got != "cm-1" {
+		t.Errorf("out.Result.CommentID = %v, want %v", got, "cm-1")
+	}
 }
 
 func TestMCP_CreateComment_DryRun(t *testing.T) {
@@ -56,14 +63,26 @@ func TestMCP_CreateComment_DryRun(t *testing.T) {
 			"dry_run":        true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Comment]](t, res)
-	require.True(t, out.DryRun)
-	require.Equal(t, http.MethodPost, out.WouldCall.Method)
-	require.Contains(t, out.WouldCall.URL, "/comments")
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := out.WouldCall.Method; got != http.MethodPost {
+		t.Errorf("out.WouldCall.Method = %v, want %v", got, http.MethodPost)
+	}
+	if !strings.Contains(out.WouldCall.URL, "/comments") {
+		t.Errorf("out.WouldCall.URL does not contain %q", "/comments")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_CreateComment_MissingFields(t *testing.T) {
@@ -101,14 +120,26 @@ func TestMCP_UpdateComment_DryRun(t *testing.T) {
 			"dry_run":    true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Comment]](t, res)
-	require.True(t, out.DryRun)
-	require.Equal(t, http.MethodPut, out.WouldCall.Method)
-	require.Contains(t, out.WouldCall.URL, "/comments/cm-1")
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := out.WouldCall.Method; got != http.MethodPut {
+		t.Errorf("out.WouldCall.Method = %v, want %v", got, http.MethodPut)
+	}
+	if !strings.Contains(out.WouldCall.URL, "/comments/cm-1") {
+		t.Errorf("out.WouldCall.URL does not contain %q", "/comments/cm-1")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_UpdateComment_HappyPath(t *testing.T) {
@@ -130,11 +161,17 @@ func TestMCP_UpdateComment_HappyPath(t *testing.T) {
 		Name:      updateCommentToolName,
 		Arguments: map[string]any{"comment_id": "cm-1", "comment": "edited"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Comment]](t, res)
-	require.Equal(t, "edited", out.Result.Body)
+	if got := out.Result.Body; got != "edited" {
+		t.Errorf("out.Result.Body = %v, want %v", got, "edited")
+	}
 }
 
 func TestMCP_DeleteComment_HappyPath(t *testing.T) {
@@ -152,12 +189,20 @@ func TestMCP_DeleteComment_HappyPath(t *testing.T) {
 		Name:      deleteCommentToolName,
 		Arguments: map[string]any{"comment_id": "cm-1"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[struct{}]](t, res)
-	require.False(t, out.DryRun)
-	require.NotNil(t, out.Result)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if out.Result == nil {
+		t.Fatal("out.Result is nil")
+	}
 }
 
 func TestMCP_DeleteComment_DryRun(t *testing.T) {
@@ -176,13 +221,23 @@ func TestMCP_DeleteComment_DryRun(t *testing.T) {
 			"dry_run":    true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[struct{}]](t, res)
-	require.True(t, out.DryRun)
-	require.Equal(t, http.MethodDelete, out.WouldCall.Method)
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := out.WouldCall.Method; got != http.MethodDelete {
+		t.Errorf("out.WouldCall.Method = %v, want %v", got, http.MethodDelete)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_DeleteComment_MissingCommentID(t *testing.T) {

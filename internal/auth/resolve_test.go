@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 // stubSource is a minimal Source double for resolve tests. The
@@ -28,9 +26,15 @@ func TestResolveToken_FirstSourceWins(t *testing.T) {
 	secondary := &stubSource{name: "secondary", tok: Token{Email: "x@y", APIToken: "t2", OrganizationID: "o"}}
 
 	got, err := resolveToken(context.Background(), []Source{primary, secondary})
-	require.NoError(t, err)
-	require.Equal(t, "primary", got.Source)
-	require.Equal(t, "t1", got.Token.APIToken)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := got.Source; got != "primary" {
+		t.Errorf("got.Source = %v, want %v", got, "primary")
+	}
+	if got := got.Token.APIToken; got != "t1" {
+		t.Errorf("got.Token.APIToken = %v, want %v", got, "t1")
+	}
 }
 
 func TestResolveToken_FallthroughOnNotConfigured(t *testing.T) {
@@ -40,8 +44,12 @@ func TestResolveToken_FallthroughOnNotConfigured(t *testing.T) {
 	secondary := &stubSource{name: "secondary", tok: Token{Email: "u@e", APIToken: "t", OrganizationID: "o"}}
 
 	got, err := resolveToken(context.Background(), []Source{primary, secondary})
-	require.NoError(t, err)
-	require.Equal(t, "secondary", got.Source)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := got.Source; got != "secondary" {
+		t.Errorf("got.Source = %v, want %v", got, "secondary")
+	}
 }
 
 func TestResolveToken_StopsOnRealError(t *testing.T) {
@@ -52,15 +60,21 @@ func TestResolveToken_StopsOnRealError(t *testing.T) {
 	secondary := &stubSource{name: "secondary", tok: Token{Email: "u@e", APIToken: "t", OrganizationID: "o"}}
 
 	got, err := resolveToken(context.Background(), []Source{primary, secondary})
-	require.ErrorIs(t, err, boom, "real errors must surface, not be swallowed by fallthrough")
-	require.Empty(t, got.Source)
+	if !errors.Is(err, boom) {
+		t.Fatalf("got %v, want boom", err)
+	}
+	if len(got.Source) != 0 {
+		t.Errorf("got.Source = %v, want empty", got.Source)
+	}
 }
 
 func TestResolveToken_NoSources_ReturnsNoCredentials(t *testing.T) {
 	t.Parallel()
 
 	_, err := resolveToken(context.Background(), nil)
-	require.ErrorIs(t, err, errNoCredentials)
+	if !errors.Is(err, errNoCredentials) {
+		t.Fatalf("got %v, want errNoCredentials", err)
+	}
 }
 
 func TestResolveToken_AllNotConfigured_ReturnsNoCredentials(t *testing.T) {
@@ -70,14 +84,22 @@ func TestResolveToken_AllNotConfigured_ReturnsNoCredentials(t *testing.T) {
 	b := &stubSource{name: "b", err: errNotConfigured}
 
 	_, err := resolveToken(context.Background(), []Source{a, b})
-	require.ErrorIs(t, err, errNoCredentials)
+	if !errors.Is(err, errNoCredentials) {
+		t.Fatalf("got %v, want errNoCredentials", err)
+	}
 }
 
 func TestDefaultSources_OrderIsEnvThenKeyring(t *testing.T) {
 	t.Parallel()
 
 	srcs := defaultSources()
-	require.Len(t, srcs, 2)
-	require.Equal(t, "env", srcs[0].Name(), "env must win so a quick override works without `auth login`")
-	require.Equal(t, "keyring", srcs[1].Name())
+	if len(srcs) != 2 {
+		t.Fatalf("len(srcs) = %d, want 2", len(srcs))
+	}
+	if got := srcs[0].Name(); got != "env" {
+		t.Errorf("env must win so a quick override works without `auth login`: got %v, want %v", got, "env")
+	}
+	if got := srcs[1].Name(); got != "keyring" {
+		t.Errorf("srcs[1].Name() = %v, want %v", got, "keyring")
+	}
 }
