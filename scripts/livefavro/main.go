@@ -28,6 +28,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -41,6 +42,11 @@ const (
 	defaultBinary = "./bin/favro-mcp"
 	callTimeout   = 90 * time.Second
 )
+
+// stopTimeout is how long a server gets to exit after its stdin closes,
+// before it is killed. It should need none of it. A variable rather than
+// a constant so the test for the kill path need not spend five seconds.
+var stopTimeout = 5 * time.Second
 
 func main() {
 	bin := flag.String("bin", defaultBinary, "the built server to drive")
@@ -398,7 +404,10 @@ func (p *pool) value(v any) (any, string) {
 
 // session is a running server and the pipes to it.
 type session struct {
-	cmd    *exec.Cmd
+	cmd *exec.Cmd
+	// in is the WRITE end of the server's stdin, kept because stop has
+	// to close it and cmd.Stdin is the other end — see stop.
+	in     io.WriteCloser
 	stdin  *bufio.Writer
 	stdout *bufio.Reader
 	nextID int
@@ -421,19 +430,44 @@ func start(bin string, env ...string) (*session, error) {
 		return nil, err
 	}
 
-	s := &session{cmd: cmd, stdin: bufio.NewWriter(in), stdout: bufio.NewReader(outPipe), nextID: 1}
+	s := &session{cmd: cmd, in: in, stdin: bufio.NewWriter(in), stdout: bufio.NewReader(outPipe), nextID: 1}
 	if err := s.initialize(); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
+// stop closes the server's stdin and waits for it to go.
+//
+// **It has to close the write end, and cmd.Stdin is the read end.**
+// StdinPipe sets cmd.Stdin to the read side of the pipe and RETURNS the
+// write side; the previous version type-asserted cmd.Stdin to a Closer,
+// which succeeds — it is an *os.File — and closed the wrong end. The
+// server never saw EOF, so it never exited, so Wait never returned.
+// Every run of this driver therefore printed its summary and then hung
+// forever, holding the server process open, and `make live` never
+// returned. It was survivable only because the summary comes first and
+// a person reads it and presses Ctrl-C.
+//
+// Go's own documentation is where this is easy to get wrong: it says
+// Wait closes the pipe after seeing the command exit, which for stdin
+// is circular — the command exits when stdin closes.
+//
+// The bounded wait is the second half. A server wedged in a request
+// will not exit on EOF either, and a driver run by hand should not need
+// a Ctrl-C for that any more than for this.
 func (s *session) stop() {
 	_ = s.stdin.Flush()
-	if closer, ok := s.cmd.Stdin.(interface{ Close() error }); ok {
-		_ = closer.Close()
+	_ = s.in.Close()
+
+	done := make(chan error, 1)
+	go func() { done <- s.cmd.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(stopTimeout):
+		_ = s.cmd.Process.Kill()
+		<-done
 	}
-	_ = s.cmd.Wait()
 }
 
 func (s *session) initialize() error {
