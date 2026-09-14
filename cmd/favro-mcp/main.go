@@ -21,10 +21,12 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -62,6 +64,17 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) err
 		case "help", "--help", "-h":
 			printUsage(stdout)
 			return nil
+		}
+
+		// A leading dash is the only thing separating a flag from a
+		// mistyped subcommand. Falling through starts the server, which
+		// reads as a hang — it blocks on stdin and says nothing — and
+		// exits 0, so a script driving this binary takes a typo for
+		// success.
+		if !strings.HasPrefix(args[0], "-") {
+			errf(stderr, "favro-mcp: unknown command %q\n\n", args[0])
+			printUsage(stderr)
+			return fmt.Errorf("unknown command: %s", args[0])
 		}
 	}
 
