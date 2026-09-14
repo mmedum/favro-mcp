@@ -671,7 +671,7 @@ the standard lists it as a thing that bites).
 ## 15. What must be verified live
 
 Not yet verified against a real organization, and each one is a place
-§2.1 can be hiding. A5 and A6 close them.
+§2.1 can be hiding.
 
 1. Every per-type custom-field write shape in `favro_set_card_custom_field`
    — the README already says these are documented-but-unconfirmed.
@@ -679,14 +679,35 @@ Not yet verified against a real organization, and each one is a place
    shipped in v1.1.1 is the third attempt at this write and the first
    that can be right in principle; nothing has yet confirmed a removal
    live.
-3. The webhook endpoints A5 adds, all three.
+3. **The shape of a webhook row, and it needs somebody to register a
+   webhook first.** A5 called `GET /webhooks` live, which is what found
+   that it answers with a bare array rather than the paginated envelope
+   — but the organization has none configured, so the call has only
+   ever returned `[]`. Three things therefore rest on fixtures:
+   - that Favro's `secret` never reaches a result. The type has no field
+     for it, so this is true by construction and a test asserts it, but
+     it has not met a real payload carrying one.
+   - which spelling Favro sends for a webhook's column scope. The
+     reference's field table says `columnIds` (array) and every example
+     shows `columnId` (string); `WebhookOptions.ColumnIDs` accepts both
+     precisely because the reference disagrees with itself, and nothing
+     has resolved which is real.
+   - `favro_delete_webhook` against a live webhook. Only the dry-run
+     path has run. This one cannot be closed by being more diligent:
+     there is deliberately no tool to create a webhook, so there is no
+     disposable one to delete.
 4. Whether `PUT /groups/{id}` replaces the member list or applies a
    delta. The docs say delta with a per-entry `delete` flag; a live test
    observed whole-list replacement. The client sends the full list, which
    is correct under either reading, but the disagreement is unresolved.
-5. Whether any documented field this client does not model is accepted
-   live — the `api-fields` gate's list of unmodelled fields is a
-   worklist, not a verdict.
+
+**Closed by A5, recorded because the closing is the evidence:**
+`CustomField.widgetCommonId` arrives on every row (100 of 100);
+`Card.sheetPosition` and `CardAttachment.thumbnailURL` both arrive
+(15 attachments across 200 cards); and 200 cards now read without a
+schema-validation error, where any card carrying a Vote, Members, Tags,
+Status or Multiple-select custom field previously returned a protocol
+error instead of a result.
 
 ## 16. Delivery phases
 
