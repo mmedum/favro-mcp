@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 // pinsShell is the rule that cost a sibling an afternoon: asking only
 // whether both keys appear says yes to a `shell: bash` sitting beside
@@ -59,5 +64,33 @@ func TestScannersAgreeNeedsBothSides(t *testing.T) {
 	}
 	if err := scannersAgree(root, []workflowFile{{name: "ci.yml", data: "jobs:\n"}}); err == nil {
 		t.Error("a workflow naming no gitleaks version should fail, not pass quietly")
+	}
+}
+
+// Hard rule 3 restates an MCP spec MUST NOT, and `forbidigo` is what
+// enforces it. Nothing else would notice the linter being dropped: the
+// tree is clean, so removing the rule changes no output — which is how
+// this repository has already shipped four rules held by nothing.
+func TestForbidigoGuardsStdout(t *testing.T) {
+	root, err := moduleRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".golangci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := string(data)
+
+	for _, want := range []string{
+		"- forbidigo",    // enabled
+		"analyze-types",  // resolves aliased imports and os.Stdout as a value
+		`^fmt\.Print.*$`, // the function family
+		`^os\.Stdout$`,   // and the destination, which is the half a Print matcher misses
+	} {
+		if !strings.Contains(config, want) {
+			t.Errorf(".golangci.yml no longer carries %q; stdout is unguarded and nothing else "+
+				"would fail to say so", want)
+		}
 	}
 }
