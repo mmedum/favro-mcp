@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -26,12 +26,24 @@ func TestProjectCardTags(t *testing.T) {
 	}
 
 	got := projectCardTags([]string{"t-1", "t-unknown", "t-2"}, tags)
-	require.Len(t, got, 3)
-	require.Equal(t, "frontend", got[0].Name)
-	require.Equal(t, "blue", got[0].Color)
-	require.Equal(t, "t-unknown", got[1].TagID)
-	require.Empty(t, got[1].Name, "unknown tag id must round-trip with empty name")
-	require.Equal(t, "backend", got[2].Name)
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3", len(got))
+	}
+	if got := got[0].Name; got != "frontend" {
+		t.Errorf("got[0].Name = %v, want %v", got, "frontend")
+	}
+	if got := got[0].Color; got != "blue" {
+		t.Errorf("got[0].Color = %v, want %v", got, "blue")
+	}
+	if got := got[1].TagID; got != "t-unknown" {
+		t.Errorf("got[1].TagID = %v, want %v", got, "t-unknown")
+	}
+	if len(got[1].Name) != 0 {
+		t.Errorf("unknown tag id must round-trip with empty name: got %v", got[1].Name)
+	}
+	if got := got[2].Name; got != "backend" {
+		t.Errorf("got[2].Name = %v, want %v", got, "backend")
+	}
 }
 
 func TestProjectCardAssignments(t *testing.T) {
@@ -47,12 +59,24 @@ func TestProjectCardAssignments(t *testing.T) {
 	}
 
 	got := projectCardAssignments(assignments, users)
-	require.Len(t, got, 2)
-	require.Equal(t, "Alice", got[0].Name)
-	require.Equal(t, "alice@example.invalid", got[0].Email)
-	require.True(t, got[0].Completed)
-	require.Equal(t, "u-unknown", got[1].UserID)
-	require.Empty(t, got[1].Name)
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got := got[0].Name; got != "Alice" {
+		t.Errorf("got[0].Name = %v, want %v", got, "Alice")
+	}
+	if got := got[0].Email; got != "alice@example.invalid" {
+		t.Errorf("got[0].Email = %v, want %v", got, "alice@example.invalid")
+	}
+	if !got[0].Completed {
+		t.Error("got[0].Completed = false, want true")
+	}
+	if got := got[1].UserID; got != "u-unknown" {
+		t.Errorf("got[1].UserID = %v, want %v", got, "u-unknown")
+	}
+	if len(got[1].Name) != 0 {
+		t.Errorf("got[1].Name = %v, want empty", got[1].Name)
+	}
 }
 
 func TestProjectCollectionNames(t *testing.T) {
@@ -64,7 +88,9 @@ func TestProjectCollectionNames(t *testing.T) {
 	}
 
 	got := projectCollectionNames([]string{"c-1", "c-unknown", "c-2"}, collections)
-	require.Equal(t, []string{"Docs", "Engineering"}, got, "unknown collection ids must be silently dropped")
+	if got := got; !reflect.DeepEqual(got, ([]string{"Docs", "Engineering"})) {
+		t.Errorf("unknown collection ids must be silently dropped: got %v, want %v", got, []string{"Docs", "Engineering"})
+	}
 }
 
 func TestFindWidgetAndColumn(t *testing.T) {
@@ -74,15 +100,23 @@ func TestFindWidgetAndColumn(t *testing.T) {
 		{WidgetCommonID: "w-1", Name: "Sprint"},
 		{WidgetCommonID: "w-2", Name: "Roadmap"},
 	}
-	require.Equal(t, "Sprint", findWidget(widgets, "w-1").Name)
-	require.Nil(t, findWidget(widgets, "w-missing"))
+	if got := findWidget(widgets, "w-1").Name; got != "Sprint" {
+		t.Errorf("findWidget(widgets, \"w-1\").Name = %v, want %v", got, "Sprint")
+	}
+	if findWidget(widgets, "w-missing") != nil {
+		t.Errorf("findWidget(widgets, \"w-missing\") = %v, want nil", findWidget(widgets, "w-missing"))
+	}
 
 	columns := []favro.Column{
 		{ColumnID: "col-1", Name: "Doing"},
 		{ColumnID: "col-2", Name: "Done"},
 	}
-	require.Equal(t, "Done", findColumnName(columns, "col-2"))
-	require.Empty(t, findColumnName(columns, "col-missing"))
+	if got := findColumnName(columns, "col-2"); got != "Done" {
+		t.Errorf("findColumnName(columns, \"col-2\") = %v, want %v", got, "Done")
+	}
+	if len(findColumnName(columns, "col-missing")) != 0 {
+		t.Errorf("findColumnName(columns, \"col-missing\") = %v, want empty", findColumnName(columns, "col-missing"))
+	}
 }
 
 // ============================================================
@@ -442,8 +476,12 @@ func TestFormatCustomFieldValue(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got, ok := formatCustomFieldValue(tc.value, tc.field, tc.users, tc.tags)
-			require.Equal(t, tc.wantOK, ok)
-			require.Equal(t, tc.want, got)
+			if got := ok; got != tc.wantOK {
+				t.Errorf("ok = %v, want %v", got, tc.wantOK)
+			}
+			if got := got; got != tc.want {
+				t.Errorf("got = %v, want %v", got, tc.want)
+			}
 		})
 	}
 }
@@ -559,7 +597,9 @@ func TestGetFullCard_IdentityValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := fix.resolver.GetFullCard(context.Background(), tc.id, false, 0)
-			require.ErrorIs(t, err, errFullCardIdentityRequired)
+			if !errors.Is(err, errFullCardIdentityRequired) {
+				t.Fatalf("got %v, want errFullCardIdentityRequired", err)
+			}
 		})
 	}
 }
@@ -616,31 +656,71 @@ func TestGetFullCard_HappyPath_ByCardID(t *testing.T) {
 	})
 
 	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, true, 0)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
-	require.Equal(t, "Print visitor passes", got.Name)
-	require.Equal(t, "Sprint Board", got.WidgetName)
-	require.Equal(t, "Done", got.ColumnName)
-	require.Equal(t, []string{"Engineering", "Operations"}, got.CollectionNames)
+	if got := got.Name; got != "Print visitor passes" {
+		t.Errorf("got.Name = %v, want %v", got, "Print visitor passes")
+	}
+	if got := got.WidgetName; got != "Sprint Board" {
+		t.Errorf("got.WidgetName = %v, want %v", got, "Sprint Board")
+	}
+	if got := got.ColumnName; got != "Done" {
+		t.Errorf("got.ColumnName = %v, want %v", got, "Done")
+	}
+	if got := got.CollectionNames; !reflect.DeepEqual(got, ([]string{"Engineering", "Operations"})) {
+		t.Errorf("got.CollectionNames = %v, want %v", got, []string{"Engineering", "Operations"})
+	}
 
-	require.Len(t, got.ResolvedTags, 2)
-	require.Equal(t, "frontend", got.ResolvedTags[0].Name)
-	require.Empty(t, got.ResolvedTags[1].Name, "missing tag id must round-trip with empty name")
+	if len(got.ResolvedTags) != 2 {
+		t.Fatalf("len(got.ResolvedTags) = %d, want 2", len(got.ResolvedTags))
+	}
+	if got := got.ResolvedTags[0].Name; got != "frontend" {
+		t.Errorf("got.ResolvedTags[0].Name = %v, want %v", got, "frontend")
+	}
+	if len(got.ResolvedTags[1].Name) != 0 {
+		t.Errorf("missing tag id must round-trip with empty name: got %v", got.ResolvedTags[1].Name)
+	}
 
-	require.Len(t, got.ResolvedAssignments, 1)
-	require.Equal(t, "Alice", got.ResolvedAssignments[0].Name)
-	require.True(t, got.ResolvedAssignments[0].Completed)
+	if len(got.ResolvedAssignments) != 1 {
+		t.Fatalf("len(got.ResolvedAssignments) = %d, want 1", len(got.ResolvedAssignments))
+	}
+	if got := got.ResolvedAssignments[0].Name; got != "Alice" {
+		t.Errorf("got.ResolvedAssignments[0].Name = %v, want %v", got, "Alice")
+	}
+	if !got.ResolvedAssignments[0].Completed {
+		t.Error("got.ResolvedAssignments[0].Completed = false, want true")
+	}
 
-	require.Len(t, got.ResolvedCustomFields, 2)
-	require.Equal(t, "Priority", got.ResolvedCustomFields[0].Name)
-	require.Equal(t, "high priority", got.ResolvedCustomFields[0].DisplayValue)
-	require.True(t, got.ResolvedCustomFields[0].Dereferenced)
-	require.Equal(t, "Status", got.ResolvedCustomFields[1].Name)
-	require.Equal(t, "Closed", got.ResolvedCustomFields[1].DisplayValue)
-	require.True(t, got.ResolvedCustomFields[1].Dereferenced)
+	if len(got.ResolvedCustomFields) != 2 {
+		t.Fatalf("len(got.ResolvedCustomFields) = %d, want 2", len(got.ResolvedCustomFields))
+	}
+	if got := got.ResolvedCustomFields[0].Name; got != "Priority" {
+		t.Errorf("got.ResolvedCustomFields[0].Name = %v, want %v", got, "Priority")
+	}
+	if got := got.ResolvedCustomFields[0].DisplayValue; got != "high priority" {
+		t.Errorf("got.ResolvedCustomFields[0].DisplayValue = %v, want %v", got, "high priority")
+	}
+	if !got.ResolvedCustomFields[0].Dereferenced {
+		t.Error("got.ResolvedCustomFields[0].Dereferenced = false, want true")
+	}
+	if got := got.ResolvedCustomFields[1].Name; got != "Status" {
+		t.Errorf("got.ResolvedCustomFields[1].Name = %v, want %v", got, "Status")
+	}
+	if got := got.ResolvedCustomFields[1].DisplayValue; got != "Closed" {
+		t.Errorf("got.ResolvedCustomFields[1].DisplayValue = %v, want %v", got, "Closed")
+	}
+	if !got.ResolvedCustomFields[1].Dereferenced {
+		t.Error("got.ResolvedCustomFields[1].Dereferenced = false, want true")
+	}
 
-	require.Len(t, got.Comments, 1)
-	require.Equal(t, "first comment", got.Comments[0].Body)
+	if len(got.Comments) != 1 {
+		t.Fatalf("len(got.Comments) = %d, want 1", len(got.Comments))
+	}
+	if got := got.Comments[0].Body; got != "first comment" {
+		t.Errorf("got.Comments[0].Body = %v, want %v", got, "first comment")
+	}
 }
 
 func TestGetFullCard_HappyPath_BySequentialID(t *testing.T) {
@@ -657,11 +737,21 @@ func TestGetFullCard_HappyPath_BySequentialID(t *testing.T) {
 	})
 
 	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{SequentialID: 42}, false, 0)
-	require.NoError(t, err)
-	require.Equal(t, "Visitor flow", got.Name)
-	require.Equal(t, 42, got.SequentialID)
-	require.Empty(t, got.Comments, "include_comments=false must skip the /comments call")
-	require.EqualValues(t, 0, fix.calls["/comments"].Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := got.Name; got != "Visitor flow" {
+		t.Errorf("got.Name = %v, want %v", got, "Visitor flow")
+	}
+	if got := got.SequentialID; got != 42 {
+		t.Errorf("got.SequentialID = %v, want %v", got, 42)
+	}
+	if len(got.Comments) != 0 {
+		t.Errorf("include_comments=false must skip the /comments call: got %v", got.Comments)
+	}
+	if got := fix.calls["/comments"].Load(); got != 0 {
+		t.Errorf("fix.calls[\"/comments\"].Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestGetFullCard_NotFoundOnEmptyListResult(t *testing.T) {
@@ -672,7 +762,9 @@ func TestGetFullCard_NotFoundOnEmptyListResult(t *testing.T) {
 	fix := newFullCardFixture(t, fullCardFixtureOpts{})
 
 	_, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardCommonID: "cc-missing"}, false, 0)
-	require.ErrorIs(t, err, errFullCardNotFound)
+	if !errors.Is(err, errFullCardNotFound) {
+		t.Fatalf("got %v, want errFullCardNotFound", err)
+	}
 }
 
 func TestGetFullCard_ExcludesCommentsByDefault(t *testing.T) {
@@ -686,10 +778,15 @@ func TestGetFullCard_ExcludesCommentsByDefault(t *testing.T) {
 	})
 
 	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, false, 0)
-	require.NoError(t, err)
-	require.Empty(t, got.Comments)
-	require.EqualValues(t, 0, fix.calls["/comments"].Load(),
-		"include_comments=false must short-circuit before any /comments call")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got.Comments) != 0 {
+		t.Errorf("got.Comments = %v, want empty", got.Comments)
+	}
+	if got := fix.calls["/comments"].Load(); got != 0 {
+		t.Errorf("include_comments=false must short-circuit before any /comments call: got %v, want %v", got, 0)
+	}
 }
 
 func TestGetFullCard_CommentLimitTrimsResult(t *testing.T) {
@@ -703,8 +800,12 @@ func TestGetFullCard_CommentLimitTrimsResult(t *testing.T) {
 	fix := newFullCardFixture(t, fullCardFixtureOpts{cards: cards, comments: comments})
 
 	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, true, 2)
-	require.NoError(t, err)
-	require.Len(t, got.Comments, 2, "comment_limit must trim the page result")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(got.Comments) != 2 {
+		t.Fatalf("comment_limit must trim the page result: got %d", len(got.Comments))
+	}
 }
 
 func TestGetFullCard_SkipsResolversWhenCardHasNoIDs(t *testing.T) {
@@ -718,16 +819,34 @@ func TestGetFullCard_SkipsResolversWhenCardHasNoIDs(t *testing.T) {
 	})
 
 	_, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, false, 0)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
-	require.EqualValues(t, 1, fix.calls["/cards"].Load(), "exactly one /cards call (the GetCard fetch)")
-	require.EqualValues(t, 0, fix.calls["/tags"].Load())
-	require.EqualValues(t, 0, fix.calls["/users"].Load())
-	require.EqualValues(t, 0, fix.calls["/widgets"].Load())
-	require.EqualValues(t, 0, fix.calls["/columns"].Load())
-	require.EqualValues(t, 0, fix.calls["/collections"].Load())
-	require.EqualValues(t, 0, fix.calls["/customfields"].Load())
-	require.EqualValues(t, 0, fix.calls["/comments"].Load())
+	if got := fix.calls["/cards"].Load(); got != 1 {
+		t.Errorf("exactly one /cards call (the GetCard fetch): got %v, want %v", got, 1)
+	}
+	if got := fix.calls["/tags"].Load(); got != 0 {
+		t.Errorf("fix.calls[\"/tags\"].Load() = %v, want %v", got, 0)
+	}
+	if got := fix.calls["/users"].Load(); got != 0 {
+		t.Errorf("fix.calls[\"/users\"].Load() = %v, want %v", got, 0)
+	}
+	if got := fix.calls["/widgets"].Load(); got != 0 {
+		t.Errorf("fix.calls[\"/widgets\"].Load() = %v, want %v", got, 0)
+	}
+	if got := fix.calls["/columns"].Load(); got != 0 {
+		t.Errorf("fix.calls[\"/columns\"].Load() = %v, want %v", got, 0)
+	}
+	if got := fix.calls["/collections"].Load(); got != 0 {
+		t.Errorf("fix.calls[\"/collections\"].Load() = %v, want %v", got, 0)
+	}
+	if got := fix.calls["/customfields"].Load(); got != 0 {
+		t.Errorf("fix.calls[\"/customfields\"].Load() = %v, want %v", got, 0)
+	}
+	if got := fix.calls["/comments"].Load(); got != 0 {
+		t.Errorf("fix.calls[\"/comments\"].Load() = %v, want %v", got, 0)
+	}
 }
 
 // cfFloat returns a pointer to n. CardCustomFieldValue.Total is a

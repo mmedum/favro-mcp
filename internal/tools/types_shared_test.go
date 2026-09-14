@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -25,7 +24,9 @@ func TestFavroPage(t *testing.T) {
 		-1: 0, // nonsense in, the first page out — never a negative page
 	}
 	for in, want := range cases {
-		require.Equal(t, want, listInput{Page: in}.favroPage(), "page %d", in)
+		if got := (listInput{Page: in}.favroPage()); got != want {
+			t.Errorf("page %d: got %v, want %v", in, got, want)
+		}
 	}
 }
 
@@ -83,11 +84,16 @@ func TestListToolPageNumberingIsOneIndexed(t *testing.T) {
 				Name:      listOrgsToolName,
 				Arguments: args,
 			})
-			require.NoError(t, err)
-			require.False(t, res.IsError, "the call must succeed: %v", res.Content)
+			if err := err; err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if res.IsError {
+				t.Errorf("the call must succeed: %v", res.Content)
+			}
 
-			require.Equal(t, tc.wantQuery, gotQuery,
-				"tool page %v must reach Favro as page %q", tc.arguments["page"], tc.wantQuery)
+			if got := gotQuery; got != tc.wantQuery {
+				t.Errorf("tool page %v must reach Favro as page %q: got %v, want %v", tc.arguments["page"], tc.wantQuery, got, tc.wantQuery)
+			}
 		})
 	}
 }
@@ -100,16 +106,30 @@ func TestNewListOutputCountsFromOne(t *testing.T) {
 
 	// Favro's first page of three.
 	out := newListOutput(favro.PageEnvelope[favro.Organization]{Page: 0, Pages: 3})
-	require.Equal(t, 1, out.Page)
-	require.Equal(t, 3, out.TotalPages)
-	require.NotNil(t, out.NextPage)
-	require.Equal(t, 2, *out.NextPage)
+	if got := out.Page; got != 1 {
+		t.Errorf("out.Page = %v, want %v", got, 1)
+	}
+	if got := out.TotalPages; got != 3 {
+		t.Errorf("out.TotalPages = %v, want %v", got, 3)
+	}
+	if out.NextPage == nil {
+		t.Fatal("out.NextPage is nil")
+	}
+	if got := *out.NextPage; got != 2 {
+		t.Errorf("*out.NextPage = %v, want %v", got, 2)
+	}
 
 	// And passing that next_page back asks Favro for its page 1.
-	require.Equal(t, 1, listInput{Page: *out.NextPage}.favroPage())
+	if got := (listInput{Page: *out.NextPage}.favroPage()); got != 1 {
+		t.Errorf("listInput{Page: *out.NextPage}.favroPage() = %v, want %v", got, 1)
+	}
 
 	// The last page offers nothing to follow.
 	out = newListOutput(favro.PageEnvelope[favro.Organization]{Page: 2, Pages: 3})
-	require.Equal(t, 3, out.Page)
-	require.Nil(t, out.NextPage)
+	if got := out.Page; got != 3 {
+		t.Errorf("out.Page = %v, want %v", got, 3)
+	}
+	if out.NextPage != nil {
+		t.Errorf("out.NextPage = %v, want nil", out.NextPage)
+	}
 }

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -38,17 +37,35 @@ func TestMCP_ListGroups_HappyPath(t *testing.T) {
 		Name:      listGroupsToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[listOutput[favro.Group]](t, res)
-	require.Len(t, out.Items, 1)
-	require.Equal(t, "Engineers", out.Items[0].Name)
-	require.Len(t, out.Items[0].Members, 1)
-	require.Equal(t, "u-1", out.Items[0].Members[0].UserID)
-	require.Equal(t, "administrator", out.Items[0].Members[0].Role)
-	require.NotNil(t, out.NextPage)
-	require.Equal(t, 2, *out.NextPage)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := out.Items[0].Name; got != "Engineers" {
+		t.Errorf("out.Items[0].Name = %v, want %v", got, "Engineers")
+	}
+	if len(out.Items[0].Members) != 1 {
+		t.Fatalf("len(out.Items[0].Members) = %d, want 1", len(out.Items[0].Members))
+	}
+	if got := out.Items[0].Members[0].UserID; got != "u-1" {
+		t.Errorf("out.Items[0].Members[0].UserID = %v, want %v", got, "u-1")
+	}
+	if got := out.Items[0].Members[0].Role; got != "administrator" {
+		t.Errorf("out.Items[0].Members[0].Role = %v, want %v", got, "administrator")
+	}
+	if out.NextPage == nil {
+		t.Fatal("out.NextPage is nil")
+	}
+	if got := *out.NextPage; got != 2 {
+		t.Errorf("*out.NextPage = %v, want %v", got, 2)
+	}
 }
 
 func TestMCP_GetGroup_HappyPath(t *testing.T) {
@@ -72,13 +89,23 @@ func TestMCP_GetGroup_HappyPath(t *testing.T) {
 			"group_id": "g-zzz",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[favro.Group](t, res)
-	require.Equal(t, "g-zzz", out.GroupID)
-	require.Equal(t, "looked up", out.Name)
-	require.Empty(t, out.Members, "groups without members must NOT carry the field")
+	if got := out.GroupID; got != "g-zzz" {
+		t.Errorf("out.GroupID = %v, want %v", got, "g-zzz")
+	}
+	if got := out.Name; got != "looked up" {
+		t.Errorf("out.Name = %v, want %v", got, "looked up")
+	}
+	if len(out.Members) != 0 {
+		t.Errorf("groups without members must NOT carry the field: got %v", out.Members)
+	}
 }
 
 func TestMCP_GetGroup_MissingID_ReturnsToolError(t *testing.T) {

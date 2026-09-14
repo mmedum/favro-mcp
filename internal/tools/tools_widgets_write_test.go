@@ -2,11 +2,11 @@ package tools
 
 import (
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -31,10 +31,14 @@ func TestMCP_CreateWidget_HappyPath(t *testing.T) {
 			"type":          "backlog",
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Widget]](t, res)
-	require.Equal(t, "w-new", out.Result.WidgetCommonID)
+	if got := out.Result.WidgetCommonID; got != "w-new" {
+		t.Errorf("out.Result.WidgetCommonID = %v, want %v", got, "w-new")
+	}
 }
 
 func TestMCP_CreateWidget_DryRun(t *testing.T) {
@@ -54,13 +58,23 @@ func TestMCP_CreateWidget_DryRun(t *testing.T) {
 			"dry_run":       true,
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Widget]](t, res)
-	require.True(t, out.DryRun)
-	require.Contains(t, out.PredictedStateDiff, "preview")
-	require.Contains(t, out.PredictedStateDiff, "c-1")
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "preview") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "preview")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "c-1") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "c-1")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_CreateWidget_MissingFields(t *testing.T) {
@@ -97,10 +111,14 @@ func TestMCP_UpdateWidget_HappyPath(t *testing.T) {
 		Name:      updateWidgetToolName,
 		Arguments: map[string]any{"widget_common_id": "w-1", "name": "renamed"},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Widget]](t, res)
-	require.Equal(t, "renamed", out.Result.Name)
+	if got := out.Result.Name; got != "renamed" {
+		t.Errorf("out.Result.Name = %v, want %v", got, "renamed")
+	}
 }
 
 func TestMCP_UpdateWidget_MissingWidgetCommonID(t *testing.T) {
@@ -123,10 +141,14 @@ func TestMCP_DeleteWidget_HappyPath(t *testing.T) {
 		Name:      deleteWidgetToolName,
 		Arguments: map[string]any{"widget_common_id": "w-1"},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[struct{}]](t, res)
-	require.False(t, out.DryRun)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
 }
 
 func TestMCP_DeleteWidget_MissingWidgetCommonID(t *testing.T) {

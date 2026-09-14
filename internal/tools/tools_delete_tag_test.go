@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMCP_DeleteTag_HappyPath(t *testing.T) {
@@ -28,15 +27,23 @@ func TestMCP_DeleteTag_HappyPath(t *testing.T) {
 		Name:      deleteTagToolName,
 		Arguments: map[string]any{"tag_id": "abc123"},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[struct{}]](t, res)
-	require.False(t, out.DryRun)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
 	// Result is *struct{}: a non-nil pointer to an empty struct on a
 	// successful live delete. The caller's contract is "if !DryRun,
 	// the delete succeeded"; the empty payload conveys no extra info.
-	require.NotNil(t, out.Result)
+	if out.Result == nil {
+		t.Fatal("out.Result is nil")
+	}
 }
 
 func TestMCP_DeleteTag_DryRun(t *testing.T) {
@@ -55,18 +62,36 @@ func TestMCP_DeleteTag_DryRun(t *testing.T) {
 			"dry_run": true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[struct{}]](t, res)
-	require.True(t, out.DryRun)
-	require.Nil(t, out.Result)
-	require.NotNil(t, out.WouldCall)
-	require.Equal(t, http.MethodDelete, out.WouldCall.Method)
-	require.Contains(t, out.WouldCall.URL, "/tags/abc123")
-	require.Contains(t, out.PredictedStateDiff, "abc123")
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if out.Result != nil {
+		t.Errorf("out.Result = %v, want nil", out.Result)
+	}
+	if out.WouldCall == nil {
+		t.Fatal("out.WouldCall is nil")
+	}
+	if got := out.WouldCall.Method; got != http.MethodDelete {
+		t.Errorf("out.WouldCall.Method = %v, want %v", got, http.MethodDelete)
+	}
+	if !strings.Contains(out.WouldCall.URL, "/tags/abc123") {
+		t.Errorf("out.WouldCall.URL does not contain %q", "/tags/abc123")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "abc123") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "abc123")
+	}
 
-	require.EqualValues(t, 0, calls.Load(), "dry_run must short-circuit before any Favro call")
+	if got := calls.Load(); got != 0 {
+		t.Errorf("dry_run must short-circuit before any Favro call: got %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_DeleteTag_MissingTagID(t *testing.T) {

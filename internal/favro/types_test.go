@@ -3,8 +3,6 @@ package favro
 import (
 	"encoding/json"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 type testEntity struct {
@@ -29,7 +27,10 @@ func TestPageEnvelope_HasNextPage(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.want, tc.env.HasNextPage())
+			if got := tc.env.HasNextPage(); got != tc.want {
+				t.Errorf("HasNextPage() = %v, want %v (page %d of %d)",
+					got, tc.want, tc.env.Page, tc.env.Pages)
+			}
 		})
 	}
 }
@@ -46,13 +47,29 @@ func TestPageEnvelope_JSONRoundTrip(t *testing.T) {
 	}`
 
 	var env PageEnvelope[testEntity]
-	require.NoError(t, json.Unmarshal([]byte(body), &env))
+	if err := json.Unmarshal([]byte(body), &env); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
 
-	require.Equal(t, 100, env.Limit)
-	require.Equal(t, 1, env.Page)
-	require.Equal(t, 3, env.Pages)
-	require.Equal(t, "req-abc", env.RequestID)
-	require.Len(t, env.Entities, 2)
-	require.Equal(t, "first", env.Entities[0].Name)
-	require.True(t, env.HasNextPage())
+	if env.Limit != 100 {
+		t.Errorf("Limit = %d, want 100", env.Limit)
+	}
+	if env.Page != 1 {
+		t.Errorf("Page = %d, want 1", env.Page)
+	}
+	if env.Pages != 3 {
+		t.Errorf("Pages = %d, want 3", env.Pages)
+	}
+	if env.RequestID != "req-abc" {
+		t.Errorf("RequestID = %q, want %q", env.RequestID, "req-abc")
+	}
+	if len(env.Entities) != 2 {
+		t.Fatalf("Entities: got %d, want 2", len(env.Entities))
+	}
+	if env.Entities[0].Name != "first" {
+		t.Errorf("Entities[0].Name = %q, want %q", env.Entities[0].Name, "first")
+	}
+	if !env.HasNextPage() {
+		t.Error("HasNextPage() = false, want true for page 1 of 3")
+	}
 }

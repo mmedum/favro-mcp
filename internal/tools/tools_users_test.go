@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -32,15 +31,29 @@ func TestMCP_ListUsers_HappyPath(t *testing.T) {
 		Name:      listUsersToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[listOutput[favro.User]](t, res)
-	require.Len(t, out.Items, 1)
-	require.Equal(t, "Alice", out.Items[0].Name)
-	require.NotNil(t, out.NextPage, "two-page response must surface next_page")
-	require.Equal(t, 2, *out.NextPage)
-	require.Equal(t, "req-u", out.RequestID)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := out.Items[0].Name; got != "Alice" {
+		t.Errorf("out.Items[0].Name = %v, want %v", got, "Alice")
+	}
+	if out.NextPage == nil {
+		t.Fatal("two-page response must surface next_page")
+	}
+	if got := *out.NextPage; got != 2 {
+		t.Errorf("*out.NextPage = %v, want %v", got, 2)
+	}
+	if got := out.RequestID; got != "req-u" {
+		t.Errorf("out.RequestID = %v, want %v", got, "req-u")
+	}
 }
 
 func TestMCP_ListUsers_ForwardsRequestIDOnPage2(t *testing.T) {
@@ -61,9 +74,12 @@ func TestMCP_ListUsers_ForwardsRequestIDOnPage2(t *testing.T) {
 			"request_id": "req-from-prior-page",
 		},
 	})
-	require.NoError(t, err)
-	require.Equal(t, "req-from-prior-page", sawRequestID,
-		"page > 0 must thread request_id back as X-Favro-Backend-Identifier")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := sawRequestID; got != "req-from-prior-page" {
+		t.Errorf("page > 0 must thread request_id back as X-Favro-Backend-Identifier: got %v, want %v", got, "req-from-prior-page")
+	}
 }
 
 func TestMCP_GetUser_HappyPath(t *testing.T) {
@@ -88,12 +104,20 @@ func TestMCP_GetUser_HappyPath(t *testing.T) {
 			"user_id": "u-zzz",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[favro.User](t, res)
-	require.Equal(t, "u-zzz", out.UserID)
-	require.Equal(t, "administrator", out.OrganizationRole)
+	if got := out.UserID; got != "u-zzz" {
+		t.Errorf("out.UserID = %v, want %v", got, "u-zzz")
+	}
+	if got := out.OrganizationRole; got != "administrator" {
+		t.Errorf("out.OrganizationRole = %v, want %v", got, "administrator")
+	}
 }
 
 func TestMCP_GetUser_MissingID_ReturnsToolError(t *testing.T) {

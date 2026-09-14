@@ -2,11 +2,11 @@ package favroapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -15,8 +15,12 @@ func TestListTasklists_ForwardsCardCommonID(t *testing.T) {
 	t.Parallel()
 
 	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
-		require.Equal(t, "/tasklists", rec.Path)
-		require.Equal(t, "cc-1", rec.Query.Get("cardCommonId"))
+		if got := rec.Path; got != "/tasklists" {
+			t.Errorf("rec.Path = %v, want %v", got, "/tasklists")
+		}
+		if got := rec.Query.Get("cardCommonId"); got != "cc-1" {
+			t.Errorf("rec.Query.Get(\"cardCommonId\") = %v, want %v", got, "cc-1")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"page":0,"pages":1,"entities":[
 			{"taskListId":"tl-1","cardCommonId":"cc-1","name":"Acceptance","position":0}
@@ -27,9 +31,15 @@ func TestListTasklists_ForwardsCardCommonID(t *testing.T) {
 	c := newTestClient(srv)
 
 	env, err := c.ListTasklists(context.Background(), 0, "", "cc-1")
-	require.NoError(t, err)
-	require.Len(t, env.Entities, 1)
-	require.Equal(t, "Acceptance", env.Entities[0].Title())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(env.Entities) != 1 {
+		t.Fatalf("len(env.Entities) = %d, want 1", len(env.Entities))
+	}
+	if got := env.Entities[0].Title(); got != "Acceptance" {
+		t.Errorf("env.Entities[0].Title() = %v, want %v", got, "Acceptance")
+	}
 }
 
 // Favro's field table calls the checklist title `name` while its
@@ -49,9 +59,15 @@ func TestTasklist_Title_FallsBackToDescription(t *testing.T) {
 	c := newTestClient(srv)
 
 	env, err := c.ListTasklists(context.Background(), 0, "", "cc-1")
-	require.NoError(t, err)
-	require.Empty(t, env.Entities[0].Name)
-	require.Equal(t, "From the docs example", env.Entities[0].Title())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(env.Entities[0].Name) != 0 {
+		t.Errorf("env.Entities[0].Name = %v, want empty", env.Entities[0].Name)
+	}
+	if got := env.Entities[0].Title(); got != "From the docs example" {
+		t.Errorf("env.Entities[0].Title() = %v, want %v", got, "From the docs example")
+	}
 }
 
 func TestListTasklists_RequiresCardCommonID_NoNetworkCall(t *testing.T) {
@@ -63,15 +79,21 @@ func TestListTasklists_RequiresCardCommonID_NoNetworkCall(t *testing.T) {
 	c := newTestClient(srv)
 
 	_, err := c.ListTasklists(context.Background(), 0, "", "")
-	require.ErrorContains(t, err, "card_common_id is required")
-	require.Empty(t, h.seen())
+	if err == nil || !strings.Contains(err.Error(), "card_common_id is required") {
+		t.Fatalf("got %v, want it to mention %q", err, "card_common_id is required")
+	}
+	if len(h.seen()) != 0 {
+		t.Errorf("h.seen() = %v, want empty", h.seen())
+	}
 }
 
 func TestGetTasklist_HappyPath(t *testing.T) {
 	t.Parallel()
 
 	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
-		require.Equal(t, "/tasklists/tl-1", rec.Path)
+		if got := rec.Path; got != "/tasklists/tl-1" {
+			t.Errorf("rec.Path = %v, want %v", got, "/tasklists/tl-1")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"taskListId":"tl-1","name":"Acceptance"}`))
 	}}
@@ -80,8 +102,12 @@ func TestGetTasklist_HappyPath(t *testing.T) {
 	c := newTestClient(srv)
 
 	got, err := c.GetTasklist(context.Background(), "tl-1")
-	require.NoError(t, err)
-	require.Equal(t, "tl-1", got.TaskListID)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := got.TaskListID; got != "tl-1" {
+		t.Errorf("got.TaskListID = %v, want %v", got, "tl-1")
+	}
 }
 
 // Seeding items at creation time saves one round-trip per item, so
@@ -90,9 +116,13 @@ func TestCreateTasklist_SeedsTasks(t *testing.T) {
 	t.Parallel()
 
 	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
-		require.Equal(t, http.MethodPost, rec.Method)
-		require.Equal(t, "/tasklists", rec.Path)
-		require.JSONEq(t, `{
+		if got := rec.Method; got != http.MethodPost {
+			t.Errorf("rec.Method = %v, want %v", got, http.MethodPost)
+		}
+		if got := rec.Path; got != "/tasklists" {
+			t.Errorf("rec.Path = %v, want %v", got, "/tasklists")
+		}
+		requireJSONEq(t, `{
 			"cardCommonId":"cc-1",
 			"name":"Acceptance",
 			"tasks":[{"name":"first"},{"name":"second","completed":true}]
@@ -112,8 +142,12 @@ func TestCreateTasklist_SeedsTasks(t *testing.T) {
 			{Name: "second", Completed: true},
 		},
 	})
-	require.NoError(t, err)
-	require.Equal(t, "tl-new", got.TaskListID)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := got.TaskListID; got != "tl-new" {
+		t.Errorf("got.TaskListID = %v, want %v", got, "tl-new")
+	}
 }
 
 func TestCreateTasklist_MissingFields_NoNetworkCall(t *testing.T) {
@@ -125,24 +159,32 @@ func TestCreateTasklist_MissingFields_NoNetworkCall(t *testing.T) {
 	c := newTestClient(srv)
 
 	_, err := c.CreateTasklist(context.Background(), favro.CreateTasklistRequest{Name: "x"})
-	require.ErrorContains(t, err, "card_common_id is required")
+	if err == nil || !strings.Contains(err.Error(), "card_common_id is required") {
+		t.Fatalf("got %v, want it to mention %q", err, "card_common_id is required")
+	}
 
 	_, err = c.CreateTasklist(context.Background(), favro.CreateTasklistRequest{CardCommonID: "cc-1"})
-	require.ErrorContains(t, err, "tasklist name is required")
+	if err == nil || !strings.Contains(err.Error(), "tasklist name is required") {
+		t.Fatalf("got %v, want it to mention %q", err, "tasklist name is required")
+	}
 
-	require.Empty(t, h.seen())
+	if len(h.seen()) != 0 {
+		t.Errorf("h.seen() = %v, want empty", h.seen())
+	}
 }
 
 func TestUpdateAndDeleteTasklist(t *testing.T) {
 	t.Parallel()
 
 	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
-		require.Equal(t, "/tasklists/tl-1", rec.Path)
+		if got := rec.Path; got != "/tasklists/tl-1" {
+			t.Errorf("rec.Path = %v, want %v", got, "/tasklists/tl-1")
+		}
 		if rec.Method == http.MethodDelete {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		require.JSONEq(t, `{"name":"Renamed"}`, rec.Body)
+		requireJSONEq(t, `{"name":"Renamed"}`, rec.Body)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"taskListId":"tl-1","name":"Renamed"}`))
 	}}
@@ -151,14 +193,24 @@ func TestUpdateAndDeleteTasklist(t *testing.T) {
 	c := newTestClient(srv)
 
 	got, err := c.UpdateTasklist(context.Background(), "tl-1", favro.UpdateTasklistRequest{Name: "Renamed"})
-	require.NoError(t, err)
-	require.Equal(t, "Renamed", got.Name)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := got.Name; got != "Renamed" {
+		t.Errorf("got.Name = %v, want %v", got, "Renamed")
+	}
 
-	require.NoError(t, c.DeleteTasklist(context.Background(), "tl-1"))
+	if err := c.DeleteTasklist(context.Background(), "tl-1"); err != nil {
+		t.Fatalf("c.DeleteTasklist(context.Background(), \"tl-1\"): %v", err)
+	}
 
 	_, err = c.UpdateTasklist(context.Background(), "", favro.UpdateTasklistRequest{Name: "x"})
-	require.ErrorIs(t, err, errMissingID)
-	require.ErrorIs(t, c.DeleteTasklist(context.Background(), ""), errMissingID)
+	if !errors.Is(err, errMissingID) {
+		t.Fatalf("got %v, want errMissingID", err)
+	}
+	if !errors.Is(c.DeleteTasklist(context.Background(), ""), errMissingID) {
+		t.Fatalf("got %v, want errMissingID", c.DeleteTasklist(context.Background(), ""))
+	}
 }
 
 func TestTasklistWrites_DryRun_NeverDispatch(t *testing.T) {
@@ -170,10 +222,16 @@ func TestTasklistWrites_DryRun_NeverDispatch(t *testing.T) {
 	ctx := WithDryRun(context.Background())
 
 	_, err := c.CreateTasklist(ctx, favro.CreateTasklistRequest{CardCommonID: "cc-1", Name: "x"})
-	require.ErrorIs(t, err, ErrDryRun)
+	if !errors.Is(err, ErrDryRun) {
+		t.Fatalf("got %v, want ErrDryRun", err)
+	}
 
 	_, err = c.UpdateTasklist(ctx, "tl-1", favro.UpdateTasklistRequest{Name: "x"})
-	require.ErrorIs(t, err, ErrDryRun)
+	if !errors.Is(err, ErrDryRun) {
+		t.Fatalf("got %v, want ErrDryRun", err)
+	}
 
-	require.ErrorIs(t, c.DeleteTasklist(ctx, "tl-1"), ErrDryRun)
+	if !errors.Is(c.DeleteTasklist(ctx, "tl-1"), ErrDryRun) {
+		t.Fatalf("got %v, want ErrDryRun", c.DeleteTasklist(ctx, "tl-1"))
+	}
 }

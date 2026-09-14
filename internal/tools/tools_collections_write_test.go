@@ -3,11 +3,11 @@ package tools
 import (
 	"io"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -34,12 +34,20 @@ func TestMCP_CreateCollection_HappyPath(t *testing.T) {
 			"color": "blue",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Collection]](t, res)
-	require.False(t, out.DryRun)
-	require.Equal(t, "c-new", out.Result.CollectionID)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if got := out.Result.CollectionID; got != "c-new" {
+		t.Errorf("out.Result.CollectionID = %v, want %v", got, "c-new")
+	}
 }
 
 func TestMCP_CreateCollection_DryRun(t *testing.T) {
@@ -55,12 +63,20 @@ func TestMCP_CreateCollection_DryRun(t *testing.T) {
 		Name:      createCollectionToolName,
 		Arguments: map[string]any{"name": "preview", "dry_run": true},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Collection]](t, res)
-	require.True(t, out.DryRun)
-	require.Equal(t, http.MethodPost, out.WouldCall.Method)
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := out.WouldCall.Method; got != http.MethodPost {
+		t.Errorf("out.WouldCall.Method = %v, want %v", got, http.MethodPost)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_CreateCollection_MissingName(t *testing.T) {
@@ -84,10 +100,14 @@ func TestMCP_UpdateCollection_HappyPath(t *testing.T) {
 		Name:      updateCollectionToolName,
 		Arguments: map[string]any{"collection_id": "c-1", "name": "renamed"},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Collection]](t, res)
-	require.Equal(t, "renamed", out.Result.Name)
+	if got := out.Result.Name; got != "renamed" {
+		t.Errorf("out.Result.Name = %v, want %v", got, "renamed")
+	}
 }
 
 func TestMCP_UpdateCollection_NoChanges_DryRun(t *testing.T) {
@@ -100,10 +120,14 @@ func TestMCP_UpdateCollection_NoChanges_DryRun(t *testing.T) {
 		Name:      updateCollectionToolName,
 		Arguments: map[string]any{"collection_id": "c-1", "dry_run": true},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Collection]](t, res)
-	require.Contains(t, out.PredictedStateDiff, "no-op")
+	if !strings.Contains(out.PredictedStateDiff, "no-op") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "no-op")
+	}
 }
 
 func TestMCP_UpdateCollection_MissingCollectionID(t *testing.T) {
@@ -126,11 +150,17 @@ func TestMCP_DeleteCollection_HappyPath(t *testing.T) {
 		Name:      deleteCollectionToolName,
 		Arguments: map[string]any{"collection_id": "c-1"},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[struct{}]](t, res)
-	require.False(t, out.DryRun)
-	require.NotNil(t, out.Result)
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if out.Result == nil {
+		t.Fatal("out.Result is nil")
+	}
 }
 
 func TestMCP_DeleteCollection_DryRun(t *testing.T) {
@@ -146,11 +176,17 @@ func TestMCP_DeleteCollection_DryRun(t *testing.T) {
 		Name:      deleteCollectionToolName,
 		Arguments: map[string]any{"collection_id": "c-1", "dry_run": true},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[struct{}]](t, res)
-	require.True(t, out.DryRun)
-	require.EqualValues(t, 0, calls.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_DeleteCollection_MissingCollectionID(t *testing.T) {
@@ -183,12 +219,19 @@ func TestMCP_CreateCollection_SendsShareToUsers(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
-	require.Contains(t, string(body), `"shareToUsers":[{"email":"someone@example.invalid","role":"edit"}]`)
-	require.NotContains(t, string(body), `"sharedToUsers"`,
-		"the read-shaped key is ignored by Favro on write")
+	if !strings.Contains(string(body), `"shareToUsers":[{"email":"someone@example.invalid","role":"edit"}]`) {
+		t.Errorf("string(body) does not contain %q", `"shareToUsers":[{"email":"someone@example.invalid","role":"edit"}]`)
+	}
+	if strings.Contains(string(body), `"sharedToUsers"`) {
+		t.Errorf("the read-shaped key is ignored by Favro on write: %q present", `"sharedToUsers"`)
+	}
 }
 
 func TestMCP_UpdateCollection_SeparatesInvitesFromMemberChanges(t *testing.T) {
@@ -215,9 +258,17 @@ func TestMCP_UpdateCollection_SeparatesInvitesFromMemberChanges(t *testing.T) {
 			},
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
-	require.Contains(t, string(body), `"shareToUsers":[{"email":"new@example.invalid","role":"view"}]`)
-	require.Contains(t, string(body), `"members":[{"userId":"u-1","role":"admin"},{"userId":"u-2","delete":true}]`)
+	if !strings.Contains(string(body), `"shareToUsers":[{"email":"new@example.invalid","role":"view"}]`) {
+		t.Errorf("string(body) does not contain %q", `"shareToUsers":[{"email":"new@example.invalid","role":"view"}]`)
+	}
+	if !strings.Contains(string(body), `"members":[{"userId":"u-1","role":"admin"},{"userId":"u-2","delete":true}]`) {
+		t.Errorf("string(body) does not contain %q", `"members":[{"userId":"u-1","role":"admin"},{"userId":"u-2","delete":true}]`)
+	}
 }

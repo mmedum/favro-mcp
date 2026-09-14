@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -32,15 +31,29 @@ func TestMCP_ListWidgets_HappyPath(t *testing.T) {
 		Name:      listWidgetsToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[listOutput[favro.Widget]](t, res)
-	require.Len(t, out.Items, 1)
-	require.Equal(t, "Sprint Board", out.Items[0].Name)
-	require.Equal(t, "board", out.Items[0].Type)
-	require.NotNil(t, out.NextPage)
-	require.Equal(t, 2, *out.NextPage)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := out.Items[0].Name; got != "Sprint Board" {
+		t.Errorf("out.Items[0].Name = %v, want %v", got, "Sprint Board")
+	}
+	if got := out.Items[0].Type; got != "board" {
+		t.Errorf("out.Items[0].Type = %v, want %v", got, "board")
+	}
+	if out.NextPage == nil {
+		t.Fatal("out.NextPage is nil")
+	}
+	if got := *out.NextPage; got != 2 {
+		t.Errorf("*out.NextPage = %v, want %v", got, 2)
+	}
 }
 
 func TestMCP_ListWidgets_FiltersByCollection(t *testing.T) {
@@ -60,9 +73,12 @@ func TestMCP_ListWidgets_FiltersByCollection(t *testing.T) {
 			"collection_id": "c-xyz",
 		},
 	})
-	require.NoError(t, err)
-	require.Equal(t, "c-xyz", sawCollection,
-		"collection_id input must reach Favro as ?collectionId=")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := sawCollection; got != "c-xyz" {
+		t.Errorf("collection_id input must reach Favro as ?collectionId=: got %v, want %v", got, "c-xyz")
+	}
 }
 
 func TestMCP_GetWidget_HappyPath(t *testing.T) {
@@ -87,12 +103,20 @@ func TestMCP_GetWidget_HappyPath(t *testing.T) {
 			"widget_common_id": "w-zzz",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[favro.Widget](t, res)
-	require.Equal(t, "w-zzz", out.WidgetCommonID)
-	require.Equal(t, "board", out.Type)
+	if got := out.WidgetCommonID; got != "w-zzz" {
+		t.Errorf("out.WidgetCommonID = %v, want %v", got, "w-zzz")
+	}
+	if got := out.Type; got != "board" {
+		t.Errorf("out.Type = %v, want %v", got, "board")
+	}
 }
 
 func TestMCP_GetWidget_MissingID_ReturnsToolError(t *testing.T) {

@@ -6,10 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
 	"github.com/mmedum/favro-mcp/internal/favro"
@@ -75,7 +74,9 @@ func TestDebugLogNeverCarriesTheSubject(t *testing.T) {
 		WidgetCommonID: markerWidgetID,
 		SequentialID:   4242,
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	// ...and a get-one call, where the id is in the path rather than
 	// the query. Driving only a list endpoint is how the first version
@@ -83,23 +84,34 @@ func TestDebugLogNeverCarriesTheSubject(t *testing.T) {
 	_, _ = c.GetCard(context.Background(), markerCardID)
 
 	logged := buf.String()
-	require.NotEmpty(t, logged, "captured nothing, so this test proved nothing — did logRequest stop emitting?")
+	if len(logged) == 0 {
+		t.Fatal("captured nothing, so this test proved nothing — did logRequest stop emitting?")
+	}
 
 	for _, forbidden := range []string{
 		markerOrgID, markerCardCommonID, markerWidgetID,
 		markerSequentialID, markerCardID, markerEmail, markerToken,
 	} {
-		require.NotContains(t, logged, forbidden,
-			"a value that identifies the subject reached the log; §9 forbids it at every level")
+		if strings.Contains(logged, forbidden) {
+			t.Errorf("a value that identifies the subject reached the log; §9 forbids it at every level: %q present", forbidden)
+		}
 	}
 
 	// The floor: the debug line still has to be useful, or "no leak"
 	// and "no logging" print the same sentence. The parameter names
 	// are what a debug line is for.
-	require.Contains(t, logged, "favro request")
-	require.Contains(t, logged, "cardCommonId", "the query's parameter names are the part worth keeping")
-	require.Contains(t, logged, "widgetCommonId")
-	require.Contains(t, logged, "/cards/{id}", "the endpoint shape is the part of the path worth keeping")
+	if !strings.Contains(logged, "favro request") {
+		t.Errorf("logged does not contain %q", "favro request")
+	}
+	if !strings.Contains(logged, "cardCommonId") {
+		t.Errorf("the query's parameter names are the part worth keeping: %q missing", "cardCommonId")
+	}
+	if !strings.Contains(logged, "widgetCommonId") {
+		t.Errorf("logged does not contain %q", "widgetCommonId")
+	}
+	if !strings.Contains(logged, "/cards/{id}") {
+		t.Errorf("the endpoint shape is the part of the path worth keeping: %q missing", "/cards/{id}")
+	}
 }
 
 // TestRedactPathIDs pins the rule the line above depends on: the shape
@@ -117,13 +129,19 @@ func TestRedactPathIDs(t *testing.T) {
 		"/":                                       "/",
 	}
 	for in, want := range cases {
-		require.Equal(t, want, redactPathIDs(in))
+		if got := redactPathIDs(in); got != want {
+			t.Errorf("redactPathIDs(in) = %v, want %v", got, want)
+		}
 	}
 
 	// Fails safe: a segment the rule cannot read as a resource name is
 	// redacted rather than printed.
-	require.Equal(t, "/{id}", redactPathIDs("/Cards"))
-	require.Equal(t, "/{id}", redactPathIDs("/cards-2024;drop"))
+	if got := redactPathIDs("/Cards"); got != "/{id}" {
+		t.Errorf("redactPathIDs(\"/Cards\") = %v, want %v", got, "/{id}")
+	}
+	if got := redactPathIDs("/cards-2024;drop"); got != "/{id}" {
+		t.Errorf("redactPathIDs(\"/cards-2024;drop\") = %v, want %v", got, "/{id}")
+	}
 }
 
 // TestQueryKeys pins the helper the line above depends on: names in,
@@ -131,16 +149,22 @@ func TestRedactPathIDs(t *testing.T) {
 func TestQueryKeys(t *testing.T) {
 	t.Parallel()
 
-	require.Nil(t, queryKeys(""))
-	require.Equal(t,
-		[]string{"cardCommonId", "page", "widgetCommonId"},
-		queryKeys("widgetCommonId="+markerWidgetID+"&cardCommonId="+markerCardCommonID+"&page=2"))
+	if queryKeys("") != nil {
+		t.Errorf("queryKeys(\"\") = %v, want nil", queryKeys(""))
+	}
+	if got := queryKeys("widgetCommonId=" + markerWidgetID + "&cardCommonId=" + markerCardCommonID + "&page=2"); !reflect.DeepEqual(got, ([]string{"cardCommonId", "page", "widgetCommonId"})) {
+		t.Errorf("queryKeys(\"widgetCommonId=\" + markerWidgetID + \"&cardCommonId=\" + markerCardCommonID + \"&page=2\") = %v, want %v", got, []string{"cardCommonId", "page", "widgetCommonId"})
+	}
 
 	// A query Favro would never send, and url.ParseQuery rejects: the
 	// names it did parse still come back, because a debug line that
 	// disappears on malformed input is a debug line that vanishes
 	// exactly when it is needed.
 	got := queryKeys("sequentialId=" + markerSequentialID + "&%zz=broken")
-	require.Equal(t, []string{"sequentialId"}, got)
-	require.NotContains(t, strings.Join(got, ","), markerSequentialID)
+	if got := got; !reflect.DeepEqual(got, ([]string{"sequentialId"})) {
+		t.Errorf("got = %v, want %v", got, []string{"sequentialId"})
+	}
+	if strings.Contains(strings.Join(got, ","), markerSequentialID) {
+		t.Errorf("strings.Join(got, \",\") unexpectedly contains %q", markerSequentialID)
+	}
 }

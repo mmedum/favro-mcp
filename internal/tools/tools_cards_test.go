@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -32,15 +31,29 @@ func TestMCP_ListCards_HappyPath(t *testing.T) {
 		Name:      listCardsToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[listOutput[favro.Card]](t, res)
-	require.Len(t, out.Items, 1)
-	require.Equal(t, "Print visitor passes", out.Items[0].Name)
-	require.Equal(t, 42, out.Items[0].SequentialID)
-	require.NotNil(t, out.NextPage)
-	require.Equal(t, 2, *out.NextPage)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := out.Items[0].Name; got != "Print visitor passes" {
+		t.Errorf("out.Items[0].Name = %v, want %v", got, "Print visitor passes")
+	}
+	if got := out.Items[0].SequentialID; got != 42 {
+		t.Errorf("out.Items[0].SequentialID = %v, want %v", got, 42)
+	}
+	if out.NextPage == nil {
+		t.Fatal("out.NextPage is nil")
+	}
+	if got := *out.NextPage; got != 2 {
+		t.Errorf("*out.NextPage = %v, want %v", got, 2)
+	}
 }
 
 func TestMCP_ListCards_FiltersForwarded(t *testing.T) {
@@ -70,12 +83,24 @@ func TestMCP_ListCards_FiltersForwarded(t *testing.T) {
 			"unique":           true,
 		},
 	})
-	require.NoError(t, err)
-	require.Equal(t, "w-1", saw.widget)
-	require.Equal(t, "col-1", saw.collection)
-	require.Equal(t, "card-c-7", saw.common)
-	require.Equal(t, "123", saw.seq)
-	require.Equal(t, "true", saw.unique)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := saw.widget; got != "w-1" {
+		t.Errorf("saw.widget = %v, want %v", got, "w-1")
+	}
+	if got := saw.collection; got != "col-1" {
+		t.Errorf("saw.collection = %v, want %v", got, "col-1")
+	}
+	if got := saw.common; got != "card-c-7" {
+		t.Errorf("saw.common = %v, want %v", got, "card-c-7")
+	}
+	if got := saw.seq; got != "123" {
+		t.Errorf("saw.seq = %v, want %v", got, "123")
+	}
+	if got := saw.unique; got != "true" {
+		t.Errorf("saw.unique = %v, want %v", got, "true")
+	}
 }
 
 func TestMCP_GetCard_HappyPath(t *testing.T) {
@@ -101,14 +126,26 @@ func TestMCP_GetCard_HappyPath(t *testing.T) {
 			"card_id": "card-i-zzz",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[favro.Card](t, res)
-	require.Equal(t, "card-i-zzz", out.CardID)
-	require.Equal(t, "card-c-zzz", out.CardCommonID)
-	require.Equal(t, "Looked Up", out.Name)
-	require.Equal(t, 99, out.SequentialID)
+	if got := out.CardID; got != "card-i-zzz" {
+		t.Errorf("out.CardID = %v, want %v", got, "card-i-zzz")
+	}
+	if got := out.CardCommonID; got != "card-c-zzz" {
+		t.Errorf("out.CardCommonID = %v, want %v", got, "card-c-zzz")
+	}
+	if got := out.Name; got != "Looked Up" {
+		t.Errorf("out.Name = %v, want %v", got, "Looked Up")
+	}
+	if got := out.SequentialID; got != 99 {
+		t.Errorf("out.SequentialID = %v, want %v", got, 99)
+	}
 }
 
 func TestMCP_GetCard_MissingID_ReturnsToolError(t *testing.T) {

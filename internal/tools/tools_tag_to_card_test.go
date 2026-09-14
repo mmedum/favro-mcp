@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 	"github.com/mmedum/favro-mcp/internal/favroapi"
@@ -50,8 +49,12 @@ func TestMCP_AddTagToCard_HappyPath(t *testing.T) {
 			"tag_name": "Frontend",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 }
 
 func TestMCP_AddTagToCard_CaseInsensitive(t *testing.T) {
@@ -67,8 +70,12 @@ func TestMCP_AddTagToCard_CaseInsensitive(t *testing.T) {
 			"tag_name": "frontend",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 }
 
 // TestMCP_AddTagToCard_HardFailUnknown pins the typo-prevention
@@ -99,11 +106,18 @@ func TestMCP_AddTagToCard_HardFailUnknown(t *testing.T) {
 			"tag_name": "Frontned",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError, "unknown tag name must surface as a tool error")
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "favro_create_tag",
-		"error must point the LLM at favro_create_tag explicitly")
-	require.EqualValues(t, 0, puts.Load(), "no PUT must be issued for an unknown tag")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("unknown tag name must surface as a tool error")
+	}
+	if !strings.Contains(strings.ToLower(serializedResponseString(t, res)), "favro_create_tag") {
+		t.Errorf("error must point the LLM at favro_create_tag explicitly: %q missing", "favro_create_tag")
+	}
+	if got := puts.Load(); got != 0 {
+		t.Errorf("no PUT must be issued for an unknown tag: got %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_AddTagToCard_AmbiguousNames(t *testing.T) {
@@ -122,9 +136,15 @@ func TestMCP_AddTagToCard_AmbiguousNames(t *testing.T) {
 			"tag_name": "Frontend",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "multiple")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
+	if !strings.Contains(strings.ToLower(serializedResponseString(t, res)), "multiple") {
+		t.Errorf("strings.ToLower(serializedResponseString(t, res)) does not contain %q", "multiple")
+	}
 }
 
 func TestMCP_AddTagToCard_DryRun(t *testing.T) {
@@ -153,11 +173,17 @@ func TestMCP_AddTagToCard_DryRun(t *testing.T) {
 			"dry_run":  true,
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	require.True(t, out.DryRun)
-	require.EqualValues(t, 0, puts.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := puts.Load(); got != 0 {
+		t.Errorf("puts.Load() = %v, want %v", got, 0)
+	}
 }
 
 func TestMCP_RemoveTagFromCard_HappyPath(t *testing.T) {
@@ -173,8 +199,12 @@ func TestMCP_RemoveTagFromCard_HappyPath(t *testing.T) {
 			"tag_name": "Frontend",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 }
 
 func TestMCP_AddTagToCard_MissingFields(t *testing.T) {

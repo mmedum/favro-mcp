@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -20,7 +19,9 @@ import (
 func writeTempFile(t *testing.T, name string, content []byte) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)
-	require.NoError(t, os.WriteFile(path, content, 0o600))
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("os.WriteFile(path, content, 0o600): %v", err)
+	}
 	return path
 }
 
@@ -59,13 +60,20 @@ func TestMCP_UploadAttachment_HappyPath(t *testing.T) {
 			"file_path": path,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool error: %s", serializedResponseString(t, res))
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool error: %s", serializedResponseString(t, res))
+	}
 
 	out := decodeStructured[writeOutput[favro.CardAttachment]](t, res)
-	require.Equal(t, "note.txt", out.Result.Name,
-		"Favro returns the attachment object, not the Card — verified live Phase 7.1")
-	require.Equal(t, "https://favro.invalid/a/note.txt", out.Result.FileURL)
+	if got := out.Result.Name; got != "note.txt" {
+		t.Errorf("Favro returns the attachment object, not the Card — verified live Phase 7.1: got %v, want %v", got, "note.txt")
+	}
+	if got := out.Result.FileURL; got != "https://favro.invalid/a/note.txt" {
+		t.Errorf("out.Result.FileURL = %v, want %v", got, "https://favro.invalid/a/note.txt")
+	}
 }
 
 // TestMCP_UploadAttachment_FilenameOverride pins that an explicit
@@ -94,8 +102,12 @@ func TestMCP_UploadAttachment_FilenameOverride(t *testing.T) {
 			"filename":  "renamed.txt",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 }
 
 func TestMCP_UploadAttachment_DryRun(t *testing.T) {
@@ -117,12 +129,20 @@ func TestMCP_UploadAttachment_DryRun(t *testing.T) {
 			"dry_run":   true,
 		},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	out := decodeStructured[writeOutput[favro.CardAttachment]](t, res)
-	require.True(t, out.DryRun)
-	require.Contains(t, out.PredictedStateDiff, "preview.txt")
-	require.EqualValues(t, 0, posts.Load())
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "preview.txt") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "preview.txt")
+	}
+	if got := posts.Load(); got != 0 {
+		t.Errorf("posts.Load() = %v, want %v", got, 0)
+	}
 }
 
 // TestMCP_UploadAttachment_PathNotAFile pins the path-must-be-regular
@@ -141,9 +161,15 @@ func TestMCP_UploadAttachment_PathNotAFile(t *testing.T) {
 			"file_path": dir,
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
-	require.Contains(t, strings.ToLower(serializedResponseString(t, res)), "regular file")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
+	if !strings.Contains(strings.ToLower(serializedResponseString(t, res)), "regular file") {
+		t.Errorf("strings.ToLower(serializedResponseString(t, res)) does not contain %q", "regular file")
+	}
 }
 
 func TestMCP_UploadAttachment_PathDoesNotExist(t *testing.T) {
@@ -157,8 +183,12 @@ func TestMCP_UploadAttachment_PathDoesNotExist(t *testing.T) {
 			"file_path": "/this/path/does/not/exist.txt",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
 }
 
 func TestMCP_UploadAttachment_MissingRequiredFields(t *testing.T) {

@@ -3,11 +3,11 @@ package tools
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -34,14 +34,26 @@ func TestMCP_CreateTag_HappyPath(t *testing.T) {
 			"color": "blue",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Tag]](t, res)
-	require.False(t, out.DryRun)
-	require.NotNil(t, out.Result)
-	require.Equal(t, "new-1", out.Result.TagID)
-	require.Nil(t, out.WouldCall, "live mode must not populate WouldCall")
+	if out.DryRun {
+		t.Error("out.DryRun = true, want false")
+	}
+	if out.Result == nil {
+		t.Fatal("out.Result is nil")
+	}
+	if got := out.Result.TagID; got != "new-1" {
+		t.Errorf("out.Result.TagID = %v, want %v", got, "new-1")
+	}
+	if out.WouldCall != nil {
+		t.Errorf("live mode must not populate WouldCall: %v", out.WouldCall)
+	}
 }
 
 // TestMCP_CreateTag_DryRun pins the dry-run behavior at the MCP
@@ -64,21 +76,43 @@ func TestMCP_CreateTag_DryRun(t *testing.T) {
 			"dry_run": true,
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[writeOutput[favro.Tag]](t, res)
-	require.True(t, out.DryRun)
-	require.Nil(t, out.Result, "dry_run must NOT populate Result")
-	require.NotNil(t, out.WouldCall)
-	require.Equal(t, http.MethodPost, out.WouldCall.Method)
-	require.Contains(t, out.WouldCall.URL, "/tags")
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if out.Result != nil {
+		t.Errorf("dry_run must NOT populate Result: %v", out.Result)
+	}
+	if out.WouldCall == nil {
+		t.Fatal("out.WouldCall is nil")
+	}
+	if got := out.WouldCall.Method; got != http.MethodPost {
+		t.Errorf("out.WouldCall.Method = %v, want %v", got, http.MethodPost)
+	}
+	if !strings.Contains(out.WouldCall.URL, "/tags") {
+		t.Errorf("out.WouldCall.URL does not contain %q", "/tags")
+	}
 	body, ok := out.RequestBody.(map[string]any)
-	require.True(t, ok, "RequestBody must decode as a JSON object; got %T", out.RequestBody)
-	require.Equal(t, "preview-only", body["name"])
-	require.Contains(t, out.PredictedStateDiff, "preview-only")
+	if !ok {
+		t.Errorf("RequestBody must decode as a JSON object; got %T", out.RequestBody)
+	}
+	if got := body["name"]; got != "preview-only" {
+		t.Errorf("body[\"name\"] = %v, want %v", got, "preview-only")
+	}
+	if !strings.Contains(out.PredictedStateDiff, "preview-only") {
+		t.Errorf("out.PredictedStateDiff does not contain %q", "preview-only")
+	}
 
-	require.EqualValues(t, 0, calls.Load(), "dry_run must short-circuit before any Favro call")
+	if got := calls.Load(); got != 0 {
+		t.Errorf("dry_run must short-circuit before any Favro call: got %v, want %v", got, 0)
+	}
 }
 
 // TestMCP_CreateTag_InvalidatesCacheOnSuccess pins the contract
@@ -111,44 +145,62 @@ func TestMCP_CreateTag_InvalidatesCacheOnSuccess(t *testing.T) {
 		Name:      resolveTagToolName,
 		Arguments: map[string]any{"name": "frontend"},
 	})
-	require.NoError(t, err)
-	require.EqualValues(t, 1, listCalls.Load())
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := listCalls.Load(); got != 1 {
+		t.Errorf("listCalls.Load() = %v, want %v", got, 1)
+	}
 
 	// Re-resolve — should hit the cache.
 	_, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      resolveTagToolName,
 		Arguments: map[string]any{"name": "frontend"},
 	})
-	require.NoError(t, err)
-	require.EqualValues(t, 1, listCalls.Load(), "second resolve must hit the cache")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := listCalls.Load(); got != 1 {
+		t.Errorf("second resolve must hit the cache: got %v, want %v", got, 1)
+	}
 
 	// Dry-run create_tag — must NOT invalidate the cache.
 	_, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      createTagToolName,
 		Arguments: map[string]any{"name": "preview", "dry_run": true},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	_, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      resolveTagToolName,
 		Arguments: map[string]any{"name": "frontend"},
 	})
-	require.NoError(t, err)
-	require.EqualValues(t, 1, listCalls.Load(),
-		"dry_run create_tag must NOT invalidate the tag cache")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := listCalls.Load(); got != 1 {
+		t.Errorf("dry_run create_tag must NOT invalidate the tag cache: got %v, want %v", got, 1)
+	}
 
 	// Live create_tag — must invalidate the cache.
 	_, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      createTagToolName,
 		Arguments: map[string]any{"name": "actual"},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	_, err = cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      resolveTagToolName,
 		Arguments: map[string]any{"name": "frontend"},
 	})
-	require.NoError(t, err)
-	require.EqualValues(t, 2, listCalls.Load(),
-		"live create_tag must invalidate the tag cache so the next resolve re-fetches")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := listCalls.Load(); got != 2 {
+		t.Errorf("live create_tag must invalidate the tag cache so the next resolve re-fetches: got %v, want %v", got, 2)
+	}
 }
 
 // TestMCP_CreateTag_MissingName pins the SDK-level required-field

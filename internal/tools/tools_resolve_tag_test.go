@@ -2,11 +2,11 @@ package tools
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 	"github.com/mmedum/favro-mcp/internal/service"
@@ -39,16 +39,32 @@ func TestMCP_ResolveTag_HappyPath(t *testing.T) {
 			"name": "front",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[resolveOutput[service.ResolvedTag]](t, res)
-	require.Len(t, out.Candidates, 1)
-	require.Equal(t, "t-1", out.Candidates[0].TagID)
-	require.Equal(t, "frontend", out.Candidates[0].Name)
-	require.Equal(t, "blue", out.Candidates[0].Color)
-	require.InDelta(t, 0.7, out.Candidates[0].Score, scoreEpsilon)
-	require.False(t, out.Cached, "first call must report uncached")
+	if len(out.Candidates) != 1 {
+		t.Fatalf("len(out.Candidates) = %d, want 1", len(out.Candidates))
+	}
+	if got := out.Candidates[0].TagID; got != "t-1" {
+		t.Errorf("out.Candidates[0].TagID = %v, want %v", got, "t-1")
+	}
+	if got := out.Candidates[0].Name; got != "frontend" {
+		t.Errorf("out.Candidates[0].Name = %v, want %v", got, "frontend")
+	}
+	if got := out.Candidates[0].Color; got != "blue" {
+		t.Errorf("out.Candidates[0].Color = %v, want %v", got, "blue")
+	}
+	if math.Abs(out.Candidates[0].Score-0.7) > scoreEpsilon {
+		t.Errorf("out.Candidates[0].Score = %v, want %v within scoreEpsilon", out.Candidates[0].Score, 0.7)
+	}
+	if out.Cached {
+		t.Error("first call must report uncached")
+	}
 }
 
 func TestMCP_ResolveTag_NoMatchReturnsEmptyList(t *testing.T) {
@@ -70,9 +86,15 @@ func TestMCP_ResolveTag_NoMatchReturnsEmptyList(t *testing.T) {
 			"name": "nomatch",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "no match must NOT surface as a tool error — empty candidate list is the contract")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("no match must NOT surface as a tool error — empty candidate list is the contract")
+	}
 
 	out := decodeStructured[resolveOutput[service.ResolvedTag]](t, res)
-	require.Empty(t, out.Candidates)
+	if len(out.Candidates) != 0 {
+		t.Errorf("out.Candidates = %v, want empty", out.Candidates)
+	}
 }

@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 )
 
 // resource is shaped like the Favro wire types this renders: a few
@@ -36,12 +34,16 @@ func (s summarizing) Summary() string { return s.text }
 func TestSummaryPrefersSummarizer(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, "12 items · last page", Summary(summarizing{"12 items · last page"}))
+	if got := Summary(summarizing{"12 items · last page"}); got != "12 items · last page" {
+		t.Errorf("Summary(summarizing{\"12 items · last page\"}) = %v, want %v", got, "12 items · last page")
+	}
 
 	// An implementation that returns nothing falls through to the
 	// outline rather than producing an empty content block — an empty
 	// readable half is worse than a generic one.
-	require.Equal(t, "(empty result)", Summary(summarizing{"   "}))
+	if got := Summary(summarizing{"   "}); got != "(empty result)" {
+		t.Errorf("Summary(summarizing{\"   \"}) = %v, want %v", got, "(empty result)")
+	}
 }
 
 func TestSummaryOutline(t *testing.T) {
@@ -59,22 +61,44 @@ func TestSummaryOutline(t *testing.T) {
 		unexported: "nor this",
 	})
 
-	require.Contains(t, got, "card_id: abc")
-	require.Contains(t, got, "name: a name with spaces")
-	require.Contains(t, got, "sequential_id: 42")
-	require.Contains(t, got, "tag_ids: 3 items", "a collection is counted, not expanded")
-	require.Contains(t, got, "custom_fields: 1 entry")
-	require.Contains(t, got, "raw: 7 bytes", "a byte slice is bytes, not a collection")
-	require.Contains(t, got, "created: 2026-09-13T10:00:00Z")
+	if !strings.Contains(got, "card_id: abc") {
+		t.Errorf("got does not contain %q", "card_id: abc")
+	}
+	if !strings.Contains(got, "name: a name with spaces") {
+		t.Errorf("got does not contain %q", "name: a name with spaces")
+	}
+	if !strings.Contains(got, "sequential_id: 42") {
+		t.Errorf("got does not contain %q", "sequential_id: 42")
+	}
+	if !strings.Contains(got, "tag_ids: 3 items") {
+		t.Errorf("a collection is counted, not expanded: %q missing", "tag_ids: 3 items")
+	}
+	if !strings.Contains(got, "custom_fields: 1 entry") {
+		t.Errorf("got does not contain %q", "custom_fields: 1 entry")
+	}
+	if !strings.Contains(got, "raw: 7 bytes") {
+		t.Errorf("a byte slice is bytes, not a collection: %q missing", "raw: 7 bytes")
+	}
+	if !strings.Contains(got, "created: 2026-09-13T10:00:00Z") {
+		t.Errorf("got does not contain %q", "created: 2026-09-13T10:00:00Z")
+	}
 
 	// Zero values are omitted: a card sets eight of thirty fields, and
 	// twenty-two lines of "false" is how the readable half stops being
 	// readable.
-	require.NotContains(t, got, "archived")
-	require.NotContains(t, got, "description")
+	if strings.Contains(got, "archived") {
+		t.Errorf("got unexpectedly contains %q", "archived")
+	}
+	if strings.Contains(got, "description") {
+		t.Errorf("got unexpectedly contains %q", "description")
+	}
 	// json:"-" and unexported fields are not ours to show.
-	require.NotContains(t, got, "never rendered")
-	require.NotContains(t, got, "nor this")
+	if strings.Contains(got, "never rendered") {
+		t.Errorf("got unexpectedly contains %q", "never rendered")
+	}
+	if strings.Contains(got, "nor this") {
+		t.Errorf("got unexpectedly contains %q", "nor this")
+	}
 }
 
 func TestSummaryClipsAndBounds(t *testing.T) {
@@ -82,16 +106,23 @@ func TestSummaryClipsAndBounds(t *testing.T) {
 
 	long := strings.Repeat("word ", 200)
 	got := Summary(resource{ID: "x", Description: long})
-	require.Contains(t, got, "…")
+	if !strings.Contains(got, "…") {
+		t.Errorf("got does not contain %q", "…")
+	}
 	for _, line := range strings.Split(got, "\n") {
-		require.LessOrEqual(t, len(line), maxSummaryValue+40,
-			"a description is not a summary of a card")
+		if len(line) > maxSummaryValue+40 {
+			t.Errorf("a description is not a summary of a card: got %v, want at most %v", len(line), maxSummaryValue+40)
+		}
 	}
 
 	// Newlines in a value collapse, so one field stays one line.
 	got = Summary(resource{ID: "x", Description: "first\nsecond\nthird"})
-	require.Contains(t, got, "description: first second third")
-	require.Len(t, strings.Split(got, "\n"), 2)
+	if !strings.Contains(got, "description: first second third") {
+		t.Errorf("got does not contain %q", "description: first second third")
+	}
+	if len(strings.Split(got, "\n")) != 2 {
+		t.Fatalf("len(strings.Split(got, \"\\n\")) = %d, want 2", len(strings.Split(got, "\n")))
+	}
 }
 
 // wide has more fields than the line cap allows, and no json tags — so
@@ -116,9 +147,15 @@ func TestSummaryCapsItsLength(t *testing.T) {
 
 	got := Summary(w)
 	lines := strings.Split(got, "\n")
-	require.Len(t, lines, maxSummaryLines+1, "the cap plus the line that says what it cut")
-	require.Equal(t, "… 2 more fields", lines[len(lines)-1])
-	require.Contains(t, got, "A: set", "an untagged field falls back to its Go name")
+	if len(lines) != maxSummaryLines+1 {
+		t.Fatalf("the cap plus the line that says what it cut: got %d", len(lines))
+	}
+	if got := lines[len(lines)-1]; got != "… 2 more fields" {
+		t.Errorf("lines[len(lines)-1] = %v, want %v", got, "… 2 more fields")
+	}
+	if !strings.Contains(got, "A: set") {
+		t.Errorf("an untagged field falls back to its Go name: %q missing", "A: set")
+	}
 }
 
 func TestSummaryNestingStopsAtDepth(t *testing.T) {
@@ -127,21 +164,41 @@ func TestSummaryNestingStopsAtDepth(t *testing.T) {
 	deep := resource{ID: "l0", Nested: &resource{ID: "l1", Nested: &resource{ID: "l2", Nested: &resource{ID: "l3"}}}}
 	got := Summary(deep)
 
-	require.Contains(t, got, "card_id: l0")
-	require.Contains(t, got, "card_id: l1")
-	require.Contains(t, got, "{…}", "nesting stops rather than recursing into a whole object graph")
-	require.NotContains(t, got, "l3")
+	if !strings.Contains(got, "card_id: l0") {
+		t.Errorf("got does not contain %q", "card_id: l0")
+	}
+	if !strings.Contains(got, "card_id: l1") {
+		t.Errorf("got does not contain %q", "card_id: l1")
+	}
+	if !strings.Contains(got, "{…}") {
+		t.Errorf("nesting stops rather than recursing into a whole object graph: %q missing", "{…}")
+	}
+	if strings.Contains(got, "l3") {
+		t.Errorf("got unexpectedly contains %q", "l3")
+	}
 }
 
 func TestSummaryHandlesNonStructs(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, "(empty result)", Summary(nil))
-	require.Equal(t, "(empty result)", Summary(struct{}{}))
-	require.Equal(t, "(empty result)", Summary((*resource)(nil)))
-	require.Equal(t, "3 items", Summary([]string{"a", "b", "c"}))
-	require.Equal(t, "hello", Summary("hello"))
-	require.Equal(t, "card_id: p", Summary(&resource{ID: "p"}), "a pointer renders as what it points at")
+	if got := Summary(nil); got != "(empty result)" {
+		t.Errorf("Summary(nil) = %v, want %v", got, "(empty result)")
+	}
+	if got := Summary(struct{}{}); got != "(empty result)" {
+		t.Errorf("Summary(struct{}{}) = %v, want %v", got, "(empty result)")
+	}
+	if got := Summary((*resource)(nil)); got != "(empty result)" {
+		t.Errorf("Summary((*resource)(nil)) = %v, want %v", got, "(empty result)")
+	}
+	if got := Summary([]string{"a", "b", "c"}); got != "3 items" {
+		t.Errorf("Summary([]string{\"a\", \"b\", \"c\"}) = %v, want %v", got, "3 items")
+	}
+	if got := Summary("hello"); got != "hello" {
+		t.Errorf("Summary(\"hello\") = %v, want %v", got, "hello")
+	}
+	if got := Summary(&resource{ID: "p"}); got != "card_id: p" {
+		t.Errorf("a pointer renders as what it points at: got %v, want %v", got, "card_id: p")
+	}
 }
 
 func TestInline(t *testing.T) {
@@ -155,8 +212,12 @@ func TestInline(t *testing.T) {
 		Fields:     map[string]string{"a": "1"},
 	})
 
-	require.Equal(t, `card_id=abc name="a name with spaces" sequential_id=42`, got)
-	require.NotContains(t, got, "tag_ids", "collections have no place on a one-line entry")
+	if got := got; got != `card_id=abc name="a name with spaces" sequential_id=42` {
+		t.Errorf("got = %v, want %v", got, `card_id=abc name="a name with spaces" sequential_id=42`)
+	}
+	if strings.Contains(got, "tag_ids") {
+		t.Errorf("collections have no place on a one-line entry: %q present", "tag_ids")
+	}
 }
 
 func TestInlineBounds(t *testing.T) {
@@ -167,9 +228,17 @@ func TestInlineBounds(t *testing.T) {
 		ID: "a", Name: "b", Sequential: 1, Archived: true,
 		Description: "d", Created: time.Now(),
 	})
-	require.Len(t, strings.Split(got, " "), maxInlineFields)
+	if len(strings.Split(got, " ")) != maxInlineFields {
+		t.Fatalf("len(strings.Split(got, \" \")) = %d, want maxInlineFields", len(strings.Split(got, " ")))
+	}
 
-	require.Equal(t, "(no scalar fields)", Inline(resource{TagIDs: []string{"t"}}))
-	require.Empty(t, Inline(nil))
-	require.Equal(t, "7", Inline(7))
+	if got := Inline(resource{TagIDs: []string{"t"}}); got != "(no scalar fields)" {
+		t.Errorf("Inline(resource{TagIDs: []string{\"t\"}}) = %v, want %v", got, "(no scalar fields)")
+	}
+	if len(Inline(nil)) != 0 {
+		t.Errorf("Inline(nil) = %v, want empty", Inline(nil))
+	}
+	if got := Inline(7); got != "7" {
+		t.Errorf("Inline(7) = %v, want %v", got, "7")
+	}
 }

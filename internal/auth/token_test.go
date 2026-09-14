@@ -1,10 +1,11 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestToken_Apply_SetsBasicAuthAndOrgHeader(t *testing.T) {
@@ -12,15 +13,25 @@ func TestToken_Apply_SetsBasicAuthAndOrgHeader(t *testing.T) {
 
 	tok := Token{Email: "user@example.com", APIToken: "tok-xyz", OrganizationID: "org-1"}
 	req, err := http.NewRequest(http.MethodGet, "https://example.com", http.NoBody)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	tok.Apply(req)
 
 	user, pass, ok := req.BasicAuth()
-	require.True(t, ok, "Apply must set Basic Auth")
-	require.Equal(t, "user@example.com", user)
-	require.Equal(t, "tok-xyz", pass)
-	require.Equal(t, "org-1", req.Header.Get("organizationId"))
+	if !ok {
+		t.Error("Apply must set Basic Auth")
+	}
+	if got := user; got != "user@example.com" {
+		t.Errorf("user = %v, want %v", got, "user@example.com")
+	}
+	if got := pass; got != "tok-xyz" {
+		t.Errorf("pass = %v, want %v", got, "tok-xyz")
+	}
+	if got := req.Header.Get("organizationId"); got != "org-1" {
+		t.Errorf("req.Header.Get(\"organizationId\") = %v, want %v", got, "org-1")
+	}
 }
 
 func TestToken_Apply_OmitsEmptyOrgID(t *testing.T) {
@@ -28,12 +39,15 @@ func TestToken_Apply_OmitsEmptyOrgID(t *testing.T) {
 
 	tok := Token{Email: "u@example.test", APIToken: "t"}
 	req, err := http.NewRequest(http.MethodGet, "https://example.com", http.NoBody)
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 
 	tok.Apply(req)
 
-	require.Empty(t, req.Header.Get("organizationId"),
-		"empty OrganizationID must not produce an empty header")
+	if len(req.Header.Get("organizationId")) != 0 {
+		t.Errorf("empty OrganizationID must not produce an empty header: got %v", req.Header.Get("organizationId"))
+	}
 }
 
 func TestToken_Validate(t *testing.T) {
@@ -87,12 +101,18 @@ func TestToken_Validate(t *testing.T) {
 
 			err := tc.tok.Validate()
 			if !tc.wantErr {
-				require.NoError(t, err)
+				if err := err; err != nil {
+					t.Fatalf("err: %v", err)
+				}
 				return
 			}
 			var mfe *missingFieldError
-			require.ErrorAs(t, err, &mfe, "expected *missingFieldError")
-			require.Equal(t, tc.missing, mfe.fields)
+			if !errors.As(err, &mfe) {
+				t.Fatalf("got %v, want mfe", err)
+			}
+			if got := mfe.fields; !reflect.DeepEqual(got, tc.missing) {
+				t.Errorf("mfe.fields = %v, want %v", got, tc.missing)
+			}
 		})
 	}
 }
@@ -102,8 +122,12 @@ func TestMissingFieldError_Message(t *testing.T) {
 
 	err := &missingFieldError{fields: []string{"email", "API token"}}
 	msg := err.Error()
-	require.Contains(t, msg, "email", "message must name 'email'")
-	require.Contains(t, msg, "API token", "message must name 'API token'")
+	if !strings.Contains(msg, "email") {
+		t.Errorf("message must name 'email': %q missing", "email")
+	}
+	if !strings.Contains(msg, "API token") {
+		t.Errorf("message must name 'API token': %q missing", "API token")
+	}
 }
 
 func TestToken_Validate_RejectsCRLF(t *testing.T) {
@@ -142,8 +166,12 @@ func TestToken_Validate_RejectsCRLF(t *testing.T) {
 
 			err := tc.tok.Validate()
 			var ife *invalidFieldError
-			require.ErrorAs(t, err, &ife, "expected *invalidFieldError")
-			require.Equal(t, tc.want, ife.fields)
+			if !errors.As(err, &ife) {
+				t.Fatalf("got %v, want ife", err)
+			}
+			if got := ife.fields; !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("ife.fields = %v, want %v", got, tc.want)
+			}
 		})
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -32,15 +31,29 @@ func TestMCP_ListCollections_HappyPath(t *testing.T) {
 		Name:      listCollectionsToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[listOutput[favro.Collection]](t, res)
-	require.Len(t, out.Items, 1)
-	require.Equal(t, "Engineering", out.Items[0].Name)
-	require.NotNil(t, out.NextPage)
-	require.Equal(t, 2, *out.NextPage)
-	require.Equal(t, "req-c", out.RequestID)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := out.Items[0].Name; got != "Engineering" {
+		t.Errorf("out.Items[0].Name = %v, want %v", got, "Engineering")
+	}
+	if out.NextPage == nil {
+		t.Fatal("out.NextPage is nil")
+	}
+	if got := *out.NextPage; got != 2 {
+		t.Errorf("*out.NextPage = %v, want %v", got, 2)
+	}
+	if got := out.RequestID; got != "req-c" {
+		t.Errorf("out.RequestID = %v, want %v", got, "req-c")
+	}
 }
 
 func TestMCP_GetCollection_HappyPath(t *testing.T) {
@@ -65,12 +78,20 @@ func TestMCP_GetCollection_HappyPath(t *testing.T) {
 			"collection_id": "c-zzz",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[favro.Collection](t, res)
-	require.Equal(t, "c-zzz", out.CollectionID)
-	require.True(t, out.Archived)
+	if got := out.CollectionID; got != "c-zzz" {
+		t.Errorf("out.CollectionID = %v, want %v", got, "c-zzz")
+	}
+	if !out.Archived {
+		t.Error("out.Archived = false, want true")
+	}
 }
 
 func TestMCP_GetCollection_MissingID_ReturnsToolError(t *testing.T) {

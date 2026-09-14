@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/auth"
 	"github.com/mmedum/favro-mcp/internal/config"
@@ -29,10 +28,16 @@ func TestRun_Version_PrintsToStdout(t *testing.T) {
 	stdin := strings.NewReader("")
 	var stdout, stderr bytes.Buffer
 
-	require.NoError(t, run([]string{"--version"}, stdin, &stdout, &stderr))
+	if err := run([]string{"--version"}, stdin, &stdout, &stderr); err != nil {
+		t.Fatalf("run([]string{\"--version\"}, stdin, &stdout, &stderr): %v", err)
+	}
 
-	require.Contains(t, stdout.String(), "favro-mcp")
-	require.Empty(t, stderr.String(), "version flag must not emit diagnostics to stderr")
+	if !strings.Contains(stdout.String(), "favro-mcp") {
+		t.Errorf("stdout.String() does not contain %q", "favro-mcp")
+	}
+	if len(stderr.String()) != 0 {
+		t.Errorf("version flag must not emit diagnostics to stderr: got %v", stderr.String())
+	}
 }
 
 func TestRun_Help_PrintsToStdout(t *testing.T) {
@@ -41,9 +46,13 @@ func TestRun_Help_PrintsToStdout(t *testing.T) {
 	stdin := strings.NewReader("")
 	var stdout, stderr bytes.Buffer
 
-	require.NoError(t, run([]string{"--help"}, stdin, &stdout, &stderr))
+	if err := run([]string{"--help"}, stdin, &stdout, &stderr); err != nil {
+		t.Fatalf("run([]string{\"--help\"}, stdin, &stdout, &stderr): %v", err)
+	}
 
-	require.Contains(t, stdout.String(), "favro-mcp — Model Context Protocol server for Favro")
+	if !strings.Contains(stdout.String(), "favro-mcp — Model Context Protocol server for Favro") {
+		t.Errorf("stdout.String() does not contain %q", "favro-mcp — Model Context Protocol server for Favro")
+	}
 }
 
 func TestRun_AuthSubcommand_Routed(t *testing.T) {
@@ -53,9 +62,15 @@ func TestRun_AuthSubcommand_Routed(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	// `auth help` should hit the auth dispatcher and emit usage to stderr.
-	require.NoError(t, run([]string{"auth", "help"}, stdin, &stdout, &stderr))
-	require.Empty(t, stdout.String(), "auth subcommands must not write to stdout")
-	require.Contains(t, stderr.String(), "favro-mcp auth")
+	if err := run([]string{"auth", "help"}, stdin, &stdout, &stderr); err != nil {
+		t.Fatalf("run([]string{\"auth\", \"help\"}, stdin, &stdout, &stderr): %v", err)
+	}
+	if len(stdout.String()) != 0 {
+		t.Errorf("auth subcommands must not write to stdout: got %v", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "favro-mcp auth") {
+		t.Errorf("stderr.String() does not contain %q", "favro-mcp auth")
+	}
 }
 
 func TestRun_UnknownAuthSubcommand_Errors(t *testing.T) {
@@ -65,8 +80,12 @@ func TestRun_UnknownAuthSubcommand_Errors(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	err := run([]string{"auth", "no-such-thing"}, stdin, &stdout, &stderr)
-	require.Error(t, err)
-	require.Contains(t, stderr.String(), "unknown subcommand")
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if !strings.Contains(stderr.String(), "unknown subcommand") {
+		t.Errorf("stderr.String() does not contain %q", "unknown subcommand")
+	}
 }
 
 func TestConfigureLogging_UnrecognizedLevel_WarnsOnStderr(t *testing.T) {
@@ -76,8 +95,12 @@ func TestConfigureLogging_UnrecognizedLevel_WarnsOnStderr(t *testing.T) {
 	var stderr bytes.Buffer
 	configureLogging(&stderr)
 
-	require.Contains(t, stderr.String(), "unrecognized "+config.EnvLogLevel)
-	require.Contains(t, stderr.String(), "loud", "the rejected value belongs in the warning")
+	if !strings.Contains(stderr.String(), "unrecognized "+config.EnvLogLevel) {
+		t.Errorf("stderr.String() does not contain %q", "unrecognized "+config.EnvLogLevel)
+	}
+	if !strings.Contains(stderr.String(), "loud") {
+		t.Errorf("the rejected value belongs in the warning: %q missing", "loud")
+	}
 }
 
 // TestConfigureLogging_LevelFromEnv covers the two things the env var
@@ -92,19 +115,33 @@ func TestConfigureLogging_LevelFromEnv(t *testing.T) {
 	slog.Info("below-threshold")
 	slog.Error("at-threshold")
 
-	require.NotContains(t, stderr.String(), "below-threshold")
-	require.Contains(t, stderr.String(), "at-threshold")
-	require.NotContains(t, stderr.String(), "unrecognized log level")
+	if strings.Contains(stderr.String(), "below-threshold") {
+		t.Errorf("stderr.String() unexpectedly contains %q", "below-threshold")
+	}
+	if !strings.Contains(stderr.String(), "at-threshold") {
+		t.Errorf("stderr.String() does not contain %q", "at-threshold")
+	}
+	if strings.Contains(stderr.String(), "unrecognized log level") {
+		t.Errorf("stderr.String() unexpectedly contains %q", "unrecognized log level")
+	}
 }
 
 func TestMissingCredsHint_NamesEveryCredentialEnvVar(t *testing.T) {
 	t.Parallel()
 
 	hint := missingCredsHint()
-	require.Contains(t, hint, auth.EnvUserEmail)
-	require.Contains(t, hint, auth.EnvAPIToken)
-	require.Contains(t, hint, auth.EnvOrganizationID)
-	require.Contains(t, hint, "auth login", "the hint must offer the keyring path too")
+	if !strings.Contains(hint, auth.EnvUserEmail) {
+		t.Errorf("hint does not contain %q", auth.EnvUserEmail)
+	}
+	if !strings.Contains(hint, auth.EnvAPIToken) {
+		t.Errorf("hint does not contain %q", auth.EnvAPIToken)
+	}
+	if !strings.Contains(hint, auth.EnvOrganizationID) {
+		t.Errorf("hint does not contain %q", auth.EnvOrganizationID)
+	}
+	if !strings.Contains(hint, "auth login") {
+		t.Errorf("the hint must offer the keyring path too: %q missing", "auth login")
+	}
 }
 
 func TestRunServer_UnknownFlag_ErrorsWithUsage(t *testing.T) {
@@ -113,17 +150,27 @@ func TestRunServer_UnknownFlag_ErrorsWithUsage(t *testing.T) {
 	var stderr bytes.Buffer
 	err := runServer([]string{"--no-such-flag"}, config.Load(), io.Discard, &stderr)
 
-	require.Error(t, err)
-	require.Contains(t, stderr.String(), "no-such-flag")
-	require.Contains(t, stderr.String(), "Usage:")
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if !strings.Contains(stderr.String(), "no-such-flag") {
+		t.Errorf("stderr.String() does not contain %q", "no-such-flag")
+	}
+	if !strings.Contains(stderr.String(), "Usage:") {
+		t.Errorf("stderr.String() does not contain %q", "Usage:")
+	}
 }
 
 func TestRunServer_HelpFlag_PrintsUsageWithoutError(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	require.NoError(t, runServer([]string{"-h"}, config.Load(), io.Discard, &stderr))
-	require.Contains(t, stderr.String(), "Usage:")
+	if err := runServer([]string{"-h"}, config.Load(), io.Discard, &stderr); err != nil {
+		t.Fatalf("runServer([]string{\"-h\"}, config.Load(), io.Discard, &stderr): %v", err)
+	}
+	if !strings.Contains(stderr.String(), "Usage:") {
+		t.Errorf("stderr.String() does not contain %q", "Usage:")
+	}
 }
 
 func TestRunServer_NoCredentials_ErrorsBeforeContactingFavro(t *testing.T) {
@@ -133,9 +180,15 @@ func TestRunServer_NoCredentials_ErrorsBeforeContactingFavro(t *testing.T) {
 
 	err := runServer(nil, config.Load(), io.Discard, io.Discard)
 
-	require.Error(t, err)
-	require.Contains(t, logs.String(), "could not resolve Favro credentials")
-	require.Contains(t, logs.String(), auth.EnvAPIToken, "the failure must name what to set")
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if !strings.Contains(logs.String(), "could not resolve Favro credentials") {
+		t.Errorf("logs.String() does not contain %q", "could not resolve Favro credentials")
+	}
+	if !strings.Contains(logs.String(), auth.EnvAPIToken) {
+		t.Errorf("the failure must name what to set: %q missing", auth.EnvAPIToken)
+	}
 }
 
 // TestRunServer_PartialEnvCredentials_Errors pins the env-binding rule:
@@ -151,10 +204,15 @@ func TestRunServer_PartialEnvCredentials_Errors(t *testing.T) {
 
 	err := runServer(nil, config.Load(), io.Discard, io.Discard)
 
-	require.Error(t, err)
-	require.Contains(t, logs.String(), "could not resolve Favro credentials")
-	require.NotContains(t, logs.String(), keyringOnlyCredentials().OrganizationID,
-		"a partial env set must not fall through to the keyring")
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if !strings.Contains(logs.String(), "could not resolve Favro credentials") {
+		t.Errorf("logs.String() does not contain %q", "could not resolve Favro credentials")
+	}
+	if strings.Contains(logs.String(), keyringOnlyCredentials().OrganizationID) {
+		t.Errorf("a partial env set must not fall through to the keyring: %q present", keyringOnlyCredentials().OrganizationID)
+	}
 }
 
 func TestRunServer_DryRunFlag_AnnouncedAtStartup(t *testing.T) {
@@ -164,8 +222,12 @@ func TestRunServer_DryRunFlag_AnnouncedAtStartup(t *testing.T) {
 
 	// Startup still fails at credential resolution; what matters here is
 	// that --dry-run parsed and was announced before that point.
-	require.Error(t, runServer([]string{"--dry-run"}, config.Load(), io.Discard, io.Discard))
-	require.Contains(t, logs.String(), "all mutating Favro requests will short-circuit")
+	if runServer([]string{"--dry-run"}, config.Load(), io.Discard, io.Discard) == nil {
+		t.Fatal("runServer([]string{\"--dry-run\"}, config.Load(), io.Discard, io.Discard) should have failed")
+	}
+	if !strings.Contains(logs.String(), "all mutating Favro requests will short-circuit") {
+		t.Errorf("logs.String() does not contain %q", "all mutating Favro requests will short-circuit")
+	}
 }
 
 func TestRun_NoArgs_TakesTheServerPath(t *testing.T) {
@@ -177,9 +239,15 @@ func TestRun_NoArgs_TakesTheServerPath(t *testing.T) {
 
 	err := run(nil, stdin, &stdout, &stderr)
 
-	require.Error(t, err)
-	require.Empty(t, stdout.String(), "stdout stays reserved for the MCP protocol stream")
-	require.Contains(t, stderr.String(), "could not resolve Favro credentials")
+	if err == nil {
+		t.Fatal("err should have failed")
+	}
+	if len(stdout.String()) != 0 {
+		t.Errorf("stdout stays reserved for the MCP protocol stream: got %v", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "could not resolve Favro credentials") {
+		t.Errorf("stderr.String() does not contain %q", "could not resolve Favro credentials")
+	}
 }
 
 // envRunMainForTest marks the re-executed child process in
@@ -206,8 +274,12 @@ func TestMain_ExitsNonZeroOnStartupFailure(t *testing.T) {
 	err := cmd.Run()
 
 	var exitErr *exec.ExitError
-	require.ErrorAs(t, err, &exitErr)
-	require.Equal(t, 1, exitErr.ExitCode())
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("got %v, want exitErr", err)
+	}
+	if got := exitErr.ExitCode(); got != 1 {
+		t.Errorf("exitErr.ExitCode() = %v, want %v", got, 1)
+	}
 }
 
 // --dump-schemas is what the schema-diff and staleness gates read, and
@@ -220,7 +292,9 @@ func TestDumpSchemasNeedsNoCredentials(t *testing.T) {
 	t.Setenv(auth.EnvOrganizationID, "")
 
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, run([]string{"--dump-schemas"}, nil, &stdout, &stderr))
+	if err := run([]string{"--dump-schemas"}, nil, &stdout, &stderr); err != nil {
+		t.Fatalf("run([]string{\"--dump-schemas\"}, nil, &stdout, &stderr): %v", err)
+	}
 
 	var dump struct {
 		Server string `json:"server"`
@@ -230,13 +304,21 @@ func TestDumpSchemasNeedsNoCredentials(t *testing.T) {
 			InputSchema map[string]any `json:"inputSchema"`
 		} `json:"tools"`
 	}
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &dump))
-	require.Equal(t, "favro-mcp", dump.Server)
+	if err := json.Unmarshal(stdout.Bytes(), &dump); err != nil {
+		t.Fatalf("json.Unmarshal(stdout.Bytes(), &dump): %v", err)
+	}
+	if got := dump.Server; got != "favro-mcp" {
+		t.Errorf("dump.Server = %v, want %v", got, "favro-mcp")
+	}
 
 	names := make(map[string]bool, len(dump.Tools))
 	for _, tool := range dump.Tools {
-		require.NotEmpty(t, tool.Description, "%s has no description", tool.Name)
-		require.NotEmpty(t, tool.InputSchema, "%s has no input schema", tool.Name)
+		if len(tool.Description) == 0 {
+			t.Fatalf("%s has no description", tool.Name)
+		}
+		if len(tool.InputSchema) == 0 {
+			t.Fatalf("%s has no input schema", tool.Name)
+		}
 		names[tool.Name] = true
 	}
 	// A read tool, a write tool and a destructive one. The last is the
@@ -244,7 +326,9 @@ func TestDumpSchemasNeedsNoCredentials(t *testing.T) {
 	// register only behind an environment flag, a dump built the easy
 	// way stops listing them and nothing else would say so.
 	for _, want := range []string{"favro_ping", "favro_list_cards", "favro_create_card", "favro_delete_card"} {
-		require.True(t, names[want], "--dump-schemas omits %s", want)
+		if !names[want] {
+			t.Errorf("--dump-schemas omits %s", want)
+		}
 	}
 }
 
@@ -275,7 +359,9 @@ func TestCleanDisconnect(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.clean, cleanDisconnect(tc.err))
+			if got := cleanDisconnect(tc.err); got != tc.clean {
+				t.Errorf("cleanDisconnect(tc.err) = %v, want %v", got, tc.clean)
+			}
 		})
 	}
 }
@@ -304,16 +390,27 @@ func TestStartupLineNamesNoTenant(t *testing.T) {
 	// stdin is /dev/null under `go test`, so the stdio transport sees
 	// EOF at once and the server shuts down cleanly. The run is only
 	// here to get past credential resolution and emit the line.
-	require.NoError(t, runServer(nil, config.Load(), io.Discard, io.Discard))
+	if err := runServer(nil, config.Load(), io.Discard, io.Discard); err != nil {
+		t.Fatalf("runServer(nil, config.Load(), io.Discard, io.Discard): %v", err)
+	}
 
 	out := logs.String()
-	require.Contains(t, out, "favro-mcp starting",
-		"logged nothing, so this test proved nothing")
-	require.Contains(t, out, "credential_source", "the line still has to be worth logging")
+	if !strings.Contains(out, "favro-mcp starting") {
+		t.Errorf("logged nothing, so this test proved nothing: %q missing", "favro-mcp starting")
+	}
+	if !strings.Contains(out, "credential_source") {
+		t.Errorf("the line still has to be worth logging: %q missing", "credential_source")
+	}
 
-	require.NotContains(t, out, tok.OrganizationID, "the organization id names the tenant")
-	require.NotContains(t, out, tok.Email)
-	require.NotContains(t, out, tok.APIToken)
+	if strings.Contains(out, tok.OrganizationID) {
+		t.Errorf("the organization id names the tenant: %q present", tok.OrganizationID)
+	}
+	if strings.Contains(out, tok.Email) {
+		t.Errorf("out unexpectedly contains %q", tok.Email)
+	}
+	if strings.Contains(out, tok.APIToken) {
+		t.Errorf("out unexpectedly contains %q", tok.APIToken)
+	}
 }
 
 // TestUsageDocumentsDestructiveFlag keeps --help honest: a tool surface
@@ -324,5 +421,7 @@ func TestUsageDocumentsDestructiveFlag(t *testing.T) {
 
 	var buf bytes.Buffer
 	printUsage(&buf)
-	require.Contains(t, buf.String(), config.EnvEnableDestructive)
+	if !strings.Contains(buf.String(), config.EnvEnableDestructive) {
+		t.Errorf("buf.String() does not contain %q", config.EnvEnableDestructive)
+	}
 }

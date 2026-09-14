@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -33,17 +32,35 @@ func TestMCP_ListOrganizations_HappyPath(t *testing.T) {
 		Name:      listOrgsToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[listOutput[favro.Organization]](t, res)
-	require.Len(t, out.Items, 1)
-	require.Equal(t, "Acme", out.Items[0].Name)
-	require.Equal(t, 1, out.Page, "Favro page 0 is page 1 on this surface")
-	require.Equal(t, 2, out.TotalPages)
-	require.NotNil(t, out.NextPage, "two-page response must surface next_page")
-	require.Equal(t, 2, *out.NextPage)
-	require.Equal(t, "req-1", out.RequestID)
+	if len(out.Items) != 1 {
+		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
+	}
+	if got := out.Items[0].Name; got != "Acme" {
+		t.Errorf("out.Items[0].Name = %v, want %v", got, "Acme")
+	}
+	if got := out.Page; got != 1 {
+		t.Errorf("Favro page 0 is page 1 on this surface: got %v, want %v", got, 1)
+	}
+	if got := out.TotalPages; got != 2 {
+		t.Errorf("out.TotalPages = %v, want %v", got, 2)
+	}
+	if out.NextPage == nil {
+		t.Fatal("two-page response must surface next_page")
+	}
+	if got := *out.NextPage; got != 2 {
+		t.Errorf("*out.NextPage = %v, want %v", got, 2)
+	}
+	if got := out.RequestID; got != "req-1" {
+		t.Errorf("out.RequestID = %v, want %v", got, "req-1")
+	}
 }
 
 func TestMCP_ListOrganizations_LastPage_NoNextPage(t *testing.T) {
@@ -64,9 +81,13 @@ func TestMCP_ListOrganizations_LastPage_NoNextPage(t *testing.T) {
 		Name:      listOrgsToolName,
 		Arguments: map[string]any{},
 	})
-	require.NoError(t, err)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
 	out := decodeStructured[listOutput[favro.Organization]](t, res)
-	require.Nil(t, out.NextPage, "single-page response must omit next_page")
+	if out.NextPage != nil {
+		t.Errorf("single-page response must omit next_page: %v", out.NextPage)
+	}
 }
 
 func TestMCP_ListOrganizations_ForwardsRequestIDOnPage2(t *testing.T) {
@@ -87,9 +108,12 @@ func TestMCP_ListOrganizations_ForwardsRequestIDOnPage2(t *testing.T) {
 			"request_id": "req-from-prior-page",
 		},
 	})
-	require.NoError(t, err)
-	require.Equal(t, "req-from-prior-page", sawRequestID,
-		"page > 0 must thread request_id back as X-Favro-Backend-Identifier")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := sawRequestID; got != "req-from-prior-page" {
+		t.Errorf("page > 0 must thread request_id back as X-Favro-Backend-Identifier: got %v, want %v", got, "req-from-prior-page")
+	}
 }
 
 func TestMCP_GetOrganization_HappyPath(t *testing.T) {
@@ -115,12 +139,20 @@ func TestMCP_GetOrganization_HappyPath(t *testing.T) {
 			"organization_id": "org-zzz",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[favro.Organization](t, res)
-	require.Equal(t, "org-zzz", out.OrganizationID)
-	require.Equal(t, "Looked Up", out.Name)
+	if got := out.OrganizationID; got != "org-zzz" {
+		t.Errorf("out.OrganizationID = %v, want %v", got, "org-zzz")
+	}
+	if got := out.Name; got != "Looked Up" {
+		t.Errorf("out.Name = %v, want %v", got, "Looked Up")
+	}
 }
 
 func TestMCP_GetOrganization_MissingID_ReturnsToolError(t *testing.T) {

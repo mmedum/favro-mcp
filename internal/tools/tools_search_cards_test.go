@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
 )
@@ -17,8 +16,8 @@ func TestMCP_SearchCards_HappyPath(t *testing.T) {
 
 	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// In-handler asserts use t.Errorf rather than require.* —
-		// require's testify-fail panics are goroutine-unsafe and
-		// testifylint's go-require rule rejects them in handlers.
+		// t.Errorf rather than t.Fatalf: FailNow is only legal on the
+		// goroutine running the test, and this is an HTTP handler.
 		if got := r.URL.Query().Get("descriptionFormat"); got != "markdown" {
 			t.Errorf("the MCP tool must propagate descriptionFormat=markdown to Favro; got %q", got)
 		}
@@ -40,13 +39,23 @@ func TestMCP_SearchCards_HappyPath(t *testing.T) {
 			"widget_common_id": "w-1",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError, "tool must succeed; got %s", serializedResponseString(t, res))
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("tool must succeed; got %s", serializedResponseString(t, res))
+	}
 
 	out := decodeStructured[searchCardsOutput](t, res)
-	require.Len(t, out.Results, 1)
-	require.Equal(t, "card-1", out.Results[0].CardID)
-	require.False(t, out.Cached)
+	if len(out.Results) != 1 {
+		t.Fatalf("len(out.Results) = %d, want 1", len(out.Results))
+	}
+	if got := out.Results[0].CardID; got != "card-1" {
+		t.Errorf("out.Results[0].CardID = %v, want %v", got, "card-1")
+	}
+	if out.Cached {
+		t.Error("out.Cached = true, want false")
+	}
 }
 
 func TestMCP_SearchCards_MissingQuery(t *testing.T) {
@@ -72,13 +81,23 @@ func TestMCP_SearchCards_MissingScope(t *testing.T) {
 		Name:      searchCardsToolName,
 		Arguments: map[string]any{"query": "printing"},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError, "missing scope must surface as a tool error")
-	require.Equal(t, 0, calls, "missing scope must short-circuit before any Favro call")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("missing scope must surface as a tool error")
+	}
+	if got := calls; got != 0 {
+		t.Errorf("missing scope must short-circuit before any Favro call: got %v, want %v", got, 0)
+	}
 
 	full := strings.ToLower(serializedResponseString(t, res))
-	require.Contains(t, full, "widget_common_id")
-	require.Contains(t, full, "collection_id")
+	if !strings.Contains(full, "widget_common_id") {
+		t.Errorf("full does not contain %q", "widget_common_id")
+	}
+	if !strings.Contains(full, "collection_id") {
+		t.Errorf("full does not contain %q", "collection_id")
+	}
 }
 
 // TestMCP_SearchCards_ScopeConflict pins the contract that passing
@@ -102,13 +121,23 @@ func TestMCP_SearchCards_ScopeConflict(t *testing.T) {
 			"collection_id":    "c-1",
 		},
 	})
-	require.NoError(t, err)
-	require.True(t, res.IsError, "scope conflict must surface as a tool error")
-	require.Equal(t, 0, calls, "scope conflict must short-circuit before any Favro call")
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("scope conflict must surface as a tool error")
+	}
+	if got := calls; got != 0 {
+		t.Errorf("scope conflict must short-circuit before any Favro call: got %v, want %v", got, 0)
+	}
 
 	full := strings.ToLower(serializedResponseString(t, res))
-	require.Contains(t, full, "widget_common_id")
-	require.Contains(t, full, "collection_id")
+	if !strings.Contains(full, "widget_common_id") {
+		t.Errorf("full does not contain %q", "widget_common_id")
+	}
+	if !strings.Contains(full, "collection_id") {
+		t.Errorf("full does not contain %q", "collection_id")
+	}
 }
 
 func TestMCP_SearchCards_WidgetScope(t *testing.T) {
@@ -135,10 +164,18 @@ func TestMCP_SearchCards_WidgetScope(t *testing.T) {
 			"widget_common_id": "w-99",
 		},
 	})
-	require.NoError(t, err)
-	require.False(t, res.IsError)
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
 
 	out := decodeStructured[searchCardsOutput](t, res)
-	require.Len(t, out.Results, 1)
-	require.Equal(t, "wc-1", out.Results[0].CardID)
+	if len(out.Results) != 1 {
+		t.Fatalf("len(out.Results) = %d, want 1", len(out.Results))
+	}
+	if got := out.Results[0].CardID; got != "wc-1" {
+		t.Errorf("out.Results[0].CardID = %v, want %v", got, "wc-1")
+	}
 }
