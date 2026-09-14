@@ -192,9 +192,22 @@ Run `favro-mcp doctor` first — it answers most of the rows below directly, and
 | Linux launcher doesn't run from the plugin | The launcher is a bash script. If your shell can't exec it, point your `.mcp.json` directly at `${CLAUDE_PLUGIN_ROOT}/bin/linux-amd64/favro-mcp` (or `linux-arm64`) instead. |
 | Windows | The bundled `bin/favro-mcp.cmd` shim exec's `bin\windows-amd64\favro-mcp.exe`. Windows hosts resolve `${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp` to the `.cmd` automatically via PATHEXT, so the standard `.mcp.json` config in [MCP host configuration](#mcp-host-configuration) works as-is. If your host doesn't honor PATHEXT, point `command` at `${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp.cmd` (or directly at `bin/windows-amd64/favro-mcp.exe`). |
 
+## Documentation
+
+| | |
+|---|---|
+| [docs/TOOLS.md](./docs/TOOLS.md) | Every tool, its inputs and what it returns. |
+| [docs/configuration.md](./docs/configuration.md) | Every setting, the commands, and what happens at startup. |
+| [docs/security.md](./docs/security.md) | Trust boundaries, what reaches a log, and what limits what. |
+| [docs/development.md](./docs/development.md) | The gates, the test conventions, and how a release is cut. |
+| [docs/architecture.md](./docs/architecture.md) | The design, the decided constraints, the evidence log and the phase plan. |
+| [SECURITY.md](./SECURITY.md) | Reporting a vulnerability. |
+
 ## Development
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+See [docs/development.md](./docs/development.md) for the gates and the
+test conventions, and [CONTRIBUTING.md](./CONTRIBUTING.md) for how to
+get set up and open a pull request.
 
 ## License
 
