@@ -1,0 +1,36 @@
+name: Feature request
+description: A tool, an option, or a behaviour that isn't there yet
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't include anything from your Favro organization — names, ids,
+        addresses. Describe the resources by role.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you're trying to do
+      description: The task, not the implementation. What would you ask a model to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What happens today
+      description: |
+        Which tools you tried, and where they stopped short. If the answer is
+        "there is no tool for it", say which Favro endpoint you think it needs —
+        `testdata/api-coverage.tsv` carries a verdict for every documented
+        endpoint, including the ones deliberately left out and why.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you've already worked around it with
+    validations:
+      required: false

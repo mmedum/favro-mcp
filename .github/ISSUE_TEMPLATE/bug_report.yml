@@ -1,0 +1,100 @@
+name: Bug report
+description: Something in favro-mcp isn't working
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report.
+
+        **For security issues** — a leaked token, an auth bypass, anything that
+        exposes one organization's data to another — do not open a public issue.
+        Follow `SECURITY.md` instead.
+
+        **Please don't paste anything from your Favro organization.** Card names
+        and ids, board and collection names, the short board-and-number
+        reference Favro shows on every card, organization ids, addresses, or an
+        API token. Refer to things by their role — "a card on a board I can
+        write to" — and the report will still be actionable. `favro-mcp doctor`
+        already redacts what it prints.
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: |
+        Output of `favro-mcp doctor`. It checks credentials, the organization
+        binding and API reachability, and replaces ids and addresses with
+        placeholders so the report is safe to paste.
+
+        Run it **without** `--show-ids` — that flag exists for your own screen
+        and prints real ids.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed it
+      options:
+        - Claude Desktop bundle (.mcpb)
+        - Claude Code plugin (.plugin)
+        - go install
+        - release archive
+        - built from source
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: "Claude Code 2.1.x, Claude Desktop, ..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: destructive
+    attributes:
+      label: Is FAVRO_ENABLE_DESTRUCTIVE set?
+      description: |
+        It registers the delete-style tools. The doctor output above says so
+        too; this is here because it changes what a report can mean.
+      options:
+        - "No (default)"
+        - "Yes"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: |
+        Which tool you called, what you expected, and what you got. If a tool
+        returned an error, paste it — they are written to be safe to share:
+        `[class] message`, with no tenant values in them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence of tool calls that shows it.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server logs
+      description: |
+        Stderr from the server, ideally with `FAVRO_LOG_LEVEL=debug`. Logs never
+        contain payloads or the organization id by design — read them before
+        pasting anyway.
+      render: text
+    validations:
+      required: false

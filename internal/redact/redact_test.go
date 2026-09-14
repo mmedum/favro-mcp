@@ -199,3 +199,109 @@ func TestNamesAreNotRedacted(t *testing.T) {
 		t.Errorf("the name is expected to survive, and the doc says so: %q", got)
 	}
 }
+
+// Literal exists because every pattern in this package is anchored on a
+// shape a tenant's data takes, so a value that IS tenant data and takes
+// some other shape passes straight through. These fixtures are
+// deliberately not 24 hex characters, for that reason.
+func TestLiteralRedactsWhatNoPatternMatches(t *testing.T) {
+	r := New()
+	r.Literal(KindID, "org-not-hex-shaped")
+
+	got := r.String("bound to org-not-hex-shaped today")
+	if strings.Contains(got, "org-not-hex-shaped") {
+		t.Errorf("String() = %q; the registered value survived", got)
+	}
+	if !strings.Contains(got, "{id 1}") {
+		t.Errorf("String() = %q; want a kinded placeholder, not a blanket one", got)
+	}
+}
+
+// The placeholder has to be the same one every time, or a reader cannot
+// tell that the id a list returned is the id a get was called with.
+func TestLiteralPlaceholderIsStableAndKinded(t *testing.T) {
+	r := New()
+	r.Literal(KindID, "org-alpha-not-real")
+	r.Literal(KindUser, "someone@example.test")
+
+	first := r.String("org-alpha-not-real and someone@example.test")
+	second := r.String("org-alpha-not-real again")
+
+	if !strings.Contains(first, "{id 1}") || !strings.Contains(first, "{user 1}") {
+		t.Errorf("String() = %q; want both kinds to appear", first)
+	}
+	if !strings.Contains(second, "{id 1}") {
+		t.Errorf("the second call gave %q; the same value must read as the same placeholder", second)
+	}
+}
+
+// Longest first, or a value that contains a shorter registered one
+// leaves the remainder behind.
+func TestLiteralReplacesLongestFirst(t *testing.T) {
+	r := New()
+	r.Literal(KindID, "org-abc")
+	r.Literal(KindID, "org-abc-extended")
+
+	got := r.String("org-abc-extended")
+	if strings.Contains(got, "org-abc") {
+		t.Errorf("String() = %q; a fragment of a registered value survived", got)
+	}
+}
+
+// Count answers "did redaction happen". A value registered and never
+// printed must not inflate it, or the number stops being able to tell
+// "redacted nothing" from "stopped redacting" — which is the failure
+// this package's own summary line exists to catch.
+func TestCountCountsWhatWasReplacedNotWhatWasRegistered(t *testing.T) {
+	r := New()
+	r.Literal(KindID, "org-appears-here")
+	r.Literal(KindID, "org-never-appears")
+
+	r.String("only org-appears-here is in this line")
+	if got := r.Count(); got != 1 {
+		t.Errorf("Count() = %d after replacing one value; want 1", got)
+	}
+}
+
+// Registering the same value twice must not mint a second placeholder.
+func TestLiteralIgnoresADuplicateRegistration(t *testing.T) {
+	r := New()
+	r.Literal(KindID, "org-registered-twice")
+	r.Literal(KindID, "org-registered-twice")
+
+	got := r.String("org-registered-twice")
+	if strings.Count(got, "{id") != 1 {
+		t.Errorf("String() = %q; want exactly one placeholder", got)
+	}
+	if n := r.Count(); n != 1 {
+		t.Errorf("Count() = %d; a duplicate registration counted twice", n)
+	}
+}
+
+// Too short to be meaningful, and short values are where a literal
+// replacement does the most damage to the rest of the line.
+func TestLiteralIgnoresAShortValue(t *testing.T) {
+	r := New()
+	r.Literal(KindID, "ab")
+	if got := r.String("ab is a word"); got != "ab is a word" {
+		t.Errorf("String() = %q; a two-character registration should be ignored", got)
+	}
+}
+
+// Secrets is the tier for output that carries real ids on purpose: the
+// token still goes, and nothing else is touched.
+func TestSecretsScrubsTheTokenAndLeavesIdentifiers(t *testing.T) {
+	r := New("tok-not-a-real-secret")
+	r.Literal(KindID, "org-not-hex-shaped")
+
+	got := r.Secrets("tok-not-a-real-secret reaching org-not-hex-shaped for someone@example.test")
+	if strings.Contains(got, "tok-not-a-real-secret") {
+		t.Errorf("Secrets() = %q; the token survived", got)
+	}
+	if !strings.Contains(got, "org-not-hex-shaped") {
+		t.Errorf("Secrets() = %q; it must leave identifiers alone — that is what it is for", got)
+	}
+	if !strings.Contains(got, "someone@example.test") {
+		t.Errorf("Secrets() = %q; it applied a pattern, which is the other tier's job", got)
+	}
+}

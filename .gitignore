@@ -11,8 +11,10 @@
 coverage.out
 coverage.html
 
-# Plugin packaging
+# Bundle packaging. The .mcpb lands in dist/, which is ignored above;
+# this covers a packer pointed somewhere else.
 *.plugin
+*.mcpb
 
 # IDE
 .idea/

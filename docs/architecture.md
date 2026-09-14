@@ -1,9 +1,9 @@
 # Architecture — favro-mcp
 
-**Status, 2026-09-13.** Released: v1.1.2. The server's own feature phases
+**Status, 2026-09-14.** Released: v1.1.2. The server's own feature phases
 (0–9) are complete and shipped. Of the alignment programme in §16, phases
-**A0–A5 are done and unreleased**, and A6 all but its evals; A7 and A8
-are not started. Where a
+**A0–A5 and A7 are done and unreleased**, and A6 all but its evals; A8
+is not started. Where a
 sentence below describes something that does not exist, it says so and
 names the phase that builds it.
 
@@ -828,8 +828,40 @@ phase An" before the next begins.
   on every other page — a check nobody has watched fail is not yet a
   check. It stays on this list rather than being marked done.
 
-- **A7 — distribution.** The `.mcpb` bundle packed in Go, SBOM, cosign,
-  attestation, reproducible timestamps, `doctor`, issue forms.
+- **A7 — distribution. Done.** The `.mcpb` bundle packed in Go by
+  `gates mcpb-pack`, with `gates mcpb` holding the committed manifest
+  against the names the packer stages; a macOS universal binary kept out
+  of the ordinary archives by `ids`; SBOM per archive, keyless cosign
+  over `checksums.txt`, `attest-build-provenance` over everything;
+  `mod_timestamp` so a rebuild is byte-identical; `favro-mcp doctor`;
+  issue forms; and `SECURITY.md`, which A8 owns and which the bug form
+  needed a commit early rather than pointing at a file that did not
+  exist.
+
+  **The bundle is packed in the universal binary's post hook and named
+  in `checksum.extra_files` and `release.extra_files` both.** The hook is
+  what MAKES it possible for the bundle to be in `checksums.txt` — every
+  binary exists and the file is unwritten — and it is not what puts it
+  there: goreleaser hashes the artifacts *it* built. Rehearsed with
+  `goreleaser release --snapshot`, and the bundle is in the checksum file
+  and agrees about its version in all five places §10b lists.
+
+  The manifest gate carries three checks the standard names and the
+  sibling implementation does not have, because a review found them
+  after it shipped. The sharpest is that a claimed platform must spawn
+  the file staged *for* it: deleting the `win32` override leaves every
+  command naming a file the bundle really carries, and Windows then runs
+  the macOS universal binary. The launcher is generated from the same
+  table the packer stages from, as `plugin.go` already does, so the one
+  thing no manifest mentions cannot drift from the one thing it runs.
+
+  Six defects, in §18. `doctor` found one by being run against a real
+  organization on its first build; a test fixture chosen not to match a
+  regex found another; and the pre-commit reviews found three that
+  nothing else could have — a count that counted registrations instead
+  of replacements, four lines of release configuration whose deletion
+  every gate would have called green, and a tag name reaching a shell in
+  the job this phase gives a signing identity to.
 - **A8 — documentation.** `docs/configuration.md`, `docs/development.md`,
   `docs/security.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`; the package
   map derived from `go list`; every path a document names checked to
@@ -883,7 +915,8 @@ decision rather than drift.
 | §7 Verify against the discovery document or specification, never the reference page's prose | There is no discovery document; verification is a live read-back | Favro publishes a reference page that has been observed to disagree with the live API, and returns 200 for a body it ignores (§2.1). The stronger rule replaces the weaker one rather than excusing it: §4.7 |
 | §1 An API-coverage gate where the server speaks to a documented API surface | The surface snapshot is scraped from the reference page rather than fetched as a machine-readable document | Same cause. The snapshot is still machine-owned and rewritten only by `gates api-diff`; the hand-written file carries verdicts only (A5) |
 | §3 A read-only mode registers only read tools and requests read-only scopes | Read-only mode is the absence of `FAVRO_ENABLE_DESTRUCTIVE` plus `--dry-run`; there are no scopes to request | Favro's API tokens carry the user's own permissions and cannot be scoped down at issue time. The honest mitigation is the README's advice to issue the token from a least-privileged service user |
-| §10b Every server ships a `.mcpb` | Ships a `.plugin` today; both after A7 | The `.plugin` is the install path this server actually has users on. Dropping it to satisfy the letter of the rule would break them |
+| §10b Every server ships a `.mcpb` | Ships both, since A7 | The `.plugin` is the install path this server actually has users on. Dropping it to satisfy the letter of the rule would break them, so the `.mcpb` was added beside it rather than instead of it |
+| §10b "Say in the manifest that the bundle does not log you in" | The manifest says the opposite: this bundle *is* the whole setup | The siblings cannot log a user in because they need an OAuth Desktop client and a terminal `login` first. Favro is a token, so `user_config` collects all three values the server needs and the install is complete. The rule's purpose — do not ship an install that appears to work and then fails on the first call — is met by saying which three values, and where in Favro to find them |
 
 Everything else is adopted as written, including the preamble's three
 obligations for any rule adopted — make it a test, derive the list from
@@ -916,6 +949,13 @@ split the wire types out): it logs `req.URL.RawQuery`, and Favro's query strings
 | 2026-09-14 | An endpoint-level coverage record is enough | Built `api-coverage`, then built `api-fields` beside it because the first cannot see inside a response | **Verified here — it is not.** An endpoint can be implemented while the type behind it silently drops half of what Favro sends: `encoding/json` ignores what it does not recognise, which is what makes reads tolerant and also what makes the gap invisible. Of 124 documented fields, four were unmodelled. One was `CustomField.widgetCommonId`, the field that says which widget a field is enabled on — the missing half of §7.4's sharpest footgun, and present on all 100 rows the live organization returns |
 | 2026-09-14 | `GET /webhooks` paginates like every other Favro collection | Wired it through the shared paginated helper, wrote a fixture in the envelope shape, and the unit tests passed. Then called it live | **Verified here — the claim was false.** It answers with a bare JSON array; an organization with none returns `[]`. The reference says so plainly — "The response will be an array of configured webhooks" — and the fixture written to match the assumption agreed with the assumption. §2.1 again, and the clearest small example of it in this repository |
 | 2026-09-14 | Tool output schemas describe what the tools return | A live read of a card carrying a Members custom field returned a protocol error, not a result | **Verified here — the claim was false, and had been since custom fields shipped.** `json.RawMessage` is `[]byte`, so schema inference described `value`, `link`, `timeline` and `reports` as arrays of integers 0–255, and the SDK validates every result against that. Any card with a Vote, Members, Tags, Status or Multiple-select value failed outright. No fixture could catch it: a fixture that sends what the schema claims agrees with the bug. Fixed in `addTool`, the one registration point, and the regression test sends the shape Favro actually sends |
+| 2026-09-14 | A binary installed the documented way reports its version | Ran `go install` semantics against `internal/version`: `Tag` and `Commit` are `-ldflags` variables, and `go install` applies no ldflags | **Verified here — the claim was false.** Every `go install` build reported `dev (unknown)`, so no bug report from one could be attributed to a build. Standard §10 names this first among the distribution details that bite. It falls back to the module version and VCS revision Go embeds itself, and `doctor` prints which of the three sources answered, because "dev (unknown)" and a real version are the same sentence to a user trying to say what they are running |
+| 2026-09-14 | `doctor`'s redaction keeps its report both safe and readable | Built it, ran it against a real organization on the first build | **Verified here — the claim was false.** Passing the address and the organization id to `redact.New` as literal secrets flattened all three values, the token included, to one `{credential}`, so the line that exists to say "the id you are bound to is not one the token can see" said `{credential} is not {credential}`. It also reported "0 values redacted" while redacting three, which is the failure this document's preamble describes, committed by the report whose job is to be readable. The address and the id are registered with a kind now and read as `{user 1}` and `{id 1}` |
+| 2026-09-14 | `internal/redact` covers the tenant values a caller hands it | Wrote the `doctor` test with an organization id deliberately not 24 hex characters | **Verified here — the claim was false.** Every pattern in that package is anchored on a shape a tenant's data takes, so a value that *is* tenant data and takes some other shape passed straight through — and the ids `doctor` prints arrive from the API rather than from configuration, into a report written to be pasted into a public issue. `Redactor.Literal` registers a known value under a kind, so the guarantee is structural rather than a hope that a regex agrees. A fixture that had matched the pattern would have passed whether the fix existed or not |
+| 2026-09-14 | The leak gate reads what a release actually ships | Wrote the bug-report form, which tells people not to paste a card reference, using one as the example | **Verified here — the gate caught its own author.** `.github/ISSUE_TEMPLATE/bug_report.yml` failed the scan on the illustration. Weakening the gate with an allowed prefix was the wrong fix and describing the shape in words was the right one; the row is here because the alternative was available and looked reasonable |
+| 2026-09-14 | The `.mcpb` is hashed and signed with the archives | The pre-commit review asked which check would fail if `checksum.extra_files` were deleted | **Verified here — none would.** The post hook is what makes it *possible* for the bundle to be in checksums.txt, and it is not what puts it there: goreleaser hashes the artifacts it built, and a file a hook dropped into dist/ is not one of them. Delete that glob and the release succeeds, `make check` passes, the manifest gate reports ok, and the bundle ships outside the signature while README goes on telling people to verify it. `gates mcpb` now holds eight such lines, and each was confirmed by deleting it and watching the gate fail |
+| 2026-09-14 | `Redactor.Count` says how much was redacted | The pre-commit review read `Literal` against `Count`, which is `len(seen)` | **Verified here — the claim was false, in the code written to fix the same class of defect.** `Literal` assigned a placeholder at registration, so a value registered and never printed still counted. A `doctor` report could say "2 values redacted" having redacted nothing — the exact inversion of the failure the row above it in this phase celebrates catching. Placeholders are assigned on the substitution that actually fires now, and the case is a test in `internal/redact` |
+| 2026-09-14 | Adding `id-token: write` to the release job is safe because only a maintainer can push a tag | The security review traced `${{ github.ref_name }}` into the `run:` line at release.yml's release-notes step, and the trigger pattern that reaches it | **Verified here — the claim does not hold.** An Actions expression is substituted as text before bash parses the line, and double quotes stop word-splitting but not command substitution. The trigger's `v[0-9]+.[0-9]+.[0-9]+-*` admits any suffix, and git accepts `$`, `` ` ``, `;` and `{}` in a ref name — confirmed by creating the tags — with `${IFS}` supplying the space git forbids. The sink predates this phase and was survivable while the job only uploaded assets; A7 adds the OIDC identity that signs `checksums.txt`, so the same tag becomes a way to have a tampered artifact signed and attested, passing every verification step README documents. Fixed in three places, and the innermost is a gate with a test, because the other two are one workflow edit from being undone |
 | 2026-09-13 | The sibling gate set | Read all four `Makefile`s and both gate registries (`scripts/gates`) | **Adopted.** 14 gates plus `transcript` and `live-cover` where a live driver exists. Note the standard's own warning: reading a `check:` target list is not an audit of what runs, since several siblings run gates as ordinary Go tests |
 | 2026-09-13 | Actions are pinned | Read `.github/workflows/*.yml`: every action is a floating major tag (`actions/checkout@v7`, …) and `govulncheck` installs `@latest` | **Verified here — unpinned.** GitHub's own guidance is that a full-length commit SHA is the only immutable reference. A1 |
 | 2026-09-13 | 83 tools | Counted registered tool-name constants; the README and `docs/TOOLS.md` both say 83 | **Verified here, today.** The standard's §7b: re-measure at each release or date it. A1's staleness gate takes the count over from this sentence |

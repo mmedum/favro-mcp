@@ -182,17 +182,9 @@ func countsMatch(readme string, registered int) []string {
 // added next week is documented or the gate fails on the commit that
 // added it.
 func envDocumented(root, readme string) []string {
-	out, err := exec.Command("git", "-C", root, "grep", "-ho", `"FAVRO_[A-Z_]*"`,
-		"--", "*.go", ":!*_test.go").Output()
+	seen, err := sourceEnvNames(root)
 	if err != nil {
-		return []string{fmt.Sprintf("git grep for environment names: %v", err)}
-	}
-	seen := map[string]bool{}
-	for _, m := range envName.FindAllStringSubmatch(string(out), -1) {
-		seen[m[1]] = true
-	}
-	if len(seen) < 3 {
-		return []string{fmt.Sprintf("found %d FAVRO_* names in the source; the check is not reading it", len(seen))}
+		return []string{err.Error()}
 	}
 	var problems []string
 	for _, name := range slices.Sorted(maps.Keys(seen)) {

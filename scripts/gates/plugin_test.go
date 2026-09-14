@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -103,17 +104,23 @@ func TestServerCommandReadsTheOneEntry(t *testing.T) {
 // 1980-00-00.
 func TestWriteZipIsReproducibleAndKeepsModes(t *testing.T) {
 	dir := t.TempDir()
-	files := map[string][]byte{
-		"bin/favro-mcp":              []byte("#!/usr/bin/env bash\n"),
-		"bin/linux-amd64/favro-mcp":  []byte("ELF"),
-		".claude-plugin/plugin.json": []byte("{}"),
+	entries := []bundleFile{
+		{name: ".claude-plugin/plugin.json", body: []byte("{}")},
+		{name: "bin/favro-mcp", body: []byte("#!/usr/bin/env bash\n")},
+		{name: "bin/linux-amd64/favro-mcp", body: []byte("ELF")},
 	}
 	executable := map[string]bool{"bin/favro-mcp": true, "bin/linux-amd64/favro-mcp": true}
+	mode := func(name string) fs.FileMode {
+		if executable[name] {
+			return 0o755
+		}
+		return 0o644
+	}
 
 	first := filepath.Join(dir, "one.plugin")
 	second := filepath.Join(dir, "two.plugin")
 	for _, out := range []string{first, second} {
-		if err := writeZip(out, files, executable); err != nil {
+		if err := writeZipAt(out, entries, mode); err != nil {
 			t.Fatal(err)
 		}
 	}

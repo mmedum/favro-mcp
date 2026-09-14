@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -110,6 +111,14 @@ func init() {
 		"plugin": {
 			run: pluginGate, args: "", gate: true,
 			doc: "the committed plugin manifest against the files the packer stages",
+		},
+		"mcpb": {
+			run: mcpbGate, args: "", gate: true,
+			doc: "the committed Claude Desktop manifest against the files the packer stages",
+		},
+		"mcpb-pack": {
+			run: mcpbPack, args: "VERSION [DIST]",
+			doc: "assemble the .mcpb from a goreleaser dist (release only)",
 		},
 		"plugin-pack": {
 			run: pluginPack, args: "[DIST]",
@@ -255,6 +264,50 @@ func gitLines(root string, args ...string) ([]string, error) {
 		}
 	}
 	return lines, nil
+}
+
+// envConstDecl matches the canonical declaration of a FAVRO_* setting:
+// an exported Env… constant holding the name. These are the names the
+// server reads, declared in one place per package.
+var envConstDecl = regexp.MustCompile(`(?m)^\s*Env[A-Za-z]*\s*=\s*"(FAVRO_[A-Z_]+)"`)
+
+// sourceEnvNames is every FAVRO_* name the non-test source mentions.
+//
+// Two gates need this — `staleness` holds the README to it and `mcpb`
+// holds the bundle manifest to it — and it was written twice, each with
+// its own hand-typed floor of 3 against a true value of six. The floor
+// is derived here instead: every name declared as an exported Env…
+// constant must appear, and there must be some. A spelling change that
+// broke the grep would otherwise read as "this server has no settings"
+// and pass both gates.
+func sourceEnvNames(root string) (map[string]bool, error) {
+	out, err := exec.Command("git", "-C", root, "grep", "-ho", `"FAVRO_[A-Z_]*"`,
+		"--", "*.go", ":!*_test.go").Output()
+	if err != nil {
+		return nil, fmt.Errorf("git grep for environment names: %w", err)
+	}
+	names := map[string]bool{}
+	for _, m := range envName.FindAllStringSubmatch(string(out), -1) {
+		names[m[1]] = true
+	}
+
+	declared, err := exec.Command("git", "-C", root, "grep", "-hE", `^\s*Env[A-Za-z]*\s*=\s*"FAVRO_`,
+		"--", "*.go", ":!*_test.go").Output()
+	if err != nil {
+		return nil, fmt.Errorf("git grep for environment declarations: %w", err)
+	}
+	want := envConstDecl.FindAllStringSubmatch(string(declared), -1)
+	if len(want) == 0 {
+		return nil, fmt.Errorf("no exported Env… constant declares a FAVRO_* name; this check is " +
+			"not reading the source")
+	}
+	for _, m := range want {
+		if !names[m[1]] {
+			return nil, fmt.Errorf("%s is declared as a constant and the literal scan did not find it; "+
+				"the two greps disagree and neither can be trusted", m[1])
+		}
+	}
+	return names, nil
 }
 
 func moduleRoot() (string, error) {
