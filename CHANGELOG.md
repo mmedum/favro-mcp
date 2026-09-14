@@ -8,8 +8,15 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-15
+
+Dependency and tooling only: no tool changed, no behaviour changed.
+
 ### Added
 - `forbidigo` forbids `fmt.Print*` and naming `os.Stdout` outside `main`. Hard rule 3 restates an MCP spec MUST NOT — a stdio server must write nothing to stdout that is not a valid MCP message — and nothing enforced it: the tree was clean, so a stray print would have corrupted the JSON-RPC stream with no check failing. Found by a contributor sweep across the sibling servers.
+
+### Changed
+- Deps: go-sdk 1.8.0, x/sync 0.23, x/term 0.46. The SDK release bounds every decoding path — a stdio JSON-RPC frame is now capped at 16 MiB inbound — and closes session leaks and teardown hangs. No protocol revision change and no tool schema moved.
 
 ## [2.0.0] - 2026-09-14
 
@@ -205,7 +212,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/mmedum/favro-mcp/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/mmedum/favro-mcp/compare/v1.1.2...v2.0.0
 [1.1.2]: https://github.com/mmedum/favro-mcp/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/mmedum/favro-mcp/compare/v1.1.0...v1.1.1
