@@ -3,14 +3,13 @@ name: Release
 on:
   push:
     tags:
+      # Not `-*`: a tag name reaches a `run:` block and this job holds
+      # id-token: write, so a tag must not be able to carry shell
+      # metacharacters. A bracket range takes alphanumerics only, so the
+      # dotted form needs its own line.
       - "v[0-9]+.[0-9]+.[0-9]+"
-      # Not `-*`. A tag name reaches a `run:` block, and git permits $, (,
-      # ), backtick, ; and { } in a ref — `${IFS}` even supplies the space
-      # git forbids. This job mints a Sigstore identity, so a tag that can
-      # carry a command substitution is a tag that can get a tampered
-      # artifact signed. Every pre-release suffix we actually use is
-      # alphanumeric.
-      - "v[0-9]+.[0-9]+.[0-9]+-[a-zA-Z0-9.]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-[a-zA-Z0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-[a-zA-Z0-9]+.[0-9]+"
 
 permissions:
   contents: read
