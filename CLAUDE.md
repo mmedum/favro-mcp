@@ -33,9 +33,13 @@ is current before starting work that a later phase is going to move.**
    `Tasklist.Title()`, `Activity.CommonID()` exist for this). Writes send
    the documented shape, and the tool description says so when it is
    unverified.
-3. **Stdout carries only MCP JSON-RPC frames.** Logs go to stderr through
-   `slog`. Never `fmt.Println` on the server path. Never log a payload,
-   and never log anything that identifies or reconstructs the subject.
+3. **Stdout carries only MCP JSON-RPC frames.** Not house style: the MCP
+   stdio transport says a server "MUST NOT write anything to its `stdout`
+   that is not a valid MCP message", and MAY write to `stderr` for
+   logging. Logs go to stderr through `slog`. `forbidigo` enforces it —
+   no `fmt.Print*` and no naming `os.Stdout` outside `main`. Never log a
+   payload, and never log anything that identifies or reconstructs the
+   subject.
 4. **Every mutating tool takes `dry_run`** and has a test proving dry-run
    never reaches `RoundTrip`. The gate lives in the client, not in the
    tool.

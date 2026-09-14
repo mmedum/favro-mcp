@@ -40,7 +40,10 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
+	// The one place the process's streams are named. Everything below
+	// takes an io.Writer, which is what lets the MCP transport own
+	// stdout and the tests capture both.
+	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil { //nolint:forbidigo
 		// Errors are already logged via slog; avoid double-printing.
 		os.Exit(1)
 	}
