@@ -31,6 +31,16 @@ var (
 	statusLine = regexp.MustCompile(`(?m)^\*\*Status,? [^.]*\.\*\* Released: v?(\d+\.\d+\.\d+)`)
 	// Something shaped like a path into this repository.
 	pathLike = regexp.MustCompile("`([A-Za-z0-9_.\\-]+/[A-Za-z0-9_./\\-]+)`")
+	// "the fourteen delete-style tools", "14 destructive tools" — a
+	// number in prose is a claim about a list the binary holds.
+	//
+	// The alternation is explicit rather than `[a-z]+` because the count
+	// of matches is the floor: with any word accepted, "the delete-style
+	// tools" matched, was discarded as unreadable, and still counted as
+	// something read. Nine of ten matches were articles, so the floor
+	// was satisfied by prose that held nothing — rule 14's failure
+	// inside the checker written to prevent it.
+	destructiveCount = regexp.MustCompile(`(?i)\b(\d+|` + numberWords + `)\s+(?:delete-style|destructive)\s+tools\b`)
 )
 
 // staleness fails when the documentation drifts from the code. Each
@@ -50,10 +60,11 @@ func staleness(w io.Writer, bin string) error {
 	if err != nil {
 		return err
 	}
-	registered, err := registeredTools(bin)
+	dump, err := toolDump(bin)
 	if err != nil {
 		return err
 	}
+	registered := toolNames(dump)
 	if len(registered) < 50 {
 		return fmt.Errorf("the binary registered %d tools; the check is not looking at this server", len(registered))
 	}
@@ -71,7 +82,9 @@ func staleness(w io.Writer, bin string) error {
 	var problems []string
 	problems = append(problems, toolsDocumented(tools, readme, registered)...)
 	problems = append(problems, countsMatch(readme, len(registered))...)
-	problems = append(problems, envDocumented(root, readme)...)
+	problems = append(problems, envDocumented(root, readme, docs["docs/configuration.md"])...)
+	problems = append(problems, gatesDocumented(docs["docs/development.md"])...)
+	problems = append(problems, destructiveCountMatches(docs, dump)...)
 	problems = append(problems, statusCurrent(arch, changelog)...)
 	problems = append(problems, packageMapCurrent(root, arch)...)
 	problems = append(problems, pathsExist(root, docs, deliveryPhases(arch))...)
@@ -82,7 +95,15 @@ func staleness(w io.Writer, bin string) error {
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "\n"))
 	}
-	_, err = fmt.Fprintf(w, "staleness ok: %d tools documented, counts and paths current\n", len(registered))
+	gates := 0
+	for _, c := range commands {
+		if c.gate {
+			gates++
+		}
+	}
+	_, err = fmt.Fprintf(w,
+		"staleness ok: %d tools and %d gates documented across %d documents, counts and paths current\n",
+		len(registered), gates, len(docs))
 	return err
 }
 
@@ -100,7 +121,7 @@ func readDocuments(root string) (map[string]string, error) {
 	return docs, nil
 }
 
-func registeredTools(bin string) ([]string, error) {
+func toolDump(bin string) (*schemaDump, error) {
 	out, err := dumpSchemas(bin)
 	if err != nil {
 		return nil, err
@@ -112,12 +133,16 @@ func registeredTools(bin string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse --dump-schemas: %w", err)
 	}
+	return dump, nil
+}
+
+func toolNames(dump *schemaDump) []string {
 	names := make([]string, 0, len(dump.Tools))
 	for _, t := range dump.Tools {
 		names = append(names, t.Name)
 	}
 	slices.Sort(names)
-	return names, nil
+	return names
 }
 
 // toolsDocumented reads two directions, because they ask different
@@ -160,19 +185,39 @@ func toolsDocumented(toolsDoc, readme string, registered []string) []string {
 // describes. A number in prose is a copy of a fact, and a copy goes
 // stale because it is a copy.
 func countsMatch(readme string, registered int) []string {
-	matches := toolCount.FindAllStringSubmatch(readme, -1)
-	if len(matches) == 0 {
-		return []string{"README.md states no tool count; this check has nothing to hold " +
-			"(if the count was deliberately removed, remove this rule with it)"}
-	}
+	return proseCount(map[string]string{"README.md": readme}, toolCount, registered, "registers",
+		"README.md states no tool count; this check has nothing to hold "+
+			"(if the count was deliberately removed, remove this rule with it)")
+}
+
+// proseCount holds every number written in prose against the number the
+// binary actually has.
+//
+// Both callers do the same four things — find the claims, read them as
+// numbers, compare, and refuse to pass on having found none — and the
+// fourth is the one that is easy to get subtly wrong. A match that is
+// not a number must not count as having read something, which is why
+// each regexp passed here matches only digits or a number word.
+func proseCount(sources map[string]string, re *regexp.Regexp, want int, verb, missing string) []string {
 	var problems []string
-	for _, m := range matches {
-		n, err := strconv.Atoi(m[1])
-		if err != nil || n == registered {
-			continue
+	checked := 0
+	for _, name := range slices.Sorted(maps.Keys(sources)) {
+		for _, m := range re.FindAllStringSubmatch(sources[name], -1) {
+			n, ok := countWord(m[1])
+			if !ok {
+				// Unreachable while the regexp only matches numbers,
+				// and cheap insurance if one later does not.
+				continue
+			}
+			checked++
+			if n != want {
+				problems = append(problems, fmt.Sprintf(
+					"%s says %q and the binary %s %d", name, strings.TrimSpace(m[0]), verb, want))
+			}
 		}
-		problems = append(problems, fmt.Sprintf(
-			"README.md says %q and the binary registers %d", m[0], registered))
+	}
+	if checked == 0 {
+		return []string{missing}
 	}
 	return problems
 }
@@ -181,7 +226,7 @@ func countsMatch(readme string, registered int) []string {
 // named in the README. The list comes from the source, so a variable
 // added next week is documented or the gate fails on the commit that
 // added it.
-func envDocumented(root, readme string) []string {
+func envDocumented(root, readme, configuration string) []string {
 	seen, err := sourceEnvNames(root)
 	if err != nil {
 		return []string{err.Error()}
@@ -191,8 +236,95 @@ func envDocumented(root, readme string) []string {
 		if !strings.Contains(readme, name) {
 			problems = append(problems, "README.md does not document "+name)
 		}
+		// docs/configuration.md is the reference, so a setting missing
+		// there is missing from the place someone goes to look it up —
+		// the README's table is a summary that may reasonably lag.
+		if !strings.Contains(configuration, name) {
+			problems = append(problems, "docs/configuration.md does not document "+name)
+		}
 	}
 	return problems
+}
+
+// gatesDocumented holds docs/development.md to the gate registry.
+//
+// The list is derived from the registry rather than compared against one
+// typed here, which is the whole point: a gate added to `main.go` and to
+// both CI lists is still invisible to anyone reading the documentation,
+// and a table of gates is exactly the kind of prose that silently stops
+// describing the program.
+func gatesDocumented(development string) []string {
+	var problems []string
+	counted := 0
+	for _, name := range slices.Sorted(maps.Keys(commands)) {
+		if !commands[name].gate {
+			continue
+		}
+		counted++
+		if !strings.Contains(development, "`"+name+"`") {
+			problems = append(problems, "docs/development.md does not name the "+name+" gate")
+		}
+	}
+	if counted < 10 {
+		return []string{fmt.Sprintf("the registry reports %d gates; this check is not reading it", counted)}
+	}
+	return problems
+}
+
+// destructiveCountMatches holds any prose count of the delete-style
+// tools to the number the binary actually annotates.
+//
+// This is the §7b failure the design document describes, and it has now
+// happened twice in this repository: the count was written as twelve
+// while thirteen were annotated, and after that was corrected a later
+// phase added a fourteenth and the sentence stayed at thirteen. A number
+// in prose is a claim about a list, and the list is in the binary.
+func destructiveCountMatches(docs map[string]string, dump *schemaDump) []string {
+	want := 0
+	for _, t := range dump.Tools {
+		if t.Annotations.DestructiveHint {
+			want++
+		}
+	}
+	if want == 0 {
+		return []string{"the dump annotates no destructive tools; this check is reading the wrong field"}
+	}
+
+	// CHANGELOG.md is excluded for the reason documentsWithPaths gives:
+	// once an entry moves under a version heading it is history, and it
+	// correctly describes what was true then. Holding a frozen sentence
+	// to today's binary would fail the build on the commit that adds the
+	// next delete tool, for a line nobody should edit.
+	live := map[string]string{}
+	for name, text := range docs {
+		if name != "CHANGELOG.md" {
+			live[name] = text
+		}
+	}
+	return proseCount(live, destructiveCount, want, "annotates",
+		fmt.Sprintf("no living document states how many delete-style tools there are, so this check "+
+			"is reading nothing; the count it would hold is %d", want))
+}
+
+// numberWords are the spellings prose actually uses for a count this
+// size, as a regexp alternation. Written once and consumed by the
+// pattern and the reader both, so a spelling one accepts is a spelling
+// the other resolves.
+// It runs from one rather than from ten because a count can fall as well
+// as rise, and a spelling outside the list is not a match at all — so
+// the list's own range is the checker's blind spot.
+const numberWords = "one|two|three|four|five|six|seven|eight|nine|ten|" +
+	"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty"
+
+// countWord reads a match of that alternation, or a run of digits.
+func countWord(s string) (int, bool) {
+	for i, word := range strings.Split(numberWords, "|") {
+		if strings.EqualFold(s, word) {
+			return i + 1, true
+		}
+	}
+	n, err := strconv.Atoi(s)
+	return n, err == nil
 }
 
 // statusCurrent compares the design document's status line with the
@@ -256,8 +388,9 @@ func packageMapCurrent(root, arch string) []string {
 // no longer exist. CHANGELOG.md is deliberately absent: its older
 // entries are history, and they correctly describe what was true then.
 var documentsWithPaths = []string{
-	"README.md", "CLAUDE.md", "CONTRIBUTING.md",
+	"README.md", "CLAUDE.md", "CONTRIBUTING.md", "SECURITY.md",
 	"docs/architecture.md", "docs/TOOLS.md",
+	"docs/configuration.md", "docs/development.md", "docs/security.md",
 }
 
 // pathsExist stats everything shaped like a repository path. A file

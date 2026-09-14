@@ -457,7 +457,7 @@ func goreleaserBlocks(root string) (map[string]string, error) {
 	return blocks, nil
 }
 
-// mcpbReleaseWiring holds the four lines that make the bundle exist, be
+// mcpbReleaseWiring holds the lines that make the bundle exist, be
 // hashed, be signed and be published.
 //
 // Nothing else here can see them, and that is the point. Delete
@@ -467,7 +467,8 @@ func goreleaserBlocks(root string) (map[string]string, error) {
 // signature, while README's "Verifying a download" goes on telling
 // people it is covered. The standard says both `checksum.extra_files`
 // and `release.extra_files`, "or the bundle ships unsigned, or is hashed
-// and never published"; this is what holds that sentence.
+// and never published"; this is what holds that sentence, and seven more
+// beside it.
 func mcpbReleaseWiring(blocks map[string]string) (problems []string, checked int) {
 	require := func(block, needle, why string) {
 		checked++

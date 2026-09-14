@@ -1,9 +1,9 @@
 # Architecture — favro-mcp
 
 **Status, 2026-09-14.** Released: v1.1.2. The server's own feature phases
-(0–9) are complete and shipped. Of the alignment programme in §16, phases
-**A0–A5 and A7 are done and unreleased**, and A6 all but its evals; A8
-is not started. Where a
+(0–9) are complete and shipped. Of the alignment programme in §16,
+**every phase is done and unreleased except A6's evals**, which need a
+model API key and are deliberately not stubbed. Where a
 sentence below describes something that does not exist, it says so and
 names the phase that builds it.
 
@@ -862,10 +862,25 @@ phase An" before the next begins.
   of replacements, four lines of release configuration whose deletion
   every gate would have called green, and a tag name reaching a shell in
   the job this phase gives a signing identity to.
-- **A8 — documentation.** `docs/configuration.md`, `docs/development.md`,
-  `docs/security.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`; the package
-  map derived from `go list`; every path a document names checked to
-  exist; the staleness gate widened to cover them.
+- **A8 — documentation. Done.** `docs/configuration.md`,
+  `docs/development.md`, `docs/security.md` and `CODE_OF_CONDUCT.md`;
+  `SECURITY.md` came a phase early in A7, because the bug-report form
+  points at it. README gains a table of them and a "Verifying a
+  download" section.
+
+  The gate is the point rather than the prose. `staleness` now reads ten
+  documents instead of six, and three rules were added, each deriving
+  its expected set from the code: every gate in the registry is named in
+  `docs/development.md`, every `FAVRO_*` the source reads is documented
+  in `docs/configuration.md` as well as the README, and any prose count
+  of the delete-style tools is held against the number the binary
+  annotates. Each was confirmed by breaking it.
+
+  The last of those found the defect this phase exists to prevent, on
+  its first run: A2 corrected §8's hand-typed "twelve" to thirteen, A5
+  then added a fourteenth delete tool, and the changelog sentence stayed
+  at thirteen. §7b in miniature, for the third time in this repository.
+  §18 has it.
 
 ### Closing a phase
 
@@ -956,6 +971,9 @@ split the wire types out): it logs `req.URL.RawQuery`, and Favro's query strings
 | 2026-09-14 | The `.mcpb` is hashed and signed with the archives | The pre-commit review asked which check would fail if `checksum.extra_files` were deleted | **Verified here — none would.** The post hook is what makes it *possible* for the bundle to be in checksums.txt, and it is not what puts it there: goreleaser hashes the artifacts it built, and a file a hook dropped into dist/ is not one of them. Delete that glob and the release succeeds, `make check` passes, the manifest gate reports ok, and the bundle ships outside the signature while README goes on telling people to verify it. `gates mcpb` now holds eight such lines, and each was confirmed by deleting it and watching the gate fail |
 | 2026-09-14 | `Redactor.Count` says how much was redacted | The pre-commit review read `Literal` against `Count`, which is `len(seen)` | **Verified here — the claim was false, in the code written to fix the same class of defect.** `Literal` assigned a placeholder at registration, so a value registered and never printed still counted. A `doctor` report could say "2 values redacted" having redacted nothing — the exact inversion of the failure the row above it in this phase celebrates catching. Placeholders are assigned on the substitution that actually fires now, and the case is a test in `internal/redact` |
 | 2026-09-14 | Adding `id-token: write` to the release job is safe because only a maintainer can push a tag | The security review traced `${{ github.ref_name }}` into the `run:` line at release.yml's release-notes step, and the trigger pattern that reaches it | **Verified here — the claim does not hold.** An Actions expression is substituted as text before bash parses the line, and double quotes stop word-splitting but not command substitution. The trigger's `v[0-9]+.[0-9]+.[0-9]+-*` admits any suffix, and git accepts `$`, `` ` ``, `;` and `{}` in a ref name — confirmed by creating the tags — with `${IFS}` supplying the space git forbids. The sink predates this phase and was survivable while the job only uploaded assets; A7 adds the OIDC identity that signs `checksums.txt`, so the same tag becomes a way to have a tampered artifact signed and attested, passing every verification step README documents. Fixed in three places, and the innermost is a gate with a test, because the other two are one workflow edit from being undone |
+| 2026-09-14 | The count of delete-style tools, having been corrected once, is right | A8 built `destructiveCountMatches`, which reads the annotation out of `--dump-schemas` and holds every prose count against it | **Verified here — the claim was false again.** A2 found §8 saying "twelve" while thirteen were annotated and fixed the sentence; A5 then added `favro_delete_webhook`, and `CHANGELOG.md` went on saying thirteen. Correcting a hand-typed number does not stop it being hand-typed, which is the whole of §7b — the fix is the checker, and it caught this on the run that introduced it |
+| 2026-09-14 | The worst a model with these tools can do is bounded by what the token can do in Favro | A8 wrote that sentence into `docs/security.md`, and the security review asked which tool reads a path | **Verified here — the claim was false.** `favro_upload_attachment` and `favro_upload_comment_attachment` take a `file_path` and read any regular file under the size cap, with no root confinement; both are registered by default, because they destroy nothing and so sit outside `FAVRO_ENABLE_DESTRUCTIVE`. A poisoned card description and an exfiltration channel are therefore the same sentence, and the containment is the account the server runs under rather than the token. The document says so now. Narrowing the code — an optional root the reads are confined to — is a behaviour change and belongs to a phase of its own |
+| 2026-09-14 | The pre-commit hook catches a committed secret | A8 wrote "gitleaks in the pre-commit hook" into `docs/security.md`; the security review read `precommitSteps` | **Verified here — the claim was false.** The hook runs gofmt, vet and `gates leaks`, which is the tenant-data scan. gitleaks runs in `make check` and in CI, so the earliest catch for a credential is after the commit object exists — which is the precise failure the hook's own comment describes. Corrected in the document rather than in the hook: the hook is deliberately the fast subset |
 | 2026-09-13 | The sibling gate set | Read all four `Makefile`s and both gate registries (`scripts/gates`) | **Adopted.** 14 gates plus `transcript` and `live-cover` where a live driver exists. Note the standard's own warning: reading a `check:` target list is not an audit of what runs, since several siblings run gates as ordinary Go tests |
 | 2026-09-13 | Actions are pinned | Read `.github/workflows/*.yml`: every action is a floating major tag (`actions/checkout@v7`, …) and `govulncheck` installs `@latest` | **Verified here — unpinned.** GitHub's own guidance is that a full-length commit SHA is the only immutable reference. A1 |
 | 2026-09-13 | 83 tools | Counted registered tool-name constants; the README and `docs/TOOLS.md` both say 83 | **Verified here, today.** The standard's §7b: re-measure at each release or date it. A1's staleness gate takes the count over from this sentence |

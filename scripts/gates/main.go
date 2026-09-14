@@ -192,6 +192,11 @@ type schemaDump struct {
 type schemaTool struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	Annotations struct {
+		DestructiveHint bool   `json:"destructiveHint"`
+		ReadOnlyHint    bool   `json:"readOnlyHint"`
+		Title           string `json:"title"`
+	} `json:"annotations"`
 	InputSchema struct {
 		Required   []string                   `json:"required"`
 		Properties map[string]json.RawMessage `json:"properties"`
