@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -302,12 +304,54 @@ func fakeHookDist(t *testing.T, version string) string {
 		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
 			t.Fatal(err)
 		}
-		script := "#!/bin/sh\necho \"favro-mcp " + version + " (test)\"\n"
-		if err := os.WriteFile(full, []byte(script), 0o700); err != nil {
+		if err := os.WriteFile(full, []byte("not a real binary"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
+	// The host's own staged binary has to be a REAL executable, because
+	// the packer asks it for its version. A shell script named
+	// favro-mcp.exe is not something Windows will run, which is how this
+	// fixture passed on Linux and macOS and failed on the third runner.
+	buildHostStub(t, filepath.Join(dist, hostStagedPath()), version)
 	return dist
+}
+
+// hostStagedPath is where fakeHookDist puts the binary versionsAgree
+// will execute: the one whose goarch matches this machine, with the
+// darwin universal binary standing in for both macOS architectures.
+func hostStagedPath() string {
+	host := runtime.GOOS + "-" + runtime.GOARCH
+	switch {
+	case runtime.GOOS == "darwin":
+		return filepath.Join("favro-mcp_darwin_all", "favro-mcp")
+	case host == "windows-amd64":
+		return filepath.Join("favro-mcp_windows_amd64_v1", "favro-mcp.exe")
+	case host == "linux-amd64":
+		return filepath.Join("favro-mcp_linux_amd64_v1", "favro-mcp")
+	default:
+		return filepath.Join("favro-mcp_linux_arm64", "favro-mcp")
+	}
+}
+
+// buildHostStub compiles a program that answers --version the way the
+// real server does. Compiled rather than scripted so it runs on every
+// platform the test matrix covers.
+func buildHostStub(t *testing.T, out, version string) {
+	t.Helper()
+	// fakeHookDist staged a placeholder here first, and `go build -o`
+	// refuses to overwrite a file it did not produce.
+	if err := os.Remove(out); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "main.go")
+	program := "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"favro-mcp " + version + " (test)\") }\n"
+	if err := os.WriteFile(src, []byte(program), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "build", "-o", out, src)
+	if combined, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("building the stub server: %v\n%s", err, combined)
+	}
 }
 
 // TestMcpbPackRefusesABinaryThatDisagreesAboutItsVersion. A bundle whose

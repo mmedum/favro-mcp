@@ -166,8 +166,15 @@ jobs:
           # The action installs the tool, so pinning the action pins a
           # wrapper and not the scanner. `gates pins` holds this to the
           # same version the Makefile runs, or a commit can pass one and
-          # fail the other.
-          GITLEAKS_VERSION: v8.30.1
+          # fail the other — it compares with the leading `v` stripped
+          # from both, which is what lets this one be written without it.
+          #
+          # And it MUST be written without it: the action prepends `v`
+          # itself, so `v8.30.1` fetched .../download/vv8.30.1/ and got a
+          # 404. The job then failed in twelve seconds with a Node stack
+          # trace about a missing `file` parameter, which is the tar
+          # extractor being handed nothing.
+          GITLEAKS_VERSION: 8.30.1
           GITLEAKS_CONFIG: .gitleaks.toml
 
   coverage:
