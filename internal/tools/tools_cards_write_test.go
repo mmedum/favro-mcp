@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"reflect"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/favroapi"
 )
 
 func TestMCP_CreateCard_HappyPath(t *testing.T) {
@@ -318,6 +320,291 @@ func TestMCP_UpdateCard_NoChanges_DryRun(t *testing.T) {
 func TestMCP_UpdateCard_MissingCardID(t *testing.T) {
 	t.Parallel()
 	assertMissingRequiredFieldFails(t, updateCardToolName, "card_id")
+}
+
+// structuralUpdateFixture answers a GET /cards/{id} with a card that
+// has parent, and records the PUT body. It is the shape every
+// parent-preservation test needs: Favro re-seats a card on a write
+// carrying widgetCommonId, and what the body says about parentCardId
+// is the whole subject.
+func structuralUpdateFixture(t *testing.T, parentCardID string, putBody *string, gets *atomic.Int32) *favroapi.Client {
+	t.Helper()
+	return favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			if gets != nil {
+				gets.Add(1)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(favro.Card{
+				CardID:         "ci-1",
+				CardCommonID:   "cc-1",
+				Name:           "nested",
+				WidgetCommonID: "w-1",
+				ParentCardID:   parentCardID,
+			})
+		case http.MethodPut:
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("read PUT body: %v", err)
+				return
+			}
+			if putBody != nil {
+				*putBody = string(b)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			// Favro echoes a null parent on a structural write
+			// whether or not the card is still nested, which is
+			// exactly why the caller cannot tell from the answer.
+			_, _ = w.Write([]byte(`{"cardId":"ci-1","cardCommonId":"cc-1","name":"nested","widgetCommonId":"w-1"}`))
+		}
+	}))
+}
+
+// TestMCP_UpdateCard_Structural_CarriesExistingParent is the
+// regression for the orphaning in hard rule 2's territory: a
+// column nudge on a nested card is a structural write, and a
+// structural write naming no parent leaves the card at top level.
+func TestMCP_UpdateCard_Structural_CarriesExistingParent(t *testing.T) {
+	t.Parallel()
+
+	var put string
+	var gets atomic.Int32
+	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", &put, &gets))
+
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":          "ci-1",
+			"widget_common_id": "w-1",
+			"column_id":        "col-2",
+			"list_position":    0,
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
+	if got := gets.Load(); got != 1 {
+		t.Errorf("a structural write must read the card back for its parent: gets = %v, want %v", got, 1)
+	}
+
+	var body favro.UpdateCardRequest
+	if err := json.Unmarshal([]byte(put), &body); err != nil {
+		t.Fatalf("json.Unmarshal(put, &body): %v", err)
+	}
+	if got := body.ParentCardID; got != "ci-parent" {
+		t.Errorf("the structural write must carry the existing parent: body.ParentCardID = %q, want %q", got, "ci-parent")
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if len(out.Notes) == 0 {
+		t.Fatal("carrying the parent through is something the caller did not ask for; it must be reported in notes")
+	}
+	if !strings.Contains(strings.Join(out.Notes, " "), "clear_parent") {
+		t.Errorf("the note must name the way to detach on purpose: %q missing", "clear_parent")
+	}
+}
+
+// TestMCP_UpdateCard_Structural_ClearParentDetaches is the opposite
+// direction: asking for the detach explicitly must not be second-
+// guessed, and must not cost a read.
+func TestMCP_UpdateCard_Structural_ClearParentDetaches(t *testing.T) {
+	t.Parallel()
+
+	var put string
+	var gets atomic.Int32
+	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", &put, &gets))
+
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":          "ci-1",
+			"widget_common_id": "w-1",
+			"clear_parent":     true,
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
+	if got := gets.Load(); got != 0 {
+		t.Errorf("an explicit detach needs no read: gets = %v, want %v", got, 0)
+	}
+	if strings.Contains(put, "parentCardId") {
+		t.Errorf("clear_parent must leave parentCardId out of the body: %q present in %q", "parentCardId", put)
+	}
+}
+
+// TestMCP_UpdateCard_Structural_TopLevelCardNeedsNoNote is the no-op
+// case: a card with no parent has nothing to preserve, so the read
+// happens and nothing else does.
+func TestMCP_UpdateCard_Structural_TopLevelCardNeedsNoNote(t *testing.T) {
+	t.Parallel()
+
+	var put string
+	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "", &put, nil))
+
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":          "ci-1",
+			"widget_common_id": "w-1",
+			"name":             "renamed",
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
+	if strings.Contains(put, "parentCardId") {
+		t.Errorf("a top-level card has no parent to carry: %q present in %q", "parentCardId", put)
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if len(out.Notes) != 0 {
+		t.Errorf("nothing was preserved, so nothing is worth reporting: out.Notes = %v, want empty", out.Notes)
+	}
+}
+
+// TestMCP_UpdateCard_NonStructural_DoesNotRead pins the other half of
+// the guard: a write Favro does not treat as structural cannot orphan
+// anything, so it must not pay for a read.
+func TestMCP_UpdateCard_NonStructural_DoesNotRead(t *testing.T) {
+	t.Parallel()
+
+	var gets atomic.Int32
+	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", nil, &gets))
+
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      updateCardToolName,
+		Arguments: map[string]any{"card_id": "ci-1", "name": "renamed"},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
+	if got := gets.Load(); got != 0 {
+		t.Errorf("a non-structural write must not read the card: gets = %v, want %v", got, 0)
+	}
+}
+
+// TestMCP_UpdateCard_ClearParentWithoutStructural_Reports covers the
+// input that asks for something Favro will not do: clear_parent on a
+// write carrying no widget_common_id changes nothing, and silence
+// would read as "detached".
+func TestMCP_UpdateCard_ClearParentWithoutStructural_Reports(t *testing.T) {
+	t.Parallel()
+
+	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", nil, nil))
+
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":      "ci-1",
+			"name":         "renamed",
+			"clear_parent": true,
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if !strings.Contains(strings.Join(out.Notes, " "), "clear_parent had no effect") {
+		t.Errorf("out.Notes must say the flag did nothing: %q missing from %v", "clear_parent had no effect", out.Notes)
+	}
+}
+
+// TestMCP_UpdateCard_Structural_ReadFailureRefuses: the read is what
+// makes the write safe, so a write that cannot be made safe does not
+// happen. Reporting beats refusing everywhere the tool knows what it
+// is doing; here it does not.
+func TestMCP_UpdateCard_Structural_ReadFailureRefuses(t *testing.T) {
+	t.Parallel()
+
+	var puts atomic.Int32
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			puts.Add(1)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"not found"}`))
+	}))
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":          "ci-1",
+			"widget_common_id": "w-1",
+			"column_id":        "col-2",
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Error("res.IsError = false, want true")
+	}
+	if got := puts.Load(); got != 0 {
+		t.Errorf("the write must not happen when the parent cannot be read: puts = %v, want %v", got, 0)
+	}
+	if !strings.Contains(serializedResponseString(t, res), "parent") {
+		t.Errorf("the LLM-visible error must name the problem: %q missing", "parent")
+	}
+}
+
+// TestMCP_UpdateCard_Structural_DryRunPreviewsPreservedParent: a
+// preview that omits the parent describes a body the tool would not
+// send, so the read runs under dry-run too — the same choice the
+// description-editor tools make.
+func TestMCP_UpdateCard_Structural_DryRunPreviewsPreservedParent(t *testing.T) {
+	t.Parallel()
+
+	var puts atomic.Int32
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(favro.Card{CardID: "ci-1", ParentCardID: "ci-parent"})
+		case http.MethodPut:
+			puts.Add(1)
+		}
+	}))
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":          "ci-1",
+			"widget_common_id": "w-1",
+			"column_id":        "col-2",
+			"dry_run":          true,
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := puts.Load(); got != 0 {
+		t.Errorf("dry-run must not PUT: puts = %v, want %v", got, 0)
+	}
+	if !strings.Contains(out.PredictedStateDiff, "ci-parent") {
+		t.Errorf("the preview must show the parent the body would carry: %q missing from %q", "ci-parent", out.PredictedStateDiff)
+	}
 }
 
 func TestMCP_ArchiveCard_HappyPath(t *testing.T) {
