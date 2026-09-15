@@ -8,9 +8,19 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-09-15
+
+Fixes a card-management server that could not move a card. `favro_move_card`
+and `favro_update_card` reported success and left the card where it was, for
+every release since 1.0.0. No tool was added, removed or renamed; everything
+below the Fixed section is repository tooling.
+
 ### Added
 - `scripts/evals`: agent evals behind a build tag. Six tasks, each scored twice — the end state read back through this server, and the trace. The run builds its own collection and board and removes them, so nothing it touches is the organization's own data. The task table sits outside the build tag, so `go test ./scripts/evals` walks every prompt without credentials, a network or a model.
 - Two checks derived from the code rather than from prose: every card tool's schema is held to the one column-move contract, so the claim cannot decay in one struct tag again; and `TestEverySentinelIsClassified` now reads `internal/favroapi` too, where a sentinel had been relying on a classification fallback that neither it nor `TestEveryErrorTypeNamesItsClass` covered.
+
+### Changed
+- `favro_move_card`'s description says what a cross-board move does: Favro adds the card to the target board and leaves the original in place, under one `cardCommonId`. There is no cross-board relocation to call.
 
 ### Fixed
 - `favro_move_card` and `favro_update_card` moved no card. Favro requires `widgetCommonId` on a `columnId` or `laneId` move and answers 200 with a stub card without it; both tools now require it and say so, and a column move whose result does not carry the requested column returns `[unavailable]` instead of a success, with a message saying not to retry. Found by the first eval run.
@@ -19,9 +29,6 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ### Security
 - The eval harness confines the driven model with `--tools ""` — the CLI's own "no built-ins" switch — instead of a hand-written list of built-in tool names to disallow, and with `--setting-sources ""` so the maintainer's permission rules, hooks and skills do not reach the run. The denylist was incomplete (`Monitor` runs a shell command under a name that is not `Bash`), and the run reads a real organization while holding a live credential, so a built-in that runs commands is an exfiltration path for card text somebody else wrote.
 - `scripts/evals` prints through `internal/redact`, and the `transcript` gate reads it as well as `scripts/livefavro`. The gate was scoped to one hard-coded directory, so a failing eval task printed the model's whole trace — live ids and all — with nothing failing.
-
-### Changed
-- `favro_move_card`'s description says what a cross-board move does: Favro adds the card to the target board and leaves the original in place, under one `cardCommonId`. There is no cross-board relocation to call.
 
 ## [2.0.1] - 2026-09-15
 
@@ -227,7 +234,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/mmedum/favro-mcp/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/mmedum/favro-mcp/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/mmedum/favro-mcp/compare/v1.1.2...v2.0.0
 [1.1.2]: https://github.com/mmedum/favro-mcp/compare/v1.1.1...v1.1.2
