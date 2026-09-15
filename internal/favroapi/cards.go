@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 // ListCards returns one page of cards. Filters are optional; pass a
@@ -81,18 +82,55 @@ func descriptionFormatQuery(format string) url.Values {
 	return url.Values{"descriptionFormat": []string{format}}
 }
 
+// errMoveNeedsWidget is the guard on Favro's column-move contract. A
+// missing argument is ClassInvalid, which is also render.Classify's
+// fallback — naming it anyway is what puts it under
+// TestEverySentinelIsClassified rather than under a default.
+var errMoveNeedsWidget = render.Sentinel(render.ClassInvalid, "favro: a column or lane move also needs widgetCommonId — Favro answers 200 and does nothing without it; it is the board the card is already on unless the move is to another board")
+
 // UpdateCard updates a card by its per-widget cardId. Returns the
 // updated favro.Card. Empty cardID short-circuits with errMissingID;
 // Favro errors propagate via the wrapped PutJSON, including
 // *DryRunRecord-wrapping-ErrDryRun under dry-run.
+//
+// **Wire-contract gotcha (verified live 2026-09-15).** A request that
+// sets ColumnID or LaneID must carry WidgetCommonID too. Without it
+// Favro answers HTTP 200 with a stub card — cardId, cardCommonId, name
+// and timeOnBoard, nothing else — and the card does not move. Nothing
+// else on a card needs it: a rename and a description edit both land
+// without one and come back as a full card.
+//
+// Two things follow, and both are here rather than in MoveCard because
+// favro_update_card takes a column_id as well and had the same hole.
+// The request is refused before it is sent, and the response is checked
+// against what was asked for, because a 200 from Favro is not
+// confirmation.
+//
+// That check is evidence, not a read-back: the PUT response comes from
+// the same request handling that ignored the body, so a response
+// echoing the requested columnId while storing nothing would pass it.
+// It caught this bug because Favro answered with a stub instead. The
+// honest version is a GET after every move, which costs a call against
+// a budget as low as ~100/hr for a hazard one live probe would settle
+// — §15 carries it.
 func (c *Client) UpdateCard(ctx context.Context, cardID string, req favro.UpdateCardRequest) (favro.Card, error) {
 	if cardID == "" {
 		return favro.Card{}, errMissingID
+	}
+	if req.WidgetCommonID == "" && (req.ColumnID != "" || req.LaneID != "") {
+		return favro.Card{}, errMoveNeedsWidget
 	}
 	var out favro.Card
 	path := "/cards/" + url.PathEscape(cardID)
 	if err := c.doJSON(ctx, http.MethodPut, path, descriptionFormatQuery(req.DescriptionFormat), req, &out); err != nil {
 		return favro.Card{}, err
+	}
+	// Only the column is checked. A lane move is the same contract by
+	// symmetry, but no board reached live has lanes on it, so a card
+	// that legitimately comes back without a laneId would turn into a
+	// false failure here. §15 carries it as unverified.
+	if req.ColumnID != "" && out.ColumnID != req.ColumnID {
+		return favro.Card{}, &MoveIgnoredError{Want: req.ColumnID, Got: out.ColumnID}
 	}
 	return out, nil
 }

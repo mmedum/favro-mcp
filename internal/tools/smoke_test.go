@@ -135,8 +135,10 @@ var smokeToolInputs = map[string]map[string]any{
 	archiveCardToolName:   {"card_id": smokeCardID, "dry_run": true},
 	unarchiveCardToolName: {"card_id": smokeCardID, "dry_run": true},
 	// A move needs a destination, and a column move additionally needs
-	// widget + column + list_position + drag_mode together or Favro
-	// silently no-ops it — so the minimal call here is the full set.
+	// the widget, or Favro answers 200 and moves nothing (verified live
+	// 2026-09-15) — so the minimal call here carries both. The
+	// positioning knobs ride along to keep them smoke-covered; neither
+	// is required.
 	moveCardToolName: {
 		"card_id":          smokeCardID,
 		"widget_common_id": smokeWidgetID,
