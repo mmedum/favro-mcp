@@ -8,6 +8,14 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-09-15
+
+The first release that publishes this server to the MCP registry, which
+is the only change anybody outside the repository will notice: until now
+it could be found only by knowing the repository exists. No tool
+changed, no behaviour changed, and the binary is the same one 2.0.2
+shipped. Everything else here is a check on this repository's own work.
+
 ### Added
 - `registry` gate and a `packaging/registry/server.json` entry, so this server can be found in the MCP registry rather than only by knowing the repository exists. The gate holds the entry to the rules the registry enforces in code and its schema does not — HTTPS identifier, a GitHub release asset URL ending in `.mcpb`, no `registryBaseUrl`, a 64-hex hash — each of which is otherwise refused at publish time, after the login has succeeded. A `publish-mcp.yml` workflow publishes it after the release exists, and can be re-run on its own.
 - `outcomes` gate: no tool states an outcome the response did not carry. It flags a branch that tests a boolean request field and then says in prose what is now true — the shape `favro_move_card` shipped in from 1.0.0 to 2.0.1 — and a branch that is honest anyway takes a row in `testdata/outcome-claims.tsv` with the reason. Adopted from google-drive-mcp, the one sibling that had it.
@@ -238,7 +246,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.3...HEAD
+[2.0.3]: https://github.com/mmedum/favro-mcp/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/mmedum/favro-mcp/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/mmedum/favro-mcp/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/mmedum/favro-mcp/compare/v1.1.2...v2.0.0
