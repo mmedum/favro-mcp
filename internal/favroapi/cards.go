@@ -130,7 +130,7 @@ func (c *Client) UpdateCard(ctx context.Context, cardID string, req favro.Update
 	// that legitimately comes back without a laneId would turn into a
 	// false failure here. §15 carries it as unverified.
 	if req.ColumnID != "" && out.ColumnID != req.ColumnID {
-		return favro.Card{}, &MoveIgnoredError{Want: req.ColumnID, Got: out.ColumnID}
+		return favro.Card{}, &WriteIgnoredError{Field: "column", Want: req.ColumnID, Got: out.ColumnID}
 	}
 	return out, nil
 }

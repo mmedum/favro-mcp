@@ -126,30 +126,46 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("Favro API error (HTTP %d) at %s: %s", e.Status, e.Path, e.Body)
 }
 
-// MoveIgnoredError is a 200 that did not move the card. Favro answers
-// a column move that omits widgetCommonId with HTTP 200 and a stub
-// body — cardId, cardCommonId, name and timeOnBoard, no columnId —
-// leaving the card where it was. UpdateCard refuses that shape before
-// it reaches the network, so what raises this is a well-formed move
-// Favro accepted and ignored for some other reason.
+// WriteIgnoredError is a 200 that did not do what was asked: Favro
+// accepted the request, raised no complaint, and the field the caller
+// asked to change came back unchanged.
 //
 // It exists because hard rule 2 is not satisfied by reading the status
-// line: the response to the write is the cheapest read-back there is,
-// and the field the caller asked to change is in it.
-type MoveIgnoredError struct {
-	// Want is the requested columnId, Got the one Favro answered with.
-	// Got is empty when the response carried no column at all, which
-	// is the stub shape.
+// line, and because the write's own response already carries the field.
+// That makes it evidence rather than a read-back — a response echoing
+// the request while storing nothing would pass — but it is evidence
+// that costs no call, and it catches the shape Favro actually answers
+// with, which is the field simply missing.
+//
+// Two paths are known to need this, which is why the type is named for
+// the class of failure rather than for the first one found:
+//
+//   - a column move that omits widgetCommonId, where Favro answers with
+//     a stub card carrying no columnId at all. UpdateCard refuses that
+//     shape before it reaches the network, so what raises this there is
+//     a well-formed move ignored for some other reason.
+//   - a custom-field write to a field the card's widget has not
+//     enabled, where Favro answers with the FULL card and the field
+//     simply absent from customFields (§2.7, verified live
+//     2026-09-15). Not yet guarded — see §15 item 1 for the one thing
+//     that blocks it.
+type WriteIgnoredError struct {
+	// Field names what did not change, in the caller's vocabulary
+	// ("column"), not the wire's.
+	Field string
+	// Want is what was asked for, Got what came back. Got is empty
+	// when the response carried no value at all.
 	Want string
 	Got  string
 }
 
-func (e *MoveIgnoredError) Error() string {
-	got := "no column at all"
+func (e *WriteIgnoredError) Error() string {
+	got := "nothing"
 	if e.Got != "" {
-		got = "column " + e.Got
+		got = e.Got
 	}
-	return fmt.Sprintf("Favro accepted the move and did not perform it: the card came back in %s, not the requested column %s", got, e.Want)
+	return fmt.Sprintf("Favro accepted the write and did not perform it: the card's %s came back as %s, not the requested %s. The same call will do the same thing — report it rather than retrying",
+		e.Field, got, e.Want)
 }
 
 // The error vocabulary, named by the errors themselves.
@@ -210,10 +226,12 @@ func (e *TransientError) ErrorClass() render.Class { return render.ClassUnavaila
 //
 // It is the closest of the nine and it is not exact: unavailable tells
 // the caller to retry later, and this result is deterministic, so a
-// retry returns it forever. A class meaning "accepted and dropped;
-// report it" is §17 decision 5, held open until a second path needs one
-// rather than settled by the first.
-func (e *MoveIgnoredError) ErrorClass() render.Class { return render.ClassUnavailable }
+// retry returns it forever. The message carries the correction, which
+// is where it belongs — the standard's shape is "[class] actionable
+// message", and a tenth member of a deliberately closed vocabulary is a
+// worse way to say "do not retry" than saying it. §17 decision 5 keeps
+// the question open for a second path to answer.
+func (e *WriteIgnoredError) ErrorClass() render.Class { return render.ClassUnavailable }
 
 // ErrorClass maps the statuses *APIError can actually carry.
 //

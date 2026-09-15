@@ -172,24 +172,24 @@ func TestEveryErrorTypeNamesItsClass(t *testing.T) {
 	t.Parallel()
 
 	expected := map[string]render.Class{
-		"AuthError":        render.ClassAuth,
-		"ForbiddenError":   render.ClassForbidden,
-		"RateLimitError":   render.ClassRateLimited,
-		"NotFoundError":    render.ClassNotFound,
-		"ValidationError":  render.ClassInvalid,
-		"TransientError":   render.ClassUnavailable,
-		"APIError":         render.ClassInvalid, // by status; see its ErrorClass
-		"MoveIgnoredError": render.ClassUnavailable,
+		"AuthError":         render.ClassAuth,
+		"ForbiddenError":    render.ClassForbidden,
+		"RateLimitError":    render.ClassRateLimited,
+		"NotFoundError":     render.ClassNotFound,
+		"ValidationError":   render.ClassInvalid,
+		"TransientError":    render.ClassUnavailable,
+		"APIError":          render.ClassInvalid, // by status; see its ErrorClass
+		"WriteIgnoredError": render.ClassUnavailable,
 	}
 	samples := map[string]error{
-		"AuthError":        &AuthError{Status: 401},
-		"ForbiddenError":   &ForbiddenError{Status: 403},
-		"RateLimitError":   &RateLimitError{Status: 429},
-		"NotFoundError":    &NotFoundError{Resource: "card"},
-		"ValidationError":  &ValidationError{Status: 400},
-		"TransientError":   &TransientError{Status: 503, Attempts: 4},
-		"APIError":         &APIError{Status: 410},
-		"MoveIgnoredError": &MoveIgnoredError{Want: "col-2"},
+		"AuthError":         &AuthError{Status: 401},
+		"ForbiddenError":    &ForbiddenError{Status: 403},
+		"RateLimitError":    &RateLimitError{Status: 429},
+		"NotFoundError":     &NotFoundError{Resource: "card"},
+		"ValidationError":   &ValidationError{Status: 400},
+		"TransientError":    &TransientError{Status: 503, Attempts: 4},
+		"APIError":          &APIError{Status: 410},
+		"WriteIgnoredError": &WriteIgnoredError{Field: "column", Want: "col-2"},
 	}
 
 	declared := declaredErrorTypes(t)
