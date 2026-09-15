@@ -13,7 +13,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - Two checks derived from the code rather than from prose: every card tool's schema is held to the one column-move contract, so the claim cannot decay in one struct tag again; and `TestEverySentinelIsClassified` now reads `internal/favroapi` too, where a sentinel had been relying on a classification fallback that neither it nor `TestEveryErrorTypeNamesItsClass` covered.
 
 ### Fixed
-- `favro_move_card` and `favro_update_card` moved no card. Favro requires `widgetCommonId` on a `columnId` or `laneId` move and answers 200 with a stub card without it; both tools now require it and say so, and a column move whose result does not carry the requested column returns `[unavailable]` instead of a success. Found by the first eval run.
+- `favro_move_card` and `favro_update_card` moved no card. Favro requires `widgetCommonId` on a `columnId` or `laneId` move and answers 200 with a stub card without it; both tools now require it and say so, and a column move whose result does not carry the requested column returns `[unavailable]` instead of a success, with a message saying not to retry. Found by the first eval run.
 - `list_position` is no longer documented as required for a column move; it never was. v1.0.0 recorded the contract correctly and the tool schema then singled out the wrong field of the four, which nothing held it to.
 
 ### Security

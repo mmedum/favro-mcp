@@ -963,14 +963,31 @@ under `[Unreleased]`. Tags are cut by the maintainer, never proposed.
    paths have the same shape on record and no guard: a custom-field
    write to a field the card's widget has not enabled (§2.7), the
    collection `shareToUsers` / `sharedToUsers` key, and `UpdateTags`'
-   unresolved delta-versus-whole-list question (§15 item 4). Each has a
-   response that carries the field the caller asked to change, so a
-   `confirm(requested, observed)` helper in `internal/favroapi` plus a
-   `Field` on the error would turn the next one into two lines. Not
-   built yet, deliberately: each path needs its own live probe first,
-   and a guard written against an assumed response shape is the failure
-   this repository keeps recording. Build it on the second instance,
-   not on the speculation of one.
+   unresolved delta-versus-whole-list question (§15 item 4).
+
+   **The second instance is now confirmed**, which is what this was
+   waiting for: a custom-field write to a field the card's widget has
+   not enabled returns HTTP 200 with the FULL card and the field simply
+   absent from `customFields` — probed live 2026-09-15 against a field
+   belonging to another widget. So the error is
+   `WriteIgnoredError{Field, Want, Got}` rather than a move-shaped one,
+   and what generalises is the discipline — compare what was asked for
+   against what came back, in the write's own response. The comparison
+   itself stays per path: "is my column the returned column" and "is my
+   field present at all" are different questions, and a shared
+   `confirm()` that answered both would be a shape nothing fits.
+
+   **The custom-field guard is still not built, and it is blocked on one
+   thing only a person can do.** The negative case is confirmed; the
+   positive one is not, because no board reachable this session has a
+   custom field enabled on it and there is no API to enable one. A
+   presence check written without having seen a *successful* write's
+   response would turn every working write into an error the moment
+   Favro omits the array — a guard written against an assumed response
+   shape, which is the failure this repository keeps recording. §15
+   item 1 already asks for the same setup: enable a custom field on a
+   board in the Favro UI, and the per-type write shapes and this guard
+   can both be settled in one pass.
 
 ## 17b. Deviations from the shared Go MCP server standard
 
@@ -1031,6 +1048,7 @@ split the wire types out): it logs `req.URL.RawQuery`, and Favro's query strings
 | 2026-09-14 | Hard rule 8, "no tool takes an `organization_id`" | Reconnected the MCP server to the built binary and called `favro_get_organization` with an id of all zeros, then with `not-a-valid-id` | **Verified here — the rule was false, and the tool was worse than non-compliant.** Both calls returned the bound organization in full. Favro's reference documents the path parameter as "the id of the organization to be retrieved. Required." and the live API ignores it, routing by the `organizationId` header it separately documents as required "to ensure the request is routed to the correct server" — §2.1 once more, on the endpoint whose whole purpose is selection. A required input that cannot affect the result reads as a choice and is not one, and a model asking for one organization was handed another with a 200. The input is gone, the tool returns the bound organization, and `gates rule8` derives the rule from the schema dump so it is held by the binary rather than by a sentence. Nothing else could have found it: the live driver passed the bound id, so the call looked correct, and `live-cover` counts options exercised rather than answers checked |
 | 2026-09-14 | `make check` green on one machine means green in CI | Pushed the branch and watched the first run; this branch had never had CI on it | **Verified here — the claim was false three ways, and every one passed on Linux.** `\s` and `\b` are GNU extensions that POSIX ERE does not have, so two gates and a test handed git patterns that matched nothing on macOS; git exited 1 for "no matches" and the checkers read that as a broken repository. The fix is to grep a fixed substring and apply the pattern in Go, where the engine is the same everywhere. On Windows the `.mcpb` fixture staged a shell script named `favro-mcp.exe` and the packer tried to execute it, because the packer asks the host binary for its version — the fixture builds a real one now. And `gitleaks-action` prepends `v` to `GITLEAKS_VERSION`, so `v8.30.1` fetched `vv8.30.1` and 404ed. The standard's line about a three-OS matrix finding Linux-only assumptions the first time it runs is exactly what happened |
 | 2026-09-15 | `favro_move_card` moves a card | A6's evals gave a model the task "move this card into the Done column" and read the board back | **Verified here — the claim is false.** The model resolved the widget, the card and the column correctly, then tried nine variations — `drag_mode=move`, `favro_update_card` with `column_id`, `sheet_position`, `drag_mode=commit`, `list_position=1000`. Every call returned success and the card never moved; it reported that honestly rather than claiming completion. Reproducible across two full runs. §2.1 in its purest form, on a card-management server that cannot move a card. **Nothing caught it because the live driver calls this tool with `dry_run: true`** — every mutating step there does, by design, so it validates a request and never observes a result. That is the blind spot evals exist to cover, and the first full run found it. **Answered 2026-09-15 and fixed:** Favro requires `widgetCommonId` on a column move and answers 200 with a stub card — `cardId`, `cardCommonId`, `name`, `timeOnBoard`, no `columnId` — without it. `listPosition` has nothing to do with it: a column move lands without one. The sharpest part is that Phase 5.3 got this right — the v1.0.0 changelog says a column move sends `widgetCommonId` + `columnId` + `listPosition` + `dragMode` *together* — and then the wire-type comment and the tool schema narrowed a four-field finding to the one field that did not matter, leaving all four optional in the schema. A finding that is recorded in prose and not in a test decays into whichever half somebody remembered. `UpdateCard` now refuses the shape before it is sent, so `favro_update_card` is covered too, and checks the returned `columnId` against the requested one |
+| 2026-09-15 | §2.7's "a custom field not enabled on the widget is accepted and discarded" | Set a Text field belonging to another widget on a sandbox card, then read the card back | **Verified here — the claim is true, and the shape it fails in is worth recording.** Favro answers HTTP 200 with the **full** card, not the stub a move gets, and the field is simply absent from `customFields`. So "did the write land" is a different question per path — missing value here, missing response there — which is what decided §17 decision 6 against a shared `confirm()` helper. The guard is not built: no board reachable has a custom field enabled on it, there is no API to enable one, and a presence check that has never seen a successful write's response would fail every working write if Favro ever omits the array |
 | 2026-09-15 | `favro_move_card` moves a card to a different board | The tool has said "move to a different widget" since Phase 5; moved a card between two boards live and listed both | **Verified here — the claim is false.** The source instance stays where it is and a second `cardId` appears on the target, both under the one `cardCommonId`. Favro's model is that a card common to several widgets has an instance on each, and a PUT that names another widget adds one; there is no single call that relocates. The tool description says add, not move, now. Not a code change: adding-then-deleting would be this server inventing a transaction Favro does not offer, and a half-failed one leaves a duplicate |
 | 2026-09-15 | The `transcript` gate holds this repository's live output to the redactor | Ran the security review over the eval commit; read the gate | **Verified here — the claim was false, and had been since the evals landed.** `transcriptDriverDir` was one hard-coded `const`, `scripts/livefavro`. `scripts/evals` drives the same live organization and printed raw: a failing task prints the model's whole trace, and every argument in it is an id resolved from live data, plus the collection id on a teardown failure. Nothing failed, because the gate read the other directory. A rule scoped to one path is a rule about that path — the gate takes a list now, both drivers print through `internal/redact`, and its own test names both and holds the one build-tag exemption to its shape |
 | 2026-09-15 | The eval harness confines a model that reads attacker-reachable text | The security review traced what the driven session could reach | **Verified here — the claim was false, and this one is a security boundary rather than a scoring one.** The run reads a real organization, so card text written by anyone with access to it reaches the model, and the process tree holds a live Favro credential. Any built-in that runs a command is then an exfiltration path for injected card content, and the confinement was a denylist with holes in it. Fixed with the two flags above. Worth keeping: the first version of this was written as a *scoring* control — "an eval that lets a model reach for Bash is scoring Bash" — which is true, and reading it only that way is what left it failing open |

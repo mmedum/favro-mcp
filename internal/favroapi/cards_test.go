@@ -1073,9 +1073,9 @@ func TestUpdateCard_MoveIgnored(t *testing.T) {
 				WidgetCommonID: "w-1",
 				ColumnID:       "col-2",
 			})
-			var ignored *MoveIgnoredError
+			var ignored *WriteIgnoredError
 			if !errors.As(err, &ignored) {
-				t.Fatalf("err = %v, want *MoveIgnoredError", err)
+				t.Fatalf("err = %v, want *WriteIgnoredError", err)
 			}
 			if ignored.Got != tc.got {
 				t.Errorf("ignored.Got = %q, want %q", ignored.Got, tc.got)
