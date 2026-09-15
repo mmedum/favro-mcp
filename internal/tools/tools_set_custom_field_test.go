@@ -835,3 +835,164 @@ func TestMCP_SetCardCustomField_Time_HappyPath(t *testing.T) {
 		t.Errorf("body does not contain %q", `"addUserReports":[{"value":50400000,"description":"pairing"}]`)
 	}
 }
+
+// verifiableCustomFieldFixture routes by path rather than by method,
+// because the read-back these tests are about is a GET too: fields
+// come from /customfields, the card comes from /cards/{id}.
+// cardFields is what the card carries when it is read back after the
+// write.
+func verifiableCustomFieldFixture(t *testing.T, fields []favro.CustomField, cardFields []favro.CardCustomFieldValue, gets *atomic.Int32) *favroapi.Client {
+	t.Helper()
+	return favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPut:
+			// A write Favro discarded and a write Favro applied come
+			// back as the same 200 with the same body.
+			_, _ = w.Write([]byte(`{"cardId":"ci-1","cardCommonId":"cc-1","name":"x"}`))
+		case strings.HasPrefix(r.URL.Path, "/cards/"):
+			if gets != nil {
+				gets.Add(1)
+			}
+			_ = json.NewEncoder(w).Encode(favro.Card{
+				CardID:             "ci-1",
+				CardCommonID:       "cc-1",
+				WidgetCommonID:     "w-1",
+				CustomFieldsValues: cardFields,
+			})
+		default:
+			_ = json.NewEncoder(w).Encode(favro.PageEnvelope[favro.CustomField]{Pages: 1, Entities: fields})
+		}
+	}))
+}
+
+// TestMCP_SetCardCustomField_NotOnCard_Reports is the case the tool
+// description already warned about in prose: Favro accepts and
+// discards a write to a field the card's widget has not enabled, and
+// answers 200 either way.
+func TestMCP_SetCardCustomField_NotOnCard_Reports(t *testing.T) {
+	t.Parallel()
+
+	c := verifiableCustomFieldFixture(t,
+		[]favro.CustomField{{CustomFieldID: "cf-text", Type: "Text", Name: "Notes"}},
+		nil, nil)
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":         "ci-1",
+			"custom_field_id": "cf-text",
+			"text":            "hello",
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("a discarded write is information, not a failed call: res.IsError = true, want false")
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	notes := strings.Join(out.Notes, " ")
+	if !strings.Contains(notes, "is not on the card after the write") {
+		t.Errorf("out.Notes must say the write did not land: %v", out.Notes)
+	}
+	if !strings.Contains(notes, "not enabled") {
+		t.Errorf("out.Notes must name the usual cause: %q missing from %v", "not enabled", out.Notes)
+	}
+}
+
+// TestMCP_SetCardCustomField_OnCard_ReportsValue: the value the card
+// carries after the write is what the caller needs to compare
+// against, since Favro normalises some of them on the way in.
+func TestMCP_SetCardCustomField_OnCard_ReportsValue(t *testing.T) {
+	t.Parallel()
+
+	c := verifiableCustomFieldFixture(t,
+		[]favro.CustomField{{CustomFieldID: "cf-text", Type: "Text", Name: "Notes"}},
+		[]favro.CardCustomFieldValue{{CustomFieldID: "cf-text", Value: json.RawMessage(`"hello"`)}}, nil)
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":         "ci-1",
+			"custom_field_id": "cf-text",
+			"text":            "hello",
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	notes := strings.Join(out.Notes, " ")
+	if !strings.Contains(notes, "verified by reading the card back") {
+		t.Errorf("out.Notes must record that the read happened: %v", out.Notes)
+	}
+	if !strings.Contains(notes, `"hello"`) {
+		t.Errorf("out.Notes must carry the value the card now holds: %v", out.Notes)
+	}
+}
+
+func TestMCP_SetCardCustomField_SkipVerify_DoesNotReadCard(t *testing.T) {
+	t.Parallel()
+
+	var cardGets atomic.Int32
+	c := verifiableCustomFieldFixture(t,
+		[]favro.CustomField{{CustomFieldID: "cf-text", Type: "Text", Name: "Notes"}},
+		nil, &cardGets)
+
+	cs := connectInMemoryWith(t, c)
+	if _, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":         "ci-1",
+			"custom_field_id": "cf-text",
+			"text":            "hello",
+			"skip_verify":     true,
+		},
+	}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := cardGets.Load(); got != 0 {
+		t.Errorf("skip_verify must drop the read-back: card reads = %v, want %v", got, 0)
+	}
+}
+
+// TestMCP_SetCardCustomField_DryRun_DoesNotVerify is the no-op case:
+// nothing was written, so there is nothing to read back.
+func TestMCP_SetCardCustomField_DryRun_DoesNotVerify(t *testing.T) {
+	t.Parallel()
+
+	var cardGets atomic.Int32
+	c := verifiableCustomFieldFixture(t,
+		[]favro.CustomField{{CustomFieldID: "cf-text", Type: "Text", Name: "Notes"}},
+		nil, &cardGets)
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: setCardCustomFieldToolName,
+		Arguments: map[string]any{
+			"card_id":         "ci-1",
+			"custom_field_id": "cf-text",
+			"text":            "hello",
+			"dry_run":         true,
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := cardGets.Load(); got != 0 {
+		t.Errorf("dry-run wrote nothing, so it verifies nothing: card reads = %v, want %v", got, 0)
+	}
+	if len(out.Notes) != 0 {
+		t.Errorf("out.Notes = %v, want empty", out.Notes)
+	}
+}

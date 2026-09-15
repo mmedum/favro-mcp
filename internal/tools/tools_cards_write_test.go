@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/favroapi"
 )
 
 func TestMCP_CreateCard_HappyPath(t *testing.T) {
@@ -320,6 +321,225 @@ func TestMCP_UpdateCard_MissingCardID(t *testing.T) {
 	assertMissingRequiredFieldFails(t, updateCardToolName, "card_id")
 }
 
+// placementFixture answers a PUT with a 200 and a GET with a card
+// sitting at readBackColumn. Favro answers 200 for a body it ignored,
+// so the PUT tells a caller nothing; what the GET says is the whole
+// subject of these tests.
+func placementFixture(t *testing.T, readBackColumn string, gets *atomic.Int32) *favroapi.Client {
+	t.Helper()
+	return favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && gets != nil {
+			gets.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(favro.Card{
+				CardID:         "ci-1",
+				CardCommonID:   "cc-1",
+				WidgetCommonID: "w-1",
+				ColumnID:       readBackColumn,
+			})
+			return
+		}
+		// What Favro echoes to a write it discarded and to one it
+		// applied is the same 200, which is the problem.
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","cardCommonId":"cc-1","columnId":"col-2"}`))
+	}))
+}
+
+// TestMCP_UpdateCard_ColumnMove_ReportsDiscardedWrite is the case
+// `list_position` has documented in prose: a column change carrying
+// no position is accepted and discarded, and the result looks like a
+// success.
+func TestMCP_UpdateCard_ColumnMove_ReportsDiscardedWrite(t *testing.T) {
+	t.Parallel()
+
+	cs := connectInMemoryWith(t, placementFixture(t, "col-1", nil))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":   "ci-1",
+			"column_id": "col-2",
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("a discarded write is information, not a failed call: res.IsError = true, want false")
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	notes := strings.Join(out.Notes, " ")
+	if !strings.Contains(notes, "column_id did not change") {
+		t.Errorf("out.Notes must say the column did not move: %q missing from %v", "column_id did not change", out.Notes)
+	}
+	if !strings.Contains(notes, "list_position") {
+		t.Errorf("out.Notes must name the fix: %q missing from %v", "list_position", out.Notes)
+	}
+	if !strings.Contains(serializedResponseString(t, res), "column_id did not change") {
+		t.Error("the verdict must reach the readable half of the result too")
+	}
+}
+
+// TestMCP_UpdateCard_ColumnMove_ReportsVerified is the other outcome:
+// silence would be indistinguishable from "not checked".
+func TestMCP_UpdateCard_ColumnMove_ReportsVerified(t *testing.T) {
+	t.Parallel()
+
+	cs := connectInMemoryWith(t, placementFixture(t, "col-2", nil))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":       "ci-1",
+			"column_id":     "col-2",
+			"list_position": 0,
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if !strings.Contains(strings.Join(out.Notes, " "), "verified by reading the card back") {
+		t.Errorf("out.Notes must record that the read happened: %v", out.Notes)
+	}
+}
+
+// TestMCP_UpdateCard_NoPlacementChange_DoesNotRead is the no-op case.
+// A guard that is wrong in the negative direction is invisible: the
+// read would happen on every write, which is what a working
+// verification also looks like.
+func TestMCP_UpdateCard_NoPlacementChange_DoesNotRead(t *testing.T) {
+	t.Parallel()
+
+	var gets atomic.Int32
+	cs := connectInMemoryWith(t, placementFixture(t, "col-1", &gets))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      updateCardToolName,
+		Arguments: map[string]any{"card_id": "ci-1", "name": "renamed"},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
+	if got := gets.Load(); got != 0 {
+		t.Errorf("a write that changes no placement has nothing to verify: gets = %v, want %v", got, 0)
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if len(out.Notes) != 0 {
+		t.Errorf("out.Notes = %v, want empty", out.Notes)
+	}
+}
+
+func TestMCP_UpdateCard_SkipVerify_DoesNotRead(t *testing.T) {
+	t.Parallel()
+
+	var gets atomic.Int32
+	cs := connectInMemoryWith(t, placementFixture(t, "col-1", &gets))
+	if _, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":     "ci-1",
+			"column_id":   "col-2",
+			"skip_verify": true,
+		},
+	}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got := gets.Load(); got != 0 {
+		t.Errorf("skip_verify must drop the read: gets = %v, want %v", got, 0)
+	}
+}
+
+// TestMCP_UpdateCard_VerifyReadFails_ReportsRatherThanErrors: the
+// write already happened, so turning a successful write into a failed
+// call would be a worse answer than saying it could not be checked.
+func TestMCP_UpdateCard_VerifyReadFails_ReportsRatherThanErrors(t *testing.T) {
+	t.Parallel()
+
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"boom"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","columnId":"col-2"}`))
+	}))
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      updateCardToolName,
+		Arguments: map[string]any{"card_id": "ci-1", "column_id": "col-2"},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if !strings.Contains(strings.Join(out.Notes, " "), "unconfirmed") {
+		t.Errorf("out.Notes must say the write is unconfirmed: %v", out.Notes)
+	}
+}
+
+// TestMCP_MoveCard_DiscardedColumnMove_Reports: favro_move_card runs
+// the same PUT, and carries the same caution in its schema.
+func TestMCP_MoveCard_DiscardedColumnMove_Reports(t *testing.T) {
+	t.Parallel()
+
+	cs := connectInMemoryWith(t, placementFixture(t, "col-1", nil))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      moveCardToolName,
+		Arguments: map[string]any{"card_id": "ci-1", "column_id": "col-2"},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if !strings.Contains(strings.Join(out.Notes, " "), "column_id did not change") {
+		t.Errorf("out.Notes must say the column did not move: %v", out.Notes)
+	}
+}
+
+// TestMCP_UpdateCard_DryRun_DoesNotVerify: nothing was written, so
+// there is nothing to read back.
+func TestMCP_UpdateCard_DryRun_DoesNotVerify(t *testing.T) {
+	t.Parallel()
+
+	var gets atomic.Int32
+	cs := connectInMemoryWith(t, placementFixture(t, "col-1", &gets))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":   "ci-1",
+			"column_id": "col-2",
+			"dry_run":   true,
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if !out.DryRun {
+		t.Error("out.DryRun = false, want true")
+	}
+	if got := gets.Load(); got != 0 {
+		t.Errorf("dry-run wrote nothing, so it verifies nothing: gets = %v, want %v", got, 0)
+	}
+	if len(out.Notes) != 0 {
+		t.Errorf("out.Notes = %v, want empty", out.Notes)
+	}
+}
+
 func TestMCP_ArchiveCard_HappyPath(t *testing.T) {
 	t.Parallel()
 
@@ -417,9 +637,17 @@ func TestMCP_UnarchiveCard_MissingCardID(t *testing.T) {
 func TestMCP_MoveCard_HappyPath(t *testing.T) {
 	t.Parallel()
 
+	// The move is a PUT and the verification that follows it is a GET;
+	// anything else is the tool doing something this test did not ask
+	// for.
+	var puts atomic.Int32
 	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			t.Errorf("move_card must PUT; got %s", r.Method)
+		switch r.Method {
+		case http.MethodPut:
+			puts.Add(1)
+		case http.MethodGet:
+		default:
+			t.Errorf("move_card must PUT, then GET to verify; got %s", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"cardId":"ci-1","columnId":"col-2"}`))
@@ -438,6 +666,10 @@ func TestMCP_MoveCard_HappyPath(t *testing.T) {
 	}
 	if res.IsError {
 		t.Error("res.IsError = true, want false")
+	}
+
+	if got := puts.Load(); got != 1 {
+		t.Errorf("puts.Load() = %v, want %v", got, 1)
 	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)

@@ -40,6 +40,7 @@ var errUnsupportedCustomFieldType = render.Sentinel(render.ClassUnsupported, "fa
 // value, so omitempty doesn't elide it.
 type setCardCustomFieldInput struct {
 	dryRunInput
+	verifyInput
 	CardID        string `json:"card_id" jsonschema:"the per-widget cardId to update"`
 	CustomFieldID string `json:"custom_field_id" jsonschema:"the custom field's customFieldId. Resolve via favro_resolve_custom_field."`
 
@@ -103,9 +104,10 @@ func registerSetCardCustomField(reg *registry, r *service.Resolver) {
 			"Successful live writes invalidate the search-cards cache. Pass " +
 			"`dry_run: true` to preview. The per-type body shapes come from Favro's REST " +
 			"docs and have not all been confirmed against a live tenant. Favro answers 200 " +
-			"for a body it ignored, and a field not enabled on the widget is accepted and " +
-			"discarded, so read the card back with favro_get_card_full to confirm the value " +
-			"actually changed.",
+			"for a body it ignored, and a field not enabled on the card's widget is accepted " +
+			"and discarded — so the tool reads the card back after the write and reports in " +
+			"`notes` whether the field is on the card and what it now carries. Pass " +
+			"`skip_verify: true` to drop that read.",
 		Annotations: mutating("Set Favro card custom field", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in setCardCustomFieldInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		field, err := lookupCustomFieldType(ctx, r, in.CustomFieldID, in.ForceRefresh)
@@ -135,6 +137,9 @@ func registerSetCardCustomField(reg *registry, r *service.Resolver) {
 		}
 		if !out.DryRun {
 			r.InvalidateSearchCardCache()
+			if !in.SkipVerify {
+				out.Notes = append(out.Notes, verifyCardCustomField(ctx, r, in.CardID, field)...)
+			}
 		}
 		return nil, out, nil
 	})
