@@ -85,6 +85,10 @@ func init() {
 			run: transcript, args: "", gate: true,
 			doc: "the live driver prints only through the redactor",
 		},
+		"outcomes": {
+			run: outcomes, args: "", gate: true,
+			doc: "no tool states an outcome the response did not carry",
+		},
 		"live-cover": {
 			run: liveCover, args: "", gate: true,
 			doc: "the live driver exercises every tool and option, or waives it",

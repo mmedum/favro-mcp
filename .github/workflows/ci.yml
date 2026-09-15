@@ -77,6 +77,8 @@ jobs:
         run: go run ./scripts/gates api-fields
       - name: live driver redacts
         run: go run ./scripts/gates transcript
+      - name: no outcome asserted from the request
+        run: go run ./scripts/gates outcomes
       - name: live driver covers the surface
         run: go run ./scripts/gates live-cover
       - name: make check and CI agree

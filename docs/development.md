@@ -35,6 +35,7 @@ places, and the registry's `gate: true` flag is what says it belongs.
 | `api-coverage` | Every documented Favro endpoint has a verdict and every verdict an endpoint. |
 | `api-fields` | Every documented field is modelled by a wire type or waived with a reason. An endpoint can be implemented while the type behind it drops half of what Favro sends. |
 | `transcript` | The live driver reaches the terminal only through the redactor. |
+| `outcomes` | No tool states an outcome the response did not carry. Flags a branch that tests a boolean request field and then says, in prose, what is now true — the shape `favro_move_card` shipped in for six releases. A branch that is honest anyway takes a row in `testdata/outcome-claims.tsv` with the reason. |
 | `live-cover` | The live driver exercises every tool and every option, or waives it with a reason. |
 | `parity` | `make check` and `ci.yml` run the same set — every prerequisite, matched by what each recipe runs rather than by target name. |
 | `plugin` | The committed `.plugin` manifest against the files the packer will stage. |
