@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `scripts/evals`: agent evals behind a build tag. Six tasks, each scored twice — the end state read back through this server, and the trace. The run builds its own collection and board and removes them, so nothing it touches is the organization's own data. The task table sits outside the build tag, so `go test ./scripts/evals` walks every prompt without credentials, a network or a model.
+
 ## [2.0.1] - 2026-09-15
 
 Dependency and tooling only: no tool changed, no behaviour changed.

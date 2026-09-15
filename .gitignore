@@ -40,6 +40,7 @@ Thumbs.db
 go.work
 go.work.sum
 
-# `go build ./scripts/gates` drops a binary here under the directory name.
+# `go build ./scripts/...` drops a binary here under the directory name.
 /gates
 /.gates
+/evals
