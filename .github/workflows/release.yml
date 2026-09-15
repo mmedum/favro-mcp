@@ -114,3 +114,22 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # After the release, never inside it. The registry sends a HEAD to the
+  # bundle's download URL before it accepts the entry, so an entry
+  # published while goreleaser is still uploading names a download nobody
+  # can fetch. GitHub answers that HEAD with a 302 to a signed asset URL,
+  # which the registry's validator accepts explicitly — a check that only
+  # took 200 would reject every GitHub release there is.
+  #
+  # A separate workflow rather than a last step, so it can be run again
+  # on its own: `gh workflow run publish-mcp.yml -f tag=vX.Y.Z`.
+  registry:
+    needs: goreleaser
+    if: ${{ !contains(github.ref, '-') }}
+    uses: ./.github/workflows/publish-mcp.yml
+    with:
+      tag: ${{ github.ref_name }}
+    permissions:
+      id-token: write
+      contents: read
