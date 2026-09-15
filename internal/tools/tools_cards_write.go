@@ -46,6 +46,11 @@ type createCardInput struct {
 // UpdateCardRequest minus the by-name tag fields and the Archive
 // boolean (the dedicated archive/unarchive tools cover that case
 // with clearer LLM ergonomics).
+//
+// ClearParent has no counterpart in UpdateCardRequest: it is this
+// server's way of saying "yes, detach it", because the handler
+// otherwise refills parentCardId on a structural write. See
+// preserveParent.
 type updateCardInput struct {
 	dryRunInput
 	CardID              string   `json:"card_id" jsonschema:"the per-widget cardId to update (NOT cardCommonId — Favro PUT /cards/{id} expects the per-widget instance id)"`
@@ -55,6 +60,7 @@ type updateCardInput struct {
 	ColumnID            string   `json:"column_id,omitempty" jsonschema:"move card to a different column. Requires widget_common_id."`
 	LaneID              string   `json:"lane_id,omitempty" jsonschema:"move card to a different lane. Requires widget_common_id."`
 	ParentCardID        string   `json:"parent_card_id,omitempty" jsonschema:"set or change the parent card"`
+	ClearParent         bool     `json:"clear_parent,omitempty" jsonschema:"if true, detach the card from its parent and leave it at top level. Only meaningful on a structural write (one carrying widget_common_id), which is the only write Favro lets a parent be cleared by; without it such a write keeps the existing parent."`
 	DragMode            string   `json:"drag_mode,omitempty" jsonschema:"'commit' (Favro's default — neighboring cards re-shuffle) or 'move' (no repositioning of siblings). Only relevant with column_id / list_position / sheet_position."`
 	ListPosition        *float64 `json:"list_position,omitempty" jsonschema:"optional position on a kanban widget as a JSON number. 0 places the card at the top of the column; a number larger than the current max sends it to the bottom; fractional values (e.g. 3.5) slot between siblings. A column move does NOT need it — widget_common_id is the field Favro requires there."`
 	SheetPosition       *float64 `json:"sheet_position,omitempty" jsonschema:"position on a sheet widget as a JSON number — same numeric vocabulary as list_position"`
@@ -153,43 +159,94 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 			"archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). " +
 			"`detailed_description` whole-body replaces; surgical markdown edits are Phase 6's " +
 			"append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live " +
-			"writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+			"writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\n" +
+			"A write carrying `widget_common_id` is structural: Favro re-seats the card from " +
+			"the body alone, so a body naming no parent leaves the card at top level — and the " +
+			"response echoes a null parent either way, so the answer cannot tell you which " +
+			"happened. This tool therefore reads the card first on such a write and carries its " +
+			"existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach " +
+			"the card on purpose, or `parent_card_id` to re-parent it.",
 		Annotations: mutating("Update Favro card", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
+		req := favro.UpdateCardRequest{
+			Name:                in.Name,
+			DetailedDescription: in.DetailedDescription,
+			WidgetCommonID:      in.WidgetCommonID,
+			ColumnID:            in.ColumnID,
+			LaneID:              in.LaneID,
+			ParentCardID:        in.ParentCardID,
+			DragMode:            in.DragMode,
+			ListPosition:        in.ListPosition,
+			SheetPosition:       in.SheetPosition,
+			AddAssignmentIDs:    in.AddAssignmentIDs,
+			RemoveAssignmentIDs: in.RemoveAssignmentIDs,
+			AddTagIDs:           in.AddTagIDs,
+			RemoveTagIDs:        in.RemoveTagIDs,
+			StartDate:           in.StartDate,
+			DueDate:             in.DueDate,
+		}
+		notes, err := settleParent(ctx, r, &in, &req)
+		if err != nil {
+			return nil, writeOutput[favro.Card]{}, err
+		}
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
 		}
 		out, err := runWrite(
-			func() (favro.Card, error) {
-				return r.Client().UpdateCard(writeCtx, in.CardID, favro.UpdateCardRequest{
-					Name:                in.Name,
-					DetailedDescription: in.DetailedDescription,
-					WidgetCommonID:      in.WidgetCommonID,
-					ColumnID:            in.ColumnID,
-					LaneID:              in.LaneID,
-					ParentCardID:        in.ParentCardID,
-					DragMode:            in.DragMode,
-					ListPosition:        in.ListPosition,
-					SheetPosition:       in.SheetPosition,
-					AddAssignmentIDs:    in.AddAssignmentIDs,
-					RemoveAssignmentIDs: in.RemoveAssignmentIDs,
-					AddTagIDs:           in.AddTagIDs,
-					RemoveTagIDs:        in.RemoveTagIDs,
-					StartDate:           in.StartDate,
-					DueDate:             in.DueDate,
-				})
-			},
-			func() string { return updateCardStateDiff(&in) },
+			func() (favro.Card, error) { return r.Client().UpdateCard(writeCtx, in.CardID, req) },
+			func() string { return updateCardStateDiff(in.CardID, &req) },
 		)
 		if err != nil {
 			return nil, writeOutput[favro.Card]{}, err
 		}
+		out.Notes = append(out.Notes, notes...)
 		if !out.DryRun {
 			r.InvalidateSearchCardCache()
 		}
 		return nil, out, nil
 	})
+}
+
+// settleParent decides what parentCardId the update body carries, and
+// reads the card to find out when it has to.
+//
+// Favro treats a card write carrying widgetCommonId as structural and
+// re-seats the card from the body alone: a body naming no parentCardId
+// leaves the card at top level. Nothing in the answer says so — the
+// response echoes a null parent whether or not the card was nested
+// before — so renaming a nested card, or nudging it one column along,
+// returns 200 and quietly detaches it. On a sectioned board that reads
+// as the card having disappeared, because people read sections.
+//
+// Hard rule 2 already says a 200 is not confirmation and that a write
+// is verified by reading the resource back. A caution in the tool
+// description is a guard with no enforcement — it works only if the
+// model reads it and obeys it — and the server is the better placed of
+// the two to do the read. So this does it, and reports what it did
+// rather than refusing: the caller asked for a rename, and a rename is
+// what it gets.
+//
+// The read is skipped entirely unless it can change the outcome, and it
+// runs under dry-run too, so the previewed body is the body that would
+// be sent (the same choice the description-editor tools make).
+func settleParent(ctx context.Context, r *service.Resolver, in *updateCardInput, req *favro.UpdateCardRequest) ([]string, error) {
+	structural := req.WidgetCommonID != ""
+	switch {
+	case !structural && in.ClearParent:
+		return []string{"clear_parent had no effect: Favro only re-seats a card on a structural write, which is one carrying widget_common_id. Pass the card's own widget_common_id alongside it to detach the card."}, nil
+	case !structural, in.ClearParent, req.ParentCardID != "":
+		return nil, nil
+	}
+	current, err := r.Client().GetCard(ctx, in.CardID)
+	if err != nil {
+		return nil, fmt.Errorf("refusing a structural update to card %q: its current parent could not be read, and a structural write naming no parent detaches the card from its parent: %w", in.CardID, err)
+	}
+	if current.ParentCardID == "" {
+		return nil, nil
+	}
+	req.ParentCardID = current.ParentCardID
+	return []string{"this write carries widget_common_id, which Favro treats as structural, and a structural write naming no parent leaves the card at top level. The card's existing parent was read back and carried through, so the card stays nested. Pass clear_parent: true to detach it on purpose, or parent_card_id to re-parent it."}, nil
 }
 
 func registerArchiveCard(reg *registry, r *service.Resolver) {
@@ -342,7 +399,11 @@ func createCardStateDiff(in createCardInput) string {
 // happened. Driven by a small dispatch table — `desc` is a closure
 // so each entry's value is computed lazily and pointer derefs only
 // fire under their `when` guard.
-func updateCardStateDiff(in *updateCardInput) string {
+//
+// It reads the request the tool built rather than the input it was
+// given, so a parent settleParent carried through shows up in the
+// preview as a parent the write sets — which is what the body says.
+func updateCardStateDiff(cardID string, in *favro.UpdateCardRequest) string {
 	type field struct {
 		when bool
 		desc func() string
@@ -380,9 +441,9 @@ func updateCardStateDiff(in *updateCardInput) string {
 		}
 	}
 	if len(changes) == 0 {
-		return fmt.Sprintf("would PUT card %q with no changed fields (no-op)", in.CardID)
+		return fmt.Sprintf("would PUT card %q with no changed fields (no-op)", cardID)
 	}
-	return fmt.Sprintf("would update card %q: %s", in.CardID, strings.Join(changes, ", "))
+	return fmt.Sprintf("would update card %q: %s", cardID, strings.Join(changes, ", "))
 }
 
 // moveCardStateDiff renders the dry-run state-diff phrase for

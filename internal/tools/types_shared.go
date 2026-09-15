@@ -154,6 +154,14 @@ type writeOutput[T any] struct {
 	WouldCall          *DryRunCall `json:"would_call,omitempty" jsonschema:"the HTTP request that would have been sent (populated when dry_run is true)"`
 	RequestBody        any         `json:"request_body,omitempty" jsonschema:"the JSON body that would have been sent, decoded into a structured object (populated when dry_run is true)"`
 	PredictedStateDiff string      `json:"predicted_state_diff,omitempty" jsonschema:"a human-readable description of the change that would happen (populated when dry_run is true)"`
+
+	// Notes is what the tool did beyond what the caller asked for,
+	// and what it knows about the write that the returned resource
+	// does not say. A caller cannot see either from Result: hard
+	// rule 2's whole point is that Favro's answer to a write is not
+	// evidence about the write, so anything the server learned by
+	// looking has to be carried separately.
+	Notes []string `json:"notes,omitempty" jsonschema:"what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done"`
 }
 
 // DryRunCall describes the request a mutating tool would have sent.
@@ -251,8 +259,9 @@ func (o listOutput[T]) Summary() string {
 // call, and a result that looks like a success is how §2.1's problem
 // starts.
 func (o writeOutput[T]) Summary() string {
-	if o.DryRun {
-		var b strings.Builder
+	var b strings.Builder
+	switch {
+	case o.DryRun:
 		b.WriteString("DRY RUN — nothing was sent to Favro.")
 		if o.WouldCall != nil {
 			fmt.Fprintf(&b, "\n  would call: %s %s", o.WouldCall.Method, o.WouldCall.URL)
@@ -260,12 +269,16 @@ func (o writeOutput[T]) Summary() string {
 		if o.PredictedStateDiff != "" {
 			fmt.Fprintf(&b, "\n  would change: %s", o.PredictedStateDiff)
 		}
-		return b.String()
+	case o.Result == nil:
+		b.WriteString("done; Favro returned no resource.")
+	default:
+		b.WriteString("done:\n")
+		b.WriteString(render.Summary(*o.Result))
 	}
-	if o.Result == nil {
-		return "done; Favro returned no resource."
+	for _, note := range o.Notes {
+		fmt.Fprintf(&b, "\n  note: %s", note)
 	}
-	return "done:\n" + render.Summary(*o.Result)
+	return b.String()
 }
 
 // Summary renders a name lookup for the readable half: the count
