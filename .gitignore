@@ -35,6 +35,11 @@ Thumbs.db
 
 # Local agent / tooling state
 .claude/
+# A session recorder wrote whole-tree snapshots here, transcript
+# included. The leak gate scans for ids and addresses; a transcript's
+# risk is card NAMES, which are ordinary words and which no pattern
+# catches — so the defence is that it is never staged.
+.entire/
 
 # Go module cache (handled by setup-go in CI)
 go.work
