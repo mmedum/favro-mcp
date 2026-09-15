@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `outcomes` gate: no tool states an outcome the response did not carry. It flags a branch that tests a boolean request field and then says in prose what is now true — the shape `favro_move_card` shipped in from 1.0.0 to 2.0.1 — and a branch that is honest anyway takes a row in `testdata/outcome-claims.tsv` with the reason. Adopted from google-drive-mcp, the one sibling that had it.
+
 ## [2.0.2] - 2026-09-15
 
 Fixes a card-management server that could not move a card. `favro_move_card`

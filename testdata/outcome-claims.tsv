@@ -1,0 +1,12 @@
+# Branches that test a boolean request field and then state an outcome,
+# which somebody has looked at and judged honest anyway. The `outcomes`
+# gate refuses any such branch that is not recorded here.
+#
+# file<TAB>field<TAB>reason
+#
+# Empty on purpose: no branch in internal/tools states an outcome from
+# the request today. Every write handler's DryRun branch picks a context
+# and says nothing, and the one branch that words two sentences —
+# delete-card's state diff on Everywhere — words both as "would", which
+# describes the request rather than the world. A row here is a decision
+# somebody made, not a way to quieten the gate.
