@@ -8,6 +8,13 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `favro_update_card` takes `clear_parent`, the way to detach a card from its parent on purpose. It is only meaningful on a structural write, and the tool reports when it was passed on a write that cannot act on it.
+- Every mutating tool result can carry `notes`: what the tool did beyond the literal request, and what it observed about the write. `Result` is Favro's answer to the write, and hard rule 2 is that Favro's answer to a write is not evidence about the write.
+
+### Fixed
+- `favro_update_card` no longer detaches a nested card from its parent on a structural write. Favro treats a write carrying `widgetCommonId` as structural and re-seats the card from the body alone, so renaming a nested card or nudging it one column along left it at top level — and the response echoes a null parent either way, so the answer could not tell you which happened. The tool now reads the card first on such a write, carries the existing parent through, and says so in `notes`.
+
 ## [2.0.1] - 2026-09-15
 
 Dependency and tooling only: no tool changed, no behaviour changed.

@@ -174,6 +174,16 @@ func extraSteps() []Step {
 			Why: "dry-run: every field an update can set at once",
 		},
 		{
+			Tool: "favro_update_card",
+			Args: map[string]any{
+				"card_id":          AnyCardID,
+				"widget_common_id": AnyWidgetCommonID,
+				"clear_parent":     true,
+				"dry_run":          true,
+			},
+			Why: "dry-run: the structural write that detaches on purpose — the one path where the tool does not read the card's current parent first",
+		},
+		{
 			Tool: "favro_move_card",
 			Args: map[string]any{
 				"card_id":          AnyCardID,

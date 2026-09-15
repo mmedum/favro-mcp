@@ -1,7 +1,7 @@
 {
   "server": "favro-mcp",
-  "version": "v1.1.2-15-ge776619-dirty (e776619)",
-  "sdk": "v1.7.0",
+  "version": "v2.0.1-dirty (a856a05)",
+  "sdk": "v1.8.0",
   "tools": [
     {
       "annotations": {
@@ -59,6 +59,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -274,6 +284,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -388,6 +408,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -748,6 +778,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -841,6 +881,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -1257,6 +1307,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -1679,6 +1739,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -1836,6 +1906,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -1950,6 +2030,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2107,6 +2197,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -2234,6 +2334,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -2345,6 +2455,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2482,6 +2602,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -2604,6 +2734,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2769,6 +2909,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -2848,6 +2998,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -2924,6 +3084,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3004,6 +3174,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -3078,6 +3258,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3159,6 +3349,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -3233,6 +3433,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3309,6 +3519,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -3383,6 +3603,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3459,6 +3689,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -3533,6 +3773,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3612,6 +3862,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -7143,6 +7403,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -7543,6 +7813,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -7723,6 +8003,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -8082,6 +8372,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -8460,6 +8760,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -8590,6 +8900,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -9467,6 +9787,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -9821,6 +10151,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -10149,7 +10489,7 @@
         "readOnlyHint": false,
         "title": "Update Favro card"
       },
-      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\nA write carrying `widget_common_id` is structural: Favro re-seats the card from the body alone, so a body naming no parent leaves the card at top level — and the response echoes a null parent either way, so the answer cannot tell you which happened. This tool therefore reads the card first on such a write and carries its existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach the card on purpose, or `parent_card_id` to re-parent it.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -10176,6 +10516,10 @@
           "card_id": {
             "description": "the per-widget cardId to update (NOT cardCommonId — Favro PUT /cards/{id} expects the per-widget instance id)",
             "type": "string"
+          },
+          "clear_parent": {
+            "description": "if true, detach the card from its parent and leave it at top level. Only meaningful on a structural write (one carrying widget_common_id), which is the only write Favro lets a parent be cleared by; without it such a write keeps the existing parent.",
+            "type": "boolean"
           },
           "column_id": {
             "description": "move card to a different column",
@@ -10264,6 +10608,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -10734,6 +11088,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -10894,6 +11258,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -11018,6 +11392,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -11159,6 +11543,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -11302,6 +11696,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -11433,6 +11837,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -11550,6 +11964,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -11664,6 +12088,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -11776,6 +12210,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -11909,6 +12353,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -12087,6 +12541,16 @@
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
           },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
             "type": "string"
@@ -12188,6 +12652,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
