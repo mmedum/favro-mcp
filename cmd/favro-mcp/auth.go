@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"golang.org/x/term"
@@ -22,6 +23,15 @@ func runAuth(args []string, stdin io.Reader, stderr io.Writer) error {
 	if len(args) == 0 {
 		return authUsage(stderr)
 	}
+	// Help is answered before dispatch, and from anywhere in the tail:
+	// every subcommand here takes no arguments, so a help token after
+	// one is a request for usage rather than input. Leaving it to the
+	// switch below matched only `auth --help` — `auth login --help`
+	// fell through to the interactive prompt, which reads `--help` off
+	// stdin, and `auth logout --help` deleted the keyring entries.
+	if slices.ContainsFunc(args, isHelpToken) {
+		return authUsage(stderr)
+	}
 	ctx := context.Background()
 
 	switch args[0] {
@@ -33,8 +43,6 @@ func runAuth(args []string, stdin io.Reader, stderr io.Writer) error {
 		return authLogout(ctx, stderr)
 	case "which":
 		return authWhich(ctx, stderr)
-	case "help", "--help", "-h":
-		return authUsage(stderr)
 	default:
 		errf(stderr, "favro-mcp auth: unknown subcommand %q\n\n", args[0])
 		_ = authUsage(stderr)
