@@ -10,6 +10,18 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ### Added
 - `scripts/evals`: agent evals behind a build tag. Six tasks, each scored twice — the end state read back through this server, and the trace. The run builds its own collection and board and removes them, so nothing it touches is the organization's own data. The task table sits outside the build tag, so `go test ./scripts/evals` walks every prompt without credentials, a network or a model.
+- Two checks derived from the code rather than from prose: every card tool's schema is held to the one column-move contract, so the claim cannot decay in one struct tag again; and `TestEverySentinelIsClassified` now reads `internal/favroapi` too, where a sentinel had been relying on a classification fallback that neither it nor `TestEveryErrorTypeNamesItsClass` covered.
+
+### Fixed
+- `favro_move_card` and `favro_update_card` moved no card. Favro requires `widgetCommonId` on a `columnId` or `laneId` move and answers 200 with a stub card without it; both tools now require it and say so, and a column move whose result does not carry the requested column returns `[unavailable]` instead of a success. Found by the first eval run.
+- `list_position` is no longer documented as required for a column move; it never was. v1.0.0 recorded the contract correctly and the tool schema then singled out the wrong field of the four, which nothing held it to.
+
+### Security
+- The eval harness confines the driven model with `--tools ""` — the CLI's own "no built-ins" switch — instead of a hand-written list of built-in tool names to disallow, and with `--setting-sources ""` so the maintainer's permission rules, hooks and skills do not reach the run. The denylist was incomplete (`Monitor` runs a shell command under a name that is not `Bash`), and the run reads a real organization while holding a live credential, so a built-in that runs commands is an exfiltration path for card text somebody else wrote.
+- `scripts/evals` prints through `internal/redact`, and the `transcript` gate reads it as well as `scripts/livefavro`. The gate was scoped to one hard-coded directory, so a failing eval task printed the model's whole trace — live ids and all — with nothing failing.
+
+### Changed
+- `favro_move_card`'s description says what a cross-board move does: Favro adds the card to the target board and leaves the original in place, under one `cardCommonId`. There is no cross-board relocation to call.
 
 ## [2.0.1] - 2026-09-15
 

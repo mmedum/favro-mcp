@@ -582,6 +582,10 @@ func TestCreateCard_DryRun_ReturnsRecord(t *testing.T) {
 
 // TestUpdateCard_HappyPath pins PUT /cards/{cardId}: body carries
 // the updateable fields, response decodes into favro.Card.
+//
+// widgetCommonId rides along because columnId is set. This test used
+// to pin the body without it, which is a body Favro answers 200 to and
+// ignores — a fixture agreeing with the assumption that wrote it.
 func TestUpdateCard_HappyPath(t *testing.T) {
 	t.Parallel()
 
@@ -592,7 +596,7 @@ func TestUpdateCard_HappyPath(t *testing.T) {
 		if got := rec.Path; got != "/cards/ci-1" {
 			t.Errorf("rec.Path = %v, want %v", got, "/cards/ci-1")
 		}
-		requireJSONEq(t, `{"name":"renamed","columnId":"col-2","addTagIds":["t-3"]}`, rec.Body)
+		requireJSONEq(t, `{"name":"renamed","widgetCommonId":"w-1","columnId":"col-2","addTagIds":["t-3"]}`, rec.Body)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"cardId":"ci-1","cardCommonId":"cc-1","name":"renamed","columnId":"col-2"}`))
 	}}
@@ -601,9 +605,10 @@ func TestUpdateCard_HappyPath(t *testing.T) {
 	c := newTestClient(srv)
 
 	got, err := c.UpdateCard(context.Background(), "ci-1", favro.UpdateCardRequest{
-		Name:      "renamed",
-		ColumnID:  "col-2",
-		AddTagIDs: []string{"t-3"},
+		Name:           "renamed",
+		WidgetCommonID: "w-1",
+		ColumnID:       "col-2",
+		AddTagIDs:      []string{"t-3"},
 	})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
@@ -720,7 +725,7 @@ func TestUpdateCard_ListPositionIsJSONNumber(t *testing.T) {
 
 	pos := 0.0
 	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
-		requireJSONEq(t, `{"columnId":"col-2","listPosition":0}`, rec.Body,
+		requireJSONEq(t, `{"widgetCommonId":"w-1","columnId":"col-2","listPosition":0}`, rec.Body,
 			"listPosition must marshal as a JSON number, NOT a string")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"cardId":"ci-1","columnId":"col-2","listPosition":0}`))
@@ -730,8 +735,9 @@ func TestUpdateCard_ListPositionIsJSONNumber(t *testing.T) {
 	c := newTestClient(srv)
 
 	_, err := c.UpdateCard(context.Background(), "ci-1", favro.UpdateCardRequest{
-		ColumnID:     "col-2",
-		ListPosition: &pos,
+		WidgetCommonID: "w-1",
+		ColumnID:       "col-2",
+		ListPosition:   &pos,
 	})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
@@ -976,5 +982,155 @@ func TestCard_CustomFields_EmptyWhenNeitherKeyPresent(t *testing.T) {
 	}
 	if len(card.CustomFields()) != 0 {
 		t.Errorf("card.CustomFields() = %v, want empty", card.CustomFields())
+	}
+}
+
+// TestUpdateCard_ColumnMoveWithoutWidget_NoNetworkCall pins the
+// wire-contract gotcha found by A6's evals: Favro answers a column
+// move that omits widgetCommonId with HTTP 200 and a stub card, and
+// does not move the card. The request never leaves this process.
+func TestUpdateCard_ColumnMoveWithoutWidget_NoNetworkCall(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		req  favro.UpdateCardRequest
+	}{
+		{"column", favro.UpdateCardRequest{ColumnID: "col-2"}},
+		{"lane", favro.UpdateCardRequest{LaneID: "ln-2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {
+				// Should never be called.
+			}}
+			srv := httptest.NewServer(h)
+			t.Cleanup(srv.Close)
+			c := newTestClient(srv)
+
+			_, err := c.UpdateCard(context.Background(), "ci-1", tc.req)
+			if !errors.Is(err, errMoveNeedsWidget) {
+				t.Errorf("err = %v, want %v", err, errMoveNeedsWidget)
+			}
+			if len(h.seen()) != 0 {
+				t.Errorf("h.seen() = %v, want empty", h.seen())
+			}
+		})
+	}
+}
+
+// TestUpdateCard_RenameNeedsNoWidget pins the other half of that
+// contract: the widget is required for a move and for nothing else. A
+// guard that asked for it on every update would be a worse bug than
+// the one it replaced.
+func TestUpdateCard_RenameNeedsNoWidget(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","name":"renamed"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.UpdateCard(context.Background(), "ci-1", favro.UpdateCardRequest{Name: "renamed"})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got.Name != "renamed" {
+		t.Errorf("got.Name = %v, want %v", got.Name, "renamed")
+	}
+}
+
+// TestUpdateCard_MoveIgnored pins that a 200 is not taken as
+// confirmation. The stub body is the one Favro returns for a move it
+// ignores, recorded live 2026-09-15.
+func TestUpdateCard_MoveIgnored(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		body string
+		got  string
+	}{
+		{"stub response", `{"cardId":"ci-1","cardCommonId":"cc-1","name":"a card","timeOnBoard":{"time":12}}`, ""},
+		{"still in the old column", `{"cardId":"ci-1","columnId":"col-1"}`, "col-1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}}
+			srv := httptest.NewServer(h)
+			t.Cleanup(srv.Close)
+			c := newTestClient(srv)
+
+			_, err := c.UpdateCard(context.Background(), "ci-1", favro.UpdateCardRequest{
+				WidgetCommonID: "w-1",
+				ColumnID:       "col-2",
+			})
+			var ignored *MoveIgnoredError
+			if !errors.As(err, &ignored) {
+				t.Fatalf("err = %v, want *MoveIgnoredError", err)
+			}
+			if ignored.Got != tc.got {
+				t.Errorf("ignored.Got = %q, want %q", ignored.Got, tc.got)
+			}
+			if ignored.Want != "col-2" {
+				t.Errorf("ignored.Want = %q, want %q", ignored.Want, "col-2")
+			}
+		})
+	}
+}
+
+// TestMoveCard_ColumnMoveWithoutWidget pins that the dedicated move
+// tool inherits the guard rather than carrying its own copy of it.
+func TestMoveCard_ColumnMoveWithoutWidget(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, _ http.ResponseWriter) {
+		// Should never be called.
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	_, err := c.MoveCard(context.Background(), "ci-1", favro.MoveCardRequest{ColumnID: "col-2"})
+	if !errors.Is(err, errMoveNeedsWidget) {
+		t.Errorf("err = %v, want %v", err, errMoveNeedsWidget)
+	}
+	if len(h.seen()) != 0 {
+		t.Errorf("h.seen() = %v, want empty", h.seen())
+	}
+}
+
+// TestMoveCard_ColumnMoveNeedsNoListPosition pins the correction to
+// the Phase 5.3 note. A column move lands without one; the field that
+// was actually missing is widgetCommonId.
+func TestMoveCard_ColumnMoveNeedsNoListPosition(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(rec recordedRequest, w http.ResponseWriter) {
+		requireJSONEq(t, `{"widgetCommonId":"w-1","columnId":"col-2"}`, rec.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","widgetCommonId":"w-1","columnId":"col-2"}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	got, err := c.MoveCard(context.Background(), "ci-1", favro.MoveCardRequest{
+		WidgetCommonID: "w-1",
+		ColumnID:       "col-2",
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got.ColumnID != "col-2" {
+		t.Errorf("got.ColumnID = %v, want %v", got.ColumnID, "col-2")
 	}
 }

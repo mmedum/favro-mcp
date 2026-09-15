@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 )
@@ -74,25 +73,25 @@ func score(h Harness, task Task, run *Run) Result {
 	if !res.ok() {
 		mark = "FAIL"
 	}
-	fmt.Printf("  %-4s %d call(s), $%.3f\n", mark, res.Calls, res.CostUSD)
+	out.line("  %-4s %d call(s), $%.3f", mark, res.Calls, res.CostUSD)
 	if res.EndState != nil {
-		fmt.Printf("       end state: %v\n", res.EndState)
+		out.line("       end state: %v", res.EndState)
 	}
 	if res.Trace != nil {
-		fmt.Printf("       trace: %v\n", res.Trace)
+		out.line("       trace: %v", res.Trace)
 	}
 	if res.Calls > res.MaxCalls {
-		fmt.Printf("       took %d calls, budget %d — it got there by flailing\n", res.Calls, res.MaxCalls)
+		out.line("       took %d calls, budget %d — it got there by flailing", res.Calls, res.MaxCalls)
 	}
 	// The trace is the finding. A failure says the surface is hard to
 	// use; only the sequence says HOW, and reading it is the whole
 	// point of running this rather than a unit test.
 	if !res.ok() {
 		for i, c := range run.Calls {
-			fmt.Printf("       %2d. %s %s\n", i+1, c.Tool, args(c.Args))
+			out.line("       %2d. %s %s", i+1, c.Tool, args(c.Args))
 		}
 		if run.Answer != "" {
-			fmt.Printf("       answered: %s\n", clip(run.Answer, 160))
+			out.line("       answered: %s", clip(run.Answer, 160))
 		}
 	}
 	return res
@@ -104,7 +103,7 @@ func score(h Harness, task Task, run *Run) Result {
 // which half went unchecked is worth more than one that quietly checks
 // nothing, and that sentence is the only warning a reader gets.
 func report(results []Result) error {
-	fmt.Printf("\n%s\n", strings.Repeat("─", 60))
+	out.line("\n%s", strings.Repeat("─", 60))
 	passed, spent := 0, 0.0
 	for _, r := range results {
 		spent += r.CostUSD
@@ -117,16 +116,16 @@ func report(results []Result) error {
 		if !r.ok() {
 			mark = "FAIL"
 		}
-		fmt.Printf("%s %-24s %d/%d calls  $%.3f\n", mark, r.Task, r.Calls, r.MaxCalls, r.CostUSD)
+		out.line("%s %-24s %d/%d calls  $%.3f", mark, r.Task, r.Calls, r.MaxCalls, r.CostUSD)
 		if r.Unverifiable != "" {
-			fmt.Printf("     unchecked: %s\n", r.Unverifiable)
+			out.line("     unchecked: %s", r.Unverifiable)
 		}
 	}
-	fmt.Printf("\n%d of %d passed, $%.2f spent\n", passed, len(results), spent)
+	out.line("\n%d of %d passed, $%.2f spent", passed, len(results), spent)
 
 	if passed < len(results) {
-		fmt.Fprintln(os.Stderr, "\nA failure here is a claim about the SURFACE, not about the model: "+
-			"a tool that works and cannot be used is what this exists to find. Read the trace before "+
+		out.fail("\nA failure here is a claim about the SURFACE, not about the model: " +
+			"a tool that works and cannot be used is what this exists to find. Read the trace before " +
 			"changing a description.")
 		return fmt.Errorf("%d of %d tasks failed", len(results)-passed, len(results))
 	}

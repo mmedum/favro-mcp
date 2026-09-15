@@ -2,18 +2,18 @@ package favroapi
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 // errMissingWidgetCommonID is returned by ListColumns when the caller
 // passes an empty widgetCommonID. Favro's /columns endpoint rejects
 // the unfiltered listing with HTTP 400, so the client short-circuits
 // locally and surfaces the requirement directly to the caller.
-var errMissingWidgetCommonID = errors.New("favro: widget_common_id is required for listing columns")
+var errMissingWidgetCommonID = render.Sentinel(render.ClassInvalid, "favro: widget_common_id is required for listing columns")
 
 // ListColumns returns one page of columns on the widget identified
 // by widgetCommonID. The widget id is mandatory — Favro's /columns

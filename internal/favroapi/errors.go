@@ -126,6 +126,32 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("Favro API error (HTTP %d) at %s: %s", e.Status, e.Path, e.Body)
 }
 
+// MoveIgnoredError is a 200 that did not move the card. Favro answers
+// a column move that omits widgetCommonId with HTTP 200 and a stub
+// body — cardId, cardCommonId, name and timeOnBoard, no columnId —
+// leaving the card where it was. UpdateCard refuses that shape before
+// it reaches the network, so what raises this is a well-formed move
+// Favro accepted and ignored for some other reason.
+//
+// It exists because hard rule 2 is not satisfied by reading the status
+// line: the response to the write is the cheapest read-back there is,
+// and the field the caller asked to change is in it.
+type MoveIgnoredError struct {
+	// Want is the requested columnId, Got the one Favro answered with.
+	// Got is empty when the response carried no column at all, which
+	// is the stub shape.
+	Want string
+	Got  string
+}
+
+func (e *MoveIgnoredError) Error() string {
+	got := "no column at all"
+	if e.Got != "" {
+		got = "column " + e.Got
+	}
+	return fmt.Sprintf("Favro accepted the move and did not perform it: the card came back in %s, not the requested column %s", got, e.Want)
+}
+
 // The error vocabulary, named by the errors themselves.
 //
 // A class used to be read off these types from outside, by a switch in
@@ -172,6 +198,22 @@ func (e *ValidationError) ErrorClass() render.Class { return render.ClassInvalid
 
 // ErrorClass reports a 5xx that survived the retry budget.
 func (e *TransientError) ErrorClass() render.Class { return render.ClassUnavailable }
+
+// ErrorClass reports a write Favro accepted and did not perform.
+//
+// Not ClassInvalid: the arguments passed every check this client makes
+// and Favro raised no complaint about them, so telling the caller to
+// change them sends it looking in the wrong place. Not ClassConflict
+// either — that means the resource moved underneath the caller, which
+// is a specific story there is no evidence for. What is left is
+// "Favro failed", which is what ClassUnavailable says.
+//
+// It is the closest of the nine and it is not exact: unavailable tells
+// the caller to retry later, and this result is deterministic, so a
+// retry returns it forever. A class meaning "accepted and dropped;
+// report it" is §17 decision 5, held open until a second path needs one
+// rather than settled by the first.
+func (e *MoveIgnoredError) ErrorClass() render.Class { return render.ClassUnavailable }
 
 // ErrorClass maps the statuses *APIError can actually carry.
 //

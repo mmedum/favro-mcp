@@ -548,11 +548,12 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_move_card",
 			Args: map[string]any{
-				"card_id":   AnyCardID,
-				"column_id": AnyColumnID,
-				"dry_run":   true,
+				"card_id":          AnyCardID,
+				"widget_common_id": AnyWidgetCommonID,
+				"column_id":        AnyColumnID,
+				"dry_run":          true,
 			},
-			Why: "dry-run: a move needs a destination, and a column is one",
+			Why: "dry-run: a column move, which Favro answers 200 to and ignores unless the widget rides along",
 		},
 		{
 			Tool: "favro_ping",

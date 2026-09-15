@@ -14,21 +14,32 @@ import (
 
 func environ() []string { return os.Environ() }
 
-// builtins are the host's own tools, which the model must not have. The
-// task is to use THIS server; anything reachable another way makes the
-// result a claim about the host instead.
-var builtins = []string{
-	"Bash", "Read", "Write", "Edit", "NotebookEdit", "Glob", "Grep",
-	"WebFetch", "WebSearch", "Task", "Agent", "TodoWrite", "ToolSearch",
-	"SlashCommand", "KillShell", "BashOutput",
-}
-
 // drive gives one task to a model and records what it did.
 //
-// The model gets this server's tools and nothing else. --strict-mcp-config
-// keeps any of the developer's own MCP servers out of the run, and the
-// disallow list keeps the model off the filesystem and the shell: an
-// eval that lets a model reach for Bash is scoring Bash.
+// The model gets this server's tools and nothing else, and the way that
+// is spelled matters more than it looks. The first version of this
+// harness named the host's built-ins in a disallow list, which is a
+// denylist and fails open: it listed six, and the model used Grep and
+// Glob — both absent — to read the maintainer's own notes about Favro's
+// quirks mid-task. Naming more of them was the wrong repair. A
+// hand-typed list of a surface somebody else ships is exactly what hard
+// rule 14 says not to build, and re-auditing it against each CLI
+// release is a job nobody will do; a later read found Monitor still
+// missing, which runs a shell command under a name that is not Bash.
+//
+// So the built-in surface is turned off at the source instead:
+// --tools "" disables all of them, and the only tools that survive are
+// the MCP ones --allowed-tools names. --setting-sources= drops the
+// developer's own settings, hooks, skills and pre-approved permission
+// rules, which would otherwise decide what a built-in may do, and
+// --strict-mcp-config keeps their other MCP servers out. What is left
+// is this server's tools, which is the thing being scored.
+//
+// This is also the security boundary, not just a scoring one. The run
+// reads a real organization, so card text written by anyone with access
+// to it reaches the model, and the process tree holds a live Favro
+// credential. A built-in that runs a command is an exfiltration path
+// for injected card content; there must not be one.
 //
 // The model's server is started WITHOUT FAVRO_ENABLE_DESTRUCTIVE, so it
 // cannot delete anything. Cleanup is the harness's job, on its own
@@ -41,13 +52,14 @@ func drive(ctx context.Context, cfgPath, prompt, model string, budget float64) *
 		"--mcp-config", cfgPath,
 		"--strict-mcp-config",
 		"--allowed-tools", "mcp__favro__*",
-		// Every built-in, by name. --allowed-tools does NOT exclude
-		// them: the first run of this harness listed six and the model
-		// used Grep and Glob to read the maintainer's own notes about
-		// Favro's quirks, which is not a surface this server exposes.
-		// An eval that lets a model reach outside the tools is scoring
-		// something else.
-		"--disallowed-tools", strings.Join(builtins, ","),
+		// "" is the CLI's own "disable every built-in". Derived from
+		// the flag rather than from a list of names this repository
+		// would have to keep in step with a surface it does not own.
+		"--tools", "",
+		// No user, project or local settings: the maintainer's
+		// permission rules, hooks and skills are not part of what is
+		// being scored, and they decide what a built-in may do.
+		"--setting-sources", "",
 		"--model", model,
 		"--max-budget-usd", fmt.Sprintf("%.2f", budget),
 		"--permission-mode", "acceptEdits",

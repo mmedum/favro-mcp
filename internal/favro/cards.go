@@ -366,9 +366,8 @@ type CreateCardRequest struct {
 // repositioning). Only relevant when ListPosition / ColumnID is set.
 //
 // ListPosition / SheetPosition are JSON numbers — see CreateCardRequest
-// for the wire contract. A column move that omits listPosition is a
-// silent 200-empty-body no-op (verified live Phase 5.3); MoveCard
-// surfaces this in its method docs.
+// for the wire contract. Neither is required to move a card between
+// columns; WidgetCommonID is. MoveCardRequest carries that contract.
 //
 // CustomFields carries per-card custom-field updates (Phase 5.5
 // added). The MCP `favro_set_card_custom_field` convenience tool
@@ -521,12 +520,23 @@ type CustomFieldTimeReport struct {
 // WidgetCommonID / ColumnID / LaneID must be set; an empty request
 // would PUT a no-op and silently succeed.
 //
-// **Wire-contract gotcha (verified live in Phase 5.3):** a column
-// move (ColumnID set) that omits ListPosition silently no-ops —
-// Favro returns HTTP 200 with an empty body and the card stays put.
-// Callers that move between columns must set ListPosition. 0 is the
-// top; a number larger than the column's current max sends the card
-// to the bottom; fractional values slot between siblings.
+// **Wire-contract gotcha (verified live 2026-09-15):** a move that
+// sets ColumnID or LaneID must also set WidgetCommonID. Without it
+// Favro answers HTTP 200 with a stub card and leaves the card where it
+// was — favroapi.UpdateCard refuses the shape rather than sending it.
+// For a move within one board WidgetCommonID is the board the card is
+// already on.
+//
+// Phase 5.3 recorded this no-op and blamed ListPosition, which was the
+// wrong field: a column move lands without one. ListPosition still
+// chooses where in the destination the card arrives — 0 is the top, a
+// number past the column's current max sends it to the bottom, and
+// fractional values slot between siblings.
+//
+// A move to a different widget is an ADD, not a relocation: the source
+// instance stays on its board and a second cardId appears on the
+// target, both under the one cardCommonId. Favro has no single call
+// that relocates a card between boards.
 //
 // DragMode defaults to Favro's "commit" when empty (cards around
 // the destination position re-shuffle); pass "move" to leave

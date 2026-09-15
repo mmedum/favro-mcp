@@ -1,7 +1,7 @@
 {
   "server": "favro-mcp",
-  "version": "v1.1.2-15-ge776619-dirty (e776619)",
-  "sdk": "v1.7.0",
+  "version": "v2.0.1-1-gad190a0-dirty (ad190a0)",
+  "sdk": "v1.8.0",
   "tools": [
     {
       "annotations": {
@@ -7087,7 +7087,7 @@
         "readOnlyHint": false,
         "title": "Move Favro card"
       },
-      "description": "Move a Favro card to a different widget, column, and/or lane. At least one of widget_common_id / column_id / lane_id must be set. Convenience over favro_update_card for the common 'move card to \u003cboard\u003e' workflow. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+      "description": "Move a Favro card between columns or lanes on a board. At least one of widget_common_id / column_id / lane_id must be set, and a column or lane move must ALSO pass widget_common_id — the board the card is already on — because Favro answers 200 and moves nothing without it. Passing a different widget_common_id adds the card to that board and leaves the original where it is; Favro has no cross-board relocation. The result is checked against what was asked for, so a move Favro accepts and ignores comes back as an error rather than a success. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7096,7 +7096,7 @@
             "type": "string"
           },
           "column_id": {
-            "description": "target columnId on the destination widget",
+            "description": "target columnId on the destination widget. Requires widget_common_id.",
             "type": "string"
           },
           "drag_mode": {
@@ -7108,11 +7108,11 @@
             "type": "boolean"
           },
           "lane_id": {
-            "description": "target laneId on the destination widget",
+            "description": "target laneId on the destination widget. Requires widget_common_id.",
             "type": "string"
           },
           "list_position": {
-            "description": "insertion position in the destination column as a JSON number. **Required for column moves** — Favro silently no-ops a column move that omits this. 0 = top; high number = bottom; fractional slots between siblings.",
+            "description": "optional insertion position in the destination column as a JSON number. 0 = top; high number = bottom; fractional slots between siblings. Omit to let Favro place the card.",
             "type": [
               "null",
               "number"
@@ -7126,7 +7126,7 @@
             ]
           },
           "widget_common_id": {
-            "description": "target widgetCommonId (resolve via favro_resolve_widget). At least one of widget_common_id, column_id, or lane_id must be set.",
+            "description": "the board the card ends up on (resolve via favro_resolve_widget). **Required whenever column_id or lane_id is set** — Favro answers 200 and moves nothing without it. For a move within one board this is the board the card is already on; favro_get_card returns it. Passing a DIFFERENT board adds the card there and leaves the original in place.",
             "type": "string"
           }
         },
@@ -10178,7 +10178,7 @@
             "type": "string"
           },
           "column_id": {
-            "description": "move card to a different column",
+            "description": "move card to a different column. Requires widget_common_id.",
             "type": "string"
           },
           "detailed_description": {
@@ -10198,11 +10198,11 @@
             "type": "string"
           },
           "lane_id": {
-            "description": "move card to a different lane",
+            "description": "move card to a different lane. Requires widget_common_id.",
             "type": "string"
           },
           "list_position": {
-            "description": "position on a kanban widget as a JSON number. 0 places the card at the top of the column; a number larger than the current max sends it to the bottom; fractional values (e.g. 3.5) slot between siblings. **Required for column moves** — a column_id change without list_position silently no-ops.",
+            "description": "optional position on a kanban widget as a JSON number. 0 places the card at the top of the column; a number larger than the current max sends it to the bottom; fractional values (e.g. 3.5) slot between siblings. A column move does NOT need it — widget_common_id is the field Favro requires there.",
             "type": [
               "null",
               "number"
@@ -10248,7 +10248,7 @@
             "type": "string"
           },
           "widget_common_id": {
-            "description": "move card to a different widget; for relocations prefer the dedicated favro_move_card tool",
+            "description": "the board the card ends up on; **required whenever column_id or lane_id is set**, and for a same-board move it is the board the card is already on. For relocations prefer the dedicated favro_move_card tool",
             "type": "string"
           }
         },

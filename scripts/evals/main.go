@@ -41,7 +41,7 @@ func (h *harness) Sandbox() Sandbox { return h.box }
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "evals:", err)
+		out.fail("evals: %v", err)
 		os.Exit(1)
 	}
 }
@@ -77,9 +77,9 @@ func run() error {
 	if !*keep {
 		defer h.teardown()
 	} else {
-		defer func() { fmt.Printf("sandbox kept: collection %s\n", h.box.CollectionID) }()
+		defer func() { out.line("sandbox kept: collection %s", h.box.CollectionID) }()
 	}
-	fmt.Println("building the sandbox…")
+	out.line("building the sandbox…")
 	if err := h.build(); err != nil {
 		return fmt.Errorf("building the sandbox: %w", err)
 	}
@@ -110,7 +110,7 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", task.Name, err)
 		}
-		fmt.Printf("\n▸ %s\n", task.Name)
+		out.line("\n▸ %s", task.Name)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		r := drive(ctx, cfg, prompt, *model, *budget)
@@ -175,7 +175,7 @@ func (h *harness) build() error {
 			return fmt.Errorf("seeding %q: %w", title, err)
 		}
 	}
-	fmt.Printf("  board %q, 3 cards, column %q\n", h.box.BoardName, doneColumn)
+	out.line("  board %q, 3 cards, column %q", h.box.BoardName, doneColumn)
 	return nil
 }
 
@@ -197,22 +197,22 @@ func (h *harness) teardown() {
 	if h.box.CollectionID == "" {
 		return
 	}
-	fmt.Println("\nremoving the sandbox…")
+	out.line("\nremoving the sandbox…")
 	if h.box.WidgetCommonID != "" {
 		if _, err := h.Call("favro_delete_widget", map[string]any{
 			"widget_common_id": h.box.WidgetCommonID,
 		}); err != nil {
-			fmt.Fprintf(os.Stderr, "  could not delete the board: %v\n", err)
+			out.fail("  could not delete the board: %v", err)
 		}
 	}
 	if _, err := h.Call("favro_delete_collection", map[string]any{
 		"collection_id": h.box.CollectionID,
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "  COULD NOT DELETE collection %s — remove it by hand: %v\n",
+		out.fail("  COULD NOT DELETE collection %s — remove it by hand: %v",
 			h.box.CollectionID, err)
 		return
 	}
-	fmt.Println("  gone")
+	out.line("  gone")
 }
 
 // modelConfig writes the .mcp.json the model's session uses. It does
