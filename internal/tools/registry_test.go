@@ -288,7 +288,7 @@ func TestEverySentinelIsClassified(t *testing.T) {
 	t.Parallel()
 
 	var files []string
-	for _, dir := range []string{".", "../service"} {
+	for _, dir := range []string{".", "../service", "../favroapi"} {
 		matched, err := filepath.Glob(filepath.Join(dir, "*.go"))
 		if err := err; err != nil {
 			t.Fatalf("err: %v", err)
@@ -352,12 +352,15 @@ func TestEverySentinelIsClassified(t *testing.T) {
 	}
 
 	// The floor, twice over: a glob that matched nothing and a package
-	// with no sentinels left both look like success.
-	if filesRead < 40 {
-		t.Errorf("read only %d source files: got %v, want at least %v", filesRead, filesRead, 40)
+	// with no sentinels left both look like success. ../favroapi joined
+	// the glob when a move guard landed there and neither this test nor
+	// TestEveryErrorTypeNamesItsClass — which reads declared types, not
+	// vars — would have held it.
+	if filesRead < 65 {
+		t.Errorf("read only %d source files: got %v, want at least %v", filesRead, filesRead, 65)
 	}
-	if checked < 14 {
-		t.Errorf("found only %d sentinels: got %v, want at least %v", checked, checked, 14)
+	if checked < 19 {
+		t.Errorf("found only %d sentinels: got %v, want at least %v", checked, checked, 19)
 	}
 }
 
@@ -385,4 +388,103 @@ func TestClassedErrorsSurviveWrapping(t *testing.T) {
 			t.Errorf("wrapping lost the class of %v: got %v, want %v", tc.err, got, tc.want)
 		}
 	}
+}
+
+// TestColumnMoveContractIsStatedOnce holds every tool schema to the one
+// wire contract for a column move, rather than to whichever half of it
+// the author of a given struct tag remembered.
+//
+// The contract, verified live 2026-09-15: Favro requires
+// widgetCommonId whenever columnId or laneId is set, and answers 200
+// with a stub card without it. list_position has nothing to do with it.
+//
+// This test exists because the repository already got this wrong once
+// in the way rule 14 describes. v1.0.0 recorded all four fields a
+// column move sends; the wire-type comment and two struct tags then
+// narrowed that to list_position alone — the one field that does not
+// matter — and left all four optional. Prose said it, nothing held it,
+// and it decayed into the opposite of the finding. The list of tools
+// comes from the registered surface, so a card tool added later is
+// covered by having been registered.
+func TestColumnMoveContractIsStatedOnce(t *testing.T) {
+	t.Parallel()
+
+	all := listToolsWith(t, Options{Destructive: true})
+	var checkedPosition, checkedWidget int
+
+	for name, tool := range all {
+		props := inputProperties(t, tool)
+		if props == nil {
+			continue
+		}
+		// Nothing may tell the model that a column move needs a
+		// position. It does not, and saying so sends it looking at the
+		// wrong argument when the move silently fails.
+		if pos, ok := props["list_position"]; ok {
+			checkedPosition++
+			if desc := strings.ToLower(pos.Description); strings.Contains(desc, "required for column") {
+				t.Errorf("%s: list_position claims to be required for a column move; widget_common_id is the field Favro requires", name)
+			}
+		}
+		// A tool taking both a card_id and a column_id is relocating an
+		// existing card, which is the only shape the contract binds —
+		// a column_id alone is a filter (favro_list_cards), the column
+		// a new card is created in, or the column itself
+		// (favro_update_column). Such a tool must offer the widget and
+		// must say it is required, because the failure without it is a
+		// success.
+		if _, ok := props["card_id"]; !ok {
+			continue
+		}
+		if _, ok := props["column_id"]; !ok {
+			continue
+		}
+		checkedWidget++
+		widget, ok := props["widget_common_id"]
+		if !ok {
+			t.Errorf("%s: moves a card between columns and takes no widget_common_id, so every move it makes is a silent no-op", name)
+			continue
+		}
+		if desc := strings.ToLower(widget.Description); !strings.Contains(desc, "required") {
+			t.Errorf("%s: takes a card_id and a column_id and its widget_common_id description does not say it is required for that; Favro answers 200 and moves nothing without it", name)
+		}
+	}
+
+	// The floor: a schema walk that found no such tool would pass every
+	// assertion above without reading anything.
+	if checkedPosition < 3 {
+		t.Errorf("read only %d list_position inputs: got %v, want at least %v", checkedPosition, checkedPosition, 3)
+	}
+	if checkedWidget < 2 {
+		t.Errorf("read only %d tools taking both column_id and widget_common_id: got %v, want at least %v", checkedWidget, checkedWidget, 2)
+	}
+}
+
+// schemaProperty is the one part of an input schema this file reads:
+// what the model is told an argument means.
+type schemaProperty struct {
+	Description string `json:"description"`
+}
+
+// inputProperties unwraps a registered tool's input schema into its
+// top-level properties. The schema arrives from ListTools as the
+// marshalled form rather than a typed value, so it round-trips through
+// JSON. Returns nil for a tool with no object schema.
+func inputProperties(t *testing.T, tool *mcp.Tool) map[string]schemaProperty {
+	t.Helper()
+
+	if tool.InputSchema == nil {
+		return nil
+	}
+	raw, err := json.Marshal(tool.InputSchema)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	var schema struct {
+		Properties map[string]schemaProperty `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	return schema.Properties
 }

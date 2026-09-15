@@ -51,12 +51,12 @@ type updateCardInput struct {
 	CardID              string   `json:"card_id" jsonschema:"the per-widget cardId to update (NOT cardCommonId — Favro PUT /cards/{id} expects the per-widget instance id)"`
 	Name                string   `json:"name,omitempty" jsonschema:"new card name; omit to keep current"`
 	DetailedDescription string   `json:"detailed_description,omitempty" jsonschema:"replacement markdown body. Phase 6's favro_append/prepend/replace_in_card_description tools provide surgical edits; this one whole-body replaces."`
-	WidgetCommonID      string   `json:"widget_common_id,omitempty" jsonschema:"move card to a different widget; for relocations prefer the dedicated favro_move_card tool"`
-	ColumnID            string   `json:"column_id,omitempty" jsonschema:"move card to a different column"`
-	LaneID              string   `json:"lane_id,omitempty" jsonschema:"move card to a different lane"`
+	WidgetCommonID      string   `json:"widget_common_id,omitempty" jsonschema:"the board the card ends up on; **required whenever column_id or lane_id is set**, and for a same-board move it is the board the card is already on. For relocations prefer the dedicated favro_move_card tool"`
+	ColumnID            string   `json:"column_id,omitempty" jsonschema:"move card to a different column. Requires widget_common_id."`
+	LaneID              string   `json:"lane_id,omitempty" jsonschema:"move card to a different lane. Requires widget_common_id."`
 	ParentCardID        string   `json:"parent_card_id,omitempty" jsonschema:"set or change the parent card"`
 	DragMode            string   `json:"drag_mode,omitempty" jsonschema:"'commit' (Favro's default — neighboring cards re-shuffle) or 'move' (no repositioning of siblings). Only relevant with column_id / list_position / sheet_position."`
-	ListPosition        *float64 `json:"list_position,omitempty" jsonschema:"position on a kanban widget as a JSON number. 0 places the card at the top of the column; a number larger than the current max sends it to the bottom; fractional values (e.g. 3.5) slot between siblings. **Required for column moves** — a column_id change without list_position silently no-ops."`
+	ListPosition        *float64 `json:"list_position,omitempty" jsonschema:"optional position on a kanban widget as a JSON number. 0 places the card at the top of the column; a number larger than the current max sends it to the bottom; fractional values (e.g. 3.5) slot between siblings. A column move does NOT need it — widget_common_id is the field Favro requires there."`
 	SheetPosition       *float64 `json:"sheet_position,omitempty" jsonschema:"position on a sheet widget as a JSON number — same numeric vocabulary as list_position"`
 	AddAssignmentIDs    []string `json:"add_assignment_ids,omitempty" jsonschema:"userIds to add to the card's assignments. Resolve via favro_resolve_user."`
 	RemoveAssignmentIDs []string `json:"remove_assignment_ids,omitempty" jsonschema:"userIds to remove from the card's assignments"`
@@ -83,10 +83,10 @@ type unarchiveCardInput struct {
 type moveCardInput struct {
 	dryRunInput
 	CardID         string   `json:"card_id" jsonschema:"the per-widget cardId to move"`
-	WidgetCommonID string   `json:"widget_common_id,omitempty" jsonschema:"target widgetCommonId (resolve via favro_resolve_widget). At least one of widget_common_id, column_id, or lane_id must be set."`
-	ColumnID       string   `json:"column_id,omitempty" jsonschema:"target columnId on the destination widget"`
-	LaneID         string   `json:"lane_id,omitempty" jsonschema:"target laneId on the destination widget"`
-	ListPosition   *float64 `json:"list_position,omitempty" jsonschema:"insertion position in the destination column as a JSON number. **Required for column moves** — Favro silently no-ops a column move that omits this. 0 = top; high number = bottom; fractional slots between siblings."`
+	WidgetCommonID string   `json:"widget_common_id,omitempty" jsonschema:"the board the card ends up on (resolve via favro_resolve_widget). **Required whenever column_id or lane_id is set** — Favro answers 200 and moves nothing without it. For a move within one board this is the board the card is already on; favro_get_card returns it. Passing a DIFFERENT board adds the card there and leaves the original in place."`
+	ColumnID       string   `json:"column_id,omitempty" jsonschema:"target columnId on the destination widget. Requires widget_common_id."`
+	LaneID         string   `json:"lane_id,omitempty" jsonschema:"target laneId on the destination widget. Requires widget_common_id."`
+	ListPosition   *float64 `json:"list_position,omitempty" jsonschema:"optional insertion position in the destination column as a JSON number. 0 = top; high number = bottom; fractional slots between siblings. Omit to let Favro place the card."`
 	SheetPosition  *float64 `json:"sheet_position,omitempty" jsonschema:"insertion position on a sheet widget as a JSON number — same numeric vocabulary as list_position"`
 	DragMode       string   `json:"drag_mode,omitempty" jsonschema:"'commit' (Favro's default — neighboring cards re-shuffle) or 'move' (no repositioning of siblings)"`
 }
@@ -248,11 +248,15 @@ func registerUnarchiveCard(reg *registry, r *service.Resolver) {
 func registerMoveCard(reg *registry, r *service.Resolver) {
 	addTool(reg, &mcp.Tool{
 		Name: moveCardToolName,
-		Description: "Move a Favro card to a different widget, column, and/or lane. At " +
-			"least one of widget_common_id / column_id / lane_id must be set. Convenience " +
-			"over favro_update_card for the common 'move card to <board>' workflow. " +
-			"Successful live writes invalidate the search-cards cache. Pass `dry_run: true` " +
-			"to preview.",
+		Description: "Move a Favro card between columns or lanes on a board. At least one " +
+			"of widget_common_id / column_id / lane_id must be set, and a column or lane " +
+			"move must ALSO pass widget_common_id — the board the card is already on — " +
+			"because Favro answers 200 and moves nothing without it. Passing a different " +
+			"widget_common_id adds the card to that board and leaves the original where it " +
+			"is; Favro has no cross-board relocation. The result is checked against what was " +
+			"asked for, so a move Favro accepts and ignores comes back as an error rather " +
+			"than a success. Successful live writes invalidate the search-cards cache. Pass " +
+			"`dry_run: true` to preview.",
 		Annotations: mutating("Move Favro card", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in moveCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		writeCtx := ctx
