@@ -12,14 +12,24 @@ import (
 	"strings"
 )
 
-// transcriptDriverDir is the live driver the gate reads.
-const transcriptDriverDir = "scripts/livefavro"
+// transcriptDriverDirs are the drivers the gate reads: every program in
+// this repository that points a live session at a real organization and
+// prints what came back.
+//
+// It was one directory, as a const, until scripts/evals was added
+// beside it and printed a failing task's whole trace — live ids the
+// model had resolved — with nothing failing, because the gate read the
+// other driver. A rule scoped to one path is a rule about that path.
+// Adding a driver means adding it here.
+var transcriptDriverDirs = []string{"scripts/livefavro", "scripts/evals"}
 
 // transcriptPrinters are the functions allowed to format output. They
 // are the redactor's own methods.
 var transcriptPrinters = map[string]bool{
-	"printer.line":   true,
-	"printer.result": true,
+	"printer.line":     true,
+	"printer.result":   true,
+	"printer.fail":     true,
+	"printer.redacted": true,
 }
 
 // transcriptNamesTheTerminal are the only functions allowed to mention
@@ -41,8 +51,8 @@ var transcriptNamesTheTerminal = map[string]bool{
 // transcriptFloors: a parser that matched nothing prints the same
 // cheerful sentence as one that matched everything.
 const (
-	minTranscriptFiles    = 1
-	minTranscriptMentions = 2
+	minTranscriptFiles    = 2
+	minTranscriptMentions = 4
 )
 
 // transcript fails if anything in the live driver reaches the terminal
@@ -59,25 +69,63 @@ func transcript(w io.Writer, _ []string) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(root, filepath.FromSlash(transcriptDriverDir))
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return fmt.Errorf("%w (the live driver is %s)", err, transcriptDriverDir)
-	}
 
 	var problems []string
 	files, writes, mentions := 0, 0, 0
 	fset := token.NewFileSet()
 
+	for _, driverDir := range transcriptDriverDirs {
+		dir := filepath.Join(root, filepath.FromSlash(driverDir))
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return fmt.Errorf("%w (the drivers are %s)", err, strings.Join(transcriptDriverDirs, ", "))
+		}
+		f, wr, m, p := transcriptScan(fset, dir, driverDir, entries)
+		files, writes, mentions = files+f, writes+wr, mentions+m
+		problems = append(problems, p...)
+	}
+
+	if files < minTranscriptFiles {
+		return fmt.Errorf("read %d Go files across %s; that is not the drivers", files, strings.Join(transcriptDriverDirs, ", "))
+	}
+	if mentions < minTranscriptMentions {
+		return fmt.Errorf("found %d mentions of os.Stdout/os.Stderr across %s, expected at least %d — this gate is not recognising them, which is worse than finding none",
+			mentions, strings.Join(transcriptDriverDirs, ", "), minTranscriptMentions)
+	}
+	if len(problems) > 0 {
+		sort.Strings(problems)
+		return fmt.Errorf("a live driver prints without redacting:\n  %s", strings.Join(problems, "\n  "))
+	}
+
+	_, err = fmt.Fprintf(w,
+		"transcript ok: %d files across %s, %d formatted writes and %d mentions of the terminal, each in a function allowed to have one\n",
+		files, strings.Join(transcriptDriverDirs, " and "), writes, mentions)
+	return err
+}
+
+// transcriptScan reads one driver directory and reports what it found.
+func transcriptScan(fset *token.FileSet, dir, driverDir string, entries []os.DirEntry) (files, writes, mentions int, problems []string) {
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
 			continue
 		}
+		path := filepath.Join(dir, e.Name())
+		// A file built only when the driver is NOT built cannot reach a
+		// live organization: it is the stub that explains how to run the
+		// real thing. scripts/evals/disabled.go is the one today. The
+		// test holds this to exactly that shape, so it cannot become a
+		// way to opt a real driver file out.
+		if excluded, err := buildExcluded(path); err != nil {
+			problems = append(problems, fmt.Sprintf("%s/%s: %v", driverDir, e.Name(), err))
+			continue
+		} else if excluded {
+			continue
+		}
 		files++
-		file, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, 0)
+		file, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
-			return err
+			problems = append(problems, fmt.Sprintf("%s/%s: %v", driverDir, e.Name(), err))
+			continue
 		}
 
 		for _, decl := range file.Decls {
@@ -94,7 +142,7 @@ func transcript(w io.Writer, _ []string) error {
 						if !transcriptPrinters[where] && where != "fatal" {
 							problems = append(problems, fmt.Sprintf(
 								"%s/%s: %s calls %s; print through the Redactor instead (%s)",
-								transcriptDriverDir, e.Name(), where, target,
+								driverDir, e.Name(), where, target,
 								strings.Join(sortedKeys(transcriptPrinters), ", ")))
 						}
 					}
@@ -109,7 +157,7 @@ func transcript(w io.Writer, _ []string) error {
 				if !transcriptNamesTheTerminal[where] {
 					problems = append(problems, fmt.Sprintf(
 						"%s/%s: %s names %s; only %s may, so that everything else has to go through the redactor",
-						transcriptDriverDir, e.Name(), where, render(sel),
+						driverDir, e.Name(), where, render(sel),
 						strings.Join(sortedKeys(transcriptNamesTheTerminal), ", ")))
 				}
 				return true
@@ -117,22 +165,30 @@ func transcript(w io.Writer, _ []string) error {
 		}
 	}
 
-	if files < minTranscriptFiles {
-		return fmt.Errorf("read %d Go files in %s; that is not the driver", files, transcriptDriverDir)
-	}
-	if mentions < minTranscriptMentions {
-		return fmt.Errorf("found %d mentions of os.Stdout/os.Stderr in %s, expected at least %d — this gate is not recognising them, which is worse than finding none",
-			mentions, transcriptDriverDir, minTranscriptMentions)
-	}
-	if len(problems) > 0 {
-		sort.Strings(problems)
-		return fmt.Errorf("the live driver prints without redacting:\n  %s", strings.Join(problems, "\n  "))
-	}
+	return files, writes, mentions, problems
+}
 
-	_, err = fmt.Fprintf(w,
-		"transcript ok: %d files in %s, %d formatted writes and %d mentions of the terminal, each in a function allowed to have one\n",
-		files, transcriptDriverDir, writes, mentions)
-	return err
+// buildExcluded reports whether a file's //go:build constraint is a
+// negation — the "this program is not built" stub beside a tagged
+// driver. Read as text rather than evaluated: the question is only
+// whether the line starts with a !, and a constraint parser would be a
+// dependency on go/build's semantics for a one-line rule.
+func buildExcluded(path string) (bool, error) {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	for _, line := range strings.Split(string(src), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "//") {
+			if after, ok := strings.CutPrefix(line, "//go:build "); ok {
+				return strings.HasPrefix(strings.TrimSpace(after), "!"), nil
+			}
+			continue
+		}
+		break
+	}
+	return false, nil
 }
 
 // terminalWrite reports whether a call writes to stdout or stderr, and

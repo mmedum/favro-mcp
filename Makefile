@@ -178,3 +178,7 @@ check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes ap
 .PHONY: clean
 clean: ## remove build artifacts
 	$(RM) -r $(BIN_DIR) dist coverage.out coverage.html favro-mcp.plugin
+
+.PHONY: evals
+evals: build ## drive a model through the tools and score it (needs credentials + the claude CLI)
+	$(GO) run -tags=evals ./scripts/evals

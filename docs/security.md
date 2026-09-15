@@ -81,11 +81,18 @@ them and a public issue until they were registered.
 and says on its own output that it is unsafe to share. The token is
 scrubbed in that mode too.
 
-## The transcript the live driver writes
+## The transcript the live drivers write
 
-`scripts/livefavro` drives the built binary against a real organization
-and prints only through `internal/redact`; the `transcript` gate fails
-the build if anything else reaches the terminal.
+`scripts/livefavro` and `scripts/evals` both drive the built binary
+against a real organization and print only through `internal/redact`;
+the `transcript` gate fails the build if anything else reaches the
+terminal, in either of them.
+
+The gate read only the first of those for a day, and the second printed
+a failing task's whole trace — live ids the model had resolved — with
+nothing failing. It takes a list now, and its test names both drivers,
+because a gate that passes and a gate that looked at the wrong directory
+print the same sentence.
 
 **What that redactor cannot do is measured rather than assumed.** On a
 complete run — 122 steps, of which 104 reached Favro and 18 were skipped
@@ -97,6 +104,35 @@ and a pattern that caught it would catch the rest of the sentence. That
 is acceptable for a maintainer's terminal showing them an organization
 they already hold a token for. It is not acceptable in a file, and the
 leak gate cannot catch it either. **Do not commit a transcript.**
+
+## What the eval harness lets a model reach
+
+`make evals` points a model at a real organization through this server,
+which makes the run itself a trust boundary rather than only a test.
+Card text in that organization may have been written by anyone with
+access to it, and the process tree holds a live Favro credential — so a
+built-in tool that runs a command would be an exfiltration path for
+text the maintainer did not write.
+
+The confinement is fail-closed, and it is spelled that way deliberately:
+
+- `--tools ""` — the CLI's own switch for "no built-in tools at all".
+  This replaced a hand-written list of built-in names to disallow, which
+  is a denylist of a surface this repository does not own: it fails
+  open, it goes stale on the next CLI release, and it had already let
+  `Grep` and `Glob` through once. `Monitor`, which runs a shell command
+  under a name that is not `Bash`, was still missing from it.
+- `--allowed-tools mcp__favro__*` with `--strict-mcp-config` — this
+  server's tools, and no other MCP server the developer has configured.
+- `--setting-sources ""` — no user, project or local settings, so the
+  maintainer's pre-approved permission rules, hooks and skills do not
+  decide what the run may do.
+- The model's server is started **without** `FAVRO_ENABLE_DESTRUCTIVE`,
+  so it holds no delete tool. Teardown runs on the harness's own
+  session, which is the only place those exist.
+
+The sandbox it builds is its own collection and board, removed at the
+end of the run even if the build fails halfway.
 
 ## What can go wrong and what limits it
 
