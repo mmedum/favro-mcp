@@ -8,6 +8,11 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `favro_update_card`, `favro_move_card` and `favro_set_card_custom_field` read the affected value back after a live write and report in `notes` whether it actually changed. Hard rule 2 says a 200 from Favro is not confirmation and that a write is verified by reading the resource back; these three carried that as a caution in their descriptions, which is a guard that fires only if the model reads it. The two known cases are a `column_id` change carrying no `list_position`, and a custom-field write to a field the card's widget has not enabled — both accepted, discarded, and answered with a 200.
+- `skip_verify` on those three tools drops the read-back, for a caller about to read the card anyway or one that cannot afford the extra request.
+- Every mutating tool result can carry `notes`: what the tool did beyond the literal request, and what it observed about the write. `Result` is Favro's answer to the write, and hard rule 2 is that Favro's answer to a write is not evidence about the write.
+
 ## [2.0.1] - 2026-09-15
 
 Dependency and tooling only: no tool changed, no behaviour changed.

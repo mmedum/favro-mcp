@@ -48,6 +48,7 @@ type createCardInput struct {
 // with clearer LLM ergonomics).
 type updateCardInput struct {
 	dryRunInput
+	verifyInput
 	CardID              string   `json:"card_id" jsonschema:"the per-widget cardId to update (NOT cardCommonId — Favro PUT /cards/{id} expects the per-widget instance id)"`
 	Name                string   `json:"name,omitempty" jsonschema:"new card name; omit to keep current"`
 	DetailedDescription string   `json:"detailed_description,omitempty" jsonschema:"replacement markdown body. Phase 6's favro_append/prepend/replace_in_card_description tools provide surgical edits; this one whole-body replaces."`
@@ -82,6 +83,7 @@ type unarchiveCardInput struct {
 // rejects with a typed error.
 type moveCardInput struct {
 	dryRunInput
+	verifyInput
 	CardID         string   `json:"card_id" jsonschema:"the per-widget cardId to move"`
 	WidgetCommonID string   `json:"widget_common_id,omitempty" jsonschema:"target widgetCommonId (resolve via favro_resolve_widget). At least one of widget_common_id, column_id, or lane_id must be set."`
 	ColumnID       string   `json:"column_id,omitempty" jsonschema:"target columnId on the destination widget"`
@@ -153,7 +155,11 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 			"archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). " +
 			"`detailed_description` whole-body replaces; surgical markdown edits are Phase 6's " +
 			"append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live " +
-			"writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+			"writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\n" +
+			"A write that sets `widget_common_id`, `column_id` or `lane_id` is read back " +
+			"afterwards and the verdict reported in `notes` — Favro answers 200 for a body it " +
+			"ignored, and a `column_id` change carrying no `list_position` is one it ignores. " +
+			"Pass `skip_verify: true` to drop that read.",
 		Annotations: mutating("Update Favro card", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		writeCtx := ctx
@@ -187,6 +193,10 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 		}
 		if !out.DryRun {
 			r.InvalidateSearchCardCache()
+			if !in.SkipVerify {
+				out.Notes = append(out.Notes, verifyCardFields(ctx, r, in.CardID,
+					requestedCardPlacement(in.WidgetCommonID, in.ColumnID, in.LaneID))...)
+			}
 		}
 		return nil, out, nil
 	})
@@ -252,7 +262,10 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 			"least one of widget_common_id / column_id / lane_id must be set. Convenience " +
 			"over favro_update_card for the common 'move card to <board>' workflow. " +
 			"Successful live writes invalidate the search-cards cache. Pass `dry_run: true` " +
-			"to preview.",
+			"to preview.\n" +
+			"The move is read back afterwards and the verdict reported in `notes` — Favro " +
+			"answers 200 for a body it ignored, and a `column_id` change carrying no " +
+			"`list_position` is one it ignores. Pass `skip_verify: true` to drop that read.",
 		Annotations: mutating("Move Favro card", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in moveCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		writeCtx := ctx
@@ -277,6 +290,10 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 		}
 		if !out.DryRun {
 			r.InvalidateSearchCardCache()
+			if !in.SkipVerify {
+				out.Notes = append(out.Notes, verifyCardFields(ctx, r, in.CardID,
+					requestedCardPlacement(in.WidgetCommonID, in.ColumnID, in.LaneID))...)
+			}
 		}
 		return nil, out, nil
 	})

@@ -174,6 +174,16 @@ func extraSteps() []Step {
 			Why: "dry-run: every field an update can set at once",
 		},
 		{
+			Tool: "favro_update_card",
+			Args: map[string]any{
+				"card_id":     AnyCardID,
+				"column_id":   AnyColumnID,
+				"skip_verify": true,
+				"dry_run":     true,
+			},
+			Why: "dry-run: the placement write with the read-back turned off",
+		},
+		{
 			Tool: "favro_move_card",
 			Args: map[string]any{
 				"card_id":          AnyCardID,
@@ -182,6 +192,7 @@ func extraSteps() []Step {
 				"lane_id":          "livefavro-probe-lane",
 				"list_position":    1,
 				"sheet_position":   1,
+				"skip_verify":      true,
 				"drag_mode":        "commit",
 				"dry_run":          true,
 			},

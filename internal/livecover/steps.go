@@ -696,6 +696,7 @@ func optionSteps() []Step {
 			Args: map[string]any{
 				"card_id":         AnyCardID,
 				"custom_field_id": AnyCustomFieldID,
+				"skip_verify":     true,
 				"dry_run":         true,
 			},
 			ExpectError: "invalid",
