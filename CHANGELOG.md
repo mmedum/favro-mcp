@@ -8,6 +8,16 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Changed
+
+- `mcp-publisher` is verified with cosign before it runs. The workflow
+  pinned its version and piped the download into `tar`; a version pins
+  which artifact to fetch, not that the bytes are the ones upstream
+  built, and the binary is then handed a token that can publish under
+  this namespace. The download is a file now, because a stream already
+  extracted cannot be checked, and the certificate identity carries the
+  exact tag so a version bump that forgets it fails loudly.
+
 ## [2.0.3] - 2026-09-15
 
 The first release that publishes this server to the MCP registry, which
