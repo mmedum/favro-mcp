@@ -8,6 +8,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-18
+
 ### Added
 - `favro_update_card` and `favro_move_card` take `clear_parent`, the way to detach a card from its parent on purpose. On `favro_update_card` it is only meaningful on a structural write, and the tool reports when it was passed on a write that cannot act on it. `favro_move_card` also takes `parent_card_id`.
 - Every mutating tool result can carry `notes`: what the tool did beyond the literal request, and what it observed about the write. `Result` is Favro's answer to the write, and hard rule 2 is that Favro's answer to a write is not evidence about the write.
@@ -312,7 +314,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.4...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/mmedum/favro-mcp/compare/v2.0.4...v2.1.0
 [2.0.4]: https://github.com/mmedum/favro-mcp/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/mmedum/favro-mcp/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/mmedum/favro-mcp/compare/v2.0.1...v2.0.2
