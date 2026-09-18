@@ -56,6 +56,10 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) err
 	cfg := configureLogging(stderr)
 
 	if len(args) > 0 {
+		if isHelpToken(args[0]) {
+			printUsage(stdout)
+			return nil
+		}
 		switch args[0] {
 		case "auth":
 			return runAuth(args[1:], stdin, stderr)
@@ -63,9 +67,6 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) err
 			return runDoctor(context.Background(), cfg, stdout, args[1:])
 		case "version", "--version", "-V":
 			printVersion(stdout)
-			return nil
-		case "help", "--help", "-h":
-			printUsage(stdout)
 			return nil
 		}
 
@@ -228,6 +229,13 @@ func cleanDisconnect(err error) bool {
 		return je.Code == -32004 || je.Code == -32003
 	}
 	return false
+}
+
+// isHelpToken reports whether s is one of the three spellings of "tell
+// me what this does". One definition, so the tokens mean the same thing
+// at every level of the command tree rather than only at the top.
+func isHelpToken(s string) bool {
+	return s == "help" || s == "--help" || s == "-h"
 }
 
 func printVersion(w io.Writer) {

@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Fixed
+- `help`, `--help` and `-h` after an `auth` subcommand print usage and exit 0 instead of falling through to the subcommand. `auth login --help` ran the interactive prompt, reading the help token — or whatever stdin was redirected from — as the email, and could store a credential in the OS keyring; `auth logout --help` deleted the keyring entries. One `isHelpToken` now defines the three spellings for the whole command tree.
+
 ## [2.0.4] - 2026-09-18
 
 ### Fixed

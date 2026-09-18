@@ -285,3 +285,73 @@ func TestPromptLine_ReadFailure_Propagates(t *testing.T) {
 		t.Fatalf("got %v, want it to mention %q", err, "stdin closed")
 	}
 }
+
+// trackingReader records whether anything was read from it. A help path
+// must not touch stdin at all: `auth login --help` consuming a line of
+// redirected input is the defect these tests pin.
+type trackingReader struct{ read bool }
+
+func (r *trackingReader) Read([]byte) (int, error) {
+	r.read = true
+	return 0, io.EOF
+}
+
+// TestRunAuth_HelpNeverActs pins what a help token has to do everywhere
+// in the auth subtree: print usage, return nil, read no stdin, and
+// leave the stored credentials alone. The tokens used to reach only
+// `auth --help`; after a subcommand they fell through to the
+// subcommand itself, so `auth login --help` prompted (reading whatever
+// stdin was redirected from) and `auth logout --help` deleted the
+// keyring entries.
+func TestRunAuth_HelpNeverActs(t *testing.T) {
+	for _, sub := range []string{"login", "status", "logout", "which"} {
+		for _, token := range []string{"help", "--help", "-h"} {
+			t.Run(sub+"_"+token, func(t *testing.T) {
+				isolateCredentials(t)
+				saveKeyringToken(t, testCredentials())
+
+				stdin := &trackingReader{}
+				var stderr bytes.Buffer
+
+				if err := runAuth([]string{sub, token}, stdin, &stderr); err != nil {
+					t.Fatalf("runAuth([]string{%q, %q}, stdin, &stderr): %v", sub, token, err)
+				}
+				if stdin.read {
+					t.Error("help read from stdin; it must print usage without consuming input")
+				}
+				if !strings.Contains(stderr.String(), "favro-mcp auth login") {
+					t.Errorf("stderr.String() does not contain %q", "favro-mcp auth login")
+				}
+				if _, err := (auth.KeyringSource{}).Load(context.Background()); err != nil {
+					t.Errorf("help must leave stored credentials untouched: %v", err)
+				}
+			})
+		}
+	}
+}
+
+// TestRunAuth_HelpTokenAlone_PrintsUsage keeps `auth help` / `auth
+// --help` / `auth -h` working now that the dispatch switch no longer
+// carries a case for them.
+func TestRunAuth_HelpTokenAlone_PrintsUsage(t *testing.T) {
+	t.Parallel()
+
+	for _, token := range []string{"help", "--help", "-h"} {
+		t.Run(token, func(t *testing.T) {
+			t.Parallel()
+
+			stdin := &trackingReader{}
+			var stderr bytes.Buffer
+
+			if err := runAuth([]string{token}, stdin, &stderr); err != nil {
+				t.Fatalf("runAuth([]string{%q}, stdin, &stderr): %v", token, err)
+			}
+			if stdin.read {
+				t.Error("help read from stdin; it must print usage without consuming input")
+			}
+			if !strings.Contains(stderr.String(), "favro-mcp auth login") {
+				t.Errorf("stderr.String() does not contain %q", "favro-mcp auth login")
+			}
+		})
+	}
+}
