@@ -1,6 +1,5 @@
 {
   "server": "favro-mcp",
-  "version": "v2.0.4-8-gbf3174f-dirty (bf3174f)",
   "sdk": "v1.8.0",
   "tools": [
     {

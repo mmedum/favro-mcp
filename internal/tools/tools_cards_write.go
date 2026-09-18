@@ -244,8 +244,9 @@ var errClearParentWithParent = render.Sentinel(render.ClassInvalid,
 //
 // Only the parent is dropped. Probed live 2026-09-18 (§18): columnId
 // and listPosition survive the same write untouched, so the guard below
-// covers the whole of this rather than a third of it. laneId is
-// untested because no board reached live has lanes.
+// covers the whole of this rather than a third of it. laneId is not
+// testable — Favro publishes no lane endpoint — and §15 records that as
+// permanent rather than pending.
 //
 // The notes still describe the body that was sent rather than the state
 // that resulted — hard rule 2 forbids inferring the second from a 200,

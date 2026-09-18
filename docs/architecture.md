@@ -732,13 +732,6 @@ Not yet verified against a real organization, and each one is a place
    delta. The docs say delta with a per-entry `delete` flag; a live test
    observed whole-list replacement. The client sends the full list, which
    is correct under either reading, but the disagreement is unresolved.
-5. Whether a **lane** move carries the same `widgetCommonId` requirement
-   the column move turned out to have. No board reached live has lanes
-   on it. The client requires the widget for both, which is safe under
-   either answer — a lane move that did not need it still works with one
-   — but the returned card is checked only against the requested
-   `columnId`, because a card on a board without lanes legitimately
-   comes back with no `laneId` and checking it would invent a failure.
 6. Whether Favro's PUT response reflects stored state or echoes the
    request. `UpdateCard` raises `MoveIgnoredError` when the returned
    `columnId` is not the requested one, which is the whole guard against
@@ -750,14 +743,27 @@ Not yet verified against a real organization, and each one is a place
    then the guard is evidence rather than confirmation, and hard rule
    2's read-back is still the caller's job.
 
+**Not verifiable, recorded so it stops being carried as pending:**
+whether a **lane** move carries the `widgetCommonId` requirement the
+column move turned out to have. Favro publishes no lane endpoint — 88
+endpoints in `testdata/api-surface.json`, not one of them lanes, and
+`laneId` / `isLane` appear only as card fields — so lanes are created
+and arranged in the UI and there is no API call that would set one up
+to probe. Waiting for a board with lanes is waiting on someone else's
+UI habits, not on a test. What follows is permanent rather than
+pending: the client requires the widget for both moves, which is safe
+under either answer, and the returned card is checked against
+`columnId` only, because a card on a board without lanes legitimately
+comes back with no `laneId` and checking it would invent a failure.
+
 **Closed 2026-09-18, recorded because the closing is the evidence:** a
 write carrying `widgetCommonId` drops `parentCardId` and nothing else.
 Probed on a dormant board: a card nested under a parent, in a
 non-default column, at an explicit `listPosition`, then PUT with
 `{widgetCommonId, name}` and read back. The parent was gone; the column
-and the list position were untouched. `laneId` remains untested because
-no board reached live has lanes on it, which is also why
-`UpdateCard`'s ignored-write check covers the column only.
+and the list position were untouched. `laneId` is not testable at all —
+Favro publishes no lane endpoint — which is also why `UpdateCard`'s
+ignored-write check covers the column only.
 
 **Closed by A5, recorded because the closing is the evidence:**
 `CustomField.widgetCommonId` arrives on every row (100 of 100);
