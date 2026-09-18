@@ -1,6 +1,6 @@
 {
   "server": "favro-mcp",
-  "version": "v2.0.4-6-g8268227-dirty (8268227)",
+  "version": "v2.0.4-8-gbf3174f-dirty (bf3174f)",
   "sdk": "v1.8.0",
   "tools": [
     {
@@ -7347,7 +7347,7 @@
         "readOnlyHint": false,
         "title": "Move Favro card"
       },
-      "description": "Move a Favro card between columns or lanes on a board. At least one of widget_common_id / column_id / lane_id must be set, and a column or lane move must ALSO pass widget_common_id — the board the card is already on — because Favro answers 200 and moves nothing without it. Passing a different widget_common_id adds the card to that board and leaves the original where it is; Favro has no cross-board relocation. The result is checked against what was asked for, so a move Favro accepts and ignores comes back as an error rather than a success. A move is a structural write, so Favro re-seats the card from the body alone: this tool reads the card's current parent first and carries it through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or `parent_card_id` to nest it there; either one also skips the read. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+      "description": "Move a Favro card between columns or lanes on a board. At least one of widget_common_id / column_id / lane_id must be set, and a column or lane move must ALSO pass widget_common_id — the board the card is already on — because Favro answers 200 and moves nothing without it. Passing a different widget_common_id adds the card to that board and leaves the original where it is; Favro has no cross-board relocation. The result is checked against what was asked for, so a move Favro accepts and ignores comes back as an error rather than a success. A move carries widget_common_id, and Favro reads `parentCardId` off such a body: this tool reads the card's current parent first and carries it through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or `parent_card_id` to nest it there; either one also skips the read. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -10497,7 +10497,7 @@
         "readOnlyHint": false,
         "title": "Update Favro card"
       },
-      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\nA write carrying `widget_common_id` is structural: Favro re-seats the card from the body alone, so a body naming no parent leaves the card at top level — and the response echoes a null parent either way, so the answer cannot tell you which happened. This tool therefore reads the card first on such a write and carries its existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
+      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\nFavro reads `parentCardId` off the body of a write carrying `widget_common_id`, so a body naming none leaves the card at top level — and the response echoes a null parent either way, so the answer cannot tell you which happened. This tool therefore reads the card first on such a write and carries its existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
