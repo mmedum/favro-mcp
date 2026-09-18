@@ -546,10 +546,10 @@ type MoveCardRequest struct {
 	ColumnID       string
 	LaneID         string
 	// ParentCardID is carried for the same reason UpdateCardRequest
-	// carries it: a move sets widgetCommonId, which Favro treats as
-	// structural, rebuilding the card's place from the body alone — so
-	// a body naming no parent leaves the card at top level, and a move
-	// that means to keep a nested card nested has to say so.
+	// carries it: a move sets widgetCommonId, and Favro reads
+	// parentCardId off the body of such a write — so a body naming none
+	// leaves the card at top level, and a move that means to keep a
+	// nested card nested has to say so.
 	ParentCardID  string
 	ListPosition  *float64
 	SheetPosition *float64

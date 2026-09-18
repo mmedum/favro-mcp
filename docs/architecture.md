@@ -410,17 +410,19 @@ apart, and each is why a tool description carries a warning:
   caller just read back never equals the one Favro stored; v1.1.1 strips
   the presigned query before sending. Two releases got this wrong before
   the read-back explained why.
-- **A structural write re-seats the card.** Favro treats a card write
-  carrying `widgetCommonId` as structural and rebuilds the card's place
-  from the body: a body naming no `parentCardId` leaves the card at top
-  level. The response echoes a null parent whether or not the card was
-  nested before, so the answer cannot tell a caller which happened. A
-  rename is enough to trigger it, and since `errMoveNeedsWidget` every
-  column move carries `widgetCommonId`, so `favro_move_card` is affected
-  on its ordinary path and not only on a cross-widget add. Both tools
-  read the card's current parent first and carry it through, reporting
-  it in `notes`; `clear_parent` detaches on purpose. How far "re-seats
-  from the body" reaches beyond `parentCardId` is item 7 in §15.
+- **A write carrying `widgetCommonId` drops the card's parent.** Favro
+  reads `parentCardId` off the body on such a write, so a body naming
+  none leaves the card at top level. The response echoes a null parent
+  whether or not the card was nested before, so the answer cannot tell a
+  caller which happened. A rename is enough to trigger it, and since
+  `errMoveNeedsWidget` every column move carries `widgetCommonId`, so
+  `favro_move_card` is affected on its ordinary path and not only on a
+  cross-widget add. Both tools read the card's current parent first and
+  carry it through, reporting it in `notes`; `clear_parent` detaches on
+  purpose. **Only the parent is dropped** — `columnId` and
+  `listPosition` survive the same write (probed live 2026-09-18, §18).
+  Earlier wording here said the write "re-seats the card from the body
+  alone", which was broader than anything observed.
 - **Group membership**: the docs describe add/remove deltas with a
   per-entry `delete` flag; a live test observed whole-list replacement.
   The client sends the full intended list, which is correct under either
@@ -748,18 +750,14 @@ Not yet verified against a real organization, and each one is a place
    then the guard is evidence rather than confirmation, and hard rule
    2's read-back is still the caller's job.
 
-7. **How far a structural write re-seats a card.** §7.4's entry is
-   verified for `parentCardId` and assumed for nothing else, while
-   `favro.UpdateCardRequest`'s own comment says absent fields are left
-   untouched. Both are in the tree and they cannot both describe the
-   same PUT. The probe: take a card that sits in a non-default column
-   **and** lane **and** under a parent, PUT `{widgetCommonId, name}`
-   only, read it back, and diff all five of `parentCardId`, `columnId`,
-   `laneId`, `listPosition`, `sheetPosition`. If only the parent drops,
-   §7.4's wording is too broad and the guard is complete. If column or
-   lane reset too, the guard covers a third of the bug and the notes it
-   emits are misleading. Either outcome changes what is written, which
-   is what makes it worth running.
+**Closed 2026-09-18, recorded because the closing is the evidence:** a
+write carrying `widgetCommonId` drops `parentCardId` and nothing else.
+Probed on a dormant board: a card nested under a parent, in a
+non-default column, at an explicit `listPosition`, then PUT with
+`{widgetCommonId, name}` and read back. The parent was gone; the column
+and the list position were untouched. `laneId` remains untested because
+no board reached live has lanes on it, which is also why
+`UpdateCard`'s ignored-write check covers the column only.
 
 **Closed by A5, recorded because the closing is the evidence:**
 `CustomField.widgetCommonId` arrives on every row (100 of 100);
@@ -1062,7 +1060,8 @@ it; **asserted**, meaning believed and not yet held by anything.
 
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
-| 2026-09-18 | A card write carrying `widgetCommonId` detaches a nested card | Reported with a live repro against a real organization, then re-run against the released v2.0.1 binary as a control: five behaviours, the control failing on exactly the orphaning row and matching everywhere else | **Verified by the reporter — the claim is true.** A rename is enough, and the 200 is byte-identical to a write that changed nothing structural, so nothing in the answer says the card moved. The control run is what makes it evidence rather than a demonstration. Guarded in `settleParent`, wired into `favro_update_card` **and** `favro_move_card` — the first patch covered only the former, and since `errMoveNeedsWidget` every column move carries `widgetCommonId`, which made the unguarded tool the one the other's description recommends. The breadth of "re-seats from the body" is §15 item 7 and is NOT settled by this row |
+| 2026-09-18 | A card write carrying `widgetCommonId` detaches a nested card | Reported with a live repro against a real organization, then re-run against the released v2.0.1 binary as a control: five behaviours, the control failing on exactly the orphaning row and matching everywhere else | **Verified by the reporter — the claim is true.** A rename is enough, and the 200 is byte-identical to a write that changed nothing structural, so nothing in the answer says the card moved. The control run is what makes it evidence rather than a demonstration. Guarded in `settleParent`, wired into `favro_update_card` **and** `favro_move_card` — the first patch covered only the former, and since `errMoveNeedsWidget` every column move carries `widgetCommonId`, which made the unguarded tool the one the other's description recommends. The breadth is settled by the row below rather than by this one |
+| 2026-09-18 | How far a write carrying `widgetCommonId` re-seats a card | Probed live on a dormant board: a card nested under a parent, in a non-default column, at an explicit `listPosition`; PUT `{widgetCommonId, name}` and read back, diffing `parentCardId`, `columnId`, `laneId`, `listPosition`, `sheetPosition` | **Verified here — the earlier wording was too broad.** Only `parentCardId` is dropped. `columnId` and `listPosition` came back unchanged, and `sheetPosition` was assigned rather than reset. So "re-seats the card from the body alone" overstated it, and §7.4 now says the narrower thing the evidence supports: the guard covers the whole bug rather than a third of it. The write's own response omitted `parentCardId` while the card still had one moments earlier, which is the §2.1 shape — the answer is identical whether or not anything was lost. `laneId` untested: no board reached live has lanes |
 | 2026-09-13 | The SDK writes the same bytes into `content` and `structuredContent` when a tool declares an output schema | Read `mcp/server.go:398–435` in the module cache: the marshalled output becomes `StructuredContent`, and when `res.Content` is nil the same serialized JSON is added as a `TextContent` block | **Verified here.** Every tool in this repository returns a typed output and a nil result, so every one of them is in that state. Standard §2 forbids it: the two halves must both be present and must not be the same bytes. Fixed in A2 at `addTool`, so the fix is one function rather than 83 handlers that each have to remember |
 | 2026-09-13 | The debug request log cannot reconstruct its subject | Read the request logger in the client package
 (`internal/favroapi/client.go`; it was under `internal/favro` until A3

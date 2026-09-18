@@ -163,8 +163,8 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 			"`detailed_description` whole-body replaces; surgical markdown edits are Phase 6's " +
 			"append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live " +
 			"writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\n" +
-			"A write carrying `widget_common_id` is structural: Favro re-seats the card from " +
-			"the body alone, so a body naming no parent leaves the card at top level — and the " +
+			"Favro reads `parentCardId` off the body of a write carrying `widget_common_id`, " +
+			"so a body naming none leaves the card at top level — and the " +
 			"response echoes a null parent either way, so the answer cannot tell you which " +
 			"happened. This tool therefore reads the card first on such a write and carries its " +
 			"existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach " +
@@ -221,9 +221,9 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 const (
 	parentClearedPhrase = "cleared (card detached to top level)"
 
-	noteClearParentInert = "clear_parent had no effect: only a write carrying widget_common_id re-seats the card. Pass the card's own widget_common_id alongside it to detach it."
+	noteClearParentInert = "clear_parent had no effect: only a write carrying widget_common_id can drop the card's parent. Pass the card's own widget_common_id alongside it to detach it."
 	noteParentNotOnBoard = "this write puts the card on a different board, and a parent must belong to the widget the write names — so this body names none and the card lands at top level there. Pass parent_card_id naming a card on that board to nest it."
-	noteParentCarried    = "kept the card's existing parent: this write carries widget_common_id, which Favro treats as structural, and a structural write naming no parent leaves the card at top level. Pass clear_parent: true to detach on purpose, or parent_card_id to re-parent."
+	noteParentCarried    = "kept the card's existing parent: Favro reads parentCardId off the body of a write carrying widget_common_id, so a body naming none would have left the card at top level. Pass clear_parent: true to detach on purpose, or parent_card_id to re-parent."
 )
 
 var errClearParentWithParent = render.Sentinel(render.ClassInvalid,
@@ -234,21 +234,23 @@ var errClearParentWithParent = render.Sentinel(render.ClassInvalid,
 // the body should name, plus anything the caller should be told that
 // the body does not say.
 //
-// Favro treats a card write carrying widgetCommonId as structural and
-// re-seats the card from the body alone: a body naming no parentCardId
-// leaves the card at top level. Nothing in the answer says so — the
-// response echoes a null parent whether or not the card was nested
-// before — so renaming a nested card, or nudging it one column along,
-// returns 200 and quietly detaches it. On a sectioned board that reads
-// as the card having disappeared, because people read sections.
+// Favro reads parentCardId off the body of a write carrying
+// widgetCommonId, so a body naming none leaves the card at top level.
+// Nothing in the answer says so — the response echoes a null parent
+// whether or not the card was nested before — so renaming a nested
+// card, or nudging it one column along, returns 200 and quietly
+// detaches it. On a sectioned board that reads as the card having
+// disappeared, because people read sections.
 //
-// How far "re-seats from the body alone" reaches is NOT settled: this
-// is verified for parentCardId and assumed for nothing else, while
-// favro.UpdateCardRequest's own comment says absent fields are left
-// untouched. §15 carries the probe that decides it. Until then this
-// acts on the one field it has evidence for, and the notes below
-// describe the body that was sent rather than the state that resulted
-// — hard rule 2 forbids inferring the second from a 200.
+// Only the parent is dropped. Probed live 2026-09-18 (§18): columnId
+// and listPosition survive the same write untouched, so the guard below
+// covers the whole of this rather than a third of it. laneId is
+// untested because no board reached live has lanes.
+//
+// The notes still describe the body that was sent rather than the state
+// that resulted — hard rule 2 forbids inferring the second from a 200,
+// and the probe settled what Favro drops, not what any given write
+// stored.
 //
 // The read is skipped entirely unless it can change the outcome, and it
 // runs under dry-run too, so the previewed body is the body that would
@@ -356,8 +358,8 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 			"widget_common_id adds the card to that board and leaves the original where it " +
 			"is; Favro has no cross-board relocation. The result is checked against what was " +
 			"asked for, so a move Favro accepts and ignores comes back as an error rather " +
-			"than a success. A move is a structural write, so Favro re-seats the card from " +
-			"the body alone: this tool reads the card's current parent first and carries it " +
+			"than a success. A move carries widget_common_id, and Favro reads `parentCardId` " +
+			"off such a body: this tool reads the card's current parent first and carries it " +
 			"through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or " +
 			"`parent_card_id` to nest it there; either one also skips the read. " +
 			"Successful live writes invalidate the search-cards cache. Pass " +

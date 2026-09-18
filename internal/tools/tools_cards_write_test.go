@@ -324,7 +324,7 @@ func TestMCP_UpdateCard_MissingCardID(t *testing.T) {
 
 // structuralUpdateFixture answers a GET /cards/{id} with a card that
 // has parent, and records the PUT body. It is the shape every
-// parent-preservation test needs: Favro re-seats a card on a write
+// parent-preservation test needs: Favro drops the parent on a write
 // carrying widgetCommonId, and what the body says about parentCardId
 // is the whole subject.
 func structuralUpdateFixture(t *testing.T, parentCardID string, putBody *string, gets *atomic.Int32) *favroapi.Client {
@@ -1045,7 +1045,7 @@ func TestMCP_DeleteCard_MissingCardID(t *testing.T) {
 // Nothing here is a list typed out by hand. The candidates come from
 // the registry, and which of them is a structural card write is decided
 // by what each one actually PUTs: a body carrying widgetCommonId is the
-// body Favro re-seats a card from, whatever tool sent it. A third such
+// body Favro drops a card's parent from, whatever tool sent it. A third such
 // tool registered later fails here on the day it is added — which is
 // the failure mode the first version of this change had, guarding
 // favro_update_card and leaving favro_move_card, the tool update_card's
