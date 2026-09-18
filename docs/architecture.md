@@ -1,11 +1,11 @@
 # Architecture — favro-mcp
 
-**Status, 2026-09-14.** Released: v2.0.1. The server's own feature phases
-(0–9) are complete and shipped. Of the alignment programme in §16,
-**every phase is done and unreleased except A6's evals**, which need a
-model API key and are deliberately not stubbed. Where a
-sentence below describes something that does not exist, it says so and
-names the phase that builds it.
+**Status, 2026-09-18.** Released: v2.0.4. The server's own feature phases
+(0–9) are complete and shipped, and **every phase of the alignment
+programme in §16 is done**, A6's evals included — the note that said they
+needed a model API key was wrong, since the siblings drive the model
+through the `claude` CLI. Where a sentence below describes something that
+does not exist, it says so and names the phase that builds it.
 
 This document is the design, the decided constraints, the evidence and
 the phase plan. Read it before changing the tool surface, the error
@@ -509,15 +509,22 @@ written (§18).
 
 **What the history already holds.** `gates leaks history` was run for
 the first time in A1, over every blob and commit message. It reports
-three classes, none of them tenant data and none of them fixable without
-rewriting a public history that has released tags on it:
+three classes, none of them tenant data. Two remain, and the third turned
+out not to need a history rewrite at all:
 
-- Session transcripts under `.entire/` (three blobs, ~725 KB), left by a
-  session-recording tool that was removed in the commit before this
-  programme began. Checked: zero Favro ids, zero app links, zero
-  `cardCommonId` or `organizationId` mentions, zero credentials — but
-  they carry the maintainer's address, which git authorship publishes on
-  every commit anyway.
+- ~~Session transcripts under `.entire/` (three blobs, ~725 KB), left by
+  a session-recording tool removed in the commit before this programme
+  began.~~ **Gone, 2026-09-15, and the sentence above was wrong about
+  them.** They were never in `main` and never in a tag — a tree scan of
+  `origin/main`, `v1.0.0` and `v2.0.1` returns zero `.entire/` paths.
+  They lived in two *local* orphan root commits left by the same tool,
+  on branches with no upstream that were never pushed; deleting those
+  removed all three, and `gates leaks history` reports none now.
+  "Not fixable without rewriting a public history" was inferred from a
+  scan that reads `--all` — which includes local branches — rather than
+  checked against what the published history holds. The scan was right;
+  the conclusion drawn from it was not. `.entire/` is in `.gitignore`
+  now, so the tool cannot stage one again.
 - The old test fixture's address at a registrable domain, in blobs
   predating A1's fix.
 - `SHA-256` in older changelog entries, which is the card-reference <!-- leakcheck:allow -->
@@ -712,6 +719,23 @@ Not yet verified against a real organization, and each one is a place
    delta. The docs say delta with a per-entry `delete` flag; a live test
    observed whole-list replacement. The client sends the full list, which
    is correct under either reading, but the disagreement is unresolved.
+5. Whether a **lane** move carries the same `widgetCommonId` requirement
+   the column move turned out to have. No board reached live has lanes
+   on it. The client requires the widget for both, which is safe under
+   either answer — a lane move that did not need it still works with one
+   — but the returned card is checked only against the requested
+   `columnId`, because a card on a board without lanes legitimately
+   comes back with no `laneId` and checking it would invent a failure.
+6. Whether Favro's PUT response reflects stored state or echoes the
+   request. `UpdateCard` raises `MoveIgnoredError` when the returned
+   `columnId` is not the requested one, which is the whole guard against
+   a move Favro accepts and drops — and it assumes the returned
+   `columnId` is read back rather than echoed. The assumption held for
+   the case that found the bug, where Favro answered with a stub card
+   carrying no column at all. It has not been tested against a move
+   Favro rejects for some other reason. One live probe settles it; until
+   then the guard is evidence rather than confirmation, and hard rule
+   2's read-back is still the caller's job.
 
 **Closed by A5, recorded because the closing is the evidence:**
 `CustomField.widgetCommonId` arrives on every row (100 of 100);
@@ -822,11 +846,21 @@ phase An" before the next begins.
   gate holds the redaction. 122 steps, 104 passing against a real
   organization and 18 skipped for ids it does not have.
 
-  **`scripts/evals` is not built**, and deliberately not stubbed. It
-  needs a model API key, none is available here, and a harness that has
-  never run is the thing this repository's own standard argues against
-  on every other page — a check nobody has watched fail is not yet a
-  check. It stays on this list rather than being marked done.
+  **`scripts/evals` is built and has been run.** The note here used to
+  say it needed a model API key. That was wrong: the siblings drive the
+  model through the `claude` CLI, which is on PATH and already
+  authenticated, so the blocker never existed. 6 tasks, behind a
+  `evals` build tag, with the task table outside the tag so `go test`
+  walks every prompt without credentials, a network or a model.
+
+  Each task is scored twice — the end state read back through this
+  server, because a model's account of what it did is the least
+  reliable thing in the run, and the trace, because a task can be
+  passed by a model that guessed and was lucky. The run creates its own
+  collection and board and deletes them, so nothing a transcript
+  carries is the organization's own data.
+
+  It found `favro_move_card` on its first full pass. §18.
 
 - **A7 — distribution. Done.** The `.mcpb` bundle packed in Go by
   `gates mcpb-pack`, with `gates mcpb` holding the committed manifest
@@ -918,6 +952,49 @@ under `[Unreleased]`. Tags are cut by the maintainer, never proposed.
    `testdata/api-coverage.tsv`, which is the kind of distinction a
    per-endpoint record holds and a prose paragraph cannot — the
    argument for the record, made by using it.
+5. **Should "Favro accepted it and did nothing" be its own error
+   class?** `MoveIgnoredError` (2026-09-15) is the first error raised
+   from an observation rather than a status, and it is classed
+   `unavailable`, which §6.2 defines as "retry later; the arguments are
+   not the problem". Half of that is right — the arguments passed every
+   check and Favro raised no complaint — and half is wrong, because the
+   result is deterministic and retrying produces it forever. None of the
+   nine says "this will never work; report it". This also weakens the
+   second half of decision 1 above: `unverified` was rejected partly
+   because "this server does not read back, so the flag would be
+   constant for a given tool", and this path does check one field of the
+   write's own response per call. It is not a read-back (§15 item 6) and
+   one path is not a pattern, so the class stays `unavailable` until
+   there is a second instance to generalise from. **Maintainer's call.**
+6. **Does the ignored-write check become a mechanism?** Three other
+   paths have the same shape on record and no guard: a custom-field
+   write to a field the card's widget has not enabled (§2.7), the
+   collection `shareToUsers` / `sharedToUsers` key, and `UpdateTags`'
+   unresolved delta-versus-whole-list question (§15 item 4).
+
+   **The second instance is now confirmed**, which is what this was
+   waiting for: a custom-field write to a field the card's widget has
+   not enabled returns HTTP 200 with the FULL card and the field simply
+   absent from `customFields` — probed live 2026-09-15 against a field
+   belonging to another widget. So the error is
+   `WriteIgnoredError{Field, Want, Got}` rather than a move-shaped one,
+   and what generalises is the discipline — compare what was asked for
+   against what came back, in the write's own response. The comparison
+   itself stays per path: "is my column the returned column" and "is my
+   field present at all" are different questions, and a shared
+   `confirm()` that answered both would be a shape nothing fits.
+
+   **The custom-field guard is still not built, and it is blocked on one
+   thing only a person can do.** The negative case is confirmed; the
+   positive one is not, because no board reachable this session has a
+   custom field enabled on it and there is no API to enable one. A
+   presence check written without having seen a *successful* write's
+   response would turn every working write into an error the moment
+   Favro omits the array — a guard written against an assumed response
+   shape, which is the failure this repository keeps recording. §15
+   item 1 already asks for the same setup: enable a custom field on a
+   board in the Favro UI, and the per-type write shapes and this guard
+   can both be settled in one pass.
 
 ## 17b. Deviations from the shared Go MCP server standard
 
@@ -936,6 +1013,16 @@ decision rather than drift.
 Everything else is adopted as written, including the preamble's three
 obligations for any rule adopted — make it a test, derive the list from
 the code, assert a floor on how much the checker read.
+
+**Checked against the siblings rather than against this table,
+2026-09-15.** Reading the four repositories' gate registries and `check`
+targets found two gates google-drive-mcp had and this one did not, and
+both are now here: `outcomes` (§18) and `registry`. Two entries that
+looked like gaps — `tool-names` and `config-vars` — are utility commands
+in the siblings, in no `check` target, so there is nothing to adopt.
+This server is ahead of chat and docs on evals, and of chat, docs and
+drive on `secrets` and `tidy` in `check`. The table above is the whole
+of the difference now, and it is six decisions rather than a backlog.
 
 ## 18. Evidence log: conventions checked, changed, or rejected
 
@@ -977,6 +1064,14 @@ split the wire types out): it logs `req.URL.RawQuery`, and Favro's query strings
 | 2026-09-14 | The live driver runs cleanly end to end | Ran `make live` and watched the process rather than the output | **Verified here — the claim was false, and had been since A6.** The 122 steps take eight seconds; the driver then hung indefinitely, holding its server open, and `make live` never returned. `stop` closed `cmd.Stdin`, which `StdinPipe` sets to the READ end of the pipe while returning the write end — the type assertion to a Closer succeeds on either, so nothing failed and nothing said so. The server never saw EOF, so it never exited, so `Wait` never returned; Go's own documentation is where this is easy to get wrong, since it says Wait closes the pipe once the command exits, which for stdin is circular. It was survivable only because the summary prints first, and it is why 6bac268 describes "a verbose run that hit my own timeout partway". Two tests now drive `stop` against a child that exits on EOF and one that does not, and the first fails against the old code |
 | 2026-09-14 | Hard rule 8, "no tool takes an `organization_id`" | Reconnected the MCP server to the built binary and called `favro_get_organization` with an id of all zeros, then with `not-a-valid-id` | **Verified here — the rule was false, and the tool was worse than non-compliant.** Both calls returned the bound organization in full. Favro's reference documents the path parameter as "the id of the organization to be retrieved. Required." and the live API ignores it, routing by the `organizationId` header it separately documents as required "to ensure the request is routed to the correct server" — §2.1 once more, on the endpoint whose whole purpose is selection. A required input that cannot affect the result reads as a choice and is not one, and a model asking for one organization was handed another with a 200. The input is gone, the tool returns the bound organization, and `gates rule8` derives the rule from the schema dump so it is held by the binary rather than by a sentence. Nothing else could have found it: the live driver passed the bound id, so the call looked correct, and `live-cover` counts options exercised rather than answers checked |
 | 2026-09-14 | `make check` green on one machine means green in CI | Pushed the branch and watched the first run; this branch had never had CI on it | **Verified here — the claim was false three ways, and every one passed on Linux.** `\s` and `\b` are GNU extensions that POSIX ERE does not have, so two gates and a test handed git patterns that matched nothing on macOS; git exited 1 for "no matches" and the checkers read that as a broken repository. The fix is to grep a fixed substring and apply the pattern in Go, where the engine is the same everywhere. On Windows the `.mcpb` fixture staged a shell script named `favro-mcp.exe` and the packer tried to execute it, because the packer asks the host binary for its version — the fixture builds a real one now. And `gitleaks-action` prepends `v` to `GITLEAKS_VERSION`, so `v8.30.1` fetched `vv8.30.1` and 404ed. The standard's line about a three-OS matrix finding Linux-only assumptions the first time it runs is exactly what happened |
+| 2026-09-15 | `favro_move_card` moves a card | A6's evals gave a model the task "move this card into the Done column" and read the board back | **Verified here — the claim is false.** The model resolved the widget, the card and the column correctly, then tried nine variations — `drag_mode=move`, `favro_update_card` with `column_id`, `sheet_position`, `drag_mode=commit`, `list_position=1000`. Every call returned success and the card never moved; it reported that honestly rather than claiming completion. Reproducible across two full runs. §2.1 in its purest form, on a card-management server that cannot move a card. **Nothing caught it because the live driver calls this tool with `dry_run: true`** — every mutating step there does, by design, so it validates a request and never observes a result. That is the blind spot evals exist to cover, and the first full run found it. **Answered 2026-09-15 and fixed:** Favro requires `widgetCommonId` on a column move and answers 200 with a stub card — `cardId`, `cardCommonId`, `name`, `timeOnBoard`, no `columnId` — without it. `listPosition` has nothing to do with it: a column move lands without one. The sharpest part is that Phase 5.3 got this right — the v1.0.0 changelog says a column move sends `widgetCommonId` + `columnId` + `listPosition` + `dragMode` *together* — and then the wire-type comment and the tool schema narrowed a four-field finding to the one field that did not matter, leaving all four optional in the schema. A finding that is recorded in prose and not in a test decays into whichever half somebody remembered. `UpdateCard` now refuses the shape before it is sent, so `favro_update_card` is covered too, and checks the returned `columnId` against the requested one |
+| 2026-09-15 | favro-mcp is aligned with the four sibling servers | Read all four gate registries and `check` targets directly, rather than §17b's account of itself | **Verified here — the claim was false, by two gates.** google-drive-mcp had `outcomes` and `registry`; this server had neither. `outcomes` is the one that stings: it holds "never assert an outcome the response did not carry", which is hard rule 2, and this repository shipped a violation of it in `favro_move_card` for six releases while the rule sat in CLAUDE.md held by nothing. Both are adopted now. Worth recording that two apparent gaps were not: `tool-names` and `config-vars` are utility commands in the siblings and sit in no `check` target, which a gate-registry diff alone would have called a finding |
+| 2026-09-15 | The `.entire/` transcripts cannot be removed without rewriting a public history that has released tags on it (§9) | Pruning stale local branches; then tree-scanned `origin/main`, `v1.0.0` and `v2.0.1` for the path, and re-ran `gates leaks history` | **Verified here — the claim was false, and cost nothing to fix.** Zero `.entire/` paths in `main` or any tag. The blobs lived in two local orphan root commits from the same tool, on branches with no upstream that were never pushed; deleting them removed all three, and the history scan now reports two classes rather than three. Theclaim came from reading a `--all` scan — which includes local branches — as a statement about the published history. A gate that reports what it found is not the same as a gate that reports where it found it |
+| 2026-09-15 | §2.7's "a custom field not enabled on the widget is accepted and discarded" | Set a Text field belonging to another widget on a sandbox card, then read the card back | **Verified here — the claim is true, and the shape it fails in is worth recording.** Favro answers HTTP 200 with the **full** card, not the stub a move gets, and the field is simply absent from `customFields`. So "did the write land" is a different question per path — missing value here, missing response there — which is what decided §17 decision 6 against a shared `confirm()` helper. The guard is not built: no board reachable has a custom field enabled on it, there is no API to enable one, and a presence check that has never seen a successful write's response would fail every working write if Favro ever omits the array |
+| 2026-09-15 | `favro_move_card` moves a card to a different board | The tool has said "move to a different widget" since Phase 5; moved a card between two boards live and listed both | **Verified here — the claim is false.** The source instance stays where it is and a second `cardId` appears on the target, both under the one `cardCommonId`. Favro's model is that a card common to several widgets has an instance on each, and a PUT that names another widget adds one; there is no single call that relocates. The tool description says add, not move, now. Not a code change: adding-then-deleting would be this server inventing a transaction Favro does not offer, and a half-failed one leaves a duplicate |
+| 2026-09-15 | The `transcript` gate holds this repository's live output to the redactor | Ran the security review over the eval commit; read the gate | **Verified here — the claim was false, and had been since the evals landed.** `transcriptDriverDir` was one hard-coded `const`, `scripts/livefavro`. `scripts/evals` drives the same live organization and printed raw: a failing task prints the model's whole trace, and every argument in it is an id resolved from live data, plus the collection id on a teardown failure. Nothing failed, because the gate read the other directory. A rule scoped to one path is a rule about that path — the gate takes a list now, both drivers print through `internal/redact`, and its own test names both and holds the one build-tag exemption to its shape |
+| 2026-09-15 | The eval harness confines a model that reads attacker-reachable text | The security review traced what the driven session could reach | **Verified here — the claim was false, and this one is a security boundary rather than a scoring one.** The run reads a real organization, so card text written by anyone with access to it reaches the model, and the process tree holds a live Favro credential. Any built-in that runs a command is then an exfiltration path for injected card content, and the confinement was a denylist with holes in it. Fixed with the two flags above. Worth keeping: the first version of this was written as a *scoring* control — "an eval that lets a model reach for Bash is scoring Bash" — which is true, and reading it only that way is what left it failing open |
+| 2026-09-15 | An eval that names the tools it allows has confined the model | Read the first eval trace | **Verified here — the claim was false.** `--allowed-tools mcp__favro__*` does not exclude the host's own built-ins, and the disallow list named six. The model used `Grep` and `Glob` to read the maintainer's notes about Favro's quirks mid-task, which is not a surface this server exposes — an eval that lets a model reach outside the tools is scoring something else. **Naming every built-in was the wrong repair, and the security review found it the same day:** a denylist of a surface somebody else ships fails open, needs re-auditing on each CLI release, and is the typed-out list hard rule 14 exists to forbid. `Monitor` was still missing, which runs a shell command under a name that is not `Bash`. It is `--tools ""` now — the CLI's own switch for "no built-ins" — plus `--setting-sources ""`, because the maintainer's permission rules, hooks and skills decided what a built-in could do. The six tasks still pass, and for less |
 | 2026-09-13 | The sibling gate set | Read all four `Makefile`s and both gate registries (`scripts/gates`) | **Adopted.** 14 gates plus `transcript` and `live-cover` where a live driver exists. Note the standard's own warning: reading a `check:` target list is not an audit of what runs, since several siblings run gates as ordinary Go tests |
 | 2026-09-13 | Actions are pinned | Read `.github/workflows/*.yml`: every action is a floating major tag (`actions/checkout@v7`, …) and `govulncheck` installs `@latest` | **Verified here — unpinned.** GitHub's own guidance is that a full-length commit SHA is the only immutable reference. A1 |
 | 2026-09-13 | 83 tools | Counted registered tool-name constants; the README and `docs/TOOLS.md` both say 83 | **Verified here, today.** The standard's §7b: re-measure at each release or date it. A1's staleness gate takes the count over from this sentence |
@@ -1004,3 +1099,4 @@ split the wire types out): it logs `req.URL.RawQuery`, and Favro's query strings
 | 2026-09-13 | Twelve tools are destructive | Counted the tools annotated `DestructiveHint: true` while building the registration gate | **Verified here — the claim was false; there are thirteen.** §8 had carried the hand-typed count since it was written. The gate now reads the annotation at registration and the test derives the same set from the live surface, so neither a count nor a list of names is written down anywhere |
 | 2026-09-13 | A gate that skips the file it guards is checking the right thing | Ran the new `classes` gate: it reported six of the nine classes as emitted by nothing | **Verified here — the claim was false, and it was this gate's own first finding about itself.** It skipped `class.go` wholesale to avoid counting the declarations, and `Classify` — where six of the nine are returned from — is in that file. It now skips the const block and the `Classes` slice and walks everything else |
 | 2026-09-13 | Favro has no OAuth for its REST API | Reference page documents HTTP Basic with email + API token only; no authorization endpoint is published | **Verified here.** §17b row 1 |
+| 2026-09-17 | The bundle manifest's own declaration is right, or at least checked | Fetched the published mcpb schemas: `mcpb-manifest-v0.2`, `v0.3` and `v0.4` are served and `v0.5` is not. **Refuted twice.** `bundleManifest` did not decode `$schema`, `manifest_version` or `support` at all, so nothing here could hold them — and `$schema` named `main`, a branch upstream can amend under a document that claims to conform to it: the path pins the FORMAT, the ref pins the BYTES. The copy at tag `v2.1.2` is byte-identical to `main` today, which is the argument for the tag rather than against it. 0.4 is not adopted: its only difference from 0.3 is a `uv` value in the `server.type` enum, and this bundle's type is `binary` | `checkBundleManifest` holds the declaration beside the staged tree: upstream's path at a full release tag or a commit SHA (an allow-list, because refusing branch NAMES passes a partial tag like `v2.1`), the version agreeing with that URL, a floor under it, and a support URL. The floor is the claim the others cannot make — 0.2 beside a 0.2 schema is self-consistent |

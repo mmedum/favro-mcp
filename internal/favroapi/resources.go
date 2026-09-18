@@ -2,18 +2,18 @@ package favroapi
 
 import (
 	"context"
-	"errors"
 	"net/url"
 	"strconv"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 // errMissingID is returned by getByID (and the resource Get<X> methods
 // that compose it) when the caller passes an empty id. The MCP layer
 // relies on the SDK's own schema validation (required fields), so
 // this sentinel mainly catches direct in-process callers.
-var errMissingID = errors.New("favro: id is required")
+var errMissingID = render.Sentinel(render.ClassInvalid, "favro: id is required")
 
 // listPage requests one paginated page of T from path. page is
 // 1-indexed; pass 0 for "first page" (the absent-page Favro default).

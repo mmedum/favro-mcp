@@ -429,8 +429,9 @@ func TestMCP_MoveCard_HappyPath(t *testing.T) {
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: moveCardToolName,
 		Arguments: map[string]any{
-			"card_id":   "ci-1",
-			"column_id": "col-2",
+			"card_id":          "ci-1",
+			"widget_common_id": "w-1",
+			"column_id":        "col-2",
 		},
 	})
 	if err := err; err != nil {
@@ -443,6 +444,75 @@ func TestMCP_MoveCard_HappyPath(t *testing.T) {
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
 	if got := out.Result.ColumnID; got != "col-2" {
 		t.Errorf("out.Result.ColumnID = %v, want %v", got, "col-2")
+	}
+}
+
+// TestMCP_MoveCard_ColumnWithoutWidget is the eval's failure as a unit
+// test: the model asked for a column move with the two ids the task
+// gave it, and got a success. It is an error now, and it names the
+// argument to add.
+func TestMCP_MoveCard_ColumnWithoutWidget(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	c := favroFixture(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+	}))
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: moveCardToolName,
+		Arguments: map[string]any{
+			"card_id":   "ci-1",
+			"column_id": "col-2",
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("res.IsError = false, want true")
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	requireDeclaredClassPrefix(t, text)
+	if !strings.HasPrefix(text, "[invalid] ") || !strings.Contains(text, "widgetCommonId") {
+		t.Errorf("the LLM-visible error must be [invalid] and name widgetCommonId: got %q", text)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	}
+}
+
+// TestMCP_MoveCard_FavroIgnoredTheMove pins that a move Favro accepts
+// and does not perform reaches the caller as an error. The body is the
+// stub Favro answers with, recorded live 2026-09-15.
+func TestMCP_MoveCard_FavroIgnoredTheMove(t *testing.T) {
+	t.Parallel()
+
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","cardCommonId":"cc-1","name":"a card"}`))
+	}))
+
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: moveCardToolName,
+		Arguments: map[string]any{
+			"card_id":          "ci-1",
+			"widget_common_id": "w-1",
+			"column_id":        "col-2",
+		},
+	})
+	if err := err; err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("res.IsError = false, want true")
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	requireDeclaredClassPrefix(t, text)
+	if !strings.HasPrefix(text, "[unavailable] ") {
+		t.Errorf("the LLM-visible error must be [unavailable]: got %q", text)
 	}
 }
 

@@ -85,6 +85,18 @@ func init() {
 			run: transcript, args: "", gate: true,
 			doc: "the live driver prints only through the redactor",
 		},
+		"outcomes": {
+			run: outcomes, args: "", gate: true,
+			doc: "no tool states an outcome the response did not carry",
+		},
+		"registry": {
+			run: registry, args: "", gate: true,
+			doc: "the committed MCP registry entry obeys the rules that registry enforces in code",
+		},
+		"registry-publish": {
+			run: registryPublish, args: "VERSION [DIST]",
+			doc: "print the registry entry to publish, with the bundle's hash from the signed checksums",
+		},
 		"live-cover": {
 			run: liveCover, args: "", gate: true,
 			doc: "the live driver exercises every tool and option, or waives it",

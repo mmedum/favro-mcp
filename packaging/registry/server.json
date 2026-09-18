@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.mmedum/favro-mcp",
+  "title": "Favro",
+  "description": "Favro cards, boards and collections over MCP: read, search, write, and resolve names to ids.",
+  "repository": {
+    "url": "https://github.com/mmedum/favro-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/mmedum/favro-mcp#readme",
+  "version": "0.0.0-dev",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/mmedum/favro-mcp/releases/download/v0.0.0-dev/favro-mcp_0.0.0-dev.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
