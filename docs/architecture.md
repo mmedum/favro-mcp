@@ -410,6 +410,17 @@ apart, and each is why a tool description carries a warning:
   caller just read back never equals the one Favro stored; v1.1.1 strips
   the presigned query before sending. Two releases got this wrong before
   the read-back explained why.
+- **A structural write re-seats the card.** Favro treats a card write
+  carrying `widgetCommonId` as structural and rebuilds the card's place
+  from the body: a body naming no `parentCardId` leaves the card at top
+  level. The response echoes a null parent whether or not the card was
+  nested before, so the answer cannot tell a caller which happened. A
+  rename is enough to trigger it, and since `errMoveNeedsWidget` every
+  column move carries `widgetCommonId`, so `favro_move_card` is affected
+  on its ordinary path and not only on a cross-widget add. Both tools
+  read the card's current parent first and carry it through, reporting
+  it in `notes`; `clear_parent` detaches on purpose. How far "re-seats
+  from the body" reaches beyond `parentCardId` is item 7 in §15.
 - **Group membership**: the docs describe add/remove deltas with a
   per-entry `delete` flag; a live test observed whole-list replacement.
   The client sends the full intended list, which is correct under either
@@ -737,6 +748,19 @@ Not yet verified against a real organization, and each one is a place
    then the guard is evidence rather than confirmation, and hard rule
    2's read-back is still the caller's job.
 
+7. **How far a structural write re-seats a card.** §7.4's entry is
+   verified for `parentCardId` and assumed for nothing else, while
+   `favro.UpdateCardRequest`'s own comment says absent fields are left
+   untouched. Both are in the tree and they cannot both describe the
+   same PUT. The probe: take a card that sits in a non-default column
+   **and** lane **and** under a parent, PUT `{widgetCommonId, name}`
+   only, read it back, and diff all five of `parentCardId`, `columnId`,
+   `laneId`, `listPosition`, `sheetPosition`. If only the parent drops,
+   §7.4's wording is too broad and the guard is complete. If column or
+   lane reset too, the guard covers a third of the bug and the notes it
+   emits are misleading. Either outcome changes what is written, which
+   is what makes it worth running.
+
 **Closed by A5, recorded because the closing is the evidence:**
 `CustomField.widgetCommonId` arrives on every row (100 of 100);
 `Card.sheetPosition` and `CardAttachment.thumbnailURL` both arrive
@@ -1038,6 +1062,7 @@ it; **asserted**, meaning believed and not yet held by anything.
 
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
+| 2026-09-18 | A card write carrying `widgetCommonId` detaches a nested card | Reported with a live repro against a real organization, then re-run against the released v2.0.1 binary as a control: five behaviours, the control failing on exactly the orphaning row and matching everywhere else | **Verified by the reporter — the claim is true.** A rename is enough, and the 200 is byte-identical to a write that changed nothing structural, so nothing in the answer says the card moved. The control run is what makes it evidence rather than a demonstration. Guarded in `settleParent`, wired into `favro_update_card` **and** `favro_move_card` — the first patch covered only the former, and since `errMoveNeedsWidget` every column move carries `widgetCommonId`, which made the unguarded tool the one the other's description recommends. The breadth of "re-seats from the body" is §15 item 7 and is NOT settled by this row |
 | 2026-09-13 | The SDK writes the same bytes into `content` and `structuredContent` when a tool declares an output schema | Read `mcp/server.go:398–435` in the module cache: the marshalled output becomes `StructuredContent`, and when `res.Content` is nil the same serialized JSON is added as a `TextContent` block | **Verified here.** Every tool in this repository returns a typed output and a nil result, so every one of them is in that state. Standard §2 forbids it: the two halves must both be present and must not be the same bytes. Fixed in A2 at `addTool`, so the fix is one function rather than 83 handlers that each have to remember |
 | 2026-09-13 | The debug request log cannot reconstruct its subject | Read the request logger in the client package
 (`internal/favroapi/client.go`; it was under `internal/favro` until A3

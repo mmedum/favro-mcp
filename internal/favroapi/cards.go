@@ -166,6 +166,7 @@ func (c *Client) MoveCard(ctx context.Context, cardID string, req favro.MoveCard
 		WidgetCommonID: req.WidgetCommonID,
 		ColumnID:       req.ColumnID,
 		LaneID:         req.LaneID,
+		ParentCardID:   req.ParentCardID,
 		ListPosition:   req.ListPosition,
 		SheetPosition:  req.SheetPosition,
 		DragMode:       req.DragMode,

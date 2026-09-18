@@ -461,7 +461,8 @@ func TestMCP_UpdateCard_Structural_TopLevelCardNeedsNoNote(t *testing.T) {
 	t.Parallel()
 
 	var put string
-	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "", &put, nil))
+	var gets atomic.Int32
+	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "", &put, &gets))
 
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: updateCardToolName,
@@ -479,6 +480,13 @@ func TestMCP_UpdateCard_Structural_TopLevelCardNeedsNoNote(t *testing.T) {
 	}
 	if strings.Contains(put, "parentCardId") {
 		t.Errorf("a top-level card has no parent to carry: %q present in %q", "parentCardId", put)
+	}
+
+	// Without this the test passes with settleParent deleted: an absent
+	// parentCardId and an empty Notes are also what doing nothing looks
+	// like. The claim is that the read happened and found nothing.
+	if got := gets.Load(); got != 1 {
+		t.Errorf("the branch under test is reached only via the read: gets = %v, want %v", got, 1)
 	}
 
 	out := decodeStructured[writeOutput[favro.Card]](t, res)
@@ -718,11 +726,19 @@ func TestMCP_UnarchiveCard_MissingCardID(t *testing.T) {
 func TestMCP_MoveCard_HappyPath(t *testing.T) {
 	t.Parallel()
 
+	var puts atomic.Int32
 	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			// The parent read settleParent does before a structural
+			// write; a move is always structural.
+			_, _ = w.Write([]byte(`{"cardId":"ci-1","widgetCommonId":"w-1","columnId":"col-1"}`))
+			return
+		}
 		if r.Method != http.MethodPut {
 			t.Errorf("move_card must PUT; got %s", r.Method)
 		}
-		w.Header().Set("Content-Type", "application/json")
+		puts.Add(1)
 		_, _ = w.Write([]byte(`{"cardId":"ci-1","columnId":"col-2"}`))
 	}))
 
@@ -820,9 +836,15 @@ func TestMCP_MoveCard_FavroIgnoredTheMove(t *testing.T) {
 func TestMCP_MoveCard_DryRun(t *testing.T) {
 	t.Parallel()
 
-	var calls atomic.Int32
-	c := favroFixture(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		calls.Add(1)
+	var puts, gets atomic.Int32
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			puts.Add(1)
+			return
+		}
+		gets.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","widgetCommonId":"w-2"}`))
 	}))
 
 	cs := connectInMemoryWith(t, c)
@@ -849,8 +871,13 @@ func TestMCP_MoveCard_DryRun(t *testing.T) {
 	if !strings.Contains(out.PredictedStateDiff, "col-2") {
 		t.Errorf("out.PredictedStateDiff does not contain %q", "col-2")
 	}
-	if got := calls.Load(); got != 0 {
-		t.Errorf("calls.Load() = %v, want %v", got, 0)
+	if got := puts.Load(); got != 0 {
+		t.Errorf("dry-run must never write: puts.Load() = %v, want %v", got, 0)
+	}
+	// Bounded, not merely non-zero: an unbounded read is how a guard
+	// that fires per retry or per field goes unnoticed.
+	if got := gets.Load(); got != 1 {
+		t.Errorf("dry-run reads the parent exactly once: gets.Load() = %v, want %v", got, 1)
 	}
 }
 
@@ -997,4 +1024,144 @@ func TestMCP_DeleteCard_DryRun_Everywhere_StateDiff(t *testing.T) {
 func TestMCP_DeleteCard_MissingCardID(t *testing.T) {
 	t.Parallel()
 	assertMissingRequiredFieldFails(t, deleteCardToolName, "card_id")
+}
+
+// TestMCP_UpdateCard_Structural_CrossWidgetDropsParent pins the one
+// case where carrying the parent through would be wrong: a parent has
+// to belong to the widget the body names, so a board change cannot
+// take the old board's parent with it.
+func TestMCP_UpdateCard_Structural_CrossWidgetDropsParent(t *testing.T) {
+	t.Parallel()
+
+	var put string
+	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", &put, nil))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":          "ci-1",
+			"widget_common_id": "w-OTHER",
+			"column_id":        "col-on-other-board",
+			"list_position":    0,
+		},
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if strings.Contains(put, "ci-parent") {
+		t.Errorf("a parent from the old board must not travel: %q present in %q", "ci-parent", put)
+	}
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if !strings.Contains(strings.Join(out.Notes, " "), "different board") {
+		t.Errorf("dropping the parent is something the caller did not ask for; it must be reported: %v", out.Notes)
+	}
+}
+
+// TestMCP_UpdateCard_ClearParentWithParentID_Refuses covers the only
+// input pair in the tool that asks for two opposite things. Guessing
+// which half was meant is how a detach becomes a re-parent.
+func TestMCP_UpdateCard_ClearParentWithParentID_Refuses(t *testing.T) {
+	t.Parallel()
+
+	var puts atomic.Int32
+	cs := connectInMemoryWith(t, favroFixture(t, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			puts.Add(1)
+		}
+	})))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":          "ci-1",
+			"widget_common_id": "w-1",
+			"clear_parent":     true,
+			"parent_card_id":   "ci-other",
+		},
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("res.IsError = false, want true")
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	requireDeclaredClassPrefix(t, text)
+	if !strings.HasPrefix(text, "[invalid] ") {
+		t.Errorf("two mutually exclusive arguments are [invalid]: got %q", text)
+	}
+	if got := puts.Load(); got != 0 {
+		t.Errorf("a refused request must not be written: puts = %v, want %v", got, 0)
+	}
+}
+
+// TestMCP_MoveCard_Structural_CarriesExistingParent is the same
+// regression as the update_card one, on the tool update_card's own
+// description tells callers to prefer. A move always carries
+// widgetCommonId, so every move is a structural write.
+func TestMCP_MoveCard_Structural_CarriesExistingParent(t *testing.T) {
+	t.Parallel()
+
+	var put string
+	var gets atomic.Int32
+	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", &put, &gets))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: moveCardToolName,
+		Arguments: map[string]any{
+			"card_id":          "ci-1",
+			"widget_common_id": "w-1",
+			"column_id":        "col-2",
+		},
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
+	if got := gets.Load(); got != 1 {
+		t.Errorf("a move must read the card back for its parent: gets = %v, want %v", got, 1)
+	}
+
+	var body favro.UpdateCardRequest
+	if err := json.Unmarshal([]byte(put), &body); err != nil {
+		t.Fatalf("json.Unmarshal(put, &body): %v", err)
+	}
+	if got := body.ParentCardID; got != "ci-parent" {
+		t.Errorf("a move must carry the existing parent: body.ParentCardID = %q, want %q", got, "ci-parent")
+	}
+}
+
+// TestMCP_UpdateCard_FailedWrite_KeepsRequestNote pins that a note
+// computed before the write survives the write failing. The note says
+// the arguments cannot do what was asked; dropping it is exactly when
+// the caller retries the same ineffective call.
+func TestMCP_UpdateCard_FailedWrite_KeepsRequestNote(t *testing.T) {
+	t.Parallel()
+
+	cs := connectInMemoryWith(t, favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1"}`))
+	})))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: updateCardToolName,
+		Arguments: map[string]any{
+			"card_id":      "ci-1",
+			"name":         "renamed",
+			"clear_parent": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("res.IsError = false, want true")
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	requireDeclaredClassPrefix(t, text)
+	if !strings.Contains(text, "clear_parent had no effect") {
+		t.Errorf("the request-level note must survive a failed write: %q", text)
+	}
 }

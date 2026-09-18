@@ -134,7 +134,7 @@ func mutating(title string, destructive bool) *mcp.ToolAnnotations {
 // --dry-run flag forces dry-run process-wide (independent of this
 // field).
 type dryRunInput struct {
-	DryRun bool `json:"dry_run,omitempty" jsonschema:"if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing."`
+	DryRun bool `json:"dry_run,omitempty" jsonschema:"if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run."`
 }
 
 // writeOutput is the standard output shape for every mutating tool.
@@ -183,6 +183,18 @@ type DryRunCall struct {
 // stateDiff is provided by the caller because the natural-language
 // "what would happen" phrasing is per-tool ("would create tag X",
 // "would archive card Y", etc).
+// withNotes carries a note computed before the write onto the error a
+// failed write returns. The note describes the REQUEST, not the result,
+// so dropping it on failure loses exactly the guidance that would stop
+// the caller retrying the same ineffective arguments. %w keeps the
+// class, so the vocabulary is unaffected.
+func withNotes(err error, notes []string) error {
+	if len(notes) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w (%s)", err, strings.Join(notes, "; "))
+}
+
 func runWrite[T any](
 	run func() (T, error),
 	stateDiff func() string,
@@ -262,7 +274,7 @@ func (o writeOutput[T]) Summary() string {
 	var b strings.Builder
 	switch {
 	case o.DryRun:
-		b.WriteString("DRY RUN — nothing was sent to Favro.")
+		b.WriteString("DRY RUN — nothing was written to Favro.")
 		if o.WouldCall != nil {
 			fmt.Fprintf(&b, "\n  would call: %s %s", o.WouldCall.Method, o.WouldCall.URL)
 		}
