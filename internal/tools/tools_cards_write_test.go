@@ -352,11 +352,25 @@ func structuralUpdateFixture(t *testing.T, parentCardID string, putBody *string,
 			if putBody != nil {
 				*putBody = string(b)
 			}
+			var sent favro.UpdateCardRequest
+			if err := json.Unmarshal(b, &sent); err != nil {
+				t.Errorf("json.Unmarshal(PUT body, &sent): %v", err)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			// Favro echoes a null parent on a structural write
 			// whether or not the card is still nested, which is
 			// exactly why the caller cannot tell from the answer.
-			_, _ = w.Write([]byte(`{"cardId":"ci-1","cardCommonId":"cc-1","name":"nested","widgetCommonId":"w-1"}`))
+			// The column it does echo, and UpdateCard refuses a
+			// write whose answer carries a different one, so the
+			// double has to echo the one it was sent.
+			_ = json.NewEncoder(w).Encode(favro.Card{
+				CardID:         "ci-1",
+				CardCommonID:   "cc-1",
+				Name:           "nested",
+				WidgetCommonID: "w-1",
+				ColumnID:       sent.ColumnID,
+			})
 		}
 	}))
 }
