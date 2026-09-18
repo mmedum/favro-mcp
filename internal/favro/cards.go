@@ -545,9 +545,15 @@ type MoveCardRequest struct {
 	WidgetCommonID string
 	ColumnID       string
 	LaneID         string
-	ListPosition   *float64
-	SheetPosition  *float64
-	DragMode       string
+	// ParentCardID is carried for the same reason UpdateCardRequest
+	// carries it: a move sets widgetCommonId, and Favro reads
+	// parentCardId off the body of such a write — so a body naming none
+	// leaves the card at top level, and a move that means to keep a
+	// nested card nested has to say so.
+	ParentCardID  string
+	ListPosition  *float64
+	SheetPosition *float64
+	DragMode      string
 }
 
 // DeleteCardResponse is the body Favro returns from DELETE /cards/{id}:

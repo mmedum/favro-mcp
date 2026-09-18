@@ -134,7 +134,7 @@ func mutating(title string, destructive bool) *mcp.ToolAnnotations {
 // --dry-run flag forces dry-run process-wide (independent of this
 // field).
 type dryRunInput struct {
-	DryRun bool `json:"dry_run,omitempty" jsonschema:"if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing."`
+	DryRun bool `json:"dry_run,omitempty" jsonschema:"if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run."`
 }
 
 // writeOutput is the standard output shape for every mutating tool.
@@ -154,6 +154,14 @@ type writeOutput[T any] struct {
 	WouldCall          *DryRunCall `json:"would_call,omitempty" jsonschema:"the HTTP request that would have been sent (populated when dry_run is true)"`
 	RequestBody        any         `json:"request_body,omitempty" jsonschema:"the JSON body that would have been sent, decoded into a structured object (populated when dry_run is true)"`
 	PredictedStateDiff string      `json:"predicted_state_diff,omitempty" jsonschema:"a human-readable description of the change that would happen (populated when dry_run is true)"`
+
+	// Notes is what the tool did beyond what the caller asked for,
+	// and what it knows about the write that the returned resource
+	// does not say. A caller cannot see either from Result: hard
+	// rule 2's whole point is that Favro's answer to a write is not
+	// evidence about the write, so anything the server learned by
+	// looking has to be carried separately.
+	Notes []string `json:"notes,omitempty" jsonschema:"what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done"`
 }
 
 // DryRunCall describes the request a mutating tool would have sent.
@@ -175,13 +183,20 @@ type DryRunCall struct {
 // stateDiff is provided by the caller because the natural-language
 // "what would happen" phrasing is per-tool ("would create tag X",
 // "would archive card Y", etc).
+//
+// notes is what the tool did beyond the literal request, computed
+// before the write. It rides on the success, on the dry-run preview and
+// on the error, because it describes the REQUEST: dropping it when the
+// write fails loses exactly the guidance that would stop the caller
+// retrying the same ineffective arguments.
 func runWrite[T any](
 	run func() (T, error),
 	stateDiff func() string,
+	notes ...string,
 ) (writeOutput[T], error) {
 	result, err := run()
 	if err == nil {
-		return writeOutput[T]{Result: &result}, nil
+		return writeOutput[T]{Result: &result, Notes: notes}, nil
 	}
 	var rec *favroapi.DryRunRecord
 	if errors.As(err, &rec) {
@@ -202,9 +217,10 @@ func runWrite[T any](
 			WouldCall:          &DryRunCall{Method: rec.Method, URL: rec.URL},
 			RequestBody:        body,
 			PredictedStateDiff: stateDiff(),
+			Notes:              notes,
 		}, nil
 	}
-	return writeOutput[T]{}, err
+	return writeOutput[T]{}, withNotes(err, notes)
 }
 
 // listFn is the shape every Favro list method exposes:
@@ -251,21 +267,38 @@ func (o listOutput[T]) Summary() string {
 // call, and a result that looks like a success is how §2.1's problem
 // starts.
 func (o writeOutput[T]) Summary() string {
-	if o.DryRun {
-		var b strings.Builder
-		b.WriteString("DRY RUN — nothing was sent to Favro.")
+	var b strings.Builder
+	switch {
+	case o.DryRun:
+		b.WriteString("DRY RUN — nothing was written to Favro.")
 		if o.WouldCall != nil {
 			fmt.Fprintf(&b, "\n  would call: %s %s", o.WouldCall.Method, o.WouldCall.URL)
 		}
 		if o.PredictedStateDiff != "" {
 			fmt.Fprintf(&b, "\n  would change: %s", o.PredictedStateDiff)
 		}
-		return b.String()
+	case o.Result == nil:
+		b.WriteString("done; Favro returned no resource.")
+	default:
+		b.WriteString("done:\n")
+		b.WriteString(render.Summary(*o.Result))
 	}
-	if o.Result == nil {
-		return "done; Favro returned no resource."
+	for _, note := range o.Notes {
+		fmt.Fprintf(&b, "\n  note: %s", note)
 	}
-	return "done:\n" + render.Summary(*o.Result)
+	return b.String()
+}
+
+// withNotes carries a note computed before the write onto the error a
+// failed write returns. The note describes the REQUEST, not the result,
+// so dropping it on failure loses exactly the guidance that would stop
+// the caller retrying the same ineffective arguments. %w keeps the
+// class, so the vocabulary is unaffected.
+func withNotes(err error, notes []string) error {
+	if len(notes) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w (%s)", err, strings.Join(notes, "; "))
 }
 
 // Summary renders a name lookup for the readable half: the count
