@@ -375,159 +375,168 @@ func structuralUpdateFixture(t *testing.T, parentCardID string, putBody *string,
 	}))
 }
 
-// TestMCP_UpdateCard_Structural_CarriesExistingParent is the
-// regression for the orphaning in hard rule 2's territory: a
-// column nudge on a nested card is a structural write, and a
-// structural write naming no parent leaves the card at top level.
-func TestMCP_UpdateCard_Structural_CarriesExistingParent(t *testing.T) {
+// TestMCP_StructuralWrite_ParentGuard is the guard's truth table. Favro
+// treats a write carrying widgetCommonId as structural and rebuilds the
+// card's place from the body alone, so a body naming no parent detaches
+// a nested card — and the 200 looks identical either way.
+//
+// Every row asserts all three observable effects: how many reads the
+// guard cost, what parent the body ended up naming, and what the caller
+// was told. The rows that cost no read matter as much as the rest: a
+// guard that is wrong in the negative direction reads on every write,
+// which looks exactly like one that works.
+func TestMCP_StructuralWrite_ParentGuard(t *testing.T) {
 	t.Parallel()
 
-	var put string
-	var gets atomic.Int32
-	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", &put, &gets))
-
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: updateCardToolName,
-		Arguments: map[string]any{
-			"card_id":          "ci-1",
-			"widget_common_id": "w-1",
-			"column_id":        "col-2",
-			"list_position":    0,
+	tests := []struct {
+		name string
+		tool string
+		// currentParent is what GET /cards/{id} reports the card's
+		// parent to be before the write.
+		currentParent string
+		args          map[string]any
+		wantGets      int32
+		// wantBodyParent is the parentCardId the PUT body must name;
+		// empty means the body must name none.
+		wantBodyParent string
+		// wantNote is a substring of the note the caller must get;
+		// empty means the call must produce no notes at all.
+		wantNote string
+	}{
+		{
+			name: "a column nudge carries the parent through",
+			tool: updateCardToolName, currentParent: "ci-parent",
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "list_position": 0},
+			wantGets: 1, wantBodyParent: "ci-parent", wantNote: "clear_parent",
 		},
-	})
-	if err := err; err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if res.IsError {
-		t.Error("res.IsError = true, want false")
-	}
-	if got := gets.Load(); got != 1 {
-		t.Errorf("a structural write must read the card back for its parent: gets = %v, want %v", got, 1)
+		{
+			name: "an explicit detach is not second-guessed, and costs no read",
+			tool: updateCardToolName, currentParent: "ci-parent",
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "clear_parent": true},
+			wantGets: 0, wantBodyParent: "", wantNote: "",
+		},
+		{
+			name: "a top-level card has nothing to carry",
+			tool: updateCardToolName, currentParent: "",
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "name": "renamed"},
+			wantGets: 1, wantBodyParent: "", wantNote: "",
+		},
+		{
+			name: "a non-structural write does not read at all",
+			tool: updateCardToolName, currentParent: "ci-parent",
+			args:     map[string]any{"card_id": "ci-1", "name": "renamed"},
+			wantGets: 0, wantBodyParent: "", wantNote: "",
+		},
+		{
+			name: "clear_parent on a write Favro will not act on says so",
+			tool: updateCardToolName, currentParent: "ci-parent",
+			args:     map[string]any{"card_id": "ci-1", "name": "renamed", "clear_parent": true},
+			wantGets: 0, wantBodyParent: "", wantNote: "clear_parent had no effect",
+		},
+		{
+			name: "a parent does not travel to another board",
+			tool: updateCardToolName, currentParent: "ci-parent",
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-OTHER", "column_id": "col-on-other-board", "list_position": 0},
+			wantGets: 1, wantBodyParent: "", wantNote: "different board",
+		},
+		{
+			name: "a move carries the parent too — it is the same structural body",
+			tool: moveCardToolName, currentParent: "ci-parent",
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2"},
+			wantGets: 1, wantBodyParent: "ci-parent", wantNote: "clear_parent",
+		},
 	}
 
-	var body favro.UpdateCardRequest
-	if err := json.Unmarshal([]byte(put), &body); err != nil {
-		t.Fatalf("json.Unmarshal(put, &body): %v", err)
-	}
-	if got := body.ParentCardID; got != "ci-parent" {
-		t.Errorf("the structural write must carry the existing parent: body.ParentCardID = %q, want %q", got, "ci-parent")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	if len(out.Notes) == 0 {
-		t.Fatal("carrying the parent through is something the caller did not ask for; it must be reported in notes")
-	}
-	if !strings.Contains(strings.Join(out.Notes, " "), "clear_parent") {
-		t.Errorf("the note must name the way to detach on purpose: %q missing", "clear_parent")
+			var put string
+			var gets atomic.Int32
+			cs := connectInMemoryWith(t, structuralUpdateFixture(t, tt.currentParent, &put, &gets))
+			res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tt.tool, Arguments: tt.args})
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if res.IsError {
+				t.Fatalf("res.IsError = true, want false: %v", res.Content[0])
+			}
+			if got := gets.Load(); got != tt.wantGets {
+				t.Errorf("gets.Load() = %v, want %v", got, tt.wantGets)
+			}
+
+			var body favro.UpdateCardRequest
+			if err := json.Unmarshal([]byte(put), &body); err != nil {
+				t.Fatalf("json.Unmarshal(put, &body): %v", err)
+			}
+			if got := body.ParentCardID; got != tt.wantBodyParent {
+				t.Errorf("body.ParentCardID = %q, want %q", got, tt.wantBodyParent)
+			}
+
+			out := decodeStructured[writeOutput[favro.Card]](t, res)
+			notes := strings.Join(out.Notes, " ")
+			switch {
+			case tt.wantNote == "" && len(out.Notes) != 0:
+				t.Errorf("nothing was done beyond the request, so nothing is worth reporting: out.Notes = %v", out.Notes)
+			case tt.wantNote != "" && !strings.Contains(notes, tt.wantNote):
+				t.Errorf("out.Notes must contain %q: %v", tt.wantNote, out.Notes)
+			}
+		})
 	}
 }
 
-// TestMCP_UpdateCard_Structural_ClearParentDetaches is the opposite
-// direction: asking for the detach explicitly must not be second-
-// guessed, and must not cost a read.
-func TestMCP_UpdateCard_Structural_ClearParentDetaches(t *testing.T) {
+// TestMCP_UpdateCard_ClearParentWithParentID_Refuses covers the only
+// input pair in the tool that asks for two opposite things. Guessing
+// which half was meant is how a detach becomes a re-parent.
+func TestMCP_UpdateCard_ClearParentWithParentID_Refuses(t *testing.T) {
 	t.Parallel()
 
-	var put string
-	var gets atomic.Int32
-	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", &put, &gets))
-
+	var puts atomic.Int32
+	cs := connectInMemoryWith(t, favroFixture(t, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			puts.Add(1)
+		}
+	})))
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: updateCardToolName,
 		Arguments: map[string]any{
 			"card_id":          "ci-1",
 			"widget_common_id": "w-1",
 			"clear_parent":     true,
+			"parent_card_id":   "ci-other",
 		},
 	})
-	if err := err; err != nil {
+	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if res.IsError {
-		t.Error("res.IsError = true, want false")
+	if !res.IsError {
+		t.Fatal("res.IsError = false, want true")
 	}
-	if got := gets.Load(); got != 0 {
-		t.Errorf("an explicit detach needs no read: gets = %v, want %v", got, 0)
+	text := res.Content[0].(*mcp.TextContent).Text
+	requireDeclaredClassPrefix(t, text)
+	if !strings.HasPrefix(text, "[invalid] ") {
+		t.Errorf("two mutually exclusive arguments are [invalid]: got %q", text)
 	}
-	if strings.Contains(put, "parentCardId") {
-		t.Errorf("clear_parent must leave parentCardId out of the body: %q present in %q", "parentCardId", put)
+	if got := puts.Load(); got != 0 {
+		t.Errorf("a refused request must not be written: puts = %v, want %v", got, 0)
 	}
 }
 
-// TestMCP_UpdateCard_Structural_TopLevelCardNeedsNoNote is the no-op
-// case: a card with no parent has nothing to preserve, so the read
-// happens and nothing else does.
-func TestMCP_UpdateCard_Structural_TopLevelCardNeedsNoNote(t *testing.T) {
+// TestMCP_UpdateCard_FailedWrite_KeepsRequestNote pins that a note
+// computed before the write survives the write failing. The note says
+// the arguments cannot do what was asked; dropping it is exactly when
+// the caller retries the same ineffective call.
+func TestMCP_UpdateCard_FailedWrite_KeepsRequestNote(t *testing.T) {
 	t.Parallel()
 
-	var put string
-	var gets atomic.Int32
-	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "", &put, &gets))
-
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: updateCardToolName,
-		Arguments: map[string]any{
-			"card_id":          "ci-1",
-			"widget_common_id": "w-1",
-			"name":             "renamed",
-		},
-	})
-	if err := err; err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if res.IsError {
-		t.Error("res.IsError = true, want false")
-	}
-	if strings.Contains(put, "parentCardId") {
-		t.Errorf("a top-level card has no parent to carry: %q present in %q", "parentCardId", put)
-	}
-
-	// Without this the test passes with settleParent deleted: an absent
-	// parentCardId and an empty Notes are also what doing nothing looks
-	// like. The claim is that the read happened and found nothing.
-	if got := gets.Load(); got != 1 {
-		t.Errorf("the branch under test is reached only via the read: gets = %v, want %v", got, 1)
-	}
-
-	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	if len(out.Notes) != 0 {
-		t.Errorf("nothing was preserved, so nothing is worth reporting: out.Notes = %v, want empty", out.Notes)
-	}
-}
-
-// TestMCP_UpdateCard_NonStructural_DoesNotRead pins the other half of
-// the guard: a write Favro does not treat as structural cannot orphan
-// anything, so it must not pay for a read.
-func TestMCP_UpdateCard_NonStructural_DoesNotRead(t *testing.T) {
-	t.Parallel()
-
-	var gets atomic.Int32
-	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", nil, &gets))
-
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name:      updateCardToolName,
-		Arguments: map[string]any{"card_id": "ci-1", "name": "renamed"},
-	})
-	if err := err; err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if res.IsError {
-		t.Error("res.IsError = true, want false")
-	}
-	if got := gets.Load(); got != 0 {
-		t.Errorf("a non-structural write must not read the card: gets = %v, want %v", got, 0)
-	}
-}
-
-// TestMCP_UpdateCard_ClearParentWithoutStructural_Reports covers the
-// input that asks for something Favro will not do: clear_parent on a
-// write carrying no widget_common_id changes nothing, and silence
-// would read as "detached".
-func TestMCP_UpdateCard_ClearParentWithoutStructural_Reports(t *testing.T) {
-	t.Parallel()
-
-	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", nil, nil))
-
+	cs := connectInMemoryWith(t, favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1"}`))
+	})))
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: updateCardToolName,
 		Arguments: map[string]any{
@@ -536,13 +545,16 @@ func TestMCP_UpdateCard_ClearParentWithoutStructural_Reports(t *testing.T) {
 			"clear_parent": true,
 		},
 	})
-	if err := err; err != nil {
+	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-
-	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	if !strings.Contains(strings.Join(out.Notes, " "), "clear_parent had no effect") {
-		t.Errorf("out.Notes must say the flag did nothing: %q missing from %v", "clear_parent had no effect", out.Notes)
+	if !res.IsError {
+		t.Fatal("res.IsError = false, want true")
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	requireDeclaredClassPrefix(t, text)
+	if !strings.Contains(text, "clear_parent had no effect") {
+		t.Errorf("the request-level note must survive a failed write: %q", text)
 	}
 }
 
@@ -1024,144 +1036,4 @@ func TestMCP_DeleteCard_DryRun_Everywhere_StateDiff(t *testing.T) {
 func TestMCP_DeleteCard_MissingCardID(t *testing.T) {
 	t.Parallel()
 	assertMissingRequiredFieldFails(t, deleteCardToolName, "card_id")
-}
-
-// TestMCP_UpdateCard_Structural_CrossWidgetDropsParent pins the one
-// case where carrying the parent through would be wrong: a parent has
-// to belong to the widget the body names, so a board change cannot
-// take the old board's parent with it.
-func TestMCP_UpdateCard_Structural_CrossWidgetDropsParent(t *testing.T) {
-	t.Parallel()
-
-	var put string
-	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", &put, nil))
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: updateCardToolName,
-		Arguments: map[string]any{
-			"card_id":          "ci-1",
-			"widget_common_id": "w-OTHER",
-			"column_id":        "col-on-other-board",
-			"list_position":    0,
-		},
-	})
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if strings.Contains(put, "ci-parent") {
-		t.Errorf("a parent from the old board must not travel: %q present in %q", "ci-parent", put)
-	}
-	out := decodeStructured[writeOutput[favro.Card]](t, res)
-	if !strings.Contains(strings.Join(out.Notes, " "), "different board") {
-		t.Errorf("dropping the parent is something the caller did not ask for; it must be reported: %v", out.Notes)
-	}
-}
-
-// TestMCP_UpdateCard_ClearParentWithParentID_Refuses covers the only
-// input pair in the tool that asks for two opposite things. Guessing
-// which half was meant is how a detach becomes a re-parent.
-func TestMCP_UpdateCard_ClearParentWithParentID_Refuses(t *testing.T) {
-	t.Parallel()
-
-	var puts atomic.Int32
-	cs := connectInMemoryWith(t, favroFixture(t, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPut {
-			puts.Add(1)
-		}
-	})))
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: updateCardToolName,
-		Arguments: map[string]any{
-			"card_id":          "ci-1",
-			"widget_common_id": "w-1",
-			"clear_parent":     true,
-			"parent_card_id":   "ci-other",
-		},
-	})
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if !res.IsError {
-		t.Fatal("res.IsError = false, want true")
-	}
-	text := res.Content[0].(*mcp.TextContent).Text
-	requireDeclaredClassPrefix(t, text)
-	if !strings.HasPrefix(text, "[invalid] ") {
-		t.Errorf("two mutually exclusive arguments are [invalid]: got %q", text)
-	}
-	if got := puts.Load(); got != 0 {
-		t.Errorf("a refused request must not be written: puts = %v, want %v", got, 0)
-	}
-}
-
-// TestMCP_MoveCard_Structural_CarriesExistingParent is the same
-// regression as the update_card one, on the tool update_card's own
-// description tells callers to prefer. A move always carries
-// widgetCommonId, so every move is a structural write.
-func TestMCP_MoveCard_Structural_CarriesExistingParent(t *testing.T) {
-	t.Parallel()
-
-	var put string
-	var gets atomic.Int32
-	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", &put, &gets))
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: moveCardToolName,
-		Arguments: map[string]any{
-			"card_id":          "ci-1",
-			"widget_common_id": "w-1",
-			"column_id":        "col-2",
-		},
-	})
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if res.IsError {
-		t.Error("res.IsError = true, want false")
-	}
-	if got := gets.Load(); got != 1 {
-		t.Errorf("a move must read the card back for its parent: gets = %v, want %v", got, 1)
-	}
-
-	var body favro.UpdateCardRequest
-	if err := json.Unmarshal([]byte(put), &body); err != nil {
-		t.Fatalf("json.Unmarshal(put, &body): %v", err)
-	}
-	if got := body.ParentCardID; got != "ci-parent" {
-		t.Errorf("a move must carry the existing parent: body.ParentCardID = %q, want %q", got, "ci-parent")
-	}
-}
-
-// TestMCP_UpdateCard_FailedWrite_KeepsRequestNote pins that a note
-// computed before the write survives the write failing. The note says
-// the arguments cannot do what was asked; dropping it is exactly when
-// the caller retries the same ineffective call.
-func TestMCP_UpdateCard_FailedWrite_KeepsRequestNote(t *testing.T) {
-	t.Parallel()
-
-	cs := connectInMemoryWith(t, favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPut {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"cardId":"ci-1"}`))
-	})))
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: updateCardToolName,
-		Arguments: map[string]any{
-			"card_id":      "ci-1",
-			"name":         "renamed",
-			"clear_parent": true,
-		},
-	})
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if !res.IsError {
-		t.Fatal("res.IsError = false, want true")
-	}
-	text := res.Content[0].(*mcp.TextContent).Text
-	requireDeclaredClassPrefix(t, text)
-	if !strings.Contains(text, "clear_parent had no effect") {
-		t.Errorf("the request-level note must survive a failed write: %q", text)
-	}
 }

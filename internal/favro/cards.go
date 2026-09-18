@@ -547,8 +547,9 @@ type MoveCardRequest struct {
 	LaneID         string
 	// ParentCardID is carried for the same reason UpdateCardRequest
 	// carries it: a move sets widgetCommonId, which Favro treats as
-	// structural, and a structural write naming no parent leaves the
-	// card at top level. See settleParent in internal/tools.
+	// structural, rebuilding the card's place from the body alone — so
+	// a body naming no parent leaves the card at top level, and a move
+	// that means to keep a nested card nested has to say so.
 	ParentCardID  string
 	ListPosition  *float64
 	SheetPosition *float64

@@ -1,6 +1,6 @@
 {
   "server": "favro-mcp",
-  "version": "v2.0.4-5-g2379682-dirty (2379682)",
+  "version": "v2.0.4-6-g8268227-dirty (8268227)",
   "sdk": "v1.8.0",
   "tools": [
     {
@@ -31,7 +31,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "search_query": {
@@ -266,7 +266,7 @@
             ]
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -387,7 +387,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "tag_name": {
@@ -756,7 +756,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "text": {
@@ -865,7 +865,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -1243,7 +1243,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "due_date": {
@@ -1659,7 +1659,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "full_members_can_add_widgets": {
@@ -1873,7 +1873,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -2013,7 +2013,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -2148,7 +2148,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "members": {
@@ -2313,7 +2313,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -2423,7 +2423,7 @@
             ]
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -2551,7 +2551,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -2701,7 +2701,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "edit_role": {
@@ -2892,7 +2892,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -2977,7 +2977,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "everywhere": {
@@ -3068,7 +3068,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -3153,7 +3153,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "widget_common_id": {
@@ -3242,7 +3242,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -3331,7 +3331,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -3413,7 +3413,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "group_id": {
@@ -3498,7 +3498,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "tag_id": {
@@ -3583,7 +3583,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "task_id": {
@@ -3668,7 +3668,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "task_list_id": {
@@ -3753,7 +3753,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "webhook_id": {
@@ -3842,7 +3842,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "widget_common_id": {
@@ -7347,7 +7347,7 @@
         "readOnlyHint": false,
         "title": "Move Favro card"
       },
-      "description": "Move a Favro card between columns or lanes on a board. At least one of widget_common_id / column_id / lane_id must be set, and a column or lane move must ALSO pass widget_common_id — the board the card is already on — because Favro answers 200 and moves nothing without it. Passing a different widget_common_id adds the card to that board and leaves the original where it is; Favro has no cross-board relocation. The result is checked against what was asked for, so a move Favro accepts and ignores comes back as an error rather than a success. A move is a structural write, so Favro re-seats the card from the body alone: this tool reads the card's current parent first and carries it through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+      "description": "Move a Favro card between columns or lanes on a board. At least one of widget_common_id / column_id / lane_id must be set, and a column or lane move must ALSO pass widget_common_id — the board the card is already on — because Favro answers 200 and moves nothing without it. Passing a different widget_common_id adds the card to that board and leaves the original where it is; Favro has no cross-board relocation. The result is checked against what was asked for, so a move Favro accepts and ignores comes back as an error rather than a success. A move is a structural write, so Favro re-seats the card from the body alone: this tool reads the card's current parent first and carries it through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or `parent_card_id` to nest it there; either one also skips the read. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7368,7 +7368,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "lane_id": {
@@ -7799,7 +7799,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "text": {
@@ -7984,7 +7984,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "file_urls": {
@@ -8359,7 +8359,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "tag_name": {
@@ -8750,7 +8750,7 @@
             ]
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -8878,7 +8878,7 @@
             ]
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "find": {
@@ -9679,7 +9679,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "force_refresh": {
@@ -10142,7 +10142,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -10497,7 +10497,7 @@
         "readOnlyHint": false,
         "title": "Update Favro card"
       },
-      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\nA write carrying `widget_common_id` is structural: Favro re-seats the card from the body alone, so a body naming no parent leaves the card at top level — and the response echoes a null parent either way, so the answer cannot tell you which happened. This tool therefore reads the card first on such a write and carries its existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach the card on purpose, or `parent_card_id` to re-parent it.",
+      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\nA write carrying `widget_common_id` is structural: Favro re-seats the card from the body alone, so a body naming no parent leaves the card at top level — and the response echoes a null parent either way, so the answer cannot tell you which happened. This tool therefore reads the card first on such a write and carries its existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -10542,7 +10542,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "due_date": {
@@ -10979,7 +10979,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "full_members_can_add_widgets": {
@@ -11234,7 +11234,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -11373,7 +11373,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "remove_attachments": {
@@ -11526,7 +11526,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "is_before": {
@@ -11651,7 +11651,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "group_id": {
@@ -11820,7 +11820,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -11927,7 +11927,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "updates": {
@@ -12064,7 +12064,7 @@
             ]
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -12187,7 +12187,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -12325,7 +12325,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "edit_role": {
@@ -12519,7 +12519,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "file_path": {
@@ -12631,7 +12631,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "file_path": {

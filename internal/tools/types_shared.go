@@ -134,7 +134,7 @@ func mutating(title string, destructive bool) *mcp.ToolAnnotations {
 // --dry-run flag forces dry-run process-wide (independent of this
 // field).
 type dryRunInput struct {
-	DryRun bool `json:"dry_run,omitempty" jsonschema:"if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still READ to build an accurate preview — favro_update_card and favro_move_card read the card's current parent so the previewed body is the body that would be sent — but nothing is ever written under dry_run."`
+	DryRun bool `json:"dry_run,omitempty" jsonschema:"if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run."`
 }
 
 // writeOutput is the standard output shape for every mutating tool.
@@ -183,25 +183,20 @@ type DryRunCall struct {
 // stateDiff is provided by the caller because the natural-language
 // "what would happen" phrasing is per-tool ("would create tag X",
 // "would archive card Y", etc).
-// withNotes carries a note computed before the write onto the error a
-// failed write returns. The note describes the REQUEST, not the result,
-// so dropping it on failure loses exactly the guidance that would stop
-// the caller retrying the same ineffective arguments. %w keeps the
-// class, so the vocabulary is unaffected.
-func withNotes(err error, notes []string) error {
-	if len(notes) == 0 {
-		return err
-	}
-	return fmt.Errorf("%w (%s)", err, strings.Join(notes, "; "))
-}
-
+//
+// notes is what the tool did beyond the literal request, computed
+// before the write. It rides on the success, on the dry-run preview and
+// on the error, because it describes the REQUEST: dropping it when the
+// write fails loses exactly the guidance that would stop the caller
+// retrying the same ineffective arguments.
 func runWrite[T any](
 	run func() (T, error),
 	stateDiff func() string,
+	notes ...string,
 ) (writeOutput[T], error) {
 	result, err := run()
 	if err == nil {
-		return writeOutput[T]{Result: &result}, nil
+		return writeOutput[T]{Result: &result, Notes: notes}, nil
 	}
 	var rec *favroapi.DryRunRecord
 	if errors.As(err, &rec) {
@@ -222,9 +217,10 @@ func runWrite[T any](
 			WouldCall:          &DryRunCall{Method: rec.Method, URL: rec.URL},
 			RequestBody:        body,
 			PredictedStateDiff: stateDiff(),
+			Notes:              notes,
 		}, nil
 	}
-	return writeOutput[T]{}, err
+	return writeOutput[T]{}, withNotes(err, notes)
 }
 
 // listFn is the shape every Favro list method exposes:
@@ -291,6 +287,18 @@ func (o writeOutput[T]) Summary() string {
 		fmt.Fprintf(&b, "\n  note: %s", note)
 	}
 	return b.String()
+}
+
+// withNotes carries a note computed before the write onto the error a
+// failed write returns. The note describes the REQUEST, not the result,
+// so dropping it on failure loses exactly the guidance that would stop
+// the caller retrying the same ineffective arguments. %w keeps the
+// class, so the vocabulary is unaffected.
+func withNotes(err error, notes []string) error {
+	if len(notes) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w (%s)", err, strings.Join(notes, "; "))
 }
 
 // Summary renders a name lookup for the readable half: the count
