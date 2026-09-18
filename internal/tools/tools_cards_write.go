@@ -168,16 +168,20 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 			"response echoes a null parent either way, so the answer cannot tell you which " +
 			"happened. This tool therefore reads the card first on such a write and carries its " +
 			"existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach " +
-			"the card on purpose, or `parent_card_id` to re-parent it.",
+			"the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
 		Annotations: mutating("Update Favro card", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
+		parent, notes, err := settleParent(ctx, r, in.CardID, in.WidgetCommonID, in.ParentCardID, in.ClearParent)
+		if err != nil {
+			return nil, writeOutput[favro.Card]{}, err
+		}
 		req := favro.UpdateCardRequest{
 			Name:                in.Name,
 			DetailedDescription: in.DetailedDescription,
 			WidgetCommonID:      in.WidgetCommonID,
 			ColumnID:            in.ColumnID,
 			LaneID:              in.LaneID,
-			ParentCardID:        in.ParentCardID,
+			ParentCardID:        parent,
 			DragMode:            in.DragMode,
 			ListPosition:        in.ListPosition,
 			SheetPosition:       in.SheetPosition,
@@ -188,11 +192,6 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 			StartDate:           in.StartDate,
 			DueDate:             in.DueDate,
 		}
-		parent, notes, err := settleParent(ctx, r, in.CardID, in.WidgetCommonID, in.ParentCardID, in.ClearParent)
-		if err != nil {
-			return nil, writeOutput[favro.Card]{}, err
-		}
-		req.ParentCardID = parent
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
@@ -200,11 +199,11 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 		out, err := runWrite(
 			func() (favro.Card, error) { return r.Client().UpdateCard(writeCtx, in.CardID, req) },
 			func() string { return updateCardStateDiff(in.CardID, &req, in.ClearParent) },
+			notes...,
 		)
 		if err != nil {
-			return nil, writeOutput[favro.Card]{}, withNotes(err, notes)
+			return nil, writeOutput[favro.Card]{}, err
 		}
-		out.Notes = notes
 		if !out.DryRun {
 			r.InvalidateSearchCardCache()
 		}
@@ -216,6 +215,17 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 // for two opposite things. ClassInvalid is §6.2's "two mutually
 // exclusive ones": the caller changes the arguments, and guessing which
 // half they meant is how a detach becomes a re-parent nobody asked for.
+// The notes settleParent can emit. Hoisted so the guard's branches are
+// visible without reading past them, and so the detach phrase has one
+// spelling shared with the two dry-run previews.
+const (
+	parentClearedPhrase = "cleared (card detached to top level)"
+
+	noteClearParentInert = "clear_parent had no effect: only a write carrying widget_common_id re-seats the card. Pass the card's own widget_common_id alongside it to detach it."
+	noteParentNotOnBoard = "this write puts the card on a different board, and a parent must belong to the widget the write names — so this body names none and the card lands at top level there. Pass parent_card_id naming a card on that board to nest it."
+	noteParentCarried    = "kept the card's existing parent: this write carries widget_common_id, which Favro treats as structural, and a structural write naming no parent leaves the card at top level. Pass clear_parent: true to detach on purpose, or parent_card_id to re-parent."
+)
+
 var errClearParentWithParent = render.Sentinel(render.ClassInvalid,
 	"favro: clear_parent and parent_card_id ask for opposite things — pass one or the other")
 
@@ -245,15 +255,29 @@ var errClearParentWithParent = render.Sentinel(render.ClassInvalid,
 // be sent (the same choice the description-editor tools make; a dry run
 // must not write, which is a different claim from must not read).
 func settleParent(ctx context.Context, r *service.Resolver, cardID, widgetCommonID, parentCardID string, clearParent bool) (string, []string, error) {
-	structural := widgetCommonID != ""
-	switch {
-	case clearParent && parentCardID != "":
+	if clearParent && parentCardID != "" {
 		return "", nil, errClearParentWithParent
-	case !structural && clearParent:
-		return parentCardID, []string{"clear_parent had no effect: Favro only re-seats a card on a structural write, which is one carrying widget_common_id. Pass the card's own widget_common_id alongside it to detach the card."}, nil
-	case !structural, clearParent, parentCardID != "":
+	}
+	if widgetCommonID == "" { // not structural: nothing is re-seated
+		if clearParent {
+			return "", []string{noteClearParentInert}, nil
+		}
 		return parentCardID, nil, nil
 	}
+	if clearParent || parentCardID != "" { // the body already settles it
+		return parentCardID, nil, nil
+	}
+	return parentFromCard(ctx, r, cardID, widgetCommonID)
+}
+
+// parentFromCard is the half of settleParent that has to ask Favro:
+// the request said nothing about the parent, so the card's own answer
+// decides what the body names.
+//
+// A failed read refuses the write. The read is what makes the write
+// safe, and a caller who would rather not pay for it has two ways to
+// say so — parent_card_id or clear_parent — which the refusal names.
+func parentFromCard(ctx context.Context, r *service.Resolver, cardID, widgetCommonID string) (string, []string, error) {
 	current, err := r.Client().GetCard(ctx, cardID)
 	if err != nil {
 		return "", nil, fmt.Errorf("refusing a structural update to card %q: its current parent could not be read, and a structural write naming no parent detaches the card from its parent. Pass parent_card_id to name the parent yourself, or clear_parent: true if detaching is what you want: %w", cardID, err)
@@ -261,14 +285,12 @@ func settleParent(ctx context.Context, r *service.Resolver, cardID, widgetCommon
 	if current.ParentCardID == "" {
 		return "", nil, nil
 	}
-	// A parent has to belong to the widget the body names. Carrying one
-	// across a board change sends an id the target widget has never
-	// heard of, so the card goes to the target's top level and the
-	// caller is told why rather than being handed an illegal body.
+	// A parent has to belong to the widget the body names, so one from
+	// the old board cannot travel with a card changing boards.
 	if current.WidgetCommonID != "" && current.WidgetCommonID != widgetCommonID {
-		return "", []string{"this write puts the card on a different board, and its parent belongs to the old one — a parent must belong to the widget the write names, so this body names none. The card will sit at top level on the target board; pass parent_card_id naming a card there to nest it."}, nil
+		return "", []string{noteParentNotOnBoard}, nil
 	}
-	return current.ParentCardID, []string{"this write carries widget_common_id, which Favro treats as structural, and a structural write naming no parent leaves the card at top level. The card's current parent was read first and this body names it, so the write asks for the card to stay nested. Pass clear_parent: true to detach it on purpose, or parent_card_id to re-parent it."}, nil
+	return current.ParentCardID, []string{noteParentCarried}, nil
 }
 
 func registerArchiveCard(reg *registry, r *service.Resolver) {
@@ -336,7 +358,8 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 			"asked for, so a move Favro accepts and ignores comes back as an error rather " +
 			"than a success. A move is a structural write, so Favro re-seats the card from " +
 			"the body alone: this tool reads the card's current parent first and carries it " +
-			"through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose. " +
+			"through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or " +
+			"`parent_card_id` to nest it there; either one also skips the read. " +
 			"Successful live writes invalidate the search-cards cache. Pass " +
 			"`dry_run: true` to preview.",
 		Annotations: mutating("Move Favro card", false),
@@ -349,28 +372,27 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 		if err != nil {
 			return nil, writeOutput[favro.Card]{}, err
 		}
+		req := favro.MoveCardRequest{
+			WidgetCommonID: in.WidgetCommonID,
+			ColumnID:       in.ColumnID,
+			LaneID:         in.LaneID,
+			ParentCardID:   parent,
+			ListPosition:   in.ListPosition,
+			SheetPosition:  in.SheetPosition,
+			DragMode:       in.DragMode,
+		}
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
 		}
 		out, err := runWrite(
-			func() (favro.Card, error) {
-				return r.Client().MoveCard(writeCtx, in.CardID, favro.MoveCardRequest{
-					WidgetCommonID: in.WidgetCommonID,
-					ColumnID:       in.ColumnID,
-					LaneID:         in.LaneID,
-					ParentCardID:   parent,
-					ListPosition:   in.ListPosition,
-					SheetPosition:  in.SheetPosition,
-					DragMode:       in.DragMode,
-				})
-			},
-			func() string { return moveCardStateDiff(in, parent) },
+			func() (favro.Card, error) { return r.Client().MoveCard(writeCtx, in.CardID, req) },
+			func() string { return moveCardStateDiff(in.CardID, &req, in.ClearParent) },
+			notes...,
 		)
 		if err != nil {
-			return nil, writeOutput[favro.Card]{}, withNotes(err, notes)
+			return nil, writeOutput[favro.Card]{}, err
 		}
-		out.Notes = notes
 		if !out.DryRun {
 			r.InvalidateSearchCardCache()
 		}
@@ -460,7 +482,7 @@ func updateCardStateDiff(cardID string, in *favro.UpdateCardRequest, clearParent
 		{in.ColumnID != "", str("column", in.ColumnID)},
 		{in.LaneID != "", str("lane", in.LaneID)},
 		{in.ParentCardID != "", str("parent", in.ParentCardID)},
-		{clearParent && in.ParentCardID == "", lit("parent → cleared (card detached to top level)")},
+		{clearParent && in.ParentCardID == "", lit("parent → " + parentClearedPhrase)},
 		{in.ListPosition != nil, num("list_position", in.ListPosition)},
 		{in.SheetPosition != nil, num("sheet_position", in.SheetPosition)},
 		{len(in.AddAssignmentIDs) > 0, count("+", "assignment(s)", len(in.AddAssignmentIDs))},
@@ -485,7 +507,7 @@ func updateCardStateDiff(cardID string, in *favro.UpdateCardRequest, clearParent
 // moveCardStateDiff renders the dry-run state-diff phrase for
 // favro_move_card. Listing the destination fields explicitly helps the
 // LLM verify it's about to relocate to the right place.
-func moveCardStateDiff(in moveCardInput, parent string) string {
+func moveCardStateDiff(cardID string, in *favro.MoveCardRequest, clearParent bool) string {
 	var dest []string
 	if in.WidgetCommonID != "" {
 		dest = append(dest, fmt.Sprintf("widget=%q", in.WidgetCommonID))
@@ -497,13 +519,13 @@ func moveCardStateDiff(in moveCardInput, parent string) string {
 		dest = append(dest, fmt.Sprintf("lane=%q", in.LaneID))
 	}
 	switch {
-	case parent != "":
-		dest = append(dest, fmt.Sprintf("parent=%q", parent))
-	case in.ClearParent:
-		dest = append(dest, "parent=cleared (card detached to top level)")
+	case in.ParentCardID != "":
+		dest = append(dest, fmt.Sprintf("parent=%q", in.ParentCardID))
+	case clearParent:
+		dest = append(dest, "parent="+parentClearedPhrase)
 	}
 	if len(dest) == 0 {
-		return fmt.Sprintf("would PUT card %q with no destination set (favro_move_card requires at least one of widget_common_id, column_id, or lane_id)", in.CardID)
+		return fmt.Sprintf("would PUT card %q with no destination set (favro_move_card requires at least one of widget_common_id, column_id, or lane_id)", cardID)
 	}
-	return fmt.Sprintf("would move card %q to %s", in.CardID, strings.Join(dest, ", "))
+	return fmt.Sprintf("would move card %q to %s", cardID, strings.Join(dest, ", "))
 }
