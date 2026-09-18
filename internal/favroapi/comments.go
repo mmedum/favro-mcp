@@ -2,11 +2,11 @@ package favroapi
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 // errMissingCardCommonID is returned by ListComments when the caller
@@ -14,7 +14,7 @@ import (
 // comments to a single card via the required `cardCommonId` query
 // parameter (verified against API docs); short-circuiting locally
 // surfaces the requirement before any HTTP round-trip.
-var errMissingCardCommonID = errors.New("favro: card_common_id is required for listing comments")
+var errMissingCardCommonID = render.Sentinel(render.ClassInvalid, "favro: card_common_id is required for listing comments")
 
 // ListComments returns one page of comments on the card identified
 // by cardCommonID. The cardCommonID is mandatory — Favro's /comments

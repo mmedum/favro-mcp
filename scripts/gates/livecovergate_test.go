@@ -24,9 +24,50 @@ func TestLiveCoverAgainstThisRepository(t *testing.T) {
 func TestTranscriptAgainstThisRepository(t *testing.T) {
 	var out sink
 	if err := transcript(&out, nil); err != nil {
-		t.Fatalf("the live driver prints without redacting: %v", err)
+		t.Fatalf("a live driver prints without redacting: %v", err)
 	}
 	out.mustSay(t, "allowed to have one")
+	// Both drivers, by name. The gate read one hard-coded directory
+	// while a second driver printed live ids beside it, so "it passed"
+	// and "it looked at the driver that was already clean" printed the
+	// same sentence.
+	for _, dir := range transcriptDriverDirs {
+		out.mustSay(t, dir)
+	}
+}
+
+// TestTranscriptSkipsOnlyTheDisabledStub holds the one exemption to its
+// shape. buildExcluded skips a file whose //go:build constraint is a
+// negation; if that ever matched a real driver file, the gate would
+// read less and still say ok.
+func TestTranscriptSkipsOnlyTheDisabledStub(t *testing.T) {
+	root, err := moduleRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var skipped []string
+	for _, dir := range transcriptDriverDirs {
+		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(dir)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+				continue
+			}
+			excluded, err := buildExcluded(filepath.Join(root, filepath.FromSlash(dir), e.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if excluded {
+				skipped = append(skipped, dir+"/"+e.Name())
+			}
+		}
+	}
+	want := []string{"scripts/evals/disabled.go"}
+	if len(skipped) != len(want) || (len(skipped) > 0 && skipped[0] != want[0]) {
+		t.Errorf("the gate skips %v, want exactly %v — a driver file must not be able to opt out by carrying a negated build tag", skipped, want)
+	}
 }
 
 // TestEveryStepNamesARegisteredTool holds the step list against the

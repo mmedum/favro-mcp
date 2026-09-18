@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/internal/render"
 )
 
 // errMissingFilename is returned by UploadAttachment when the
@@ -14,7 +15,7 @@ import (
 // the query string to determine the attachment's display name; an
 // empty filename would 400 server-side or, worse, silently land an
 // untitled file.
-var errMissingFilename = fmt.Errorf("favro: filename is required for attachment upload")
+var errMissingFilename = render.Sentinel(render.ClassInvalid, "favro: filename is required for attachment upload")
 
 // UploadAttachmentMaxBytes caps the in-memory size of a single
 // attachment upload. Favro's documented limit is 10 MiB; the cap

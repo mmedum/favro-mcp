@@ -119,6 +119,14 @@ live: build ## drive the built binary against a real organization (needs credent
 transcript: ## the live driver prints only through the redactor
 	@$(GO) run ./scripts/gates transcript
 
+.PHONY: outcomes
+outcomes: ## no tool states an outcome the response did not carry
+	@$(GO) run ./scripts/gates outcomes
+
+.PHONY: registry
+registry: ## the committed MCP registry entry obeys the registry's own rules
+	@$(GO) run ./scripts/gates registry
+
 .PHONY: live-cover
 live-cover: ## the live driver exercises every tool and option, or waives it
 	@$(GO) run ./scripts/gates live-cover
@@ -173,8 +181,12 @@ package-mcpb: ## build a snapshot .mcpb bundle (requires goreleaser)
 	goreleaser release --snapshot --clean --skip=publish
 
 .PHONY: check
-check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields transcript live-cover parity plugin mcpb rule8 schema-diff smoke staleness ## everything CI runs
+check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields transcript outcomes registry live-cover parity plugin mcpb rule8 schema-diff smoke staleness ## everything CI runs
 
 .PHONY: clean
 clean: ## remove build artifacts
 	$(RM) -r $(BIN_DIR) dist coverage.out coverage.html favro-mcp.plugin
+
+.PHONY: evals
+evals: build ## drive a model through the tools and score it (needs credentials + the claude CLI)
+	$(GO) run -tags=evals ./scripts/evals

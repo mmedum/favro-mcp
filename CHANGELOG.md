@@ -11,6 +11,96 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ### Fixed
 - `help`, `--help` and `-h` after an `auth` subcommand print usage and exit 0 instead of falling through to the subcommand. `auth login --help` ran the interactive prompt, reading the help token — or whatever stdin was redirected from — as the email, and could store a credential in the OS keyring; `auth logout --help` deleted the keyring entries. One `isHelpToken` now defines the three spellings for the whole command tree.
 
+## [2.0.4] - 2026-09-18
+
+### Fixed
+
+- The registry entry is not built from an unverified checksum file.
+  `publish-mcp.yml` downloaded the published `checksums.txt` and fed it
+  to the gate that writes the entry, whose `fileSha256` comes out of that
+  file — the number a registry-driven client checks its download against.
+  The only `cosign verify-blob` in the job covered the `mcp-publisher`
+  tarball. Somebody able to replace a release asset could edit
+  `checksums.txt` beside it, and the dispatch path would copy their
+  digest into a registry that cannot take an entry back. The signature is
+  verified before the file is read, with the certificate identity pinned
+  to this repository's `release.yml` at the exact tag, and cosign is
+  installed before the step that uses it.
+
+### Added
+
+- The bundle gate holds what the manifest says about ITSELF. `$schema`,
+  `manifest_version` and `support` were not decoded at all, so nothing
+  could hold them — and `$schema` named `main`, a branch upstream can
+  amend under a document that claims to conform to it. The version in the
+  path pins the FORMAT; the ref pins the BYTES.
+
+  Four claims, checked by the packer as well as the gate, so a bundle
+  cannot be packed past them: `$schema` is upstream's published path at a
+  ref that cannot move — a full release tag or a commit SHA — the version
+  in that URL equals `manifest_version`, that version is not below the
+  one this repository has checked, and a `support` URL says where a
+  failing install is reported. The ref rule is an allow-list over the
+  whole URL, because refusing the branch names `main`, `master` and
+  `HEAD` passes a branch called anything else, a partial tag like `v2.1`
+  that upstream re-points as it releases, and the right filename served
+  by somebody who is not upstream.
+
+  The floor is the claim the others structurally cannot make: they hold
+  the manifest against itself, and 0.2 beside a 0.2 schema is stale and
+  entirely self-consistent. Checked against the published schemas — 0.2,
+  0.3 and 0.4 are served and 0.5 is not, and 0.4's only change is a `uv`
+  value in the `server.type` enum, which a `binary` server gains nothing
+  from.
+
+### Changed
+
+- The bundle manifest's `$schema` names the `v2.1.2` tag rather than
+  `main`. Its copy of the schema is byte-identical today, which is the
+  point: nothing would say if it stopped being.
+
+- `mcp-publisher` is verified with cosign before it runs. The workflow
+  pinned its version and piped the download into `tar`; a version pins
+  which artifact to fetch, not that the bytes are the ones upstream
+  built, and the binary is then handed a token that can publish under
+  this namespace. The download is a file now, because a stream already
+  extracted cannot be checked, and the certificate identity carries the
+  exact tag so a version bump that forgets it fails loudly.
+
+## [2.0.3] - 2026-09-15
+
+The first release that publishes this server to the MCP registry, which
+is the only change anybody outside the repository will notice: until now
+it could be found only by knowing the repository exists. No tool
+changed, no behaviour changed, and the binary is the same one 2.0.2
+shipped. Everything else here is a check on this repository's own work.
+
+### Added
+- `registry` gate and a `packaging/registry/server.json` entry, so this server can be found in the MCP registry rather than only by knowing the repository exists. The gate holds the entry to the rules the registry enforces in code and its schema does not — HTTPS identifier, a GitHub release asset URL ending in `.mcpb`, no `registryBaseUrl`, a 64-hex hash — each of which is otherwise refused at publish time, after the login has succeeded. A `publish-mcp.yml` workflow publishes it after the release exists, and can be re-run on its own.
+- `outcomes` gate: no tool states an outcome the response did not carry. It flags a branch that tests a boolean request field and then says in prose what is now true — the shape `favro_move_card` shipped in from 1.0.0 to 2.0.1 — and a branch that is honest anyway takes a row in `testdata/outcome-claims.tsv` with the reason. Adopted from google-drive-mcp, the one sibling that had it.
+
+## [2.0.2] - 2026-09-15
+
+Fixes a card-management server that could not move a card. `favro_move_card`
+and `favro_update_card` reported success and left the card where it was, for
+every release since 1.0.0. No tool was added, removed or renamed; everything
+below the Fixed section is repository tooling.
+
+### Added
+- `scripts/evals`: agent evals behind a build tag. Six tasks, each scored twice — the end state read back through this server, and the trace. The run builds its own collection and board and removes them, so nothing it touches is the organization's own data. The task table sits outside the build tag, so `go test ./scripts/evals` walks every prompt without credentials, a network or a model.
+- Two checks derived from the code rather than from prose: every card tool's schema is held to the one column-move contract, so the claim cannot decay in one struct tag again; and `TestEverySentinelIsClassified` now reads `internal/favroapi` too, where a sentinel had been relying on a classification fallback that neither it nor `TestEveryErrorTypeNamesItsClass` covered.
+
+### Changed
+- `favro_move_card`'s description says what a cross-board move does: Favro adds the card to the target board and leaves the original in place, under one `cardCommonId`. There is no cross-board relocation to call.
+
+### Fixed
+- `favro_move_card` and `favro_update_card` moved no card. Favro requires `widgetCommonId` on a `columnId` or `laneId` move and answers 200 with a stub card without it; both tools now require it and say so, and a column move whose result does not carry the requested column returns `[unavailable]` instead of a success, with a message saying not to retry. Found by the first eval run.
+- `list_position` is no longer documented as required for a column move; it never was. v1.0.0 recorded the contract correctly and the tool schema then singled out the wrong field of the four, which nothing held it to.
+
+### Security
+- The eval harness confines the driven model with `--tools ""` — the CLI's own "no built-ins" switch — instead of a hand-written list of built-in tool names to disallow, and with `--setting-sources ""` so the maintainer's permission rules, hooks and skills do not reach the run. The denylist was incomplete (`Monitor` runs a shell command under a name that is not `Bash`), and the run reads a real organization while holding a live credential, so a built-in that runs commands is an exfiltration path for card text somebody else wrote.
+- `scripts/evals` prints through `internal/redact`, and the `transcript` gate reads it as well as `scripts/livefavro`. The gate was scoped to one hard-coded directory, so a failing eval task printed the model's whole trace — live ids and all — with nothing failing.
+
 ## [2.0.1] - 2026-09-15
 
 Dependency and tooling only: no tool changed, no behaviour changed.
@@ -215,7 +305,10 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.4...HEAD
+[2.0.4]: https://github.com/mmedum/favro-mcp/compare/v2.0.3...v2.0.4
+[2.0.3]: https://github.com/mmedum/favro-mcp/compare/v2.0.2...v2.0.3
+[2.0.2]: https://github.com/mmedum/favro-mcp/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/mmedum/favro-mcp/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/mmedum/favro-mcp/compare/v1.1.2...v2.0.0
 [1.1.2]: https://github.com/mmedum/favro-mcp/compare/v1.1.1...v1.1.2
