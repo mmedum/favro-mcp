@@ -8,6 +8,22 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-09-18
+
+### Fixed
+
+- The registry entry is not built from an unverified checksum file.
+  `publish-mcp.yml` downloaded the published `checksums.txt` and fed it
+  to the gate that writes the entry, whose `fileSha256` comes out of that
+  file — the number a registry-driven client checks its download against.
+  The only `cosign verify-blob` in the job covered the `mcp-publisher`
+  tarball. Somebody able to replace a release asset could edit
+  `checksums.txt` beside it, and the dispatch path would copy their
+  digest into a registry that cannot take an entry back. The signature is
+  verified before the file is read, with the certificate identity pinned
+  to this repository's `release.yml` at the exact tag, and cosign is
+  installed before the step that uses it.
+
 ### Added
 
 - The bundle gate holds what the manifest says about ITSELF. `$schema`,
@@ -286,7 +302,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.3...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.0.4...HEAD
+[2.0.4]: https://github.com/mmedum/favro-mcp/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/mmedum/favro-mcp/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/mmedum/favro-mcp/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/mmedum/favro-mcp/compare/v2.0.0...v2.0.1
