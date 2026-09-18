@@ -57,12 +57,17 @@ func DumpSchemas(ctx context.Context, srv *mcp.Server, w io.Writer, version stri
 	}
 	slices.SortFunc(res.Tools, func(a, b *mcp.Tool) int { return strings.Compare(a.Name, b.Name) })
 
+	// The build stamp deliberately does NOT go in the dump. schemas.json
+	// is committed, and version carries the git describe of whoever ran
+	// `make schemas` — including -dirty, since regenerating requires an
+	// edit first. Nothing reads it (no gate, no test), so it bought one
+	// churning line per regeneration and a -dirty stamp on main. The
+	// SDK version stays, because the schema SHAPE depends on it.
 	out := struct {
-		Server  string      `json:"server"`
-		Version string      `json:"version"`
-		SDK     string      `json:"sdk"`
-		Tools   []*mcp.Tool `json:"tools"`
-	}{tools.ServerName, version, sdkVersion(), res.Tools}
+		Server string      `json:"server"`
+		SDK    string      `json:"sdk"`
+		Tools  []*mcp.Tool `json:"tools"`
+	}{tools.ServerName, sdkVersion(), res.Tools}
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

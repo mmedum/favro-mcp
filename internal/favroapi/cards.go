@@ -126,9 +126,10 @@ func (c *Client) UpdateCard(ctx context.Context, cardID string, req favro.Update
 		return favro.Card{}, err
 	}
 	// Only the column is checked. A lane move is the same contract by
-	// symmetry, but no board reached live has lanes on it, so a card
-	// that legitimately comes back without a laneId would turn into a
-	// false failure here. §15 carries it as unverified.
+	// symmetry, but a card on a board without lanes legitimately comes
+	// back with no laneId, so checking it would invent a failure. This
+	// is permanent, not pending: Favro publishes no lane endpoint, so
+	// there is no API call that would set a lane up to probe. §15.
 	if req.ColumnID != "" && out.ColumnID != req.ColumnID {
 		return favro.Card{}, &WriteIgnoredError{Field: "column", Want: req.ColumnID, Got: out.ColumnID}
 	}
