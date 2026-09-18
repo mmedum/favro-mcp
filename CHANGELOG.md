@@ -9,12 +9,12 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ## [Unreleased]
 
 ### Added
-- `favro_update_card` takes `clear_parent`, the way to detach a card from its parent on purpose. It is only meaningful on a structural write, and the tool reports when it was passed on a write that cannot act on it.
+- `favro_update_card` and `favro_move_card` take `clear_parent`, the way to detach a card from its parent on purpose. On `favro_update_card` it is only meaningful on a structural write, and the tool reports when it was passed on a write that cannot act on it. `favro_move_card` also takes `parent_card_id`.
 - Every mutating tool result can carry `notes`: what the tool did beyond the literal request, and what it observed about the write. `Result` is Favro's answer to the write, and hard rule 2 is that Favro's answer to a write is not evidence about the write.
 
 ### Fixed
 - `help`, `--help` and `-h` after an `auth` subcommand print usage and exit 0 instead of falling through to the subcommand. `auth login --help` ran the interactive prompt, reading the help token — or whatever stdin was redirected from — as the email, and could store a credential in the OS keyring; `auth logout --help` deleted the keyring entries. One `isHelpToken` now defines the three spellings for the whole command tree.
-- `favro_update_card` no longer detaches a nested card from its parent on a structural write. Favro treats a write carrying `widgetCommonId` as structural and re-seats the card from the body alone, so renaming a nested card or nudging it one column along left it at top level — and the response echoes a null parent either way, so the answer could not tell you which happened. The tool now reads the card first on such a write, carries the existing parent through, and says so in `notes`.
+- `favro_update_card` and `favro_move_card` no longer detach a nested card from its parent on a structural write. Favro treats a write carrying `widgetCommonId` as structural and re-seats the card from the body alone, so renaming a nested card or nudging it one column along left it at top level — and the response echoes a null parent either way, so the answer could not tell you which happened. Both tools now read the card first on such a write, carry the existing parent through, and say so in `notes`. A parent is not carried across a board change, because a parent must belong to the widget the write names. `clear_parent` together with `parent_card_id` is refused rather than silently re-parenting.
 
 ## [2.0.4] - 2026-09-18
 
