@@ -1037,3 +1037,116 @@ func TestMCP_DeleteCard_MissingCardID(t *testing.T) {
 	t.Parallel()
 	assertMissingRequiredFieldFails(t, deleteCardToolName, "card_id")
 }
+
+// TestStructuralCardWrites_RunTheParentGuard is the rule the guard
+// exists to hold, applied to every tool that can break it rather than
+// to the two that were remembered.
+//
+// Nothing here is a list typed out by hand. The candidates come from
+// the registry, and which of them is a structural card write is decided
+// by what each one actually PUTs: a body carrying widgetCommonId is the
+// body Favro re-seats a card from, whatever tool sent it. A third such
+// tool registered later fails here on the day it is added — which is
+// the failure mode the first version of this change had, guarding
+// favro_update_card and leaving favro_move_card, the tool update_card's
+// own description recommends, sending the same body unguarded.
+//
+// The floor matters as much as the assertion. A filter that stopped
+// matching would pass in silence, which is the sentence a filter that
+// checked everything also prints.
+func TestStructuralCardWrites_RunTheParentGuard(t *testing.T) {
+	t.Parallel()
+
+	var structural []string
+	for _, name := range cardAddressingTools(t) {
+		body, gets := driveStructuralWrite(t, name)
+		if body.WidgetCommonID == "" {
+			continue // not a card write, or not a structural one
+		}
+		structural = append(structural, name)
+
+		if body.ParentCardID != "ci-parent" {
+			t.Errorf("%s sent a structural body naming no parent, which detaches a nested card: parentCardId = %q, want %q", name, body.ParentCardID, "ci-parent")
+		}
+		if gets != 1 {
+			t.Errorf("%s must read the card's parent before a structural write: gets = %v, want %v", name, gets, 1)
+		}
+	}
+
+	if len(structural) < 2 {
+		t.Fatalf("observed %d structural card writes (%v), want at least %d — the derivation stopped finding them, which passes for the wrong reason", len(structural), structural, 2)
+	}
+}
+
+// driveStructuralWrite calls one tool with the arguments that make a
+// card write structural, and reports the card body it PUT and how many
+// reads it cost. A tool that PUTs no card body reports a zero body,
+// which is how a non-card-write drops out of the rule above.
+//
+// The call's own outcome is deliberately not asserted: a tool that
+// errors on this fixture is one the rule does not apply to, and the
+// floor is what notices if a tool the rule DOES apply to starts
+// erroring out of it.
+func driveStructuralWrite(t *testing.T, name string) (favro.UpdateCardRequest, int32) {
+	t.Helper()
+
+	var put string
+	var gets atomic.Int32
+	cs := connectInMemoryWith(t, structuralUpdateFixture(t, "ci-parent", &put, &gets))
+	if _, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: name,
+		Arguments: map[string]any{
+			"card_id":          "ci-1",
+			"widget_common_id": "w-1",
+			"column_id":        "col-2",
+		},
+	}); err != nil {
+		t.Fatalf("cs.CallTool(%s): %v", name, err)
+	}
+
+	var body favro.UpdateCardRequest
+	if put != "" {
+		if err := json.Unmarshal([]byte(put), &body); err != nil {
+			t.Fatalf("json.Unmarshal(%s PUT body, &body): %v", name, err)
+		}
+	}
+	return body, gets.Load()
+}
+
+// cardAddressingTools derives, from the live registry, every mutating
+// tool that takes both a card_id to address an existing card and a
+// widget_common_id to name a board. That is the widest set that could
+// send a structural card write; which of them does is settled by
+// driving them, not by reading their schemas.
+func cardAddressingTools(t *testing.T) []string {
+	t.Helper()
+
+	cs := connectInMemoryWith(t, favroFixture(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
+	listed, err := cs.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("cs.ListTools: %v", err)
+	}
+
+	var names []string
+	for _, tool := range listed.Tools {
+		if tool.Annotations == nil || tool.Annotations.ReadOnlyHint {
+			continue
+		}
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("json.Marshal(%s input schema): %v", tool.Name, err)
+		}
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatalf("json.Unmarshal(%s input schema): %v", tool.Name, err)
+		}
+		_, addressesCard := schema.Properties["card_id"]
+		_, namesBoard := schema.Properties["widget_common_id"]
+		if addressesCard && namesBoard {
+			names = append(names, tool.Name)
+		}
+	}
+	return names
+}
