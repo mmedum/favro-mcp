@@ -1,6 +1,5 @@
 {
   "server": "favro-mcp",
-  "version": "v2.0.1-1-gad190a0-dirty (ad190a0)",
   "sdk": "v1.8.0",
   "tools": [
     {
@@ -31,7 +30,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "search_query": {
@@ -59,6 +58,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -256,7 +265,7 @@
             ]
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -273,6 +282,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -367,7 +386,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "tag_name": {
@@ -388,6 +407,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -726,7 +755,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "text": {
@@ -747,6 +776,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -825,7 +864,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -841,6 +880,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -1193,7 +1242,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "due_date": {
@@ -1257,6 +1306,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -1599,7 +1658,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "full_members_can_add_widgets": {
@@ -1678,6 +1737,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -1803,7 +1872,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -1835,6 +1904,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -1933,7 +2012,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -1950,6 +2029,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2058,7 +2147,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "members": {
@@ -2106,6 +2195,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2213,7 +2312,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -2233,6 +2332,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2313,7 +2422,7 @@
             ]
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -2345,6 +2454,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2431,7 +2550,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -2481,6 +2600,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2571,7 +2700,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "edit_role": {
@@ -2604,6 +2733,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2752,7 +2891,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -2768,6 +2907,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2827,7 +2976,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "everywhere": {
@@ -2847,6 +2996,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2908,7 +3067,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -2924,6 +3083,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -2983,7 +3152,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "widget_common_id": {
@@ -3003,6 +3172,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3062,7 +3241,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -3078,6 +3257,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3141,7 +3330,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -3158,6 +3347,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3213,7 +3412,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "group_id": {
@@ -3233,6 +3432,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3288,7 +3497,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "tag_id": {
@@ -3308,6 +3517,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3363,7 +3582,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "task_id": {
@@ -3383,6 +3602,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3438,7 +3667,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "task_list_id": {
@@ -3458,6 +3687,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3513,7 +3752,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "webhook_id": {
@@ -3533,6 +3772,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -3592,7 +3841,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "widget_common_id": {
@@ -3612,6 +3861,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -7087,13 +7346,17 @@
         "readOnlyHint": false,
         "title": "Move Favro card"
       },
-      "description": "Move a Favro card between columns or lanes on a board. At least one of widget_common_id / column_id / lane_id must be set, and a column or lane move must ALSO pass widget_common_id — the board the card is already on — because Favro answers 200 and moves nothing without it. Passing a different widget_common_id adds the card to that board and leaves the original where it is; Favro has no cross-board relocation. The result is checked against what was asked for, so a move Favro accepts and ignores comes back as an error rather than a success. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+      "description": "Move a Favro card between columns or lanes on a board. At least one of widget_common_id / column_id / lane_id must be set, and a column or lane move must ALSO pass widget_common_id — the board the card is already on — because Favro answers 200 and moves nothing without it. Passing a different widget_common_id adds the card to that board and leaves the original where it is; Favro has no cross-board relocation. The result is checked against what was asked for, so a move Favro accepts and ignores comes back as an error rather than a success. A move carries widget_common_id, and Favro reads `parentCardId` off such a body: this tool reads the card's current parent first and carries it through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or `parent_card_id` to nest it there; either one also skips the read. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "card_id": {
             "description": "the per-widget cardId to move",
             "type": "string"
+          },
+          "clear_parent": {
+            "description": "if true, detach the card from its parent and leave it at top level on the destination. A move is always a structural write, so without this the card's existing parent is read and carried through.",
+            "type": "boolean"
           },
           "column_id": {
             "description": "target columnId on the destination widget. Requires widget_common_id.",
@@ -7104,7 +7367,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "lane_id": {
@@ -7117,6 +7380,10 @@
               "null",
               "number"
             ]
+          },
+          "parent_card_id": {
+            "description": "nest the moved card under this parent. Must be a card on the widget this move names.",
+            "type": "string"
           },
           "sheet_position": {
             "description": "insertion position on a sheet widget as a JSON number — same numeric vocabulary as list_position",
@@ -7142,6 +7409,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -7521,7 +7798,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "text": {
@@ -7542,6 +7819,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -7696,7 +7983,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "file_urls": {
@@ -7723,6 +8010,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -8061,7 +8358,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "tag_name": {
@@ -8082,6 +8379,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -8442,7 +8749,7 @@
             ]
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -8459,6 +8766,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -8560,7 +8877,7 @@
             ]
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "find": {
@@ -8590,6 +8907,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -9351,7 +9678,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "force_refresh": {
@@ -9466,6 +9793,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -9804,7 +10141,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           }
         },
@@ -9820,6 +10157,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -10149,7 +10496,7 @@
         "readOnlyHint": false,
         "title": "Update Favro card"
       },
-      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\nFavro reads `parentCardId` off the body of a write carrying `widget_common_id`, so a body naming none leaves the card at top level — and the response echoes a null parent either way, so the answer cannot tell you which happened. This tool therefore reads the card first on such a write and carries its existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -10177,6 +10524,10 @@
             "description": "the per-widget cardId to update (NOT cardCommonId — Favro PUT /cards/{id} expects the per-widget instance id)",
             "type": "string"
           },
+          "clear_parent": {
+            "description": "if true, detach the card from its parent and leave it at top level. Only meaningful on a structural write (one carrying widget_common_id), which is the only write Favro lets a parent be cleared by; without it such a write keeps the existing parent.",
+            "type": "boolean"
+          },
           "column_id": {
             "description": "move card to a different column. Requires widget_common_id.",
             "type": "string"
@@ -10190,7 +10541,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "due_date": {
@@ -10264,6 +10615,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -10617,7 +10978,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "full_members_can_add_widgets": {
@@ -10733,6 +11094,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -10862,7 +11233,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -10893,6 +11264,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -10991,7 +11372,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "remove_attachments": {
@@ -11018,6 +11399,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -11134,7 +11525,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "is_before": {
@@ -11159,6 +11550,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -11249,7 +11650,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "group_id": {
@@ -11301,6 +11702,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -11408,7 +11819,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -11432,6 +11843,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -11505,7 +11926,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "updates": {
@@ -11549,6 +11970,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -11632,7 +12063,7 @@
             ]
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -11663,6 +12094,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -11745,7 +12186,7 @@
         "additionalProperties": false,
         "properties": {
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "name": {
@@ -11776,6 +12217,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -11873,7 +12324,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "edit_role": {
@@ -11909,6 +12360,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -12057,7 +12518,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "file_path": {
@@ -12086,6 +12547,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",
@@ -12159,7 +12630,7 @@
             "type": "string"
           },
           "dry_run": {
-            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without actually contacting Favro. Useful for previewing destructive operations before committing.",
+            "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
           },
           "file_path": {
@@ -12188,6 +12659,16 @@
           "dry_run": {
             "description": "true when dry_run was requested (or forced process-wide). When true, Result is omitted and WouldCall + RequestBody + PredictedStateDiff describe the would-be request.",
             "type": "boolean"
+          },
+          "notes": {
+            "description": "what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "predicted_state_diff": {
             "description": "a human-readable description of the change that would happen (populated when dry_run is true)",

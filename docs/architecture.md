@@ -410,6 +410,19 @@ apart, and each is why a tool description carries a warning:
   caller just read back never equals the one Favro stored; v1.1.1 strips
   the presigned query before sending. Two releases got this wrong before
   the read-back explained why.
+- **A write carrying `widgetCommonId` drops the card's parent.** Favro
+  reads `parentCardId` off the body on such a write, so a body naming
+  none leaves the card at top level. The response echoes a null parent
+  whether or not the card was nested before, so the answer cannot tell a
+  caller which happened. A rename is enough to trigger it, and since
+  `errMoveNeedsWidget` every column move carries `widgetCommonId`, so
+  `favro_move_card` is affected on its ordinary path and not only on a
+  cross-widget add. Both tools read the card's current parent first and
+  carry it through, reporting it in `notes`; `clear_parent` detaches on
+  purpose. **Only the parent is dropped** — `columnId` and
+  `listPosition` survive the same write (probed live 2026-09-18, §18).
+  Earlier wording here said the write "re-seats the card from the body
+  alone", which was broader than anything observed.
 - **Group membership**: the docs describe add/remove deltas with a
   per-entry `delete` flag; a live test observed whole-list replacement.
   The client sends the full intended list, which is correct under either
@@ -719,13 +732,6 @@ Not yet verified against a real organization, and each one is a place
    delta. The docs say delta with a per-entry `delete` flag; a live test
    observed whole-list replacement. The client sends the full list, which
    is correct under either reading, but the disagreement is unresolved.
-5. Whether a **lane** move carries the same `widgetCommonId` requirement
-   the column move turned out to have. No board reached live has lanes
-   on it. The client requires the widget for both, which is safe under
-   either answer — a lane move that did not need it still works with one
-   — but the returned card is checked only against the requested
-   `columnId`, because a card on a board without lanes legitimately
-   comes back with no `laneId` and checking it would invent a failure.
 6. Whether Favro's PUT response reflects stored state or echoes the
    request. `UpdateCard` raises `MoveIgnoredError` when the returned
    `columnId` is not the requested one, which is the whole guard against
@@ -736,6 +742,28 @@ Not yet verified against a real organization, and each one is a place
    Favro rejects for some other reason. One live probe settles it; until
    then the guard is evidence rather than confirmation, and hard rule
    2's read-back is still the caller's job.
+
+**Not verifiable, recorded so it stops being carried as pending:**
+whether a **lane** move carries the `widgetCommonId` requirement the
+column move turned out to have. Favro publishes no lane endpoint — 88
+endpoints in `testdata/api-surface.json`, not one of them lanes, and
+`laneId` / `isLane` appear only as card fields — so lanes are created
+and arranged in the UI and there is no API call that would set one up
+to probe. Waiting for a board with lanes is waiting on someone else's
+UI habits, not on a test. What follows is permanent rather than
+pending: the client requires the widget for both moves, which is safe
+under either answer, and the returned card is checked against
+`columnId` only, because a card on a board without lanes legitimately
+comes back with no `laneId` and checking it would invent a failure.
+
+**Closed 2026-09-18, recorded because the closing is the evidence:** a
+write carrying `widgetCommonId` drops `parentCardId` and nothing else.
+Probed on a dormant board: a card nested under a parent, in a
+non-default column, at an explicit `listPosition`, then PUT with
+`{widgetCommonId, name}` and read back. The parent was gone; the column
+and the list position were untouched. `laneId` is not testable at all —
+Favro publishes no lane endpoint — which is also why `UpdateCard`'s
+ignored-write check covers the column only.
 
 **Closed by A5, recorded because the closing is the evidence:**
 `CustomField.widgetCommonId` arrives on every row (100 of 100);
@@ -1038,6 +1066,8 @@ it; **asserted**, meaning believed and not yet held by anything.
 
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
+| 2026-09-18 | A card write carrying `widgetCommonId` detaches a nested card | Reported with a live repro against a real organization, then re-run against the released v2.0.1 binary as a control: five behaviours, the control failing on exactly the orphaning row and matching everywhere else | **Verified by the reporter — the claim is true.** A rename is enough, and the 200 is byte-identical to a write that changed nothing structural, so nothing in the answer says the card moved. The control run is what makes it evidence rather than a demonstration. Guarded in `settleParent`, wired into `favro_update_card` **and** `favro_move_card` — the first patch covered only the former, and since `errMoveNeedsWidget` every column move carries `widgetCommonId`, which made the unguarded tool the one the other's description recommends. The breadth is settled by the row below rather than by this one |
+| 2026-09-18 | How far a write carrying `widgetCommonId` re-seats a card | Probed live on a dormant board: a card nested under a parent, in a non-default column, at an explicit `listPosition`; PUT `{widgetCommonId, name}` and read back, diffing `parentCardId`, `columnId`, `laneId`, `listPosition`, `sheetPosition` | **Verified here — the earlier wording was too broad.** Only `parentCardId` is dropped. `columnId` and `listPosition` came back unchanged, and `sheetPosition` was assigned rather than reset. So "re-seats the card from the body alone" overstated it, and §7.4 now says the narrower thing the evidence supports: the guard covers the whole bug rather than a third of it. The write's own response omitted `parentCardId` while the card still had one moments earlier, which is the §2.1 shape — the answer is identical whether or not anything was lost. `laneId` untested: no board reached live has lanes |
 | 2026-09-13 | The SDK writes the same bytes into `content` and `structuredContent` when a tool declares an output schema | Read `mcp/server.go:398–435` in the module cache: the marshalled output becomes `StructuredContent`, and when `res.Content` is nil the same serialized JSON is added as a `TextContent` block | **Verified here.** Every tool in this repository returns a typed output and a nil result, so every one of them is in that state. Standard §2 forbids it: the two halves must both be present and must not be the same bytes. Fixed in A2 at `addTool`, so the fix is one function rather than 83 handlers that each have to remember |
 | 2026-09-13 | The debug request log cannot reconstruct its subject | Read the request logger in the client package
 (`internal/favroapi/client.go`; it was under `internal/favro` until A3
