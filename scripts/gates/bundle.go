@@ -105,7 +105,7 @@ func writeZipEntries(w io.Writer, entries []bundleFile, mode func(string) fs.Fil
 //
 // The edit itself is on the bytes rather than on the decoded value,
 // because re-encoding a map is not a neutral act. Go sorts map keys, so
-// the shipped manifest would come out alphabetised and unreviewable
+// the shipped manifest would come out alphabetized and unreviewable
 // against the source, and its encoder escapes `<`, `>` and `&`. Both are
 // legal JSON and neither is what anyone wrote.
 func stampVersion(raw []byte, version, path string) ([]byte, error) {

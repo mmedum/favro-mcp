@@ -60,7 +60,7 @@ type waiver struct {
 // implemented while the type behind it quietly ignores half of what
 // Favro sends. A field added to a Favro resource is invisible to a
 // client that decodes into a struct without it — encoding/json drops
-// what it does not recognise, which is what makes reads tolerant and
+// what it does not recognize, which is what makes reads tolerant and
 // also what makes this silent.
 //
 // Runs offline, against whatever `gates api-diff` last fetched.
@@ -79,7 +79,7 @@ func apiFields(w io.Writer, _ []string) error {
 			apiSurfacePath, len(surface.Resources), minFieldResources)
 	}
 
-	modelled, err := wireFields(filepath.Join(root, "internal", "favro"))
+	modeled, err := wireFields(filepath.Join(root, "internal", "favro"))
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func apiFields(w io.Writer, _ []string) error {
 		return err
 	}
 
-	problems, checked := checkFields(surface.Resources, modelled, waived)
+	problems, checked := checkFields(surface.Resources, modeled, waived)
 	if checked < minFieldsChecked {
 		return fmt.Errorf("compared only %d documented fields, expected at least %d", checked, minFieldsChecked)
 	}
@@ -98,13 +98,13 @@ func apiFields(w io.Writer, _ []string) error {
 		return fmt.Errorf("the documented fields and the wire types disagree:\n  %s", strings.Join(problems, "\n  "))
 	}
 
-	_, err = fmt.Fprintf(w, "api-fields ok: %d documented fields across %d resources, each modelled or waived with a reason (%d waived)\n",
+	_, err = fmt.Fprintf(w, "api-fields ok: %d documented fields across %d resources, each modeled or waived with a reason (%d waived)\n",
 		checked, len(surface.Resources), len(waived))
 	return err
 }
 
 // checkFields compares each documented field against the type's tags.
-func checkFields(resources []apiResource, modelled map[string]map[string]bool, waived []waiver) ([]string, int) {
+func checkFields(resources []apiResource, modeled map[string]map[string]bool, waived []waiver) ([]string, int) {
 	var problems []string
 	checked := 0
 
@@ -121,7 +121,7 @@ func checkFields(resources []apiResource, modelled map[string]map[string]bool, w
 				"the reference documents a %q resource and sectionTypes names no wire type for it", r.Section))
 			continue
 		}
-		tags, ok := modelled[typeName]
+		tags, ok := modeled[typeName]
 		if !ok {
 			problems = append(problems, fmt.Sprintf(
 				"sectionTypes maps %q to favro.%s, which is not a struct in internal/favro", r.Section, typeName))
@@ -150,7 +150,7 @@ func checkFields(resources []apiResource, modelled map[string]map[string]bool, w
 	for _, wv := range waived {
 		if !used[wv.section+"\x00"+wv.field] {
 			problems = append(problems, fmt.Sprintf(
-				"%s:%d: %s.%s is waived and is either modelled or no longer documented — a waiver that waives nothing reads like a decision",
+				"%s:%d: %s.%s is waived and is either modeled or no longer documented — a waiver that waives nothing reads like a decision",
 				apiFieldsWaivedPath, wv.line, wv.section, wv.field))
 		}
 	}

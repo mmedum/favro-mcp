@@ -110,7 +110,7 @@ func register(r *resolver) {
 `
 			claims, branches := claimsIn(t, src)
 			if branches != 1 {
-				t.Fatalf("branches = %d, want %d — the gate stopped recognising the branch", branches, 1)
+				t.Fatalf("branches = %d, want %d — the gate stopped recognizing the branch", branches, 1)
 			}
 			if len(claims) != 0 {
 				t.Errorf("claims = %d, want 0: %q", len(claims), claims[0].quote)

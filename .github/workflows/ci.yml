@@ -150,10 +150,10 @@ jobs:
       # binary mode to work around it.
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-      - name: licences
-        # segmentio/asm is ignored by path rather than by licence name:
+      - name: licenses
+        # segmentio/asm is ignored by path rather than by license name:
         # it relicensed to MIT-0 in v1.2.1, which go-licenses v1.6.0's
-        # classifier does not recognise, so it reports an empty name that
+        # classifier does not recognize, so it reports an empty name that
         # no --allowed_licenses value can match. See the Makefile.
         run: go run github.com/google/go-licenses@v1.6.0 check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC --ignore github.com/segmentio/asm
 

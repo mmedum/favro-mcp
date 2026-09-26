@@ -124,7 +124,7 @@ type Classed interface {
 // without a sentinel is an argument the caller got wrong — "pass
 // exactly one of", "is required", "must be between" — so ClassInvalid
 // tells the caller the true thing in every case that exists today. A
-// server bug arriving here would be mislabelled; that is the trade,
+// server bug arriving here would be mislabeled; that is the trade,
 // and TestEverySentinelIsClassified, in internal/tools, is what keeps
 // the set of unclassified errors from growing quietly.
 func Classify(err error) Class {

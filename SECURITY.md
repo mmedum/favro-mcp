@@ -11,7 +11,7 @@ shows it. **Do not include anything from a real Favro organization** —
 no tokens, organization ids, card ids or names, or addresses. A
 description by role is enough to act on.
 
-Expect an acknowledgement within a week. If a fix ships, the advisory
+Expect an acknowledgment within a week. If a fix ships, the advisory
 and the changelog will say what was wrong and which versions carried it.
 
 ## Supported versions

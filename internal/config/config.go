@@ -100,7 +100,7 @@ func Load() Config {
 }
 
 // ParseLogLevel maps a case-folded value to a slog.Level. The second
-// return is false for values it does not recognise; the level is info
+// return is false for values it does not recognize; the level is info
 // in that case.
 func ParseLogLevel(s string) (slog.Level, bool) {
 	switch s {

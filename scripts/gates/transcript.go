@@ -89,7 +89,7 @@ func transcript(w io.Writer, _ []string) error {
 		return fmt.Errorf("read %d Go files across %s; that is not the drivers", files, strings.Join(transcriptDriverDirs, ", "))
 	}
 	if mentions < minTranscriptMentions {
-		return fmt.Errorf("found %d mentions of os.Stdout/os.Stderr across %s, expected at least %d — this gate is not recognising them, which is worse than finding none",
+		return fmt.Errorf("found %d mentions of os.Stdout/os.Stderr across %s, expected at least %d — this gate is not recognizing them, which is worse than finding none",
 			mentions, strings.Join(transcriptDriverDirs, ", "), minTranscriptMentions)
 	}
 	if len(problems) > 0 {

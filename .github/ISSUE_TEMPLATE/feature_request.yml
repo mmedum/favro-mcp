@@ -1,5 +1,5 @@
 name: Feature request
-description: A tool, an option, or a behaviour that isn't there yet
+description: A tool, an option, or a behavior that isn't there yet
 labels: ["enhancement"]
 body:
   - type: markdown

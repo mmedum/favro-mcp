@@ -35,6 +35,8 @@ linters:
     - forbidigo
 
   settings:
+    misspell:
+      locale: US
     # The MCP stdio transport is normative: a server MUST NOT write
     # anything to stdout that is not a valid MCP message, and MAY write
     # to stderr for logging. Hard rule 3 restates that; this enforces it,
