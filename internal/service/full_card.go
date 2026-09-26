@@ -242,7 +242,7 @@ func (r *Resolver) dereferenceComments(ctx context.Context, full *FullCard, comm
 	return nil
 }
 
-// FetchCardForIdentity normalises the three identity flavors into a
+// FetchCardForIdentity normalizes the three identity flavors into a
 // single Card. card_id calls GET /cards/{cardId} directly; the
 // other two call ListCards with the matching filter and take the
 // first row.

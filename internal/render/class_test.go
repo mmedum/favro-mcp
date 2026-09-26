@@ -38,7 +38,7 @@ func TestClassify(t *testing.T) {
 		{"nil", nil, ClassInvalid},
 		{"self-classed wins", selfClassed{ClassAmbiguous}, ClassAmbiguous},
 		{"self-classed, any member", selfClassed{ClassUnsupported}, ClassUnsupported},
-		{"context cancelled", context.Canceled, ClassUnavailable},
+		{"context canceled", context.Canceled, ClassUnavailable},
 		{"deadline", context.DeadlineExceeded, ClassUnavailable},
 		{"unclassified falls back", errors.New("something the server layer raised"), ClassInvalid},
 	}

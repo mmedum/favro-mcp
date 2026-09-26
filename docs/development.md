@@ -33,7 +33,7 @@ places, and the registry's `gate: true` flag is what says it belongs.
 | `pins` | Every action is a full commit SHA, every tool version an exact one, every workflow pins its shell. An action that fetches `latest` is a pinned wrapper around an unpinned dependency. |
 | `classes` | The closed error vocabulary and `docs/architecture.md` §6.2 name each other, from both sides. A documented class no code emits fails too — that is the side that rots. |
 | `api-coverage` | Every documented Favro endpoint has a verdict and every verdict an endpoint. |
-| `api-fields` | Every documented field is modelled by a wire type or waived with a reason. An endpoint can be implemented while the type behind it drops half of what Favro sends. |
+| `api-fields` | Every documented field is modeled by a wire type or waived with a reason. An endpoint can be implemented while the type behind it drops half of what Favro sends. |
 | `transcript` | The live driver reaches the terminal only through the redactor. |
 | `outcomes` | No tool states an outcome the response did not carry. Flags a branch that tests a boolean request field and then says, in prose, what is now true — the shape `favro_move_card` shipped in for six releases. A branch that is honest anyway takes a row in `testdata/outcome-claims.tsv` with the reason. |
 | `registry` | The committed MCP registry entry obeys the rules the registry enforces in code — HTTPS identifier, a GitHub release asset URL ending in `.mcpb`, no `registryBaseUrl`, a 64-hex hash — none of which its schema carries. `registry-publish` fills the version and hash in from the signed checksums after the release exists. |
@@ -109,7 +109,7 @@ is right.
   work survives a cleared session and the diff can be reviewed as a unit.
 - Say what changed and why. The investigation belongs in the commit body;
   deep context belongs in a comment next to the code.
-- Before committing: `make check` green, tests for the new behaviour,
+- Before committing: `make check` green, tests for the new behavior,
   `/simplify` and `/security-review` over the pending diff with findings
   resolved or explained, a look at the schema diff, and live verification
   where the change touched the wire.

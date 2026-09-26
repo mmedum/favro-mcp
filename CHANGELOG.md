@@ -8,6 +8,13 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Changed
+
+- Tool descriptions, error messages and docs use American spelling:
+  "organization", "color", "canceled", "license". Tool names, input
+  and output fields and enum values are unchanged, so no caller needs to
+  act.
+
 ## [2.1.0] - 2026-09-18
 
 ### Added
@@ -82,7 +89,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 The first release that publishes this server to the MCP registry, which
 is the only change anybody outside the repository will notice: until now
 it could be found only by knowing the repository exists. No tool
-changed, no behaviour changed, and the binary is the same one 2.0.2
+changed, no behavior changed, and the binary is the same one 2.0.2
 shipped. Everything else here is a check on this repository's own work.
 
 ### Added
@@ -112,7 +119,7 @@ below the Fixed section is repository tooling.
 - `scripts/evals` prints through `internal/redact`, and the `transcript` gate reads it as well as `scripts/livefavro`. The gate was scoped to one hard-coded directory, so a failing eval task printed the model's whole trace — live ids and all — with nothing failing.
 ## [2.0.1] - 2026-09-15
 
-Dependency and tooling only: no tool changed, no behaviour changed.
+Dependency and tooling only: no tool changed, no behavior changed.
 
 ### Added
 - `forbidigo` forbids `fmt.Print*` and naming `os.Stdout` outside `main`. Hard rule 3 restates an MCP spec MUST NOT — a stdio server must write nothing to stdout that is not a valid MCP message — and nothing enforced it: the tree was clean, so a stray print would have corrupted the JSON-RPC stream with no check failing. Found by a contributor sweep across the sibling servers.
@@ -137,9 +144,9 @@ breaking changes to the tool surface — see Removed and Changed.
 - `internal/render`: the readable half of every tool result, and the closed error vocabulary — `invalid`, `not_found`, `auth`, `conflict`, `unavailable`, `unsupported`, `forbidden`, `rate_limited`, `ambiguous`.
 - `classes` gate: the vocabulary in `internal/render/class.go` and the table in `docs/architecture.md` §6.2 must name each other, and a class no code returns fails too.
 - `internal/config`: every `FAVRO_*` setting resolved once at startup, with the values it could not read reported rather than silently defaulted.
-- `favro_list_webhooks` and `favro_delete_webhook`. There is deliberately no tool to create one: Favro's are *outgoing* webhooks, pointing at a URL that must outlive this process. The signing secret Favro returns is not modelled, so it cannot reach a result.
+- `favro_list_webhooks` and `favro_delete_webhook`. There is deliberately no tool to create one: Favro's are *outgoing* webhooks, pointing at a URL that must outlive this process. The signing secret Favro returns is not modeled, so it cannot reach a result.
 - `testdata/api-surface.json`, written by `make api-diff` from favro.com/developer: 88 endpoints and 15 resource field tables. `api-coverage` and `api-fields` gates hold it against `testdata/api-coverage.tsv` and `testdata/api-fields-waived.tsv` offline, in both directions, so an endpoint or field nobody decided about fails the build.
-- `Card.sheetPosition`, `CardAttachment.thumbnailURL` and `CustomField.widgetCommonId` are modelled. The last is the field that says which widget a custom field is enabled on — writing to a field the widget has not enabled is accepted and ignored, and nothing in a response said so before.
+- `Card.sheetPosition`, `CardAttachment.thumbnailURL` and `CustomField.widgetCommonId` are modeled. The last is the field that says which widget a custom field is enabled on — writing to a field the widget has not enabled is accepted and ignored, and nothing in a response said so before.
 - depguard rules holding the package dependency direction, one per package, naming what it may not import, plus a rule denying testify and go-difflib.
 - `scripts/livefavro`: drives the built binary against a real organization, 122 steps over every tool, printing only through `internal/redact`. Every mutating step carries `dry_run`, so it writes nothing.
 - `internal/redact`: stable placeholders for the values a transcript must not carry. The same id reads as the same `{id 1}` throughout a run, so an id can still be followed across calls.
@@ -155,14 +162,14 @@ breaking changes to the tool surface — see Removed and Changed.
 - Issue forms for bugs and features, and `SECURITY.md`. The bug form asks for `doctor` output and says what not to paste; the leak gate caught the example in its own first draft.
 
 ### Changed
-- `CLAUDE.md` restructured to the sibling shape — mission, hard rules, where things go, definition of done — and now points at `docs/architecture.md` for anything it used to summarise.
+- `CLAUDE.md` restructured to the sibling shape — mission, hard rules, where things go, definition of done — and now points at `docs/architecture.md` for anything it used to summarize.
 - `make ci` is now `make check`, and `gates parity` fails if it and `ci.yml` stop running the same set — every one of `check`'s twenty-two prerequisites, not just the gates, matched by what each recipe runs rather than by target name.
 - Every GitHub Action is pinned to a full commit SHA with the version in a trailing comment, and every tool it installs is pinned to one exact version; `gates pins` holds both, plus the workflow-level `shell: bash` the Windows runner needs.
-- govulncheck runs in source mode again, pinned to v1.8.0. The binary-mode workaround existed because v1.7.0's analysis could not parse the Go 1.27 stdlib; v1.8.0 can, and source mode analyses call paths rather than a symbol table.
+- govulncheck runs in source mode again, pinned to v1.8.0. The binary-mode workaround existed because v1.7.0's analysis could not parse the Go 1.27 stdlib; v1.8.0 can, and source mode analyzes call paths rather than a symbol table.
 - `scripts/changelog-section.sh` and `scripts/package-plugin.sh` are now `gates release-notes` and `gates plugin-pack`. The packer gains what the shell version could not have: the launcher's platform table is the table the gate reads, so a renamed binary fails on the commit that renames it rather than for every user of that platform.
-- The licence check ignores `github.com/segmentio/asm` by path — it relicensed to MIT-0, which go-licenses v1.6.0's classifier does not recognise and no allowlist value can match.
+- The license check ignores `github.com/segmentio/asm` by path — it relicensed to MIT-0, which go-licenses v1.6.0's classifier does not recognize and no allowlist value can match.
 - Every tool error is now `[class] actionable message`, from the closed vocabulary. A 429 carries `retry_after_seconds` in the text, since a failed call has no `structuredContent` to put it in.
-- Tool results send a readable `content` block and a machine-readable `structuredContent` one. They used to be the same bytes: the SDK copies the marshalled output into a text block when a handler leaves `Content` unset, and every handler did.
+- Tool results send a readable `content` block and a machine-readable `structuredContent` one. They used to be the same bytes: the SDK copies the marshaled output into a text block when a handler leaves `Content` unset, and every handler did.
 - Package layout split to the shape the sibling servers use: `internal/favro` is the wire types alone and `internal/favroapi` the REST client; `internal/server` is split into `internal/tools` (the MCP surface), `internal/service` (resolution, search, the full-card fan-out, description editing) and `internal/server` (SDK wiring, two files). Direction runs one way — `server` → `tools` → `service` → `favroapi` → `favro` — with `config`, `cache`, `auth` and `render` as leaves.
 - `internal/favroapi`'s typed errors name their own class, rather than having one read off them by a switch in `internal/render`. An eighth error type can no longer reach the fallback class in silence.
 - The Resolver's cache invalidation is exported API (`InvalidateTagCache` and the rest). A write tool in another package has to call it, and the rule that it must was already the load-bearing one.
@@ -171,7 +178,7 @@ breaking changes to the tool surface — see Removed and Changed.
 - List tools are now genuinely 1-indexed, as their schema has always said. `page` went to Favro untouched and Favro counts from zero, so asking for page 1 returned the second page and the first was never seen — a valid page of real results with rows silently absent. `page` and `next_page` in responses count from one to match.
 - Releases build a macOS universal binary, kept out of the ordinary archives by `ids` so the release page does not offer a fourth macOS download. A bundle manifest names a command per platform and has no key for the architecture, which is what makes it necessary.
 - Builds are reproducible: `mod_timestamp` is the commit's own timestamp, so rebuilding a tag gives byte-identical archives and `sha256sum -c` on a rebuild means something.
-- Both bundles share one zip writer, one version stamper and one binary-agrees-with-its-manifest check (`scripts/gates/bundle.go`); `plugin.go` is 87 lines shorter. The `.plugin` gains the atomic write the `.mcpb` had and stops shipping a manifest re-encoded from a Go map — which alphabetised the keys out of the order anyone wrote them in.
+- Both bundles share one zip writer, one version stamper and one binary-agrees-with-its-manifest check (`scripts/gates/bundle.go`); `plugin.go` is 87 lines shorter. The `.plugin` gains the atomic write the `.mcpb` had and stops shipping a manifest re-encoded from a Go map — which alphabetized the keys out of the order anyone wrote them in.
 - A binary installed with `go install` reports its real version. `go install` applies no ldflags, so it said `dev (unknown)` and no bug report from one could be tied to a build; it falls back to the module version and VCS revision Go embeds, and `doctor` names which of the three sources answered.
 
 ### Removed
@@ -233,7 +240,7 @@ Docs, tests, and one attachment fix. No tool inputs changed.
 
 Re-checked the client against Favro's REST docs and a live tenant. The custom-field layer was built on a wire contract Favro doesn't implement, three write paths could never have worked, and four documented resources had no client at all. 64 tools → 83. Go 1.27 clears three stdlib CVEs.
 
-This release removes tool inputs, which normally calls for a major bump. It's a minor because every removed input sat on a code path that silently did nothing — no working behaviour changes shape. Calls using the old names now fail loudly instead of being quietly ignored. See **Removed**.
+This release removes tool inputs, which normally calls for a major bump. It's a minor because every removed input sat on a code path that silently did nothing — no working behavior changes shape. Calls using the old names now fail loudly instead of being quietly ignored. See **Removed**.
 
 ### Added
 - Tasks and Tasklists (checklists): 10 tools. `favro_create_tasklist` seeds items in one request.
