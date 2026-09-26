@@ -8,12 +8,11 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-26
+
 ### Changed
 
-- Tool descriptions, error messages and docs use American spelling:
-  "organization", "color", "canceled", "license". Tool names, input
-  and output fields and enum values are unchanged, so no caller needs to
-  act.
+- Tool descriptions, errors and docs use American spelling; tool names, fields and enums are unchanged.
 
 ## [2.1.0] - 2026-09-18
 
@@ -321,7 +320,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/mmedum/favro-mcp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/mmedum/favro-mcp/compare/v2.0.4...v2.1.0
 [2.0.4]: https://github.com/mmedum/favro-mcp/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/mmedum/favro-mcp/compare/v2.0.2...v2.0.3
