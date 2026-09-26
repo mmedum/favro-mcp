@@ -501,7 +501,7 @@ type fullCardFixture struct {
 	calls    map[string]*atomic.Int32
 }
 
-// fullCardFixtureOpts customises the fixture per test. Anything
+// fullCardFixtureOpts customizes the fixture per test. Anything
 // left zero-value uses an empty list response (so listAllX returns
 // nothing without erroring).
 type fullCardFixtureOpts struct {

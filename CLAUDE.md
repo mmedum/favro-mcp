@@ -13,7 +13,7 @@ error vocabulary, the write path, or the package layout.
 This server is one of five that run on the shared standard in
 `~/.claude/mcp-server-standard.md`; the siblings are google-chat-mcp,
 google-docs-mcp, google-drive-mcp and google-sheets-mcp. Where this one
-deviates, `docs/architecture.md` §17b says why. The alignment programme
+deviates, `docs/architecture.md` §17b says why. The alignment program
 that closes the remaining gaps is §16, phases A0–A8 — **check which phase
 is current before starting work that a later phase is going to move.**
 
@@ -151,7 +151,7 @@ rather than writing one from memory.
 
 ## Definition of done
 
-`make check` green, tests for the new behaviour, `/simplify` and
+`make check` green, tests for the new behavior, `/simplify` and
 `/security-review` over the pending changes with findings resolved or
 explained, and — because unit tests cannot catch what hard rule 2
 describes — **live verification against a real organization before the

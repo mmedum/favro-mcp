@@ -15,7 +15,7 @@ func TestAPIFieldsAgainstThisRepository(t *testing.T) {
 		t.Fatalf("the documented fields and the wire types disagree: %v", err)
 	}
 	out.mustSay(t, "documented fields across")
-	out.mustSay(t, "modelled or waived")
+	out.mustSay(t, "modeled or waived")
 }
 
 // TestEverySectionWithFieldsHasAType holds the one hand-written list in
@@ -34,7 +34,7 @@ func TestEverySectionWithFieldsHasAType(t *testing.T) {
 		t.Fatalf("read %d resources, expected at least %d", len(surface.Resources), minFieldResources)
 	}
 
-	modelled, err := wireFields(filepath.Join(root, "internal", "favro"))
+	modeled, err := wireFields(filepath.Join(root, "internal", "favro"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestEverySectionWithFieldsHasAType(t *testing.T) {
 			t.Errorf("the reference documents %q and sectionTypes names no type for it", r.Section)
 			continue
 		}
-		if _, ok := modelled[name]; !ok {
+		if _, ok := modeled[name]; !ok {
 			t.Errorf("sectionTypes maps %q to favro.%s, which is not a struct in internal/favro", r.Section, name)
 		}
 	}
@@ -86,46 +86,46 @@ func fieldInputs(t *testing.T, waiversTSV string) ([]apiResource, map[string]map
 	if err != nil {
 		t.Fatal(err)
 	}
-	modelled := map[string]map[string]bool{"Tag": {"tagId": true, "name": true}}
-	return surface.Resources, modelled, waived
+	modeled := map[string]map[string]bool{"Tag": {"tagId": true, "name": true}}
+	return surface.Resources, modeled, waived
 }
 
 const goodReason = "A reason long enough to say what the field is and why nothing here parses it."
 
 // A documented field with neither a tag nor a waiver is the gap this
 // gate exists to find.
-func TestCheckFieldsReportsAnUnmodelledField(t *testing.T) {
-	resources, modelled, waived := fieldInputs(t, "")
-	problems, checked := checkFields(resources, modelled, waived)
+func TestCheckFieldsReportsAnUnmodeledField(t *testing.T) {
+	resources, modeled, waived := fieldInputs(t, "")
+	problems, checked := checkFields(resources, modeled, waived)
 	if checked != 3 {
 		t.Errorf("checked %d fields, want 3", checked)
 	}
 	if len(problems) != 1 || !strings.Contains(problems[0], "mystery") {
-		t.Errorf("got %v, want the unmodelled field reported", problems)
+		t.Errorf("got %v, want the unmodeled field reported", problems)
 	}
 }
 
 func TestCheckFieldsAcceptsAWaiver(t *testing.T) {
-	resources, modelled, waived := fieldInputs(t, "Tags\tmystery\t"+goodReason+"\n")
-	if problems, _ := checkFields(resources, modelled, waived); len(problems) != 0 {
+	resources, modeled, waived := fieldInputs(t, "Tags\tmystery\t"+goodReason+"\n")
+	if problems, _ := checkFields(resources, modeled, waived); len(problems) != 0 {
 		t.Errorf("a waived field should pass: %v", problems)
 	}
 }
 
 func TestCheckFieldsRejectsAThinWaiver(t *testing.T) {
-	resources, modelled, waived := fieldInputs(t, "Tags\tmystery\tlater\n")
-	problems, _ := checkFields(resources, modelled, waived)
+	resources, modeled, waived := fieldInputs(t, "Tags\tmystery\tlater\n")
+	problems, _ := checkFields(resources, modeled, waived)
 	if len(problems) != 1 || !strings.Contains(problems[0], "say why") {
 		t.Errorf("got %v, want the thin reason reported", problems)
 	}
 }
 
-// The half that rots: a waiver for a field that is modelled, or that
+// The half that rots: a waiver for a field that is modeled, or that
 // Favro no longer documents, reads like a decision and is residue.
 func TestCheckFieldsReportsAStaleWaiver(t *testing.T) {
-	resources, modelled, waived := fieldInputs(t,
+	resources, modeled, waived := fieldInputs(t,
 		"Tags\tmystery\t"+goodReason+"\nTags\tname\t"+goodReason+"\n")
-	problems, _ := checkFields(resources, modelled, waived)
+	problems, _ := checkFields(resources, modeled, waived)
 	if len(problems) != 1 || !strings.Contains(problems[0], "waives nothing") {
 		t.Errorf("got %v, want the stale waiver reported", problems)
 	}

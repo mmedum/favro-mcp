@@ -51,7 +51,7 @@ var (
 // document names still exist.
 //
 // Expect it to be narrower than it looks. Its scope is itself a
-// hand-maintained list, which is the failure this whole programme keeps
+// hand-maintained list, which is the failure this whole program keeps
 // describing, applied to the checker instead of the code — so each rule
 // below derives its expected set from the code rather than from a list
 // typed here.
@@ -70,7 +70,7 @@ func staleness(w io.Writer, bin string) error {
 	}
 
 	// Read once. Two independent readers of one file is how a
-	// normalisation added to one of them silently fails to apply to the
+	// normalization added to one of them silently fails to apply to the
 	// other.
 	docs, err := readDocuments(root)
 	if err != nil {

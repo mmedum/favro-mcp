@@ -48,7 +48,7 @@ const (
 )
 
 // platform is one binary the bundle carries, the directory it is staged
-// under, and how a launcher recognises the machine it belongs to.
+// under, and how a launcher recognizes the machine it belongs to.
 //
 // This is the one table. The packer stages from it, the launcher is
 // generated from it, and the gate compares it against what GoReleaser
@@ -166,7 +166,7 @@ func pluginGate(w io.Writer, _ []string) error {
 		}
 		for _, u := range p.uname {
 			if !strings.Contains(launcher, u) {
-				problems = append(problems, "the launcher recognises no machine reporting "+u)
+				problems = append(problems, "the launcher recognizes no machine reporting "+u)
 			}
 		}
 	}
@@ -419,7 +419,7 @@ func stageBundle(root, dist string) (files map[string][]byte, executable map[str
 	}
 
 	// Through stampVersion rather than a decode-and-re-encode: Go sorts
-	// map keys, so re-marshalling shipped a manifest alphabetised out of
+	// map keys, so re-marshaling shipped a manifest alphabetized out of
 	// whatever order it was written in, and the encoder escapes < > and
 	// &. Both are legal JSON and neither is what anyone wrote.
 	rawManifest, err := os.ReadFile(filepath.Join(root, manifestPath))

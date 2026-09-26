@@ -29,7 +29,7 @@ import (
 // consulted; the argument the caller passed is treated as its own
 // evidence.
 //
-// Three shapes are honest and the gate recognises all three structurally
+// Three shapes are honest and the gate recognizes all three structurally
 // rather than by a list of function names:
 //
 //   - the branch consults Favro, by calling through the client or by
@@ -86,9 +86,9 @@ func outcomes(w io.Writer, _ []string) error {
 	claims, branches := outcomeClaims(files, fields, fset)
 	// A rule with nothing of its shape to look at is a rule nobody is
 	// holding. Every write tool in this repository branches on DryRun,
-	// so a run that finds no branch at all has stopped recognising them.
+	// so a run that finds no branch at all has stopped recognizing them.
 	if branches < minOutcomeBranches {
-		return fmt.Errorf("found %d branch(es) testing a boolean request field, expected at least %d — this check is not recognising them any more",
+		return fmt.Errorf("found %d branch(es) testing a boolean request field, expected at least %d — this check is not recognizing them any more",
 			branches, minOutcomeBranches)
 	}
 
@@ -384,7 +384,7 @@ func refusesWithError(body *ast.BlockStmt) bool {
 // A hypothetical is not an outcome. This repository's dry-run vocabulary
 // is "would …", and a sentence in that form describes the request rather
 // than the world — which is the honest wording the gate is asking for,
-// so recognising it is not an escape hatch but the rule itself.
+// so recognizing it is not an escape hatch but the rule itself.
 func statedOutcome(body *ast.BlockStmt, fset *token.FileSet) (string, int) {
 	quote, line := "", 0
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -411,7 +411,7 @@ func isProse(s string) bool {
 	return len(s) >= 16 && strings.Contains(strings.TrimSpace(s), " ")
 }
 
-// isHypothetical recognises the dry-run wording, which states what was
+// isHypothetical recognizes the dry-run wording, which states what was
 // asked for rather than what happened.
 func isHypothetical(s string) bool {
 	t := strings.ToLower(strings.TrimSpace(s))

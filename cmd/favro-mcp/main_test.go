@@ -345,7 +345,7 @@ func TestCleanDisconnect(t *testing.T) {
 		clean bool
 	}{
 		{"a server that stopped on its own", nil, true},
-		{"the context was cancelled", context.Canceled, true},
+		{"the context was canceled", context.Canceled, true},
 		{"a wrapped cancellation", fmt.Errorf("run: %w", context.Canceled), true},
 		{"a plain EOF", io.EOF, true},
 		{"the server closing, as the SDK reports it", &jsonrpc.Error{Code: -32004, Message: "server is closing"}, true},
@@ -432,7 +432,7 @@ func TestUsageDocumentsDestructiveFlag(t *testing.T) {
 // reads as a hang, because the server blocks on stdin and says nothing,
 // and exits 0, so a script driving this binary takes a typo for success.
 //
-// Behaviour rather than a predicate: run() is what falls through, so a
+// Behavior rather than a predicate: run() is what falls through, so a
 // test of a `looksLikeSubcommand` helper would pass with the guard
 // deleted. Two sibling servers have the fix and exactly that gap.
 func TestRun_UnknownCommand_FailsWithoutStartingTheServer(t *testing.T) {

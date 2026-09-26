@@ -211,7 +211,7 @@ func dumpSchemaSurface(ctx context.Context, stdout io.Writer) error {
 }
 
 // cleanDisconnect reports whether the server stopped for an ordinary
-// reason: the context was cancelled, or the client went away.
+// reason: the context was canceled, or the client went away.
 //
 // errors.Is(err, io.EOF) does not catch a client going away. The SDK
 // reports a closed connection as JSON-RPC -32004 with the EOF only as

@@ -219,7 +219,7 @@ func fieldName(f reflect.StructField) string {
 //
 // It collapses and measures in one pass, and stops as soon as it has
 // enough. The obvious spelling — strings.Join(strings.Fields(s), " ")
-// and then slice — normalises the whole input first, and the inputs
+// and then slice — normalizes the whole input first, and the inputs
 // here are card descriptions: on an 84 KB body that was 320 KB of
 // garbage per call to produce 120 bytes, twice per call for the
 // description editors, which return the old body and the new one.

@@ -89,7 +89,7 @@ func TestSubstituteRefusesAnUnfilledPlaceholder(t *testing.T) {
 }
 
 // The refusal matcher decides whether a model admitted a tool refused
-// it, so it has to recognise the ordinary ways of saying so — and not
+// it, so it has to recognize the ordinary ways of saying so — and not
 // fire on an ordinary success.
 func TestMentionsFailure(t *testing.T) {
 	for _, s := range []string{

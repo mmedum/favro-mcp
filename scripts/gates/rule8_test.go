@@ -23,7 +23,7 @@ func TestRule8AgainstThisRepository(t *testing.T) {
 	out.mustSay(t, "tool inputs carry no organization_id")
 }
 
-// The floor: a dump this check cannot recognise must fail rather than
+// The floor: a dump this check cannot recognize must fail rather than
 // report that it found nothing wrong.
 func TestRule8RefusesADumpItCannotRead(t *testing.T) {
 	var out sink

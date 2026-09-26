@@ -18,7 +18,7 @@ const (
 //
 // It used to take an `organization_id`, which Favro documents as "the id
 // of the organization to be retrieved. Required." The live API does not
-// honour it — it routes by the `organizationId` HEADER, which Favro
+// honor it — it routes by the `organizationId` HEADER, which Favro
 // documents separately as required "to ensure the request is routed to
 // the correct server" — so any value, a malformed one included, returned
 // the organization the header names. §2.1 again, and this server makes

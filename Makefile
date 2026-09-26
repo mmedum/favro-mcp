@@ -73,12 +73,12 @@ vuln: ## govulncheck
 	$(GO) run $(GOVULNCHECK) ./...
 
 .PHONY: licenses
-licenses: ## every dependency's licence is one we accept
-# segmentio/asm is ignored by path, not by licence name. It relicensed
+licenses: ## every dependency's license is one we accept
+# segmentio/asm is ignored by path, not by license name. It relicensed
 # to MIT No Attribution (MIT-0) in v1.2.1 — strictly more permissive than
 # the MIT it carried before, and OSI-approved — and go-licenses v1.6.0's
-# classifier, which is from 2023, does not recognise MIT-0 at all: it
-# reports an empty licence name, so no --allowed_licenses value can
+# classifier, which is from 2023, does not recognize MIT-0 at all: it
+# reports an empty license name, so no --allowed_licenses value can
 # satisfy it. Verified by reading the module's LICENSE. It arrives
 # transitively through the MCP SDK's jsonschema dependency.
 	$(GO) run $(GOLICENSES) check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC --ignore github.com/segmentio/asm
@@ -108,7 +108,7 @@ api-coverage: ## every documented Favro endpoint has a verdict, and the reverse
 	@$(GO) run ./scripts/gates api-coverage
 
 .PHONY: api-fields
-api-fields: ## every documented field is modelled, or waived with a reason
+api-fields: ## every documented field is modeled, or waived with a reason
 	@$(GO) run ./scripts/gates api-fields
 
 .PHONY: live

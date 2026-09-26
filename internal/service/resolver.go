@@ -175,7 +175,7 @@ func clampLimit(limit int) int {
 	return limit
 }
 
-// rankByName centralises the score → filter → sort → cap pattern
+// rankByName centralizes the score → filter → sort → cap pattern
 // every Resolve<X> follows. T is the source type (favro.Tag,
 // favro.User, …); R is the resolver's per-resource output type
 // (ResolvedTag, ResolvedUser, …).
