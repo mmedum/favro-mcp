@@ -89,7 +89,7 @@ type op struct {
 // diffOps returns the line-by-line edit script.
 //
 // The common prefix and suffix are stripped first. That is not just an
-// optimisation: append and prepend — two of the three tools that call
+// optimization: append and prepend — two of the three tools that call
 // this — differ from their input only at one end, so trimming reduces
 // the search to almost nothing and makes the common case exact.
 func diffOps(oldLines, newLines []string) []op {

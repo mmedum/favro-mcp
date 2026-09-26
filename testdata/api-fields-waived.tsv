@@ -2,7 +2,7 @@
 #
 # `gates api-fields` compares every field in the reference against the
 # json tags on the wire type, and a field with neither a tag nor a row
-# here fails. A row that waives a field which IS modelled, or which
+# here fails. A row that waives a field which IS modeled, or which
 # Favro no longer documents, fails too — a waiver that waives nothing
 # reads exactly like a decision.
 #

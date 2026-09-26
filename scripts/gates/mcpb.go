@@ -393,7 +393,7 @@ func mcpbLauncherAgrees() []string {
 		}
 		for _, u := range b.uname {
 			if !strings.Contains(script, u) {
-				problems = append(problems, "the launcher recognises no machine reporting "+u)
+				problems = append(problems, "the launcher recognizes no machine reporting "+u)
 			}
 		}
 	}

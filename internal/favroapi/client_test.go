@@ -456,7 +456,7 @@ func TestRedactHeaders_Authorization(t *testing.T) {
 	}
 	// organizationId names the tenant and rides on every request, so
 	// it is redacted too. This assertion used to read the other way,
-	// which is how the leak survived: the behaviour was not an
+	// which is how the leak survived: the behavior was not an
 	// oversight, it was pinned.
 	if got := out["Organizationid"]; got != "[REDACTED]" {
 		t.Errorf("out[\"Organizationid\"] = %v, want %v", got, "[REDACTED]")

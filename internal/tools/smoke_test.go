@@ -320,7 +320,7 @@ func writeSmokeAttachment(t *testing.T) string {
 // a failing tool call instead of silently passing on zero values.
 //
 // An unrouted path fails the test rather than 404ing: a tool reaching
-// an endpoint nobody modelled here is exactly the drift this file
+// an endpoint nobody modeled here is exactly the drift this file
 // exists to catch.
 func smokeFixtureHandler(t *testing.T) http.Handler {
 	t.Helper()
@@ -374,7 +374,7 @@ func smokeResponseFor(r *http.Request) (string, bool) {
 	if len(segments) == 1 {
 		// /webhooks is the one collection Favro answers with a bare
 		// array rather than the paginated envelope. The fixture has to
-		// match the API, not the pattern — modelling it as an envelope
+		// match the API, not the pattern — modeling it as an envelope
 		// is what let the first version of the client pass here and
 		// fail against the live endpoint.
 		if segments[0] == "webhooks" {

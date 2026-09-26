@@ -124,7 +124,7 @@ func TestMCP_GetOrganization_HappyPath(t *testing.T) {
 		// The bound organization, not one the caller named. Favro routes
 		// this call by the organizationId header and ignores the path
 		// segment, so a tool that took an id handed back whatever the
-		// header said while looking as though it had honoured the input.
+		// header said while looking as though it had honored the input.
 		// require.* would call t.FailNow from the handler goroutine,
 		// which is unsafe; t.Errorf returns control to the handler.
 		if r.URL.Path != "/organizations/synthetic-organization" {

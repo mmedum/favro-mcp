@@ -25,7 +25,7 @@ func (f *failingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 }
 
 // testEntity is a stand-in resource for the pagination tests: the
-// envelope's behaviour does not depend on what it carries, and using a
+// envelope's behavior does not depend on what it carries, and using a
 // real wire type here would tie a transport test to a schema.
 type testEntity struct {
 	ID   string `json:"id"`
@@ -53,7 +53,7 @@ func requireJSONEq(t *testing.T, want, got string, why ...string) {
 	}
 	if !reflect.DeepEqual(wantVal, gotVal) {
 		// why is what the assertion was for, when the caller said —
-		// several of these exist to pin a marshalling detail that the
+		// several of these exist to pin a marshaling detail that the
 		// bodies alone would not explain.
 		t.Errorf("request body: %s\n got %s\nwant %s", strings.Join(why, " "), got, want)
 	}

@@ -88,7 +88,7 @@ been written rather than by somebody remembering to add it.
 useful for checking what a write would send; it does not stop a host from
 calling the tool without it.
 
-## Startup behaviour
+## Startup behavior
 
 The server resolves credentials, then validates them against Favro with
 one `GET /organizations`, then serves. **If either step fails it logs the

@@ -8,7 +8,7 @@ import (
 // Webhook is one outgoing webhook Favro has registered: an address it
 // posts card events to.
 //
-// **The signing secret is deliberately not modelled.** Favro returns a
+// **The signing secret is deliberately not modeled.** Favro returns a
 // `secret` on every read, and it is what signs the X-Favro-Webhook
 // header on every delivery — anyone holding it can forge an event to
 // whoever is consuming that webhook. The strongest way not to leak a

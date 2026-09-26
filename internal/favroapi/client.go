@@ -629,7 +629,7 @@ func (c *Client) logRequest(req *http.Request, attempt int) {
 // That keeps "cards" and the "v1" in the base URL, and cannot keep an
 // id, because the only variable segments these paths carry are the ids
 // this client itself interpolates and those are 24-hex. Anything the
-// rule does not recognise — uppercase, punctuation, anything long —
+// rule does not recognize — uppercase, punctuation, anything long —
 // becomes {id} rather than being printed.
 func redactPathIDs(path string) string {
 	segments := strings.Split(path, "/")

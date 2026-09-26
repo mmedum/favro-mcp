@@ -40,7 +40,7 @@ type Card struct {
 	Position     float64 `json:"position,omitempty"`
 	ListPosition float64 `json:"listPosition,omitempty"`
 	// SheetPosition is the card's place in a sheet view. Documented on
-	// the card and previously modelled only on the write requests, so a
+	// the card and previously modeled only on the write requests, so a
 	// read dropped it — found by `gates api-fields`.
 	SheetPosition float64 `json:"sheetPosition,omitempty"`
 	IsArchived    bool    `json:"archived,omitempty"`

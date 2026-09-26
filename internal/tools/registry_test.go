@@ -126,7 +126,7 @@ func TestEveryToolIsAnnotated(t *testing.T) {
 // show the model one half or the other, so both must be present and
 // they must not be the same bytes. Every tool in this repository
 // returned a nil *mcp.CallToolResult, which is exactly the state where
-// the SDK copies the marshalled output into a TextContent block.
+// the SDK copies the marshaled output into a TextContent block.
 func TestContentAndStructuredContentDiffer(t *testing.T) {
 	t.Parallel()
 
@@ -174,11 +174,11 @@ func TestContentAndStructuredContentDiffer(t *testing.T) {
 	}
 }
 
-// TestListToolContentSummarisesThePage covers the shape that matters
+// TestListToolContentSummarizesThePage covers the shape that matters
 // most for §4.4: this server never aggregates pages, so a caller that
 // misses next_page reads a prefix of the answer and believes it is the
 // whole one. The readable half has to say so.
-func TestListToolContentSummarisesThePage(t *testing.T) {
+func TestListToolContentSummarizesThePage(t *testing.T) {
 	t.Parallel()
 
 	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -279,7 +279,7 @@ func requireDeclaredClassPrefix(t *testing.T, text string) {
 // declare error sentinels and requires each one to name its class.
 //
 // Reading the source is the point. render.Classify falls back to
-// ClassInvalid, which is right for every unsentinelled error here today
+// ClassInvalid, which is right for every unsentineled error here today
 // and wrong the moment somebody adds a sentinel that means "not found"
 // — and a fallback is exactly the kind of thing that silently absorbs a
 // mistake. Go cannot enumerate a package's variables at run time, so
@@ -468,7 +468,7 @@ type schemaProperty struct {
 
 // inputProperties unwraps a registered tool's input schema into its
 // top-level properties. The schema arrives from ListTools as the
-// marshalled form rather than a typed value, so it round-trips through
+// marshaled form rather than a typed value, so it round-trips through
 // JSON. Returns nil for a tool with no object schema.
 func inputProperties(t *testing.T, tool *mcp.Tool) map[string]schemaProperty {
 	t.Helper()

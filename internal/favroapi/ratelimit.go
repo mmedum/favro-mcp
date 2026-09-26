@@ -96,7 +96,7 @@ func parseRateLimitHeaders(resp *http.Response) RateLimitSnapshot {
 // rateLimitHeaderParsers maps each observed header to the field it
 // fills. A table rather than a chain of ifs so adding a header is one
 // row — and every entry keeps the same "absent leaves the zero value
-// alone, unparseable is ignored" behaviour.
+// alone, unparseable is ignored" behavior.
 var rateLimitHeaderParsers = []struct {
 	name  string
 	apply func(*RateLimitSnapshot, string)
