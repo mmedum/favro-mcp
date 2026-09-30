@@ -1,6 +1,7 @@
 package favroapi
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -66,10 +67,20 @@ func (c *Client) CreateCard(ctx context.Context, req favro.CreateCardRequest) (f
 		return favro.Card{}, fmt.Errorf("favro: card name is required")
 	}
 	var out favro.Card
-	if err := c.doJSON(ctx, http.MethodPost, "/cards", descriptionFormatQuery(req.DescriptionFormat), req, &out); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/cards", writeDescriptionFormatQuery(req.DescriptionFormat), req, &out); err != nil {
 		return favro.Card{}, err
 	}
 	return out, nil
+}
+
+// writeDescriptionFormatQuery is descriptionFormatQuery for a write,
+// where an unset format means markdown. Favro re-serializes the
+// markdown it is sent ("- " bullets become "* ", list items gain a
+// blank line between them), and the stored form is what a caller
+// matching against the description needs; Favro's plaintext default
+// would hide both.
+func writeDescriptionFormatQuery(format string) url.Values {
+	return descriptionFormatQuery(cmp.Or(format, favro.DescriptionFormatMarkdown))
 }
 
 // descriptionFormatQuery renders the optional descriptionFormat
@@ -121,7 +132,7 @@ func (c *Client) UpdateCard(ctx context.Context, cardID string, req favro.Update
 	}
 	var out favro.Card
 	path := "/cards/" + url.PathEscape(cardID)
-	if err := c.doJSON(ctx, http.MethodPut, path, descriptionFormatQuery(req.DescriptionFormat), req, &out); err != nil {
+	if err := c.doJSON(ctx, http.MethodPut, path, writeDescriptionFormatQuery(req.DescriptionFormat), req, &out); err != nil {
 		return favro.Card{}, err
 	}
 	// Only the column is checked. A lane move is the same contract by

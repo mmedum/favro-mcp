@@ -325,16 +325,18 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_get_card",
 			Args: map[string]any{
-				"card_id": AnyCardID,
+				"card_id":            AnyCardID,
+				"description_format": "markdown",
 			},
 			Why: "reads",
 		},
 		{
 			Tool: "favro_get_card_full",
 			Args: map[string]any{
-				"card_id":          AnyCardID,
-				"comment_limit":    1,
-				"include_comments": false,
+				"card_id":            AnyCardID,
+				"comment_limit":      1,
+				"description_format": "markdown",
+				"include_comments":   false,
 			},
 			Why: "reads",
 		},
