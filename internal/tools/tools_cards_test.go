@@ -208,3 +208,36 @@ func TestCardCustomFieldValuesPassOutputValidation(t *testing.T) {
 		t.Errorf("len(CustomFields()) = %d, want 6", got)
 	}
 }
+
+func TestMCP_GetCard_DescriptionFormatForwarded(t *testing.T) {
+	t.Parallel()
+
+	for _, format := range []string{"", "markdown"} {
+		t.Run("format="+format, func(t *testing.T) {
+			t.Parallel()
+
+			var saw string
+			c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				saw = r.URL.Query().Get("descriptionFormat")
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(favro.Card{CardID: "c-1", DetailedDescription: "* one\n\n* two"})
+			}))
+
+			args := map[string]any{"card_id": "c-1"}
+			if format != "" {
+				args["description_format"] = format
+			}
+			cs := connectInMemoryWith(t, c)
+			res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: getCardToolName, Arguments: args})
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if res.IsError {
+				t.Fatal("res.IsError = true, want false")
+			}
+			if saw != format {
+				t.Errorf("descriptionFormat sent = %q, want %q", saw, format)
+			}
+		})
+	}
+}

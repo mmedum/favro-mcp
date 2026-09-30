@@ -25,6 +25,9 @@ func TestMCP_CreateCard_HappyPath(t *testing.T) {
 		if r.URL.Path != "/cards" {
 			t.Errorf("expected /cards; got %s", r.URL.Path)
 		}
+		if got := r.URL.Query().Get("descriptionFormat"); got != "markdown" {
+			t.Errorf("create_card must ask for descriptionFormat=markdown so the result shows the stored body; got %q", got)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"cardId":"ci-new","cardCommonId":"cc-new","name":"hello","widgetCommonId":"w-1"}`))
 	}))
@@ -222,6 +225,9 @@ func TestMCP_UpdateCard_HappyPath(t *testing.T) {
 		}
 		if !strings.HasPrefix(r.URL.Path, "/cards/") {
 			t.Errorf("expected /cards/{id}; got %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("descriptionFormat"); got != "markdown" {
+			t.Errorf("update_card must ask for descriptionFormat=markdown so the result shows the stored body; got %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"cardId":"ci-1","cardCommonId":"cc-1","name":"renamed"}`))

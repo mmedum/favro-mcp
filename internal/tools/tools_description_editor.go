@@ -19,7 +19,14 @@ import (
 // no-op write returns 200 exactly like a real one — so the caller
 // would read success where nothing happened.
 var errDescriptionFindNoMatch = render.Sentinel(render.ClassNotFound,
-	"favro: 'find' matched nothing in the card description; refusing to PUT an unchanged body")
+	"favro: 'find' matched nothing in the card description; refusing to PUT an unchanged body. "+findMatchesStoredMarkdown)
+
+// findMatchesStoredMarkdown is the one explanation of why a `find`
+// copied from what was sent can miss, shared by the tool description
+// and its not_found error.
+const findMatchesStoredMarkdown = "`find` matches the markdown as Favro stored it, not as it was sent: " +
+	"Favro normalizes bullet markers ('- ' becomes '* ') and puts a blank line between list items, " +
+	"so build `find` from favro_get_card with `description_format: \"markdown\"`."
 
 const (
 	appendCardDescriptionToolName    = "favro_append_card_description"
@@ -66,7 +73,7 @@ func registerAppendCardDescription(reg *registry, r *service.Resolver) {
 			"the diff without writing.",
 		Annotations: mutating("Append to Favro card description", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in appendCardDescriptionInput) (*mcp.CallToolResult, writeOutput[service.EditorResult], error) {
-		card, err := r.Client().GetCardWithDescriptionFormat(ctx, in.CardID, "markdown")
+		card, err := r.Client().GetCardWithDescriptionFormat(ctx, in.CardID, favro.DescriptionFormatMarkdown)
 		if err != nil {
 			return nil, writeOutput[service.EditorResult]{}, err
 		}
@@ -88,7 +95,7 @@ func registerPrependCardDescription(reg *registry, r *service.Resolver) {
 			"Pass `dry_run: true` to preview.",
 		Annotations: mutating("Prepend to Favro card description", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in prependCardDescriptionInput) (*mcp.CallToolResult, writeOutput[service.EditorResult], error) {
-		card, err := r.Client().GetCardWithDescriptionFormat(ctx, in.CardID, "markdown")
+		card, err := r.Client().GetCardWithDescriptionFormat(ctx, in.CardID, favro.DescriptionFormatMarkdown)
 		if err != nil {
 			return nil, writeOutput[service.EditorResult]{}, err
 		}
@@ -107,12 +114,13 @@ func registerReplaceInCardDescription(reg *registry, r *service.Resolver) {
 			"common substring doesn't accidentally rewrite every occurrence; pass `count: 0` " +
 			"(or negative) to replace all. `use_regex: true` compiles `find` as a Go regex " +
 			"and lets `replace` use `$N` backrefs. If `find` matches nothing the tool returns " +
-			"a typed error rather than PUT-ing an unchanged body. Returns `{old, new, " +
+			"a typed error rather than PUT-ing an unchanged body. " + findMatchesStoredMarkdown +
+			" Returns `{old, new, " +
 			"unified_diff}`. Successful live writes invalidate the search-cards cache. " +
 			"Pass `dry_run: true` to preview.",
 		Annotations: mutating("Replace in Favro card description", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in replaceInCardDescriptionInput) (*mcp.CallToolResult, writeOutput[service.EditorResult], error) {
-		card, err := r.Client().GetCardWithDescriptionFormat(ctx, in.CardID, "markdown")
+		card, err := r.Client().GetCardWithDescriptionFormat(ctx, in.CardID, favro.DescriptionFormatMarkdown)
 		if err != nil {
 			return nil, writeOutput[service.EditorResult]{}, err
 		}

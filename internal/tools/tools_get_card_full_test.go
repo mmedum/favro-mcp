@@ -130,3 +130,52 @@ func TestMCP_GetCardFull_IdentityRequired(t *testing.T) {
 		t.Errorf("full does not contain %q", "sequential_id")
 	}
 }
+
+// TestMCP_GetCardFull_DescriptionFormatForwarded covers both fetch
+// paths: GET /cards/{id} for card_id, and the ListCards filter for
+// the other identities.
+func TestMCP_GetCardFull_DescriptionFormatForwarded(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		args map[string]any
+	}{
+		{"card_id", map[string]any{"card_id": "c-1", "description_format": "markdown"}},
+		{"card_common_id", map[string]any{"card_common_id": "cc-1", "description_format": "markdown"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var saw string
+			c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				card := favro.Card{CardID: "c-1", CardCommonID: "cc-1", DetailedDescription: "* one"}
+				if strings.HasPrefix(r.URL.Path, "/cards") {
+					saw = r.URL.Query().Get("descriptionFormat")
+				}
+				switch r.URL.Path {
+				case "/cards/c-1":
+					_ = json.NewEncoder(w).Encode(card)
+				case "/cards":
+					_ = json.NewEncoder(w).Encode(favro.PageEnvelope[favro.Card]{Pages: 1, Entities: []favro.Card{card}})
+				default:
+					_ = json.NewEncoder(w).Encode(favro.PageEnvelope[json.RawMessage]{Pages: 1})
+				}
+			}))
+
+			cs := connectInMemoryWith(t, c)
+			res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: getCardFullToolName, Arguments: tc.args})
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if res.IsError {
+				t.Fatalf("res.IsError = true, want false")
+			}
+			if saw != "markdown" {
+				t.Errorf("descriptionFormat sent = %q, want %q", saw, "markdown")
+			}
+		})
+	}
+}
