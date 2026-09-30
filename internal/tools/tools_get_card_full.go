@@ -19,6 +19,7 @@ type getCardFullInput struct {
 	SequentialID    int    `json:"sequential_id,omitempty" jsonschema:"the integer part of a human-readable card ref (e.g. 123 for 'BSC-123'); mutually exclusive with card_id and card_common_id. Exactly one identity is required."`
 	IncludeComments bool   `json:"include_comments,omitempty" jsonschema:"include the first page of comments on the card (default false). Comments are scoped per cardCommonId so they are shared across every widget instance of the card."`
 	CommentLimit    int    `json:"comment_limit,omitempty" jsonschema:"max comments to return when include_comments=true; trims the first page locally. Default 20."`
+	descriptionFormatInput
 }
 
 func registerGetCardFull(reg *registry, r *service.Resolver) {
@@ -39,14 +40,20 @@ func registerGetCardFull(reg *registry, r *service.Resolver) {
 			"card → resolve everything' flow. Pass exactly one of `card_id` (per-widget), " +
 			"`card_common_id` (cross-widget), or `sequential_id` (integer of a 'BSC-123' " +
 			"ref). Comments are off by default — set `include_comments: true` to fetch " +
-			"the first page (cap with `comment_limit`, default 20). Read-only.",
+			"the first page (cap with `comment_limit`, default 20). Pass " +
+			"`description_format: \"markdown\"` to see the description as Favro stored it. " +
+			"Read-only.",
 		Annotations: readOnly("Get a Favro card with names dereferenced"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in getCardFullInput) (*mcp.CallToolResult, service.FullCard, error) {
 		full, err := r.GetFullCard(ctx, service.FullCardIdentity{
 			CardID:       in.CardID,
 			CardCommonID: in.CardCommonID,
 			SequentialID: in.SequentialID,
-		}, in.IncludeComments, in.CommentLimit)
+		}, service.FullCardOptions{
+			DescriptionFormat: in.DescriptionFormat,
+			IncludeComments:   in.IncludeComments,
+			CommentLimit:      in.CommentLimit,
+		})
 		if err != nil {
 			return nil, service.FullCard{}, err
 		}

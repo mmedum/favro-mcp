@@ -596,7 +596,7 @@ func TestGetFullCard_IdentityValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := fix.resolver.GetFullCard(context.Background(), tc.id, false, 0)
+			_, err := fix.resolver.GetFullCard(context.Background(), tc.id, FullCardOptions{})
 			if !errors.Is(err, errFullCardIdentityRequired) {
 				t.Fatalf("got %v, want errFullCardIdentityRequired", err)
 			}
@@ -655,7 +655,7 @@ func TestGetFullCard_HappyPath_ByCardID(t *testing.T) {
 		},
 	})
 
-	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, true, 0)
+	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, FullCardOptions{IncludeComments: true})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -736,7 +736,7 @@ func TestGetFullCard_HappyPath_BySequentialID(t *testing.T) {
 		}},
 	})
 
-	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{SequentialID: 42}, false, 0)
+	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{SequentialID: 42}, FullCardOptions{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -761,7 +761,7 @@ func TestGetFullCard_NotFoundOnEmptyListResult(t *testing.T) {
 	// finds nothing.
 	fix := newFullCardFixture(t, fullCardFixtureOpts{})
 
-	_, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardCommonID: "cc-missing"}, false, 0)
+	_, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardCommonID: "cc-missing"}, FullCardOptions{})
 	if !errors.Is(err, errFullCardNotFound) {
 		t.Fatalf("got %v, want errFullCardNotFound", err)
 	}
@@ -777,7 +777,7 @@ func TestGetFullCard_ExcludesCommentsByDefault(t *testing.T) {
 		},
 	})
 
-	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, false, 0)
+	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, FullCardOptions{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -799,7 +799,7 @@ func TestGetFullCard_CommentLimitTrimsResult(t *testing.T) {
 	}
 	fix := newFullCardFixture(t, fullCardFixtureOpts{cards: cards, comments: comments})
 
-	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, true, 2)
+	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, FullCardOptions{IncludeComments: true, CommentLimit: 2})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -818,7 +818,7 @@ func TestGetFullCard_SkipsResolversWhenCardHasNoIDs(t *testing.T) {
 		cards: []favro.Card{{CardID: "c-1", CardCommonID: "cc-1", Name: "minimal"}},
 	})
 
-	_, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, false, 0)
+	_, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-1"}, FullCardOptions{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
