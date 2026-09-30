@@ -8,6 +8,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-09-30
+
 ### Added
 - `favro_update_card` and `favro_move_card` read the card back after a column or lane write and report in `notes` whether it is where it was asked to be. A card read back on another board than the one named is reported as not verified rather than compared.
 - `favro_set_card_custom_field` reads the card back and reports in `notes` whether the field is on the card and what it carries, since Favro answers 200 for a write to a field the card's widget has not enabled.
@@ -344,7 +346,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/mmedum/favro-mcp/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/mmedum/favro-mcp/compare/v2.1.1...v3.0.0
 [2.1.1]: https://github.com/mmedum/favro-mcp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/mmedum/favro-mcp/compare/v2.0.4...v2.1.0
