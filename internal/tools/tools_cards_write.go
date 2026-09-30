@@ -54,6 +54,7 @@ type createCardInput struct {
 // settleParent.
 type updateCardInput struct {
 	dryRunInput
+	verifyInput
 	CardID              string   `json:"card_id" jsonschema:"the per-widget cardId to update (NOT cardCommonId — Favro PUT /cards/{id} expects the per-widget instance id)"`
 	Name                string   `json:"name,omitempty" jsonschema:"new card name; omit to keep current"`
 	DetailedDescription string   `json:"detailed_description,omitempty" jsonschema:"replacement markdown body. Phase 6's favro_append/prepend/replace_in_card_description tools provide surgical edits; this one whole-body replaces. Favro normalizes markdown when storing it; the returned card shows the stored form."`
@@ -89,6 +90,7 @@ type unarchiveCardInput struct {
 // rejects with a typed error.
 type moveCardInput struct {
 	dryRunInput
+	verifyInput
 	CardID         string   `json:"card_id" jsonschema:"the per-widget cardId to move"`
 	ParentCardID   string   `json:"parent_card_id,omitempty" jsonschema:"nest the moved card under this parent. Must be a card on the widget this move names."`
 	ClearParent    bool     `json:"clear_parent,omitempty" jsonschema:"if true, detach the card from its parent and leave it at top level on the destination. A move is always a structural write, so without this the card's existing parent is read and carried through."`
@@ -163,6 +165,7 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 			"`detailed_description` whole-body replaces; surgical markdown edits are Phase 6's " +
 			"append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live " +
 			"writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\n" +
+			verifyPlacementDescription +
 			"Favro reads `parentCardId` off the body of a write carrying `widget_common_id`, " +
 			"so a body naming none leaves the card at top level — and the " +
 			"response echoes a null parent either way, so the answer cannot tell you which " +
@@ -206,6 +209,9 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 		}
 		if !out.DryRun {
 			r.InvalidateSearchCardCache()
+			in.readBack(&out, func() []string {
+				return verifyPlacement(ctx, r, in.CardID, out.Result, placement{in.WidgetCommonID, in.ColumnID, in.LaneID})
+			})
 		}
 		return nil, out, nil
 	})
@@ -363,6 +369,7 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 			"off such a body: this tool reads the card's current parent first and carries it " +
 			"through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or " +
 			"`parent_card_id` to nest it there; either one also skips the read. " +
+			verifyPlacementDescription +
 			"Successful live writes invalidate the search-cards cache. Pass " +
 			"`dry_run: true` to preview.",
 		Annotations: mutating("Move Favro card", false),
@@ -398,6 +405,9 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 		}
 		if !out.DryRun {
 			r.InvalidateSearchCardCache()
+			in.readBack(&out, func() []string {
+				return verifyPlacement(ctx, r, in.CardID, out.Result, placement{in.WidgetCommonID, in.ColumnID, in.LaneID})
+			})
 		}
 		return nil, out, nil
 	})

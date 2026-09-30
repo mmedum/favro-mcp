@@ -121,9 +121,8 @@ var errMoveNeedsWidget = render.Sentinel(render.ClassInvalid, "favro: a column o
 // the same request handling that ignored the body, so a response
 // echoing the requested columnId while storing nothing would pass it.
 // It caught this bug because Favro answered with a stub instead. The
-// honest version is a GET after every move, which costs a call against
-// a budget as low as ~100/hr for a hazard one live probe would settle
-// — §15 carries it.
+// honest version, a GET after the move, is done by the MCP tools
+// (internal/tools/verify.go), where skip_verify can drop it.
 func (c *Client) UpdateCard(ctx context.Context, cardID string, req favro.UpdateCardRequest) (favro.Card, error) {
 	if cardID == "" {
 		return favro.Card{}, errMissingID

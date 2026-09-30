@@ -333,12 +333,17 @@ func TestMCP_UpdateCard_MissingCardID(t *testing.T) {
 // parent-preservation test needs: Favro drops the parent on a write
 // carrying widgetCommonId, and what the body says about parentCardId
 // is the whole subject.
+//
+// gets counts only the reads made before the PUT, which are the ones
+// that decide the body. A move is read back after it lands too; that
+// read is the verification tests' subject, not this fixture's.
 func structuralUpdateFixture(t *testing.T, parentCardID string, putBody *string, gets *atomic.Int32) *favroapi.Client {
 	t.Helper()
+	var wrote atomic.Bool
 	return favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			if gets != nil {
+			if gets != nil && !wrote.Load() {
 				gets.Add(1)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -350,6 +355,7 @@ func structuralUpdateFixture(t *testing.T, parentCardID string, putBody *string,
 				ParentCardID:   parentCardID,
 			})
 		case http.MethodPut:
+			wrote.Store(true)
 			b, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Errorf("read PUT body: %v", err)
@@ -1155,4 +1161,228 @@ func cardAddressingTools(t *testing.T) []string {
 		}
 	}
 	return names
+}
+
+// placementFixture answers the parent read and the read-back with the
+// card at readBack, and a PUT with the requested column echoed back:
+// Favro echoes a write it discarded the same way as one it applied, so
+// only the GET after the PUT says anything. gets counts the GETs made
+// after the PUT, which are the read-backs.
+func placementFixture(t *testing.T, readBack favro.Card, gets *atomic.Int32) *favroapi.Client {
+	t.Helper()
+	var wrote atomic.Bool
+	return favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			if gets != nil && wrote.Load() {
+				gets.Add(1)
+			}
+			_ = json.NewEncoder(w).Encode(readBack)
+			return
+		}
+		wrote.Store(true)
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","cardCommonId":"cc-1","widgetCommonId":"w-1","columnId":"col-2"}`))
+	}))
+}
+
+// TestMCP_CardPlacement_ReadBack covers the verdicts favro_update_card
+// and favro_move_card report after a live placement write. Adapted
+// from the tests in #77.
+func TestMCP_CardPlacement_ReadBack(t *testing.T) {
+	t.Parallel()
+
+	onBoard := func(column, lane string) favro.Card {
+		return favro.Card{CardID: "ci-1", CardCommonID: "cc-1", WidgetCommonID: "w-1", ColumnID: column, LaneID: lane}
+	}
+	tests := []struct {
+		name     string
+		tool     string
+		readBack favro.Card
+		args     map[string]any
+		wantGets int32
+		// wantNote is a substring the notes must carry; empty means
+		// the read-back must add no notes.
+		wantNote string
+		// avoid is a substring no note may carry.
+		avoid string
+	}{
+		{
+			name: "a move Favro echoed but did not store is reported", tool: updateCardToolName,
+			readBack: onBoard("col-1", ""),
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "clear_parent": true},
+			wantGets: 1, wantNote: "column_id did not change: the card was read back after the write and reports",
+			// The column does not need list_position (verified live
+			// 2026-09-15); a note naming it would send the caller after
+			// the wrong fix.
+			avoid: "list_position",
+		},
+		{
+			name: "a move that landed says it was verified", tool: updateCardToolName,
+			readBack: onBoard("col-2", ""),
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "clear_parent": true},
+			wantGets: 1, wantNote: "verified by reading the card back: it is in the requested column.",
+		},
+		{
+			name: "favro_move_card gets the same verdict", tool: moveCardToolName,
+			readBack: onBoard("col-1", ""),
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "clear_parent": true},
+			wantGets: 1, wantNote: "column_id did not change",
+		},
+		{
+			name: "a write to another board is not judged against this instance", tool: moveCardToolName,
+			readBack: favro.Card{CardID: "ci-1", WidgetCommonID: "w-1", ColumnID: "col-1"},
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-OTHER", "column_id": "col-2", "clear_parent": true},
+			wantGets: 1, wantNote: "not verified: the card read back is on board", avoid: "did not change",
+		},
+		{
+			name: "an empty laneId read back is not evidence either way", tool: moveCardToolName,
+			readBack: onBoard("col-2", ""),
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "lane_id": "lane-1", "clear_parent": true},
+			wantGets: 1, wantNote: "lane_id not verified", avoid: "lane_id did not change",
+		},
+		{
+			name: "column and lane that landed are both named", tool: moveCardToolName,
+			readBack: onBoard("col-2", "lane-1"),
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "lane_id": "lane-1", "clear_parent": true},
+			wantGets: 1, wantNote: "the requested column and lane.",
+		},
+		{
+			name: "a write that moves nothing reads nothing back", tool: updateCardToolName,
+			readBack: onBoard("col-1", ""),
+			args:     map[string]any{"card_id": "ci-1", "name": "renamed"},
+			wantGets: 0,
+		},
+		{
+			name: "skip_verify drops the read", tool: updateCardToolName,
+			readBack: onBoard("col-1", ""),
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "clear_parent": true, "skip_verify": true},
+			wantGets: 0,
+		},
+		{
+			name: "skip_verify drops the read on a move too", tool: moveCardToolName,
+			readBack: onBoard("col-1", ""),
+			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "clear_parent": true, "skip_verify": true},
+			wantGets: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gets atomic.Int32
+			cs := connectInMemoryWith(t, placementFixture(t, tt.readBack, &gets))
+			res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tt.tool, Arguments: tt.args})
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if res.IsError {
+				t.Fatalf("a verdict is information, not a failed call: res.IsError = true: %v", res.Content[0])
+			}
+			if got := gets.Load(); got != tt.wantGets {
+				t.Errorf("read-backs = %v, want %v", got, tt.wantGets)
+			}
+			out := decodeStructured[writeOutput[favro.Card]](t, res)
+			notes := strings.Join(out.Notes, " ")
+			if tt.wantNote == "" && len(out.Notes) != 0 {
+				t.Errorf("out.Notes = %v, want none", out.Notes)
+			}
+			if tt.wantNote != "" && !strings.Contains(notes, tt.wantNote) {
+				t.Errorf("out.Notes = %v, want one containing %q", out.Notes, tt.wantNote)
+			}
+			if tt.wantNote != "" && !strings.Contains(serializedResponseString(t, res), tt.wantNote) {
+				t.Error("the verdict must reach the readable half of the result too")
+			}
+			if tt.avoid != "" && strings.Contains(notes, tt.avoid) {
+				t.Errorf("out.Notes = %v, must not contain %q", out.Notes, tt.avoid)
+			}
+		})
+	}
+}
+
+// TestMCP_CardPlacement_ReadsTheCardFavroReturned: the read-back
+// addresses the cardId in Favro's answer, falling back to the one
+// passed only when the answer carries none.
+func TestMCP_CardPlacement_ReadsTheCardFavroReturned(t *testing.T) {
+	t.Parallel()
+
+	var readPath atomic.Value
+	var wrote atomic.Bool
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			if wrote.Load() {
+				readPath.Store(r.URL.Path)
+			}
+			_ = json.NewEncoder(w).Encode(favro.Card{CardID: "ci-new", WidgetCommonID: "w-1", ColumnID: "col-2"})
+			return
+		}
+		wrote.Store(true)
+		_, _ = w.Write([]byte(`{"cardId":"ci-new","widgetCommonId":"w-1","columnId":"col-2"}`))
+	}))
+	cs := connectInMemoryWith(t, c)
+	if _, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      moveCardToolName,
+		Arguments: map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "clear_parent": true},
+	}); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if got, _ := readPath.Load().(string); got != "/cards/ci-new" {
+		t.Errorf("read-back path = %q, want %q", got, "/cards/ci-new")
+	}
+}
+
+// TestMCP_CardPlacement_ReadBackFails_ReportsUnconfirmed: the write
+// already happened, so failing the call would invite a retry.
+func TestMCP_CardPlacement_ReadBackFails_ReportsUnconfirmed(t *testing.T) {
+	t.Parallel()
+
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"boom"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cardId":"ci-1","columnId":"col-2"}`))
+	}))
+	cs := connectInMemoryWith(t, c)
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      updateCardToolName,
+		Arguments: map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "clear_parent": true},
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Error("res.IsError = true, want false")
+	}
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if !strings.Contains(strings.Join(out.Notes, " "), "unconfirmed") {
+		t.Errorf("out.Notes = %v, want one saying the write is unconfirmed", out.Notes)
+	}
+}
+
+// TestMCP_CardPlacement_DryRun_ReadsNothingBack: nothing was written.
+func TestMCP_CardPlacement_DryRun_ReadsNothingBack(t *testing.T) {
+	t.Parallel()
+
+	var gets atomic.Int32
+	cs := connectInMemoryWith(t, placementFixture(t, favro.Card{CardID: "ci-1", WidgetCommonID: "w-1"}, &gets))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      moveCardToolName,
+		Arguments: map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "clear_parent": true, "dry_run": true},
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	if !out.DryRun {
+		t.Fatal("out.DryRun = false, want true")
+	}
+	if got := gets.Load(); got != 0 {
+		t.Errorf("read-backs = %v, want 0", got)
+	}
+	if len(out.Notes) != 0 {
+		t.Errorf("out.Notes = %v, want none", out.Notes)
+	}
 }

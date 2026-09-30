@@ -7354,7 +7354,7 @@
         "readOnlyHint": false,
         "title": "Move Favro card"
       },
-      "description": "Move a Favro card between columns or lanes on a board. At least one of widget_common_id / column_id / lane_id must be set, and a column or lane move must ALSO pass widget_common_id — the board the card is already on — because Favro answers 200 and moves nothing without it. Passing a different widget_common_id adds the card to that board and leaves the original where it is; Favro has no cross-board relocation. The result is checked against what was asked for, so a move Favro accepts and ignores comes back as an error rather than a success. A move carries widget_common_id, and Favro reads `parentCardId` off such a body: this tool reads the card's current parent first and carries it through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or `parent_card_id` to nest it there; either one also skips the read. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+      "description": "Move a Favro card between columns or lanes on a board. At least one of widget_common_id / column_id / lane_id must be set, and a column or lane move must ALSO pass widget_common_id — the board the card is already on — because Favro answers 200 and moves nothing without it. Passing a different widget_common_id adds the card to that board and leaves the original where it is; Favro has no cross-board relocation. The result is checked against what was asked for, so a move Favro accepts and ignores comes back as an error rather than a success. A move carries widget_common_id, and Favro reads `parentCardId` off such a body: this tool reads the card's current parent first and carries it through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or `parent_card_id` to nest it there; either one also skips the read. A write that sets `column_id` or `lane_id` is then read back, and whether the card is where it was asked to be is reported in `notes` — the response alone cannot say, because a 200 echoing the requested column is also what an ignored write returns. That costs one request; pass `skip_verify: true` to drop it. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7399,6 +7399,10 @@
               "null",
               "number"
             ]
+          },
+          "skip_verify": {
+            "description": "if true, do not read the card back after the write. The read-back costs one extra request and is what turns Favro's 200 into evidence — skip it only when the caller is about to read the card anyway.",
+            "type": "boolean"
           },
           "widget_common_id": {
             "description": "the board the card ends up on (resolve via favro_resolve_widget). **Required whenever column_id or lane_id is set** — Favro answers 200 and moves nothing without it. For a move within one board this is the board the card is already on; favro_get_card returns it. Passing a DIFFERENT board adds the card there and leaves the original in place.",
@@ -9638,7 +9642,7 @@
         "readOnlyHint": false,
         "title": "Set Favro card custom field"
       },
-      "description": "Set a single custom-field value on a Favro card. Supply exactly one kind of value input, matching the resolved field's Type:\n  • Text → `text`\n  • Number → `number`\n  • Date → `date` (ISO 8601)\n  • Checkbox → `checkbox`\n  • Vote → `vote`\n  • Color → `color`\n  • Single select → `single_select_item_id`\n  • Status → `status_item_id`\n  • Multiple select → `multi_select_item_ids` (replaces the selection)\n  • Members → `add_member_user_ids` and/or `remove_member_user_ids`\n  • Tags → `add_tag_ids` and/or `remove_tag_ids`\n  • Rating → `rating_value` (Favro fixes the scale at 0-5)\n  • Link → `link_url` + optional `link_text`\n  • Timeline → `timeline_start_date` + `timeline_due_date` (+ optional `timeline_show_time`)\n  • Time → `time_report_ms` (+ optional `time_report_description`)\nMembers and Tags are add/remove deltas, not whole-list replacements — Favro's API has no replace operation for them. Resolve customFieldId via favro_resolve_custom_field; userIds via favro_resolve_user; tagIds via favro_resolve_tag; select / status item ids via favro_get_custom_field. Progress and Sequential ID are calculated by Favro and reject writes. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview. The per-type body shapes come from Favro's REST docs and have not all been confirmed against a live tenant. Favro answers 200 for a body it ignored, and a field not enabled on the widget is accepted and discarded, so read the card back with favro_get_card_full to confirm the value actually changed.",
+      "description": "Set a single custom-field value on a Favro card. Supply exactly one kind of value input, matching the resolved field's Type:\n  • Text → `text`\n  • Number → `number`\n  • Date → `date` (ISO 8601)\n  • Checkbox → `checkbox`\n  • Vote → `vote`\n  • Color → `color`\n  • Single select → `single_select_item_id`\n  • Status → `status_item_id`\n  • Multiple select → `multi_select_item_ids` (replaces the selection)\n  • Members → `add_member_user_ids` and/or `remove_member_user_ids`\n  • Tags → `add_tag_ids` and/or `remove_tag_ids`\n  • Rating → `rating_value` (Favro fixes the scale at 0-5)\n  • Link → `link_url` + optional `link_text`\n  • Timeline → `timeline_start_date` + `timeline_due_date` (+ optional `timeline_show_time`)\n  • Time → `time_report_ms` (+ optional `time_report_description`)\nMembers and Tags are add/remove deltas, not whole-list replacements — Favro's API has no replace operation for them. Resolve customFieldId via favro_resolve_custom_field; userIds via favro_resolve_user; tagIds via favro_resolve_tag; select / status item ids via favro_get_custom_field. Progress and Sequential ID are calculated by Favro and reject writes. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview. The per-type body shapes come from Favro's REST docs and have not all been confirmed against a live tenant. Favro answers 200 for a body it ignored, and a field not enabled on the card's widget is accepted and discarded — so the tool reads the card back after the write and reports in `notes` whether the field is on the card and what it now carries. That costs one request; pass `skip_verify: true` to drop it.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -9748,6 +9752,10 @@
           "single_select_item_id": {
             "description": "customFieldItemId for a Single-select field. Look up item ids via favro_get_custom_field.",
             "type": "string"
+          },
+          "skip_verify": {
+            "description": "if true, do not read the card back after the write. The read-back costs one extra request and is what turns Favro's 200 into evidence — skip it only when the caller is about to read the card anyway.",
+            "type": "boolean"
           },
           "status_item_id": {
             "description": "customFieldItemId for a Status-typed field. Look up item ids via favro_get_custom_field.",
@@ -10504,7 +10512,7 @@
         "readOnlyHint": false,
         "title": "Update Favro card"
       },
-      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\nFavro reads `parentCardId` off the body of a write carrying `widget_common_id`, so a body naming none leaves the card at top level — and the response echoes a null parent either way, so the answer cannot tell you which happened. This tool therefore reads the card first on such a write and carries its existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
+      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\nA write that sets `column_id` or `lane_id` is then read back, and whether the card is where it was asked to be is reported in `notes` — the response alone cannot say, because a 200 echoing the requested column is also what an ignored write returns. That costs one request; pass `skip_verify: true` to drop it. Favro reads `parentCardId` off the body of a write carrying `widget_common_id`, so a body naming none leaves the card at top level — and the response echoes a null parent either way, so the answer cannot tell you which happened. This tool therefore reads the card first on such a write and carries its existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -10601,6 +10609,10 @@
               "null",
               "number"
             ]
+          },
+          "skip_verify": {
+            "description": "if true, do not read the card back after the write. The read-back costs one extra request and is what turns Favro's 200 into evidence — skip it only when the caller is about to read the card anyway.",
+            "type": "boolean"
           },
           "start_date": {
             "description": "ISO-8601 start date",
