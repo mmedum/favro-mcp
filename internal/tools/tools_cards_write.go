@@ -34,7 +34,7 @@ type createCardInput struct {
 	ColumnID            string   `json:"column_id,omitempty" jsonschema:"the columnId on the target widget. Resolve via favro_resolve_column."`
 	LaneID              string   `json:"lane_id,omitempty" jsonschema:"the laneId on the target widget (only meaningful when the widget has lanes)"`
 	ParentCardID        string   `json:"parent_card_id,omitempty" jsonschema:"the cardId of a parent card if this card should be a child"`
-	DetailedDescription string   `json:"detailed_description,omitempty" jsonschema:"markdown body for the card description"`
+	DetailedDescription string   `json:"detailed_description,omitempty" jsonschema:"markdown body for the card description. Favro normalizes markdown when storing it; the returned card shows the stored form."`
 	ListPosition        *float64 `json:"list_position,omitempty" jsonschema:"position on a kanban widget as a JSON number. 0 places the card at the top of the column; a number larger than the current max sends it to the bottom; fractional values (e.g. 3.5) slot between siblings without renumbering. (String values, even numeric, are rejected by Favro.)"`
 	SheetPosition       *float64 `json:"sheet_position,omitempty" jsonschema:"position on a sheet widget as a JSON number — same numeric vocabulary as list_position"`
 	AssignmentIDs       []string `json:"assignment_ids,omitempty" jsonschema:"userIds to assign on creation. Resolve via favro_resolve_user."`
@@ -57,7 +57,7 @@ type updateCardInput struct {
 	verifyInput
 	CardID              string   `json:"card_id" jsonschema:"the per-widget cardId to update (NOT cardCommonId — Favro PUT /cards/{id} expects the per-widget instance id)"`
 	Name                string   `json:"name,omitempty" jsonschema:"new card name; omit to keep current"`
-	DetailedDescription string   `json:"detailed_description,omitempty" jsonschema:"replacement markdown body. Phase 6's favro_append/prepend/replace_in_card_description tools provide surgical edits; this one whole-body replaces."`
+	DetailedDescription string   `json:"detailed_description,omitempty" jsonschema:"replacement markdown body. Phase 6's favro_append/prepend/replace_in_card_description tools provide surgical edits; this one whole-body replaces. Favro normalizes markdown when storing it; the returned card shows the stored form."`
 	WidgetCommonID      string   `json:"widget_common_id,omitempty" jsonschema:"the board the card ends up on; **required whenever column_id or lane_id is set**, and for a same-board move it is the board the card is already on. For relocations prefer the dedicated favro_move_card tool"`
 	ColumnID            string   `json:"column_id,omitempty" jsonschema:"move card to a different column. Requires widget_common_id."`
 	LaneID              string   `json:"lane_id,omitempty" jsonschema:"move card to a different lane. Requires widget_common_id."`

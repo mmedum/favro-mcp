@@ -99,6 +99,19 @@ func (id FullCardIdentity) Validate() error {
 	return nil
 }
 
+// FullCardOptions are GetFullCard's optional knobs; the zero value
+// is the default for each.
+type FullCardOptions struct {
+	// DescriptionFormat is passed through to Favro; empty is its
+	// plaintext default.
+	DescriptionFormat string
+	// IncludeComments fetches the first page of comments.
+	IncludeComments bool
+	// CommentLimit trims that page; <= 0 means
+	// fullCardCommentDefaultLimit.
+	CommentLimit int
+}
+
 // errFullCardIdentityRequired is returned when the caller does not
 // supply exactly one of card_id / card_common_id / sequential_id.
 var errFullCardIdentityRequired = render.Sentinel(render.ClassInvalid, "favro_get_card_full: pass exactly one of card_id, card_common_id, sequential_id")
@@ -124,16 +137,17 @@ const fullCardCommentDefaultLimit = 20
 // fan-out collapses ~1.5s of sequential round-trips down to ~300ms;
 // on a warm cache every step is in-process map lookups and the
 // goroutine overhead is trivial.
-func (r *Resolver) GetFullCard(ctx context.Context, id FullCardIdentity, includeComments bool, commentLimit int) (FullCard, error) {
+func (r *Resolver) GetFullCard(ctx context.Context, id FullCardIdentity, opts FullCardOptions) (FullCard, error) {
 	if err := id.Validate(); err != nil {
 		return FullCard{}, err
 	}
-	card, err := r.FetchCardForIdentity(ctx, id)
+	card, err := r.FetchCardForIdentity(ctx, id, opts.DescriptionFormat)
 	if err != nil {
 		return FullCard{}, err
 	}
 
 	full := FullCard{Card: card}
+	commentLimit := opts.CommentLimit
 	if commentLimit <= 0 {
 		commentLimit = fullCardCommentDefaultLimit
 	}
@@ -143,7 +157,7 @@ func (r *Resolver) GetFullCard(ctx context.Context, id FullCardIdentity, include
 	g.Go(func() error { return r.dereferenceAssignments(gctx, &full) })
 	g.Go(func() error { return r.dereferenceWidgetContext(gctx, &full) })
 	g.Go(func() error { return r.dereferenceCustomFields(gctx, &full) })
-	if includeComments {
+	if opts.IncludeComments {
 		g.Go(func() error { return r.dereferenceComments(gctx, &full, commentLimit) })
 	}
 	if err := g.Wait(); err != nil {
@@ -254,12 +268,15 @@ func (r *Resolver) dereferenceComments(ctx context.Context, full *FullCard, comm
 // downstream widget/column/collection dereference. The caller must
 // Validate the identity first; this function trusts that exactly
 // one field is set.
-func (r *Resolver) FetchCardForIdentity(ctx context.Context, id FullCardIdentity) (favro.Card, error) {
+//
+// descriptionFormat is passed through to Favro as descriptionFormat;
+// empty leaves Favro's plaintext default.
+func (r *Resolver) FetchCardForIdentity(ctx context.Context, id FullCardIdentity, descriptionFormat string) (favro.Card, error) {
 	if id.CardID != "" {
-		return r.client.GetCard(ctx, id.CardID)
+		return r.client.GetCardWithDescriptionFormat(ctx, id.CardID, descriptionFormat)
 	}
 
-	filter := favro.ListCardsFilter{}
+	filter := favro.ListCardsFilter{DescriptionFormat: descriptionFormat}
 	if id.CardCommonID != "" {
 		filter.CardCommonID = id.CardCommonID
 	}

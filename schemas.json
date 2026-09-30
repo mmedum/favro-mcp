@@ -1238,7 +1238,7 @@
             "type": "string"
           },
           "detailed_description": {
-            "description": "markdown body for the card description",
+            "description": "markdown body for the card description. Favro normalizes markdown when storing it; the returned card shows the stored form.",
             "type": "string"
           },
           "dry_run": {
@@ -3920,12 +3920,16 @@
         "readOnlyHint": true,
         "title": "Get Favro card"
       },
-      "description": "Get a single Favro card by its per-widget cardId. Favro's GET endpoint only accepts the per-widget cardId — passing a cardCommonId here 403s. To fetch a card known only by cardCommonId, use favro_list_cards with that filter. Read-only.",
+      "description": "Get a single Favro card by its per-widget cardId. Favro's GET endpoint only accepts the per-widget cardId — passing a cardCommonId here 403s. To fetch a card known only by cardCommonId, use favro_list_cards with that filter. Pass `description_format: \"markdown\"` to see the description as Favro stored it. Read-only.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "card_id": {
             "description": "the Favro per-widget cardId (NOT the cross-widget cardCommonId — Favro 403s if you pass a cardCommonId here). To fetch a card known only by cardCommonId, call favro_list_cards with that filter.",
+            "type": "string"
+          },
+          "description_format": {
+            "description": "'plaintext' (default) or 'markdown' for the detailedDescription body. 'markdown' returns the body as Favro stored it, which is what favro_replace_in_card_description matches against.",
             "type": "string"
           }
         },
@@ -4225,7 +4229,7 @@
         "readOnlyHint": true,
         "title": "Get a Favro card with names dereferenced"
       },
-      "description": "Fetch one Favro card with every id field dereferenced into a human-readable name: tag IDs → tag names, assignee userIds → user names + emails, widgetCommonId → widget name, columnId → column name, collectionIds (from the parent widget) → collection names, customFieldId → custom field name + display value. Custom-field display values cover Text, Number, Date, Date created, Checkbox, Link, Single select, Multiple select, Status (name + color), Members (resolved to user names), Rating ('value / total'), Timeline ('start → due'), Voting (yes/no), Progress (percent), Tags (resolved to tag names), Sequential ID (the auto-counter value), and Relations (a count summary; raw IDs available via the entry's `raw` field). Unknown future Types pass through with `dereferenced: false` and the raw JSON attached. Saves 4–7 follow-up calls in the typical 'fetch card → resolve everything' flow. Pass exactly one of `card_id` (per-widget), `card_common_id` (cross-widget), or `sequential_id` (integer of a 'BSC-123' ref). Comments are off by default — set `include_comments: true` to fetch the first page (cap with `comment_limit`, default 20). Read-only.",
+      "description": "Fetch one Favro card with every id field dereferenced into a human-readable name: tag IDs → tag names, assignee userIds → user names + emails, widgetCommonId → widget name, columnId → column name, collectionIds (from the parent widget) → collection names, customFieldId → custom field name + display value. Custom-field display values cover Text, Number, Date, Date created, Checkbox, Link, Single select, Multiple select, Status (name + color), Members (resolved to user names), Rating ('value / total'), Timeline ('start → due'), Voting (yes/no), Progress (percent), Tags (resolved to tag names), Sequential ID (the auto-counter value), and Relations (a count summary; raw IDs available via the entry's `raw` field). Unknown future Types pass through with `dereferenced: false` and the raw JSON attached. Saves 4–7 follow-up calls in the typical 'fetch card → resolve everything' flow. Pass exactly one of `card_id` (per-widget), `card_common_id` (cross-widget), or `sequential_id` (integer of a 'BSC-123' ref). Comments are off by default — set `include_comments: true` to fetch the first page (cap with `comment_limit`, default 20). Pass `description_format: \"markdown\"` to see the description as Favro stored it. Read-only.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4240,6 +4244,10 @@
           "comment_limit": {
             "description": "max comments to return when include_comments=true; trims the first page locally. Default 20.",
             "type": "integer"
+          },
+          "description_format": {
+            "description": "'plaintext' (default) or 'markdown' for the detailedDescription body. 'markdown' returns the body as Favro stored it, which is what favro_replace_in_card_description matches against.",
+            "type": "string"
           },
           "include_comments": {
             "description": "include the first page of comments on the card (default false). Comments are scoped per cardCommonId so they are shared across every widget instance of the card.",
@@ -5614,7 +5622,7 @@
             "type": "string"
           },
           "description_format": {
-            "description": "'plaintext' (default) or 'markdown' for the detailedDescription body",
+            "description": "'plaintext' (default) or 'markdown' for the detailedDescription body. 'markdown' returns the body as Favro stored it, which is what favro_replace_in_card_description matches against.",
             "type": "string"
           },
           "page": {
@@ -8865,7 +8873,7 @@
         "readOnlyHint": false,
         "title": "Replace in Favro card description"
       },
-      "description": "Replace text in a Favro card's description. Default `count: 1` so a common substring doesn't accidentally rewrite every occurrence; pass `count: 0` (or negative) to replace all. `use_regex: true` compiles `find` as a Go regex and lets `replace` use `$N` backrefs. If `find` matches nothing the tool returns a typed error rather than PUT-ing an unchanged body. Returns `{old, new, unified_diff}`. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
+      "description": "Replace text in a Favro card's description. Default `count: 1` so a common substring doesn't accidentally rewrite every occurrence; pass `count: 0` (or negative) to replace all. `use_regex: true` compiles `find` as a Go regex and lets `replace` use `$N` backrefs. If `find` matches nothing the tool returns a typed error rather than PUT-ing an unchanged body. `find` matches the markdown as Favro stored it, not as it was sent: Favro normalizes bullet markers ('- ' becomes '* ') and puts a blank line between list items, so build `find` from favro_get_card with `description_format: \"markdown\"`. Returns `{old, new, unified_diff}`. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -10541,7 +10549,7 @@
             "type": "string"
           },
           "detailed_description": {
-            "description": "replacement markdown body. Phase 6's favro_append/prepend/replace_in_card_description tools provide surgical edits; this one whole-body replaces.",
+            "description": "replacement markdown body. Phase 6's favro_append/prepend/replace_in_card_description tools provide surgical edits; this one whole-body replaces. Favro normalizes markdown when storing it; the returned card shows the stored form.",
             "type": "string"
           },
           "drag_mode": {

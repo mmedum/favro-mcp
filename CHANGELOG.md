@@ -12,6 +12,11 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - `favro_update_card` and `favro_move_card` read the card back after a column or lane write and report in `notes` whether it is where it was asked to be. A card read back on another board than the one named is reported as not verified rather than compared.
 - `favro_set_card_custom_field` reads the card back and reports in `notes` whether the field is on the card and what it carries, since Favro answers 200 for a write to a field the card's widget has not enabled.
 - `skip_verify` on those three tools drops the read-back, for a caller about to read the card anyway.
+- `favro_get_card` and `favro_get_card_full` take `description_format`, as `favro_list_cards` does, so the description Favro stored can be read directly.
+
+### Changed
+- Every card write (`favro_create_card`, `favro_update_card`, `favro_move_card`, archive, tag, custom-field and attachment writes) requests `descriptionFormat=markdown`, so the returned card shows the description as Favro stored it rather than as plaintext.
+- `favro_replace_in_card_description`'s description and its `not_found` error say that Favro normalizes markdown on storing it (`- ` bullets become `* `, list items gain a blank line), and point to a markdown read.
 
 ## [3.0.0] - 2026-09-30
 

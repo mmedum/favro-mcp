@@ -197,7 +197,7 @@ func (r *Resolver) fetchScopedCards(
 	// HTML-flavored which would defeat the strip rules below.
 	// includeArchived flows into the server-side `archived` filter.
 	filter := favro.ListCardsFilter{
-		DescriptionFormat: "markdown",
+		DescriptionFormat: favro.DescriptionFormatMarkdown,
 		Archived:          includeArchived,
 	}
 	switch scope {
