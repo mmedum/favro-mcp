@@ -808,9 +808,12 @@ Not yet verified against a real organization, and each one is a place
    `columnId` is read back rather than echoed. The assumption held for
    the case that found the bug, where Favro answered with a stub card
    carrying no column at all. It has not been tested against a move
-   Favro rejects for some other reason. One live probe settles it; until
-   then the guard is evidence rather than confirmation, and hard rule
-   2's read-back is still the caller's job.
+   Favro rejects for some other reason. **Partly closed 2026-09-30:**
+   `favro_update_card` and `favro_move_card` now read the card back after
+   a column or lane write and report the verdict in `notes` (§18), so the
+   read-back is no longer the caller's job. What stays open is whether
+   the echo-but-don't-store case happens at all: every move probed live
+   so far landed.
 
 **Not verifiable, recorded so it stops being carried as pending:**
 whether a **lane** move carries the `widgetCommonId` requirement the
@@ -1100,6 +1103,17 @@ under `[Unreleased]`. Tags are cut by the maintainer, never proposed.
    board in the Favro UI, and the per-type write shapes and this guard
    can both be settled in one pass.
 
+   **Built 2026-09-30, as a note rather than an error.** A dormant board
+   with Text fields in use settled the positive case (§18): a successful
+   Text write reads back as `{customFieldId, value}` in `customFields`.
+   `favro_set_card_custom_field` reads the card back and reports whether
+   the field is on it and what it carries. A note rather than
+   `WriteIgnoredError`, because only the Text shape has been seen
+   succeed, and a write that clears a field legitimately leaves it
+   absent. A pre-check on `CustomField.widgetCommonId` was ruled out by
+   the same probe: cards carry values for fields whose `widgetCommonId`
+   is another board, so it would refuse writes that land.
+
 ## 17b. Deviations from the shared Go MCP server standard
 
 Adopted 2026-09-13. Where this server differs, the difference is a
@@ -1142,6 +1156,7 @@ it; **asserted**, meaning believed and not yet held by anything.
 
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
+| 2026-09-30 | Post-write read-back of card placement and custom fields (#77) | On a dormant board: a probe card created, a Text field used by no card on the board set, a Text field from another board set, moved to a second column with `favro_move_card`, moved back with `favro_update_card`, moved with `skip_verify`, then deleted and read back as gone. A second probe card set the Text field most cards on the board carry. Also read which fields the board's cards carry against each field's `widgetCommonId` | **Verified here.** Both moves read back verified; `skip_verify` added no note. Both unused fields came back absent from `customFields` after a 200, and the tool said so. The used field read back present with the value written, as `{customFieldId, value}`. The board's cards carry values for fields whose `widgetCommonId` is another board, so `widgetCommonId` does not say where a field is enabled. Not probed: a move Favro echoes but does not store (none seen), a cross-board write (it would add a card to a second board), and lanes (§15) |
 | 2026-09-30 | Asking the person works against a real organization | `livefavro -asks` on a build of this branch: a probe tag it created, deleted with a decline (still there) and then an accept (gone); both card upload and a public collection asked with names read from Favro and declined, and the collection read back as not created | **Verified here**, on protocol 2025-11-25, where the SDK asks inside the call. 2026-07-28 is stateless in go-sdk v1.8.0 (`server/discover` and per-request `_meta`), which the raw-JSON-RPC driver does not speak, so its round trip is held by the in-memory tests only. The comment upload was skipped: the organization has no comment to attach to |
 | 2026-09-30 | The SDK sends no `structuredContent` for a result that asks | Read `mcp/server.go:438–446` of go-sdk v1.8.0 in the module cache: when the handler's result has `InputRequests`, the output is not marshaled | **Verified here.** `addTool` must not fill `Content` for such a result either, since content and input requests are exclusive on the wire; it checks `InputRequests` before rendering a summary |
 | 2026-09-30 | `os.Root` keeps an upload inside `FAVRO_UPLOAD_DIR` | `TestMCP_UploadAttachment_ReadsOnlyTheUploadDir`: a relative path, an absolute one inside, a `..` that stays inside, a `..` out, an absolute path elsewhere, and a symbolic link out, each through the real tool | **Verified here.** Every way out is refused before a byte is read or a request sent, and the refusal does not repeat the path |
