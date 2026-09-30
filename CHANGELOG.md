@@ -8,6 +8,11 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `favro_update_card` and `favro_move_card` read the card back after a column or lane write and report in `notes` whether it is where it was asked to be. A card read back on another board than the one named is reported as not verified rather than compared.
+- `favro_set_card_custom_field` reads the card back and reports in `notes` whether the field is on the card and what it carries, since Favro answers 200 for a write to a field the card's widget has not enabled.
+- `skip_verify` on those three tools drops the read-back, for a caller about to read the card anyway.
+
 ## [3.0.0] - 2026-09-30
 
 ### Added

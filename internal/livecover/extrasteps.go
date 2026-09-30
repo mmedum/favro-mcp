@@ -216,6 +216,18 @@ func extraSteps() []Step {
 			Why: "dry-run: a move that detaches on purpose — the one move path that does not read the card's current parent first",
 		},
 		{
+			Tool: "favro_update_card",
+			Args: map[string]any{
+				"card_id":          AnyCardID,
+				"widget_common_id": AnyWidgetCommonID,
+				"column_id":        AnyColumnID,
+				"clear_parent":     true,
+				"skip_verify":      true,
+				"dry_run":          true,
+			},
+			Why: "dry-run: the placement write with the read-back turned off",
+		},
+		{
 			Tool: "favro_move_card",
 			Args: map[string]any{
 				"card_id":          AnyCardID,
@@ -224,6 +236,7 @@ func extraSteps() []Step {
 				"lane_id":          "livefavro-probe-lane",
 				"list_position":    1,
 				"sheet_position":   1,
+				"skip_verify":      true,
 				"drag_mode":        "commit",
 				"dry_run":          true,
 			},

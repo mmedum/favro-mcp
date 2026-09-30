@@ -571,6 +571,15 @@ func formatCustomFieldValue(v favro.CardCustomFieldValue, f favro.CustomField, u
 	return "", false
 }
 
+// FormatCustomFieldValue renders one card custom-field value the way
+// favro_get_card_full does, for a caller that has no user or tag list
+// to dereference against (Members and Tags then fall back as the
+// formatters define). ok is false when the type is unknown or the value
+// did not decode.
+func FormatCustomFieldValue(v favro.CardCustomFieldValue, f favro.CustomField) (string, bool) {
+	return formatCustomFieldValue(v, f, nil, nil)
+}
+
 // decodeJSONString unmarshals raw as a JSON string.
 func decodeJSONString(raw json.RawMessage) (string, bool) {
 	var s string
