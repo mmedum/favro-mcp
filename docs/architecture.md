@@ -369,8 +369,14 @@ publishes. An unrecognized type passes through with
 Favro field type should degrade to "here is the raw value", not to a
 wrong rendering.
 
-Descriptions are read with `descriptionFormat=markdown`, so what comes
-back is what an edit has to be written against.
+The description editors read with `descriptionFormat=markdown`, so what
+comes back is what an edit has to be written against. Favro normalizes
+markdown on storing it (`- ` bullets become `* `, list items gain a blank
+line between them), so the stored form is not what the caller sent:
+`favro_get_card` and `favro_get_card_full` take `description_format` to
+show it, and every card write asks for it on the card it returns.
+Matching is not loosened to paper over the difference — guessing Favro's
+serializer is worse than showing its output.
 
 ### 7.2 Search
 

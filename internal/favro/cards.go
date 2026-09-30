@@ -256,13 +256,22 @@ type ListCardsFilter struct {
 	// per widget instance. Useful when the caller is searching by
 	// name and doesn't care about cross-widget duplication.
 	Unique bool
-	// DescriptionFormat selects "plaintext" (default) or "markdown"
-	// for Card.DetailedDescription. Empty means Favro's default.
+	// DescriptionFormat selects DescriptionFormatPlaintext (default)
+	// or DescriptionFormatMarkdown for Card.DetailedDescription.
+	// Empty means Favro's default.
 	// Phase 4.3 search.go and Phase 6 description editors require
 	// "markdown" so the markdown stripper / surgical-edit logic
 	// sees the format it expects.
 	DescriptionFormat string
 }
+
+// The two values Favro's descriptionFormat parameter takes.
+// Plaintext is Favro's default; markdown is the form Favro stores,
+// after normalizing what it was sent.
+const (
+	DescriptionFormatPlaintext = "plaintext"
+	DescriptionFormatMarkdown  = "markdown"
+)
 
 // Values returns the filter as url.Values; empty fields are
 // omitted. Exported so callers that paginate via favro.Paginate
@@ -340,9 +349,11 @@ type CreateCardRequest struct {
 	Tasklists    []CardTasklist          `json:"tasklists,omitempty"`
 	CustomFields []CardCustomFieldUpdate `json:"customFields,omitempty"`
 
-	// DescriptionFormat selects "plaintext" (Favro's default) or
-	// "markdown" for the DetailedDescription on the *returned* card.
-	// It rides in the query string, not the body, hence json:"-".
+	// DescriptionFormat selects the format of DetailedDescription on
+	// the *returned* card. It rides in the query string, not the
+	// body, hence json:"-". Empty means DescriptionFormatMarkdown:
+	// favroapi defaults it so every write returns the description
+	// Favro stored rather than a plaintext rendering of it.
 	DescriptionFormat string `json:"-"`
 }
 
@@ -415,9 +426,11 @@ type UpdateCardRequest struct {
 	// PUT /cards/{cardId}.
 	RemoveAttachments []string `json:"removeAttachments,omitempty"`
 
-	// DescriptionFormat selects "plaintext" (Favro's default) or
-	// "markdown" for the DetailedDescription on the *returned* card.
-	// It rides in the query string, not the body, hence json:"-".
+	// DescriptionFormat selects the format of DetailedDescription on
+	// the *returned* card. It rides in the query string, not the
+	// body, hence json:"-". Empty means DescriptionFormatMarkdown:
+	// favroapi defaults it so every write returns the description
+	// Favro stored rather than a plaintext rendering of it.
 	DescriptionFormat string `json:"-"`
 }
 

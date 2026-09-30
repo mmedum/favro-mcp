@@ -145,7 +145,7 @@ func resolveAddCommentTarget(ctx context.Context, r *service.Resolver, in *addCo
 		return in.CardCommonID, false, nil, nil
 	}
 	if in.CardID != "" || in.SequentialID > 0 {
-		card, err := r.FetchCardForIdentity(ctx, service.FullCardIdentity{CardID: in.CardID, SequentialID: in.SequentialID})
+		card, err := r.FetchCardForIdentity(ctx, service.FullCardIdentity{CardID: in.CardID, SequentialID: in.SequentialID}, "")
 		if err != nil {
 			return "", false, nil, err
 		}
