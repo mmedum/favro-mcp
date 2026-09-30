@@ -3,7 +3,7 @@ package favroapi
 import (
 	"context"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
 )
 
 // ListCustomFields returns one page of custom fields in the active

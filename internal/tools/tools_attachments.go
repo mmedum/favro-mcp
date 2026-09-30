@@ -2,16 +2,20 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
-	"github.com/mmedum/favro-mcp/internal/favroapi"
-	"github.com/mmedum/favro-mcp/internal/render"
-	"github.com/mmedum/favro-mcp/internal/service"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/render"
+	"github.com/mmedum/favro-mcp/v3/internal/service"
 )
 
 const (
@@ -27,6 +31,14 @@ const (
 // over the wire.
 var errAttachmentPathNotAFile = render.Sentinel(render.ClassInvalid, "favro: file_path must point at a regular file")
 
+// errAttachmentOutsideDir is a file_path that leaves FAVRO_UPLOAD_DIR:
+// an absolute path elsewhere, a "..", or a link out of it.
+var errAttachmentOutsideDir = render.Sentinel(render.ClassInvalid,
+	"favro: file_path must name a file inside FAVRO_UPLOAD_DIR, as a path relative to it or an absolute path within it; nothing outside it is read")
+
+// errAttachmentMissing is a file_path with no file behind it.
+var errAttachmentMissing = render.Sentinel(render.ClassNotFound, "favro: there is no file at file_path inside FAVRO_UPLOAD_DIR")
+
 // uploadAttachmentInput is the input for favro_upload_attachment.
 // v0.1 supports local file paths only — the tool reads from disk
 // and uploads raw bytes. Base64-inline body is deferred per plan
@@ -34,7 +46,7 @@ var errAttachmentPathNotAFile = render.Sentinel(render.ClassInvalid, "favro: fil
 type uploadAttachmentInput struct {
 	dryRunInput
 	CardID   string `json:"card_id" jsonschema:"the per-widget cardId to attach the file to"`
-	FilePath string `json:"file_path" jsonschema:"absolute path to the local file to upload. Local file paths only."`
+	FilePath string `json:"file_path" jsonschema:"the file to upload, as a path inside the directory FAVRO_UPLOAD_DIR names: relative to it, or absolute within it. Nothing outside that directory is read, and a link out of it is refused."`
 	Filename string `json:"filename,omitempty" jsonschema:"display name on the card; defaults to the file's basename when omitted"`
 	MimeType string `json:"mime_type,omitempty" jsonschema:"optional MIME type. Omit to let Favro infer it from the filename extension."`
 }
@@ -45,7 +57,7 @@ type uploadAttachmentInput struct {
 type uploadCommentAttachmentInput struct {
 	dryRunInput
 	CommentID string `json:"comment_id" jsonschema:"the Favro commentId to attach the file to"`
-	FilePath  string `json:"file_path" jsonschema:"absolute path to the local file to upload. Local file paths only."`
+	FilePath  string `json:"file_path" jsonschema:"the file to upload, as a path inside the directory FAVRO_UPLOAD_DIR names: relative to it, or absolute within it. Nothing outside that directory is read, and a link out of it is refused."`
 	Filename  string `json:"filename,omitempty" jsonschema:"display name on the comment; defaults to the file's basename when omitted"`
 	MimeType  string `json:"mime_type,omitempty" jsonschema:"optional MIME type. Omit to let Favro infer it from the filename extension."`
 }
@@ -58,30 +70,38 @@ type removeAttachmentInput struct {
 }
 
 func registerUploadAttachment(reg *registry, r *service.Resolver) {
-	addTool(reg, &mcp.Tool{
+	if reg.uploadDir == "" {
+		return
+	}
+	addAsking(reg, &mcp.Tool{
 		Name: uploadAttachmentToolName,
 		Description: "Upload a local file as an attachment on a Favro card via raw-bytes POST. " +
-			"Reads from `file_path` (absolute), then POSTs to `/cards/{cardId}/attachment` with " +
+			"Reads `file_path` from the directory FAVRO_UPLOAD_DIR names, and from nowhere else; " +
+			"this tool exists only when that is set. Then POSTs to `/cards/{cardId}/attachment` with " +
 			"`Content-Type: application/octet-stream` and the filename in the query string. " +
 			"`filename` defaults to the file's basename if omitted. Cap is 8 MiB per upload — " +
 			"larger files surface a typed error before any HTTP work. Returns the created " +
 			"attachment object `{name, fileURL}` (Favro echoes the attachment, NOT the updated " +
 			"Card — verified live). Successful live writes invalidate the search-cards cache " +
 			"(cached card payloads carry stale attachment lists otherwise). Pass `dry_run: true` " +
-			"to preview without contacting Favro. Use favro_remove_attachment to detach a file.",
+			"to preview without contacting Favro. Use favro_remove_attachment to detach a file." + asksFirst,
 		Annotations: mutating("Upload Favro attachment", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in uploadAttachmentInput) (*mcp.CallToolResult, writeOutput[favro.CardAttachment], error) {
-		content, err := readAttachmentFile(in.FilePath)
+		content, up, err := prepareUpload(reg.uploadDir, uploadAttachmentToolName, in.FilePath, in.Filename, in.CardID)
 		if err != nil {
 			return nil, writeOutput[favro.CardAttachment]{}, err
 		}
-		filename := in.Filename
-		if filename == "" {
-			filename = filepath.Base(in.FilePath)
-		}
+		filename := up.Filename
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
+		}
+		if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
+			card, err := r.Client().GetCard(ctx, in.CardID)
+			up.Card = card.Name
+			return render.AskUpload(up), err
+		}); err != nil {
+			return nil, writeOutput[favro.CardAttachment]{}, err
 		}
 		out, err := runWrite(
 			func() (favro.CardAttachment, error) {
@@ -101,53 +121,141 @@ func registerUploadAttachment(reg *registry, r *service.Resolver) {
 	})
 }
 
-// readAttachmentFile reads the file at path with the upload cap
-// enforced before allocating. Stats first so a multi-GiB file
-// doesn't OOM the process during io.ReadAll. The cap also blocks
-// directories / FIFOs / device nodes from being mistakenly read.
-func readAttachmentFile(path string) ([]byte, error) {
-	if path == "" {
-		return nil, fmt.Errorf("favro: file_path is required")
-	}
-	info, err := os.Stat(path)
+// prepareUpload reads the file both upload tools send, names it, and
+// fills what their question shares; each adds its own target.
+func prepareUpload(dir, tool, filePath, filename, targetID string) ([]byte, render.Upload, error) {
+	content, rel, err := readAttachmentFile(dir, filePath)
 	if err != nil {
-		return nil, fmt.Errorf("favro: stat %q: %w", path, err)
+		return nil, render.Upload{}, err
 	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: %q", errAttachmentPathNotAFile, path)
+	if filename == "" {
+		filename = path.Base(rel)
 	}
-	if info.Size() > favroapi.UploadAttachmentMaxBytes {
-		return nil, fmt.Errorf("favro: file %q is %d bytes, exceeds the %d-byte cap", path, info.Size(), favroapi.UploadAttachmentMaxBytes)
-	}
-	content, err := os.ReadFile(path) //nolint:gosec // G304: file_path is the documented input — these tools read what the LLM tells them to.
+	return content, render.Upload{
+		Tool: tool, Path: rel, Size: int64(len(content)), Sum: render.SumBytes(content),
+		Filename: filename, TargetID: targetID,
+	}, nil
+}
+
+// readAttachmentFile reads the file at name inside dir, and nothing
+// outside it: name is relative to dir or absolute within it, and the
+// read goes through an os.Root, which refuses a ".." or a link that
+// leaves the directory. It returns the content and the path relative to
+// dir, slash-separated. The upload cap is checked before anything is
+// read, and only a regular file is opened: stat first, since opening a
+// named pipe would wait for a writer.
+//
+// Errors name file_path, not the path itself: the path is what a
+// card's text may have suggested, and the error goes back to the model.
+func readAttachmentFile(dir, name string) ([]byte, string, error) {
+	rel, err := uploadPath(dir, name)
 	if err != nil {
-		return nil, fmt.Errorf("favro: read %q: %w", path, err)
+		return nil, "", err
+	}
+	content, err := readInRoot(dir, rel)
+	if err != nil {
+		return nil, "", err
+	}
+	return content, filepath.ToSlash(rel), nil
+}
+
+// uploadPath is name relative to dir, refused when it is not inside it
+// by its spelling alone. A link out of dir is caught by the os.Root
+// that opens it.
+func uploadPath(dir, name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("favro: file_path is required")
+	}
+	rel := name
+	if filepath.IsAbs(name) {
+		r, err := filepath.Rel(dir, filepath.Clean(name))
+		if err != nil {
+			return "", errAttachmentOutsideDir
+		}
+		rel = r
+	}
+	if !filepath.IsLocal(rel) {
+		return "", errAttachmentOutsideDir
+	}
+	return rel, nil
+}
+
+// statUpload refuses what readInRoot must not open: nothing there, a
+// link out of the root, anything but a regular file, or a file over
+// the cap.
+func statUpload(root *os.Root, rel string) error {
+	info, err := root.Stat(rel)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return errAttachmentMissing
+	case err != nil:
+		return errAttachmentOutsideDir
+	case !info.Mode().IsRegular():
+		return errAttachmentPathNotAFile
+	case info.Size() > favroapi.UploadAttachmentMaxBytes:
+		return fmt.Errorf("favro: the file is %d bytes, over the %d-byte cap", info.Size(), favroapi.UploadAttachmentMaxBytes)
+	}
+	return nil
+}
+
+// readInRoot reads rel inside dir through an os.Root.
+func readInRoot(dir, rel string) ([]byte, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, render.Errorf(render.ClassUnavailable, "favro: FAVRO_UPLOAD_DIR could not be opened")
+	}
+	defer func() { _ = root.Close() }()
+	if err := statUpload(root, rel); err != nil {
+		return nil, err
+	}
+	f, err := root.Open(rel)
+	if err != nil {
+		return nil, errAttachmentOutsideDir
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() {
+		return nil, errAttachmentPathNotAFile
+	}
+	content, err := io.ReadAll(io.LimitReader(f, favroapi.UploadAttachmentMaxBytes+1))
+	switch {
+	case err != nil:
+		return nil, render.Errorf(render.ClassUnavailable, "favro: the file could not be read whole")
+	case int64(len(content)) > favroapi.UploadAttachmentMaxBytes:
+		return nil, fmt.Errorf("favro: the file grew past the %d-byte cap while it was read", favroapi.UploadAttachmentMaxBytes)
 	}
 	return content, nil
 }
 
 func registerUploadCommentAttachment(reg *registry, r *service.Resolver) {
-	addTool(reg, &mcp.Tool{
+	if reg.uploadDir == "" {
+		return
+	}
+	addAsking(reg, &mcp.Tool{
 		Name: uploadCommentAttachmentToolName,
 		Description: "Upload a local file as an attachment on a Favro comment via raw-bytes " +
 			"POST to `/comments/{commentId}/attachment`. Same contract as " +
 			"favro_upload_attachment, but the file lands on a comment rather than on the " +
-			"card itself: reads from `file_path` (absolute), `filename` defaults to the " +
+			"card itself: reads `file_path` from FAVRO_UPLOAD_DIR only, `filename` defaults to the " +
 			"basename, 8 MiB cap enforced before any HTTP work, returns the created " +
-			"attachment object `{name, fileURL}`. Pass `dry_run: true` to preview.",
+			"attachment object `{name, fileURL}`. Pass `dry_run: true` to preview." + asksFirst,
 		Annotations: mutating("Upload Favro comment attachment", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in uploadCommentAttachmentInput) (*mcp.CallToolResult, writeOutput[favro.CardAttachment], error) {
-		content, err := readAttachmentFile(in.FilePath)
+		content, up, err := prepareUpload(reg.uploadDir, uploadCommentAttachmentToolName, in.FilePath, in.Filename, in.CommentID)
 		if err != nil {
 			return nil, writeOutput[favro.CardAttachment]{}, err
 		}
-		filename := in.Filename
-		if filename == "" {
-			filename = filepath.Base(in.FilePath)
-		}
+		filename := up.Filename
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
+		}
+		if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
+			comment, err := r.Client().GetComment(ctx, in.CommentID)
+			up.OnComment, up.Comment = true, comment.Body
+			return render.AskUpload(up), err
+		}); err != nil {
+			return nil, writeOutput[favro.CardAttachment]{}, err
 		}
 		out, err := runWrite(
 			func() (favro.CardAttachment, error) {

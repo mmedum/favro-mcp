@@ -6,7 +6,7 @@ import (
 	"bufio"
 	"os"
 
-	"github.com/mmedum/favro-mcp/internal/redact"
+	"github.com/mmedum/favro-mcp/v3/internal/redact"
 )
 
 // out is the only thing in this program that writes to the terminal.

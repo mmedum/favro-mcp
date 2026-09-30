@@ -6,9 +6,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
-	"github.com/mmedum/favro-mcp/internal/favroapi"
-	"github.com/mmedum/favro-mcp/internal/render"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/render"
 )
 
 const (
@@ -65,18 +65,24 @@ func registerWebhooks(reg *registry, client *favroapi.Client) {
 		return nil, listWebhooksOutput{Webhooks: hooks, Count: len(hooks)}, nil
 	})
 
-	addTool(reg, &mcp.Tool{
+	addAsking(reg, &mcp.Tool{
 		Name: deleteWebhookToolName,
 		Description: "Delete an outgoing webhook by `webhook_id`. Favro stops posting card " +
 			"events to that address immediately, and whatever was consuming them stops " +
 			"receiving them — this server cannot tell you what that is, so confirm with " +
 			"a human before removing a webhook you did not create. Resolve the id with " +
-			"`favro_list_webhooks`. Pass `dry_run: true` to preview.",
+			"`favro_list_webhooks`. Pass `dry_run: true` to preview." + asksFirst,
 		Annotations: mutating("Delete Favro webhook", true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteWebhookInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
+		}
+		if err := confirmFirst(ctx, client.DryRun(writeCtx), func() (render.Question, error) {
+			hook, err := findWebhook(ctx, client, in.WebhookID)
+			return render.AskDeleteWebhook(in.WebhookID, hook.Name, hook.PostToURL), err
+		}); err != nil {
+			return nil, writeOutput[struct{}]{}, err
 		}
 		out, err := runWrite(
 			func() (struct{}, error) {
@@ -91,4 +97,24 @@ func registerWebhooks(reg *registry, client *favroapi.Client) {
 		}
 		return nil, out, nil
 	})
+}
+
+// errWebhookNotFound is a webhook id the organization's list does not
+// hold. Favro has no read for one webhook, so the question that names
+// it reads them all.
+var errWebhookNotFound = render.Sentinel(render.ClassNotFound,
+	"favro_delete_webhook: no webhook in this organization has that webhook_id; list them with favro_list_webhooks")
+
+// findWebhook is one webhook, found in the organization's list.
+func findWebhook(ctx context.Context, client *favroapi.Client, id string) (favro.Webhook, error) {
+	hooks, err := client.ListWebhooks(ctx, favro.ListWebhooksFilter{})
+	if err != nil {
+		return favro.Webhook{}, err
+	}
+	for _, h := range hooks {
+		if h.WebhookID == id {
+			return h, nil
+		}
+	}
+	return favro.Webhook{}, errWebhookNotFound
 }

@@ -174,7 +174,7 @@ func mcpbLauncherScript() string {
 	b.WriteString("  *)\n" +
 		"    # stderr, because stdout is the JSON-RPC channel.\n" +
 		`    echo "favro-mcp: no binary in this bundle for $(uname -m)." \` + "\n" +
-		`         "Install with: go install github.com/mmedum/favro-mcp/cmd/favro-mcp@latest" >&2` + "\n" +
+		`         "Install with: go install github.com/mmedum/favro-mcp/v3/cmd/favro-mcp@latest" >&2` + "\n" +
 		"    exit 1\n" +
 		"    ;;\n" +
 		"esac\n\n" +

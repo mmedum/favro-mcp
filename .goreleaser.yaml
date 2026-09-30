@@ -22,8 +22,8 @@ builds:
     mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
       - -s -w
-      - -X github.com/mmedum/favro-mcp/internal/version.Tag={{ .Tag }}
-      - -X github.com/mmedum/favro-mcp/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/mmedum/favro-mcp/v3/internal/version.Tag={{ .Tag }}
+      - -X github.com/mmedum/favro-mcp/v3/internal/version.Commit={{ .ShortCommit }}
     goos:
       - linux
       - darwin

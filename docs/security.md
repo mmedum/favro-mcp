@@ -139,6 +139,7 @@ end of the run even if the build fails halfway.
 | Risk | Mitigation |
 |---|---|
 | A **delete-style** tool runs unattended | They are **not registered** unless `FAVRO_ENABLE_DESTRUCTIVE=true`. A host in an auto-approve mode runs an annotated tool without prompting, and the MCP spec says clients treat annotations as untrusted — so the only guarantee is absence from `tools/list`. Which tools those are is read from the annotation at registration, never from a list of names. This covers deletion and nothing else: `favro_update_card` replaces a description wholesale, and it, `favro_replace_in_card_description`, `favro_update_comment` and `favro_update_tags` are registered by default. They are not destructive in the MCP sense — they destroy no resource — but they do overwrite, and Favro has no undo. |
+| A delete, an upload or a public collection happens without the person | Ten writes are put to the person through the client first, when it can ask: the deletes Favro cannot undo, both uploads, and making a collection public (`docs/architecture.md` §9.2). The question names what the write acts on, read fresh, and the answer is bound to it. A client that cannot ask gets no question; `FAVRO_REQUIRE_PROMPT=true` refuses those writes instead. |
 | A write happens during a preview | Every mutating tool takes `dry_run`, and the gate lives in the HTTP client rather than in each tool, so a dry run cannot reach `RoundTrip`. A test proves it per tool. |
 | A typo creates a permanent org-global tag | The tag tools hard-fail on an unknown tag name rather than creating it. Favro's own `addTags` creates unknown tags, which turns a typo into something everyone in the organization then sees. |
 | A write is reported as succeeding when Favro ignored it | Favro answers 200 for a request body it ignored, and its REST docs disagree with the live API in places. Writes send the documented shape; a tool whose write is unverified says so in its description; and the project's definition of done requires reading the resource back against a real organization before a phase ships. |
@@ -151,25 +152,18 @@ end of the run even if the build fails halfway.
 
 ## Threats this server does not address
 
-- **Anything the token can do in Favro, and anything the account can read
-  on disk.** The first half is bounded by choosing the user the token
-  belongs to. The second half is not bounded by the token at all — see
-  the next bullet.
-- **Reading local files.** `favro_upload_attachment` and
-  `favro_upload_comment_attachment` take a `file_path` and read whatever
-  the account running the server can read, with no root confinement and
-  no allowlist — only a regular-file check and a size cap. Both are
-  registered **by default**: they destroy nothing, so they are not behind
-  `FAVRO_ENABLE_DESTRUCTIVE`, and `dry_run` is a preview rather than a
-  guard.
-
-  That is the tools' documented purpose, and it is also an exfiltration
-  path: combined with the bullet below, a card description can tell a
-  model to attach a credential file to a card, and Favro being the only
-  network peer is what makes it a usable channel rather than what
-  prevents one. **The containment is the account the server runs under.**
-  Do not run it under an account whose filesystem you would not be
-  willing to attach to a Favro card.
+- **Anything the token can do in Favro, and anything in the upload
+  directory.** The first half is bounded by choosing the user the token
+  belongs to. The second by what you put in `FAVRO_UPLOAD_DIR`.
+- **What is in the upload directory.** `favro_upload_attachment` and
+  `favro_upload_comment_attachment` exist only when `FAVRO_UPLOAD_DIR` is
+  set, and read inside it and nowhere else: a `..` or a symbolic link out
+  of it is refused. Anything in it can be sent to Favro, and a card's text
+  can suggest which file. The person is asked before each upload when the
+  client can ask, with the path and the size; a client that cannot ask
+  sends on the model's word. Point the variable at a directory that holds
+  only what you are willing to attach to a card, never at your home
+  directory.
 - **Prompt injection through Favro content.** A card description is
   untrusted text that reaches a model. This server renders it faithfully
   and does not interpret it; nothing here prevents a model from acting on

@@ -2,6 +2,8 @@ package config
 
 import (
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -119,5 +121,61 @@ func TestWarningsNameTheVariable(t *testing.T) {
 	}
 	if !strings.Contains(joined, "stay unregistered") {
 		t.Errorf("the warning has to say what the ignored value cost: %q missing", "stay unregistered")
+	}
+}
+
+// TestLoadRequirePrompt pins the parse. The variable exists to refuse,
+// so a value Go cannot read means on, and says so.
+func TestLoadRequirePrompt(t *testing.T) {
+	for _, tc := range []struct {
+		env        string
+		want, warn bool
+	}{
+		{"", false, false},
+		{"true", true, false},
+		{"0", false, false},
+		{"yes", true, true},
+	} {
+		t.Setenv(EnvRequirePrompt, tc.env)
+		cfg := Load()
+		if cfg.RequirePrompt != tc.want || (len(cfg.Warnings) > 0) != tc.warn {
+			t.Errorf("%q: RequirePrompt %v, warnings %q", tc.env, cfg.RequirePrompt, cfg.Warnings)
+		}
+	}
+}
+
+// TestLoadUploadDir pins what FAVRO_UPLOAD_DIR accepts: an absolute path
+// to a directory that exists, cleaned. Anything else leaves uploads off
+// and says why.
+func TestLoadUploadDir(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "f")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		env, want, warn string
+	}{
+		{"", "", ""},
+		{dir, dir, ""},
+		{" " + dir + "/sub/.. ", dir, ""},
+		{"relative/dir", "", "not an absolute path"},
+		{file, "", "not a directory"},
+		{filepath.Join(dir, "missing"), "", "cannot be read"},
+	} {
+		t.Setenv(EnvUploadDir, tc.env)
+		if tc.env == " "+dir+"/sub/.. " {
+			if err := os.Mkdir(filepath.Join(dir, "sub"), 0o700); err != nil && !os.IsExist(err) {
+				t.Fatal(err)
+			}
+		}
+		cfg := Load()
+		warned := strings.Join(cfg.Warnings, "\n")
+		if cfg.UploadDir != tc.want || (tc.warn == "") != (warned == "") || !strings.Contains(warned, tc.warn) {
+			t.Errorf("%q: UploadDir %q, warnings %q", tc.env, cfg.UploadDir, warned)
+		}
+		if tc.warn != "" && !strings.Contains(warned, "upload tools stay unregistered") {
+			t.Errorf("%q: the warning does not say what it means: %q", tc.env, warned)
+		}
 	}
 }

@@ -65,6 +65,13 @@ const (
 	AnySequentialID Placeholder = "{sequential_id}"
 )
 
+// The file and folder the driver puts in the FAVRO_UPLOAD_DIR it starts
+// the server with, for the upload steps to name.
+const (
+	UploadFile   = "livefavro-probe.txt"
+	UploadFolder = "livefavro-folder"
+)
+
 // Placeholders is every value the driver resolves, for the test that
 // requires each one to be both resolvable and used.
 var Placeholders = []Placeholder{

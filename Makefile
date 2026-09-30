@@ -10,7 +10,7 @@ BIN_DIR   := bin
 BIN       ?= $(BIN_DIR)/favro-mcp$(EXE)
 COVER_MIN ?= 80
 
-MODULE      := github.com/mmedum/favro-mcp
+MODULE      := github.com/mmedum/favro-mcp/v3
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 VERSION_PKG := $(MODULE)/internal/version

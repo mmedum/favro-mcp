@@ -8,6 +8,18 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- The server asks the person through the client before ten writes, when the client can ask: deleting a tag, collection, widget, group or webhook, `favro_delete_card` with `everywhere: true`, both uploads, and making a collection public. A call they did not confirm is `[blocked]`.
+- `FAVRO_REQUIRE_PROMPT` refuses those writes when the client cannot ask.
+- Error classes `blocked` and `ambiguous_outcome`.
+- The `.mcpb` bundle asks for an optional upload folder.
+
+### Changed
+- **Breaking:** the Go module path is `github.com/mmedum/favro-mcp/v3`.
+
+### Security
+- **Breaking:** `favro_upload_attachment` and `favro_upload_comment_attachment` read only inside `FAVRO_UPLOAD_DIR`, and are not registered unless it is set. They read any file the account could read before. Set it to a folder that holds only what you would attach to a card.
+
 ## [2.1.1] - 2026-09-26
 
 ### Changed

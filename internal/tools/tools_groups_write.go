@@ -7,9 +7,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
-	"github.com/mmedum/favro-mcp/internal/favroapi"
-	"github.com/mmedum/favro-mcp/internal/service"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/render"
+	"github.com/mmedum/favro-mcp/v3/internal/service"
 )
 
 const (
@@ -106,17 +107,23 @@ func registerUpdateGroup(reg *registry, r *service.Resolver) {
 }
 
 func registerDeleteGroup(reg *registry, r *service.Resolver) {
-	addTool(reg, &mcp.Tool{
+	addAsking(reg, &mcp.Tool{
 		Name: deleteGroupToolName,
 		Description: "Delete a Favro group by its groupId. Destructive — MCP hosts may warn " +
 			"before auto-confirming. The group is removed from any sharing / assignment / " +
 			"custom-field references it appeared in. Successful live writes invalidate the " +
-			"group cache. Pass `dry_run: true` to preview.",
+			"group cache. Pass `dry_run: true` to preview." + asksFirst,
 		Annotations: mutating("Delete Favro group", true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteGroupInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
+		}
+		if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
+			g, err := r.Client().GetGroup(ctx, in.GroupID)
+			return render.AskDeleteGroup(in.GroupID, g.Name), err
+		}); err != nil {
+			return nil, writeOutput[struct{}]{}, err
 		}
 		out, err := runWrite(
 			func() (struct{}, error) {

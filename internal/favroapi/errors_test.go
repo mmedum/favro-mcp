@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/favro-mcp/internal/render"
+	"github.com/mmedum/favro-mcp/v3/internal/render"
 )
 
 func TestAuthError_Message_NeverIncludesCredentialsOrValues(t *testing.T) {

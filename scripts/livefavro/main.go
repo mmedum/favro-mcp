@@ -31,11 +31,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/mmedum/favro-mcp/internal/livecover"
-	"github.com/mmedum/favro-mcp/internal/redact"
+	"github.com/mmedum/favro-mcp/v3/internal/livecover"
+	"github.com/mmedum/favro-mcp/v3/internal/redact"
 )
 
 const (
@@ -52,9 +54,11 @@ func main() {
 	bin := flag.String("bin", defaultBinary, "the built server to drive")
 	only := flag.String("only", "", "run only the steps for this tool")
 	verbose := flag.Bool("v", false, "print each result, redacted")
+	asks := flag.Bool("asks", false, "run the asking checks instead of the steps: a probe tag this run creates is "+
+		"asked about, declined and then deleted, and the uploads and a public collection are asked about and declined")
 	flag.Parse()
 
-	if err := run(*bin, *only, *verbose); err != nil {
+	if err := run(*bin, *only, *verbose, *asks); err != nil {
 		fatal(err)
 	}
 }
@@ -73,7 +77,7 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-func run(bin, only string, verbose bool) error {
+func run(bin, only string, verbose, asks bool) error {
 	if _, err := os.Stat(bin); err != nil {
 		return fmt.Errorf("%s: %w (run `make build` first)", bin, err)
 	}
@@ -87,11 +91,23 @@ func run(bin, only string, verbose bool) error {
 	)
 	out := newPrinter(red)
 
+	uploadDir, err := makeUploadDir()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(uploadDir) }()
+
 	// Destructive tools are registered so their dry-run paths can be
 	// exercised. Nothing here sends a live write: every mutating step
 	// carries dry_run, and the client's gate turns that into a record
-	// rather than a request.
-	srv, err := start(bin, "FAVRO_ENABLE_DESTRUCTIVE=true")
+	// rather than a request. -asks is the exception, and runAsks says
+	// what it writes.
+	env := []string{"FAVRO_ENABLE_DESTRUCTIVE=true", "FAVRO_UPLOAD_DIR=" + uploadDir}
+	if asks {
+		return runAsks(bin, env, out, red)
+	}
+
+	srv, err := start(bin, env...)
 	if err != nil {
 		return err
 	}
@@ -120,6 +136,26 @@ func run(bin, only string, verbose bool) error {
 		return fmt.Errorf("%d steps failed", tally.failed)
 	}
 	return nil
+}
+
+// makeUploadDir makes the FAVRO_UPLOAD_DIR the upload tools need to
+// exist: a file for the dry-run uploads to read, and a folder for the
+// not-a-regular-file guard. The confinement steps name paths outside
+// it, which must be refused before anything is read.
+func makeUploadDir() (string, error) {
+	dir, err := os.MkdirTemp("", "livefavro-upload-")
+	if err != nil {
+		return "", err
+	}
+	err = os.WriteFile(filepath.Join(dir, livecover.UploadFile), []byte("livefavro probe\n"), 0o600)
+	if err == nil {
+		err = os.Mkdir(filepath.Join(dir, livecover.UploadFolder), 0o700)
+	}
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return "", err
+	}
+	return dir, nil
 }
 
 // tally is what a run amounted to.
@@ -410,9 +446,20 @@ type session struct {
 	stdin  *bufio.Writer
 	stdout *bufio.Reader
 	nextID int
+
+	// onElicit, when set, declares form elicitation and answers each
+	// question the server puts with elicitation/create: it gets the
+	// message and returns the action.
+	onElicit func(message string) string
 }
 
 func start(bin string, env ...string) (*session, error) {
+	return startWith(bin, nil, env...)
+}
+
+// startWith is start with, when onElicit is set, a client that can be
+// asked.
+func startWith(bin string, onElicit func(string) string, env ...string) (*session, error) {
 	cmd := exec.Command(bin)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stderr = nil // the server's own logs are not this transcript
@@ -429,7 +476,10 @@ func start(bin string, env ...string) (*session, error) {
 		return nil, err
 	}
 
-	s := &session{cmd: cmd, in: in, stdin: bufio.NewWriter(in), stdout: bufio.NewReader(outPipe), nextID: 1}
+	s := &session{
+		cmd: cmd, in: in, stdin: bufio.NewWriter(in), stdout: bufio.NewReader(outPipe), nextID: 1,
+		onElicit: onElicit,
+	}
 	if err := s.initialize(); err != nil {
 		return nil, err
 	}
@@ -470,9 +520,13 @@ func (s *session) stop() {
 }
 
 func (s *session) initialize() error {
+	capabilities := map[string]any{}
+	if s.onElicit != nil {
+		capabilities["elicitation"] = map[string]any{"form": map[string]any{}}
+	}
 	_, err := s.request("initialize", map[string]any{
 		"protocolVersion": "2025-11-25",
-		"capabilities":    map[string]any{},
+		"capabilities":    capabilities,
 		"clientInfo":      map[string]any{"name": "livefavro", "version": "0"},
 	})
 	if err != nil {
@@ -514,6 +568,9 @@ type callResult struct {
 
 // text returns the readable half.
 func (r *callResult) text() string {
+	if r == nil {
+		return ""
+	}
 	var b strings.Builder
 	for _, c := range r.Content {
 		b.WriteString(c.Text)
@@ -551,7 +608,9 @@ func (s *session) request(method string, params any) (json.RawMessage, error) {
 			return nil, fmt.Errorf("%s: %w", method, err)
 		}
 		var frame struct {
-			ID     int             `json:"id"`
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
 			Result json.RawMessage `json:"result"`
 			Error  *struct {
 				Message string `json:"message"`
@@ -560,7 +619,17 @@ func (s *session) request(method string, params any) (json.RawMessage, error) {
 		if err := json.Unmarshal(line, &frame); err != nil {
 			continue // not a frame we sent for
 		}
-		if frame.ID != id {
+		if frame.Method != "" {
+			// A request from the server, inside the call: answered here,
+			// or the call it belongs to would never return.
+			if len(frame.ID) > 0 {
+				if err := s.answer(frame.ID, frame.Method, frame.Params); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		if string(frame.ID) != strconv.Itoa(id) {
 			continue
 		}
 		if frame.Error != nil {
@@ -569,6 +638,26 @@ func (s *session) request(method string, params any) (json.RawMessage, error) {
 		return frame.Result, nil
 	}
 	return nil, fmt.Errorf("%s: no answer within %s", method, callTimeout)
+}
+
+// answer replies to a request the server made: a question through
+// onElicit, and anything else as not supported.
+func (s *session) answer(id json.RawMessage, method string, params json.RawMessage) error {
+	if method == "elicitation/create" && s.onElicit != nil {
+		var p struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(params, &p)
+		result := map[string]any{"action": s.onElicit(p.Message)}
+		if result["action"] == "accept" {
+			result["content"] = map[string]any{}
+		}
+		return s.write(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+	}
+	return s.write(map[string]any{
+		"jsonrpc": "2.0", "id": id,
+		"error": map[string]any{"code": -32601, "message": "livefavro does not answer " + method},
+	})
 }
 
 func (s *session) notify(method string) error {
