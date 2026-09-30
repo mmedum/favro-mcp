@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/v3/internal/auth"
 )
 
 // fixtureToken provides obviously-fake credentials for tests. None of

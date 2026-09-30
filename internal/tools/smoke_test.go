@@ -307,7 +307,7 @@ func substituteSmokePlaceholders(args map[string]any, filePath string) map[strin
 // tools read from disk.
 func writeSmokeAttachment(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "smoke.txt")
+	path := filepath.Join(uploadDirOf(t), "smoke.txt")
 	if err := os.WriteFile(path, []byte("smoke"), 0o600); err != nil {
 		t.Fatalf("os.WriteFile(path, []byte(\"smoke\"), 0o600): %v", err)
 	}

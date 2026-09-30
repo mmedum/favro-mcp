@@ -91,14 +91,14 @@ linters:
           files:
             - "**/internal/favro/*.go"
           deny:
-            - pkg: "github.com/mmedum/favro-mcp/internal"
+            - pkg: "github.com/mmedum/favro-mcp/v3/internal"
               desc: "internal/favro is the wire vocabulary and imports nothing from this module; a type that needs a dependency belongs in the package that has one"
         render-is-a-leaf:
           list-mode: lax
           files:
             - "**/internal/render/*.go"
           deny:
-            - pkg: "github.com/mmedum/favro-mcp/internal"
+            - pkg: "github.com/mmedum/favro-mcp/v3/internal"
               desc: "internal/render holds the error vocabulary that internal/favroapi imports, so it cannot import anything back — an error names its own class through the Classed interface"
         no-mcp-below-the-tool-layer:
           list-mode: lax
@@ -164,4 +164,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/mmedum/favro-mcp
+        - github.com/mmedum/favro-mcp/v3

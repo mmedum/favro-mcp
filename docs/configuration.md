@@ -12,6 +12,8 @@ the OS keyring, which `favro-mcp auth login` writes.
 | `FAVRO_ORGANIZATION_ID` | keyring, else unset | The organization every request is scoped to. This server is single-org and no tool takes another. |
 | `FAVRO_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`, case-insensitive. Logs go to stderr. A value this server cannot read falls back to `info` and says so. |
 | `FAVRO_ENABLE_DESTRUCTIVE` | `false` | Register the delete-style tools. See below — "off" means absent from `tools/list`, not guarded. Anything unreadable as a bool leaves them off. |
+| `FAVRO_UPLOAD_DIR` | unset | The one directory the upload tools read files from. Unset, and they are not registered. It must be an absolute path to a directory that exists; anything else is logged at startup and leaves uploads off. See below. |
+| `FAVRO_REQUIRE_PROMPT` | `false` | Refuse the writes that ask the person when the client cannot ask them, rather than making them on the arguments alone. A value this server cannot read counts as `true`, and it says so. |
 | `FAVRO_MCP_SKIP_VALIDATE` | unset | Any non-empty value skips the startup credential check. For protocol-only tests that never reach Favro. |
 
 ## Credential resolution
@@ -87,6 +89,26 @@ been written rather than by somebody remembering to add it.
 `dry_run` is not a second guard for this. It is a per-call preview,
 useful for checking what a write would send; it does not stop a host from
 calling the tool without it.
+
+## The upload directory
+
+`favro_upload_attachment` and `favro_upload_comment_attachment` send a
+local file to Favro, so they exist only when `FAVRO_UPLOAD_DIR` names a
+directory, and read inside it and nowhere else. `file_path` is relative
+to it, or absolute within it. A `..` or a symbolic link that leaves it is
+refused before anything is read. Use a directory that holds only what you
+would attach to a card.
+
+## Asking the person
+
+Before ten writes the server asks the person through the client, when
+the client can: the deletes of a tag, collection, widget, group or
+webhook, deleting a card from every widget, both uploads, and making a
+collection public. The question names what the write would act on;
+accepting it is the confirmation. A call the person did not confirm
+comes back `[blocked]` and nothing is changed. A dry run asks nothing.
+A client that cannot ask gets no question unless `FAVRO_REQUIRE_PROMPT`
+is set, which refuses those writes instead.
 
 ## Startup behavior
 

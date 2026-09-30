@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/v3/internal/auth"
 )
 
 // runAuth dispatches the `auth <subcommand>` subtree. stderr carries

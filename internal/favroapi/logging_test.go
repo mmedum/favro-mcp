@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/internal/auth"
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/auth"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
 )
 
 // These markers stand in for the values §9 forbids in a log. Each has

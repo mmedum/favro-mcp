@@ -1645,7 +1645,7 @@
         "readOnlyHint": false,
         "title": "Create Favro collection"
       },
-      "description": "Create a new Favro collection. `name` is required. Sharing defaults to specific-users-only; pass `public_sharing: 'organization'` for org-wide visibility. Use `share_to_users` to invite people (each entry needs email or userId plus a role). Successful live writes invalidate the collection cache. Pass `dry_run: true` to preview the request without contacting Favro.",
+      "description": "Create a new Favro collection. `name` is required. Sharing defaults to specific-users-only; pass `public_sharing: 'organization'` for org-wide visibility. Use `share_to_users` to invite people (each entry needs email or userId plus a role). Successful live writes invalidate the collection cache. Pass `dry_run: true` to preview the request without contacting Favro. With `public_sharing: 'public'`, the server asks the person through the client when it can, showing what would go; a call they did not confirm is [blocked], and is not made again unless they ask.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2967,7 +2967,7 @@
         "readOnlyHint": false,
         "title": "Delete Favro card"
       },
-      "description": "Delete a Favro card by its per-widget cardId. With `everywhere: false` (default) only this widget's instance is removed — other widgets sharing the same cardCommonId keep their copies. With `everywhere: true` the card is purged from EVERY widget — irreversible. Returns the list of cardIds Favro deleted. Successful live writes invalidate the search-cards cache. Destructive — MCP hosts may warn before auto-confirming. Pass `dry_run: true` to preview.",
+      "description": "Delete a Favro card by its per-widget cardId. With `everywhere: false` (default) only this widget's instance is removed — other widgets sharing the same cardCommonId keep their copies. With `everywhere: true` the card is purged from EVERY widget — irreversible. Returns the list of cardIds Favro deleted. Successful live writes invalidate the search-cards cache. Destructive — MCP hosts may warn before auto-confirming. Pass `dry_run: true` to preview. With `everywhere: true`, the server asks the person through the client when it can, showing what would go; a call they did not confirm is [blocked], and is not made again unless they ask.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3058,7 +3058,7 @@
         "readOnlyHint": false,
         "title": "Delete Favro collection"
       },
-      "description": "Delete a Favro collection by its collectionId. Destructive — MCP hosts may warn before auto-confirming. Favro does not cascade-delete widgets when a collection is removed; widgets that lived only in this collection may become orphaned. On success the collection / widget / search-cards caches are invalidated. Pass `dry_run: true` to preview.",
+      "description": "Delete a Favro collection by its collectionId. Destructive — MCP hosts may warn before auto-confirming. Favro does not cascade-delete widgets when a collection is removed; widgets that lived only in this collection may become orphaned. On success the collection / widget / search-cards caches are invalidated. Pass `dry_run: true` to preview. Before the write, the server asks the person through the client when it can, showing what would go; a call they did not confirm is [blocked], and is not made again unless they ask.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3407,7 +3407,7 @@
         "readOnlyHint": false,
         "title": "Delete Favro group"
       },
-      "description": "Delete a Favro group by its groupId. Destructive — MCP hosts may warn before auto-confirming. The group is removed from any sharing / assignment / custom-field references it appeared in. Successful live writes invalidate the group cache. Pass `dry_run: true` to preview.",
+      "description": "Delete a Favro group by its groupId. Destructive — MCP hosts may warn before auto-confirming. The group is removed from any sharing / assignment / custom-field references it appeared in. Successful live writes invalidate the group cache. Pass `dry_run: true` to preview. Before the write, the server asks the person through the client when it can, showing what would go; a call they did not confirm is [blocked], and is not made again unless they ask.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3492,7 +3492,7 @@
         "readOnlyHint": false,
         "title": "Delete Favro tag"
       },
-      "description": "Delete an org-global Favro tag by its tagId. The tag is removed from every card it was applied to — Favro does not soft-delete tags. On a successful live delete the org's tag cache is invalidated so the next resolve / list call re-fetches. Pass `dry_run: true` to preview the request without contacting Favro. Destructive — MCP hosts may warn users before auto-confirming.",
+      "description": "Delete an org-global Favro tag by its tagId. The tag is removed from every card it was applied to — Favro does not soft-delete tags. On a successful live delete the org's tag cache is invalidated so the next resolve / list call re-fetches. Pass `dry_run: true` to preview the request without contacting Favro. Destructive — MCP hosts may warn users before auto-confirming. Before the write, the server asks the person through the client when it can, showing what would go; a call they did not confirm is [blocked], and is not made again unless they ask.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3747,7 +3747,7 @@
         "readOnlyHint": false,
         "title": "Delete Favro webhook"
       },
-      "description": "Delete an outgoing webhook by `webhook_id`. Favro stops posting card events to that address immediately, and whatever was consuming them stops receiving them — this server cannot tell you what that is, so confirm with a human before removing a webhook you did not create. Resolve the id with `favro_list_webhooks`. Pass `dry_run: true` to preview.",
+      "description": "Delete an outgoing webhook by `webhook_id`. Favro stops posting card events to that address immediately, and whatever was consuming them stops receiving them — this server cannot tell you what that is, so confirm with a human before removing a webhook you did not create. Resolve the id with `favro_list_webhooks`. Pass `dry_run: true` to preview. Before the write, the server asks the person through the client when it can, showing what would go; a call they did not confirm is [blocked], and is not made again unless they ask.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3832,7 +3832,7 @@
         "readOnlyHint": false,
         "title": "Delete Favro widget"
       },
-      "description": "Delete a Favro widget by its widgetCommonId. Destructive — MCP hosts may warn before auto-confirming. Cards on the widget are removed; columns on the widget become inaccessible. Pass `collection_id` to remove the widget from just that collection; omitting it deletes every instance across all collections the widget belongs to. On success the widget / column / search-cards caches are invalidated. Pass `dry_run: true` to preview.",
+      "description": "Delete a Favro widget by its widgetCommonId. Destructive — MCP hosts may warn before auto-confirming. Cards on the widget are removed; columns on the widget become inaccessible. Pass `collection_id` to remove the widget from just that collection; omitting it deletes every instance across all collections the widget belongs to. On success the widget / column / search-cards caches are invalidated. Pass `dry_run: true` to preview. Before the write, the server asks the person through the client when it can, showing what would go; a call they did not confirm is [blocked], and is not made again unless they ask.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -10954,7 +10954,7 @@
         "readOnlyHint": false,
         "title": "Update Favro collection"
       },
-      "description": "Update a Favro collection. Every body field is optional — pass at least one. `archive: true` archives, `archive: false` unarchives, omit to keep current. Membership uses two separate lists: `share_to_users` invites people who aren't in the collection yet, while `members` re-roles or (with `delete: true`) removes people who already are. Successful live writes invalidate the collection cache. Pass `dry_run: true` to preview.",
+      "description": "Update a Favro collection. Every body field is optional — pass at least one. `archive: true` archives, `archive: false` unarchives, omit to keep current. Membership uses two separate lists: `share_to_users` invites people who aren't in the collection yet, while `members` re-roles or (with `delete: true`) removes people who already are. Successful live writes invalidate the collection cache. Pass `dry_run: true` to preview. When `public_sharing: 'public'` makes a collection public that was not, the server asks the person through the client when it can, showing what would go; a call they did not confirm is [blocked], and is not made again unless they ask.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -12509,7 +12509,7 @@
         "readOnlyHint": false,
         "title": "Upload Favro attachment"
       },
-      "description": "Upload a local file as an attachment on a Favro card via raw-bytes POST. Reads from `file_path` (absolute), then POSTs to `/cards/{cardId}/attachment` with `Content-Type: application/octet-stream` and the filename in the query string. `filename` defaults to the file's basename if omitted. Cap is 8 MiB per upload — larger files surface a typed error before any HTTP work. Returns the created attachment object `{name, fileURL}` (Favro echoes the attachment, NOT the updated Card — verified live). Successful live writes invalidate the search-cards cache (cached card payloads carry stale attachment lists otherwise). Pass `dry_run: true` to preview without contacting Favro. Use favro_remove_attachment to detach a file.",
+      "description": "Upload a local file as an attachment on a Favro card via raw-bytes POST. Reads `file_path` from the directory FAVRO_UPLOAD_DIR names, and from nowhere else; this tool exists only when that is set. Then POSTs to `/cards/{cardId}/attachment` with `Content-Type: application/octet-stream` and the filename in the query string. `filename` defaults to the file's basename if omitted. Cap is 8 MiB per upload — larger files surface a typed error before any HTTP work. Returns the created attachment object `{name, fileURL}` (Favro echoes the attachment, NOT the updated Card — verified live). Successful live writes invalidate the search-cards cache (cached card payloads carry stale attachment lists otherwise). Pass `dry_run: true` to preview without contacting Favro. Use favro_remove_attachment to detach a file. Before the write, the server asks the person through the client when it can, showing what would go; a call they did not confirm is [blocked], and is not made again unless they ask.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -12522,7 +12522,7 @@
             "type": "boolean"
           },
           "file_path": {
-            "description": "absolute path to the local file to upload. Local file paths only.",
+            "description": "the file to upload, as a path inside the directory FAVRO_UPLOAD_DIR names: relative to it, or absolute within it. Nothing outside that directory is read, and a link out of it is refused.",
             "type": "string"
           },
           "filename": {
@@ -12621,7 +12621,7 @@
         "readOnlyHint": false,
         "title": "Upload Favro comment attachment"
       },
-      "description": "Upload a local file as an attachment on a Favro comment via raw-bytes POST to `/comments/{commentId}/attachment`. Same contract as favro_upload_attachment, but the file lands on a comment rather than on the card itself: reads from `file_path` (absolute), `filename` defaults to the basename, 8 MiB cap enforced before any HTTP work, returns the created attachment object `{name, fileURL}`. Pass `dry_run: true` to preview.",
+      "description": "Upload a local file as an attachment on a Favro comment via raw-bytes POST to `/comments/{commentId}/attachment`. Same contract as favro_upload_attachment, but the file lands on a comment rather than on the card itself: reads `file_path` from FAVRO_UPLOAD_DIR only, `filename` defaults to the basename, 8 MiB cap enforced before any HTTP work, returns the created attachment object `{name, fileURL}`. Pass `dry_run: true` to preview. Before the write, the server asks the person through the client when it can, showing what would go; a call they did not confirm is [blocked], and is not made again unless they ask.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -12634,7 +12634,7 @@
             "type": "boolean"
           },
           "file_path": {
-            "description": "absolute path to the local file to upload. Local file paths only.",
+            "description": "the file to upload, as a path inside the directory FAVRO_UPLOAD_DIR names: relative to it, or absolute within it. Nothing outside that directory is read, and a link out of it is refused.",
             "type": "string"
           },
           "filename": {

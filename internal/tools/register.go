@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"log/slog"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/favroapi"
-	"github.com/mmedum/favro-mcp/internal/service"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/service"
 )
 
 // ServerName is the MCP Implementation name advertised on the protocol
@@ -26,6 +28,15 @@ type Options struct {
 	// signal a client may act on and not a control. The only tool that
 	// cannot be run unattended is one that is not there.
 	Destructive bool
+
+	// RequirePrompt is FAVRO_REQUIRE_PROMPT: the writes that ask the
+	// person are refused when the client cannot ask them, rather than
+	// made on the arguments alone.
+	RequirePrompt bool
+
+	// UploadDir is FAVRO_UPLOAD_DIR, the one directory the upload tools
+	// read from. Empty, and they are not registered.
+	UploadDir string
 
 	// CredentialSource is "env" or "keyring", surfaced by favro_ping so
 	// a caller can tell which credentials are live without being shown
@@ -55,7 +66,11 @@ type Options struct {
 // per-tool would each maintain their own cache and burn the rate-limit
 // budget on parallel cold-start fetches.
 func Register(srv *mcp.Server, client *favroapi.Client, opts Options) {
-	reg := &registry{srv: srv, destructive: opts.Destructive}
+	reg := &registry{
+		srv: srv, destructive: opts.Destructive, asking: newAsking(slog.Default()),
+		requirePrompt: opts.RequirePrompt, uploadDir: opts.UploadDir,
+	}
+	srv.AddReceivingMiddleware(askFailures(reg.asking))
 	resolver := service.NewResolver(client)
 
 	registerPing(reg, client, opts.CredentialSource, opts.Version)

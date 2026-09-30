@@ -75,6 +75,18 @@ const (
 	ClassAmbiguous Class = "ambiguous"
 )
 
+// The two that asking the person forces (§9.2).
+const (
+	// ClassBlocked is a write the person did not confirm, or one this
+	// server would not make without asking them. Nothing was changed;
+	// the caller does not make the call again unless the person asks.
+	ClassBlocked Class = "blocked"
+	// ClassAmbiguousOutcome is a write the person confirmed whose result
+	// never came back, so it may have happened. The caller reads the
+	// resource to see, and never repeats the write to find out.
+	ClassAmbiguousOutcome Class = "ambiguous_outcome"
+)
+
 // Classes is every class, in the order §6.2 lists them, for a caller
 // that needs to range over the vocabulary.
 //
@@ -92,6 +104,8 @@ var Classes = []Class{
 	ClassForbidden,
 	ClassRateLimited,
 	ClassAmbiguous,
+	ClassBlocked,
+	ClassAmbiguousOutcome,
 }
 
 // Retryable is implemented by an error that knows how long the caller
@@ -209,4 +223,10 @@ func (e *sentinel) ErrorClass() Class { return e.class }
 // fmt.Errorf("%w: …") keeps the class, since Classify walks the chain.
 func Sentinel(class Class, msg string) error {
 	return &sentinel{class: class, msg: msg}
+}
+
+// Errorf is Sentinel with a formatted message, for an error built per
+// call rather than declared once.
+func Errorf(class Class, format string, args ...any) error {
+	return &sentinel{class: class, msg: fmt.Sprintf(format, args...)}
 }

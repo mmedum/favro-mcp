@@ -8,6 +8,20 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-30
+
+### Added
+- The server asks the person through the client before ten writes, when the client can ask: deleting a tag, collection, widget, group or webhook, `favro_delete_card` with `everywhere: true`, both uploads, and making a collection public. A call they did not confirm is `[blocked]`.
+- `FAVRO_REQUIRE_PROMPT` refuses those writes when the client cannot ask.
+- Error classes `blocked` and `ambiguous_outcome`.
+- The `.mcpb` bundle asks for an optional upload folder.
+
+### Changed
+- **Breaking:** the Go module path is `github.com/mmedum/favro-mcp/v3`.
+
+### Security
+- **Breaking:** `favro_upload_attachment` and `favro_upload_comment_attachment` read only inside `FAVRO_UPLOAD_DIR`, and are not registered unless it is set. They read any file the account could read before. Set it to a folder that holds only what you would attach to a card.
+
 ## [2.1.1] - 2026-09-26
 
 ### Changed
@@ -320,7 +334,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/mmedum/favro-mcp/compare/v2.1.1...v3.0.0
 [2.1.1]: https://github.com/mmedum/favro-mcp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/mmedum/favro-mcp/compare/v2.0.4...v2.1.0
 [2.0.4]: https://github.com/mmedum/favro-mcp/compare/v2.0.3...v2.0.4

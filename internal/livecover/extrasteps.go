@@ -262,25 +262,23 @@ func extraSteps() []Step {
 			Tool: "favro_upload_attachment",
 			Args: map[string]any{
 				"card_id":   AnyCardID,
-				"file_path": "/dev/null",
+				"file_path": UploadFile,
 				"filename":  "livefavro-probe.txt",
 				"mime_type": "text/plain",
 				"dry_run":   true,
 			},
-			ExpectError: "invalid",
-			Why:         "the guard again, with the name and type overrides set",
+			Why: "dry-run: a file inside FAVRO_UPLOAD_DIR is read, with the name and type overrides set",
 		},
 		{
 			Tool: "favro_upload_comment_attachment",
 			Args: map[string]any{
 				"comment_id": AnyCommentID,
-				"file_path":  "/dev/null",
+				"file_path":  UploadFile,
 				"filename":   "livefavro-probe.txt",
 				"mime_type":  "text/plain",
 				"dry_run":    true,
 			},
-			ExpectError: "invalid",
-			Why:         "the same on the comment path",
+			Why: "the same on the comment path",
 		},
 	}
 }

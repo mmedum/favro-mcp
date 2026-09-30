@@ -30,7 +30,7 @@ func TestStampFrom(t *testing.T) {
 	buildInfo := func(version string, settings ...debug.BuildSetting) *debug.BuildInfo {
 		bi := &debug.BuildInfo{Settings: settings}
 		bi.Main.Version = version
-		bi.Main.Path = "github.com/mmedum/favro-mcp"
+		bi.Main.Path = "github.com/mmedum/favro-mcp/v3"
 		return bi
 	}
 
@@ -124,8 +124,8 @@ func TestModuleFrom(t *testing.T) {
 		t.Errorf("moduleFrom(nil) = %q; want %q", got, "unknown")
 	}
 	bi := &debug.BuildInfo{}
-	bi.Main.Path = "github.com/mmedum/favro-mcp/"
-	if got := moduleFrom(bi); got != "github.com/mmedum/favro-mcp" {
+	bi.Main.Path = "github.com/mmedum/favro-mcp/v3/"
+	if got := moduleFrom(bi); got != "github.com/mmedum/favro-mcp/v3" {
 		t.Errorf("moduleFrom(…) = %q; want the path without its trailing slash", got)
 	}
 }

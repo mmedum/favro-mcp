@@ -9,7 +9,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/render"
+	"github.com/mmedum/favro-mcp/v3/internal/render"
 )
 
 // schemaOptions fixes what type inference gets wrong about
@@ -49,6 +49,24 @@ type registry struct {
 	// whose annotations set DestructiveHint is not registered — not
 	// hidden, not guarded, not present. See addTool.
 	destructive bool
+
+	// asking is how the tools registered through addAsking put their
+	// question to the person, and requirePrompt is
+	// FAVRO_REQUIRE_PROMPT: refuse those writes when the client cannot
+	// ask.
+	asking        *asking
+	requirePrompt bool
+
+	// uploadDir is FAVRO_UPLOAD_DIR, the one directory the upload tools
+	// read from. Empty, and they are not registered.
+	uploadDir string
+}
+
+// admits reports whether t is registered at all: a tool annotated
+// destructive only when the flag is set.
+func (reg *registry) admits(t *mcp.Tool) bool {
+	return t.Annotations == nil || t.Annotations.DestructiveHint == nil ||
+		!*t.Annotations.DestructiveHint || reg.destructive
 }
 
 // addTool registers one tool, and is the single place three things
@@ -73,8 +91,7 @@ type registry struct {
 // **The error class.** Errors leave as "[class] actionable message",
 // classified from the error's own type rather than from its text.
 func addTool[In, Out any](reg *registry, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
-	if t.Annotations != nil && t.Annotations.DestructiveHint != nil &&
-		*t.Annotations.DestructiveHint && !reg.destructive {
+	if !reg.admits(t) {
 		return
 	}
 
@@ -99,7 +116,9 @@ func addTool[In, Out any](reg *registry, t *mcp.Tool, h mcp.ToolHandlerFor[In, O
 		if res == nil {
 			res = &mcp.CallToolResult{}
 		}
-		if res.Content == nil {
+		// A question to the person (addAsking) carries no content: the
+		// SDK sends its input requests in place of a result.
+		if res.Content == nil && res.InputRequests == nil {
 			res.Content = []mcp.Content{&mcp.TextContent{Text: render.Summary(out)}}
 		}
 		return res, out, nil

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -38,6 +39,17 @@ const (
 	// says clients treat tool annotations as untrusted. The tool that
 	// cannot run unattended is the one that was never registered.
 	EnvEnableDestructive = "FAVRO_ENABLE_DESTRUCTIVE"
+
+	// EnvUploadDir is the one directory the upload tools read files
+	// from. Unset — the default — and they are not registered, because
+	// an upload is a file leaving this computer and a path is something
+	// a card's text can suggest to a model.
+	EnvUploadDir = "FAVRO_UPLOAD_DIR"
+
+	// EnvRequirePrompt refuses the writes that ask the person when the
+	// client cannot ask them, rather than making them on the arguments
+	// alone.
+	EnvRequirePrompt = "FAVRO_REQUIRE_PROMPT"
 )
 
 // Config is the resolved settings.
@@ -51,6 +63,13 @@ type Config struct {
 
 	// Destructive registers the delete-style tools.
 	Destructive bool
+
+	// UploadDir is the absolute, existing directory uploads are read
+	// from, or empty when uploads are off.
+	UploadDir string
+
+	// RequirePrompt refuses an asking write when the client cannot ask.
+	RequirePrompt bool
 
 	// Warnings is what Load could not read, as sentences ready to log.
 	//
@@ -96,7 +115,50 @@ func Load() Config {
 		}
 	}
 
+	// Unreadable here means on: the variable exists to refuse, and a
+	// typo in it must not quietly stop refusing.
+	if raw := os.Getenv(EnvRequirePrompt); raw != "" {
+		on, err := strconv.ParseBool(raw)
+		switch {
+		case err != nil:
+			cfg.RequirePrompt = true
+			cfg.Warnings = append(cfg.Warnings,
+				fmt.Sprintf("unreadable %s %q — treated as true; set it to true or false", EnvRequirePrompt, raw))
+		default:
+			cfg.RequirePrompt = on
+		}
+	}
+
+	if raw := strings.TrimSpace(os.Getenv(EnvUploadDir)); raw != "" {
+		dir, err := UploadDir(raw)
+		switch {
+		case err != nil:
+			cfg.Warnings = append(cfg.Warnings,
+				fmt.Sprintf("ignoring %s: %v — the upload tools stay unregistered", EnvUploadDir, err))
+		default:
+			cfg.UploadDir = dir
+		}
+	}
+
 	return cfg
+}
+
+// UploadDir checks a FAVRO_UPLOAD_DIR value: an absolute path to a
+// directory that exists. A relative one would mean whatever directory
+// the host happened to start the server in.
+func UploadDir(raw string) (string, error) {
+	if !filepath.IsAbs(raw) {
+		return "", fmt.Errorf("%q is not an absolute path", raw)
+	}
+	dir := filepath.Clean(raw)
+	info, err := os.Stat(dir)
+	switch {
+	case err != nil:
+		return "", fmt.Errorf("%q cannot be read: %w", dir, err)
+	case !info.IsDir():
+		return "", fmt.Errorf("%q is not a directory", dir)
+	}
+	return dir, nil
 }
 
 // ParseLogLevel maps a case-folded value to a slog.Level. The second
