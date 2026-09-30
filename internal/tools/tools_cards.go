@@ -24,19 +24,26 @@ const (
 // carry filter state across pages.
 type listCardsInput struct {
 	listInput
-	WidgetCommonID    string `json:"widget_common_id,omitempty" jsonschema:"optional Favro widget id (widgetCommonId) to scope the listing to a single widget; pass it on EVERY page when paginating"`
-	CollectionID      string `json:"collection_id,omitempty" jsonschema:"optional Favro collection id to scope the listing to a single collection"`
-	CardCommonID      string `json:"card_common_id,omitempty" jsonschema:"optional Favro cardCommonId to fetch every instance of a single card across the widgets it lives on"`
-	SequentialID      int    `json:"sequential_id,omitempty" jsonschema:"optional Favro card sequential id (the integer part of human-readable refs like 'BSC-123' — pass 123 here)"`
-	ColumnID          string `json:"column_id,omitempty" jsonschema:"optional Favro columnId to scope the listing to a single column inside the widget/collection"`
-	TodoList          bool   `json:"todo_list,omitempty" jsonschema:"if true, restrict the listing to the authenticated user's personal todo list"`
-	Archived          bool   `json:"archived,omitempty" jsonschema:"if true, include archived cards in the result; default (false) hides them server-side"`
-	Unique            bool   `json:"unique,omitempty" jsonschema:"if true, return one row per cardCommonId rather than one row per widget instance — useful when searching by name and cross-widget duplicates are noise"`
-	DescriptionFormat string `json:"description_format,omitempty" jsonschema:"'plaintext' (default) or 'markdown' for the detailedDescription body"`
+	WidgetCommonID string `json:"widget_common_id,omitempty" jsonschema:"optional Favro widget id (widgetCommonId) to scope the listing to a single widget; pass it on EVERY page when paginating"`
+	CollectionID   string `json:"collection_id,omitempty" jsonschema:"optional Favro collection id to scope the listing to a single collection"`
+	CardCommonID   string `json:"card_common_id,omitempty" jsonschema:"optional Favro cardCommonId to fetch every instance of a single card across the widgets it lives on"`
+	SequentialID   int    `json:"sequential_id,omitempty" jsonschema:"optional Favro card sequential id (the integer part of human-readable refs like 'BSC-123' — pass 123 here)"`
+	ColumnID       string `json:"column_id,omitempty" jsonschema:"optional Favro columnId to scope the listing to a single column inside the widget/collection"`
+	TodoList       bool   `json:"todo_list,omitempty" jsonschema:"if true, restrict the listing to the authenticated user's personal todo list"`
+	Archived       bool   `json:"archived,omitempty" jsonschema:"if true, include archived cards in the result; default (false) hides them server-side"`
+	Unique         bool   `json:"unique,omitempty" jsonschema:"if true, return one row per cardCommonId rather than one row per widget instance — useful when searching by name and cross-widget duplicates are noise"`
+	descriptionFormatInput
+}
+
+// descriptionFormatInput is embedded in the inputs of the tools that
+// read a card's description.
+type descriptionFormatInput struct {
+	DescriptionFormat string `json:"description_format,omitempty" jsonschema:"'plaintext' (default) or 'markdown' for the detailedDescription body. 'markdown' returns the body as Favro stored it, which is what favro_replace_in_card_description matches against."`
 }
 
 // getCardInput is the input for favro_get_card.
 type getCardInput struct {
+	descriptionFormatInput
 	CardID string `json:"card_id" jsonschema:"the Favro per-widget cardId (NOT the cross-widget cardCommonId — Favro 403s if you pass a cardCommonId here). To fetch a card known only by cardCommonId, call favro_list_cards with that filter."`
 }
 
@@ -73,10 +80,11 @@ func registerCards(reg *registry, client *favroapi.Client) {
 		Description: "Get a single Favro card by its per-widget cardId. Favro's GET endpoint " +
 			"only accepts the per-widget cardId — passing a cardCommonId here 403s. To fetch " +
 			"a card known only by cardCommonId, use favro_list_cards with that filter. " +
-			"Read-only.",
+			"Pass `description_format: \"markdown\"` to see the description as Favro " +
+			"stored it. Read-only.",
 		Annotations: readOnly("Get Favro card"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in getCardInput) (*mcp.CallToolResult, favro.Card, error) {
-		card, err := client.GetCard(ctx, in.CardID)
+		card, err := client.GetCardWithDescriptionFormat(ctx, in.CardID, in.DescriptionFormat)
 		if err != nil {
 			return nil, favro.Card{}, err
 		}

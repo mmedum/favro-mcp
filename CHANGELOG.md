@@ -8,6 +8,13 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `favro_get_card` and `favro_get_card_full` take `description_format`, as `favro_list_cards` does, so the description Favro stored can be read directly.
+
+### Changed
+- Every card write (`favro_create_card`, `favro_update_card`, `favro_move_card`, archive, tag, custom-field and attachment writes) requests `descriptionFormat=markdown`, so the returned card shows the description as Favro stored it rather than as plaintext.
+- `favro_replace_in_card_description`'s description and its `not_found` error say that Favro normalizes markdown on storing it (`- ` bullets become `* `, list items gain a blank line), and point to a markdown read.
+
 ## [3.0.0] - 2026-09-30
 
 ### Added
