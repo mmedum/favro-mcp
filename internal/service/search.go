@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
-	"github.com/mmedum/favro-mcp/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
 )
 
 // SearchScope picks the corpus the search runs over. Favro's /cards

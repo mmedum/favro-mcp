@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
-	"github.com/mmedum/favro-mcp/internal/render"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/render"
 )
 
 // errMissingCardCommonID is returned by ListComments when the caller

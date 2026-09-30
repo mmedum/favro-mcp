@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
 )
 
 // ListCardActivities returns one page of a card's activity history,

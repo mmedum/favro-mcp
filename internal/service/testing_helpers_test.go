@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/internal/favroapi"
-	"github.com/mmedum/favro-mcp/internal/favroapi/favroapitest"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi/favroapitest"
 )
 
 // favroFixture forwards to the one shared client fixture; see

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/internal/auth"
-	"github.com/mmedum/favro-mcp/internal/config"
+	"github.com/mmedum/favro-mcp/v3/internal/auth"
+	"github.com/mmedum/favro-mcp/v3/internal/config"
 )
 
 // The organization ids these tests use are fabricated, and deliberately

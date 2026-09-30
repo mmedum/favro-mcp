@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/favro-mcp/internal/livecover"
+	"github.com/mmedum/favro-mcp/v3/internal/livecover"
 )
 
 // liveCoverWaivedPath records the tools and options the live driver

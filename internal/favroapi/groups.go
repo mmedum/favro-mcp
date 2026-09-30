@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
 )
 
 // ListGroups returns one page of groups in the active organization.

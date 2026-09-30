@@ -1,10 +1,12 @@
 # Architecture — favro-mcp
 
-**Status, 2026-09-26.** Released: v2.1.1. The server's own feature phases
+**Status, 2026-09-30.** Released: v3.0.0. The server's own feature phases
 (0–9) are complete and shipped, and **every phase of the alignment
 program in §16 is done**, A6's evals included — the note that said they
 needed a model API key was wrong, since the siblings drive the model
-through the `claude` CLI. Where a sentence below describes something that
+through the `claude` CLI. **B1 shipped in 3.0.0**: the server asks the
+person before ten writes (§9.2), and uploads read one configured
+directory (§9.1). Where a sentence below describes something that
 does not exist, it says so and names the phase that builds it.
 
 This document is the design, the decided constraints, the evidence and
@@ -296,6 +298,8 @@ indistinguishable from one that simply has not happened yet.
 | `forbidden` | Favro's 403, which it uses both for "no permission" and for "exists but not visible to this token" (§2.6). Collapsing it into `not_found` would tell a model to stop looking for something that is there | try a different route to the resource, or ask for access |
 | `rate_limited` | 429, carrying `retry_after_seconds` in the message. Distinct from `unavailable` because the correct response is to wait a named duration rather than to retry | wait the named number of seconds |
 | `ambiguous` | a name matching several candidates | choose one; do not retry the name |
+| `blocked` | a write the person did not confirm when asked, an answer that does not belong to the call, or one `FAVRO_REQUIRE_PROMPT` refuses because the client cannot ask (§9.2). Nothing was changed | do not make the call again unless the person asks for it |
+| `ambiguous_outcome` | the person confirmed a write and the call ended before its result came back, so it may have happened (§9.2) | read the resource to see; never repeat the write to find out |
 
 The fallback for an error that names no class is `invalid`, and that is
 measured rather than neutral: every error this server's own layer
@@ -438,10 +442,10 @@ apart, and each is why a tool description carries a warning:
 ### 7.5 Uploads
 
 Attachments are a raw-bytes POST to `/cards/{id}/attachments` or
-`/comments/{id}/attachments`, from a local absolute path, capped locally
-at 8 MiB. Favro echoes the created attachment rather than the updated
-card — verified live, and worth stating because the obvious assumption
-is the other one.
+`/comments/{id}/attachments`, from a file inside `FAVRO_UPLOAD_DIR`
+(§9.1), capped locally at 8 MiB. Favro echoes the created attachment
+rather than the updated card — verified live, and worth stating because
+the obvious assumption is the other one.
 
 
 ## 8. Tool surface
@@ -600,7 +604,72 @@ every level, and a test that exercises one call site proves it for one
 call site.
 
 **Safety.** §8's destructive-tool gate; §4.2's dry-run; §4.3's hard-fail
-on unknown tag names. Reads are budgeted only by pagination.
+on unknown tag names; the upload directory (§9.1); asking the person
+(§9.2). Reads are budgeted only by pagination.
+
+### 9.1 Uploads read one directory
+
+Until 3.0.0 the upload tools read any file the account running the
+server could read, and were registered by default. A card's text can
+suggest a path to a model, and Favro is a network peer, so that was an
+exfiltration channel with nothing but the account's own permissions
+around it.
+
+Now they read inside `FAVRO_UPLOAD_DIR` and nowhere else, and are **not
+registered** unless it is set. The value must be an absolute path to a
+directory that exists; anything else is logged at startup and leaves
+uploads off. `file_path` is relative to the directory, or absolute
+within it, and the read goes through `os.Root`, which refuses a `..` or
+a symbolic link that leaves it. The size cap and the regular-file check
+come before any byte is read, and the file is opened only after a stat
+says it is regular, since opening a named pipe would wait for a writer.
+A refusal names `file_path`, not the path, because the path may be what
+a card's text suggested.
+
+### 9.2 Asking the person
+
+Ten writes are put to the person through the client before they are
+made, as an MCP form elicitation with no fields: accepting is the
+confirmation. They are the ones that cannot be undone or that send
+something past the people who can already see it:
+
+- `favro_delete_tag`, `favro_delete_collection`, `favro_delete_widget`,
+  `favro_delete_group`, `favro_delete_webhook`, and `favro_delete_card`
+  with `everywhere: true`. Favro has no undo and no trash for these.
+- `favro_upload_attachment` and `favro_upload_comment_attachment`: a
+  file leaves this computer. The question names the path and the size,
+  and the answer is bound to the file's content, so a file changed
+  while the person reads is not sent.
+- `favro_create_collection` and `favro_update_collection` when they make
+  a collection public: anyone on the internet with the link can see it.
+  An update asks only when the collection is not already public, which
+  it reads rather than assumes.
+
+The other deletes (a comment, a column, a task, one widget's copy of a
+card and the rest) do not ask: they reach one item somebody named, and
+the destructive flag already gates them. Comments do not ask either;
+whether Favro notifies on a mention is not established.
+
+The mechanism is the one the siblings run, ported rather than depended
+on. A tool asks by being registered through `addAsking`, which puts a
+person on the handler's context; the handler calls `confirmFirst` after
+every other check and just before the write, and a dry run asks
+nothing. The question is built from a fresh read, so it names what the
+write acts on rather than an id. On protocol 2026-07-28 the first call
+returns the question and a signed `requestState`, and the call comes
+back with the answer; before it, the SDK asks inside the call. The state
+is an HMAC over the tool, the arguments and what the question binds,
+with a key drawn per process, a nonce spent once, and a five-minute
+expiry when it travels through the client. Any answer but accept is
+refused before the handler reads anything. What the question showed is
+checked again on the answering round, so a tag renamed in between is
+refused rather than deleted under a name the person never saw.
+
+A client that cannot ask gets no question, and the arguments are the
+guard, as before. `FAVRO_REQUIRE_PROMPT=true` refuses those writes
+instead. Two failures have classes of their own (§6.2): `blocked` for
+anything refused before the write, and `ambiguous_outcome` for a
+confirmed write whose result never came back.
 
 ## 10. Auth, config, process model
 
@@ -944,6 +1013,13 @@ phase An" before the next begins.
   at thirteen. §7b in miniature, for the third time in this repository.
   §18 has it.
 
+- **B1 — asking the person, and uploads from one directory (3.0.0).**
+  §9.1 and §9.2. The module path moves to `/v3`, because removing the
+  upload tools from the default surface is breaking. The questions, the
+  signed state and `quoted()` are ported from the sibling that last
+  fixed them, including links broken in any script and refusals before
+  the retry reads.
+
 ### Closing a phase
 
 `make check` green, tests for the new behavior, `/simplify` and
@@ -1066,6 +1142,11 @@ it; **asserted**, meaning believed and not yet held by anything.
 
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
+| 2026-09-30 | Asking the person works against a real organization | `livefavro -asks` on a build of this branch: a probe tag it created, deleted with a decline (still there) and then an accept (gone); both card upload and a public collection asked with names read from Favro and declined, and the collection read back as not created | **Verified here**, on protocol 2025-11-25, where the SDK asks inside the call. 2026-07-28 is stateless in go-sdk v1.8.0 (`server/discover` and per-request `_meta`), which the raw-JSON-RPC driver does not speak, so its round trip is held by the in-memory tests only. The comment upload was skipped: the organization has no comment to attach to |
+| 2026-09-30 | The SDK sends no `structuredContent` for a result that asks | Read `mcp/server.go:438–446` of go-sdk v1.8.0 in the module cache: when the handler's result has `InputRequests`, the output is not marshaled | **Verified here.** `addTool` must not fill `Content` for such a result either, since content and input requests are exclusive on the wire; it checks `InputRequests` before rendering a summary |
+| 2026-09-30 | `os.Root` keeps an upload inside `FAVRO_UPLOAD_DIR` | `TestMCP_UploadAttachment_ReadsOnlyTheUploadDir`: a relative path, an absolute one inside, a `..` that stays inside, a `..` out, an absolute path elsewhere, and a symbolic link out, each through the real tool | **Verified here.** Every way out is refused before a byte is read or a request sent, and the refusal does not repeat the path |
+| 2026-09-30 | An empty form is a valid elicitation, and a client that cannot ask declares nothing | The sibling that built this first checked the MCP specification's schema (properties is an open map with no minimum) and the SDK's capability handling | **Adopted.** The same two known client limits apply: one client auto-accepts an empty form under its most permissive policy, and one reports a skipped question as an accept |
+| 2026-09-30 | `public_sharing: 'public'` opens a collection to anyone with the link | This repository's own schema text, written from Favro's reference | **Asserted.** Not probed live: making a real collection public to test it is the act the question guards |
 | 2026-09-18 | A card write carrying `widgetCommonId` detaches a nested card | Reported with a live repro against a real organization, then re-run against the released v2.0.1 binary as a control: five behaviors, the control failing on exactly the orphaning row and matching everywhere else | **Verified by the reporter — the claim is true.** A rename is enough, and the 200 is byte-identical to a write that changed nothing structural, so nothing in the answer says the card moved. The control run is what makes it evidence rather than a demonstration. Guarded in `settleParent`, wired into `favro_update_card` **and** `favro_move_card` — the first patch covered only the former, and since `errMoveNeedsWidget` every column move carries `widgetCommonId`, which made the unguarded tool the one the other's description recommends. The breadth is settled by the row below rather than by this one |
 | 2026-09-18 | How far a write carrying `widgetCommonId` re-seats a card | Probed live on a dormant board: a card nested under a parent, in a non-default column, at an explicit `listPosition`; PUT `{widgetCommonId, name}` and read back, diffing `parentCardId`, `columnId`, `laneId`, `listPosition`, `sheetPosition` | **Verified here — the earlier wording was too broad.** Only `parentCardId` is dropped. `columnId` and `listPosition` came back unchanged, and `sheetPosition` was assigned rather than reset. So "re-seats the card from the body alone" overstated it, and §7.4 now says the narrower thing the evidence supports: the guard covers the whole bug rather than a third of it. The write's own response omitted `parentCardId` while the card still had one moments earlier, which is the §2.1 shape — the answer is identical whether or not anything was lost. `laneId` untested: no board reached live has lanes |
 | 2026-09-13 | The SDK writes the same bytes into `content` and `structuredContent` when a tool declares an output schema | Read `mcp/server.go:398–435` in the module cache: the marshaled output becomes `StructuredContent`, and when `res.Content` is nil the same serialized JSON is added as a `TextContent` block | **Verified here.** Every tool in this repository returns a typed output and a nil result, so every one of them is in that state. Standard §2 forbids it: the two halves must both be present and must not be the same bytes. Fixed in A2 at `addTool`, so the fix is one function rather than 83 handlers that each have to remember |

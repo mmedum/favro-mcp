@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mmedum/favro-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/mmedum/favro-mcp/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/mmedum/favro-mcp)](https://github.com/mmedum/favro-mcp/releases/latest)
-[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/favro-mcp.svg)](https://pkg.go.dev/github.com/mmedum/favro-mcp)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/favro-mcp/v3.svg)](https://pkg.go.dev/github.com/mmedum/favro-mcp/v3)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for [Favro](https://favro.com), written in Go.
@@ -91,13 +91,20 @@ Two sources, checked in order; the first one that produces a complete `(email, t
 1. **Environment variables** — `FAVRO_USER_EMAIL`, `FAVRO_API_TOKEN`, `FAVRO_ORGANIZATION_ID`.
 2. **OS keyring** — populated once via `favro-mcp auth login` (cross-platform: macOS Keychain, Windows Credential Manager, Linux Secret Service).
 
-Three more variables change how the server runs rather than who it runs as:
+Five more variables change how the server runs rather than who it runs as:
 
 | Variable | Effect |
 | --- | --- |
 | `FAVRO_LOG_LEVEL` | `debug` / `info` (default) / `warn` / `error`. Logs go to stderr; stdout carries only the MCP protocol stream. |
 | `FAVRO_MCP_SKIP_VALIDATE` | When set to anything non-empty, skips the startup call that checks the credentials against Favro. For offline testing; the server then fails on the first real tool call instead of at startup. |
 | `FAVRO_ENABLE_DESTRUCTIVE` | Set to `true` to register the delete-style tools. Off by default, and "off" means they are absent from `tools/list` rather than guarded — a host in an auto-approve mode runs a tool without prompting, so not registering it is the only guarantee. Anything the value cannot be read as `true` leaves them off. |
+| `FAVRO_UPLOAD_DIR` | The one directory the upload tools read files from, as an absolute path. Unset, and they are not registered. Nothing outside it is read, and a link out of it is refused. |
+| `FAVRO_REQUIRE_PROMPT` | Set to `true` to refuse the writes that ask the person when the client cannot ask them. |
+
+Before the deletes Favro cannot undo, before an upload, and before
+making a collection public, the server asks the person through the
+client when it can, and names what would go. A call they did not
+confirm comes back `[blocked]`.
 
 ### `auth` subcommands
 

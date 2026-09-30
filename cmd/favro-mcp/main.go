@@ -32,11 +32,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/auth"
-	"github.com/mmedum/favro-mcp/internal/config"
-	"github.com/mmedum/favro-mcp/internal/favroapi"
-	"github.com/mmedum/favro-mcp/internal/server"
-	"github.com/mmedum/favro-mcp/internal/version"
+	"github.com/mmedum/favro-mcp/v3/internal/auth"
+	"github.com/mmedum/favro-mcp/v3/internal/config"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/server"
+	"github.com/mmedum/favro-mcp/v3/internal/version"
 )
 
 func main() {
@@ -175,12 +175,12 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 
 	opts := server.Options{
 		Destructive:      cfg.Destructive,
+		RequirePrompt:    cfg.RequirePrompt,
+		UploadDir:        cfg.UploadDir,
 		CredentialSource: rt.Source,
 		Version:          version.String(),
 	}
-	if opts.Destructive {
-		slog.Warn(config.EnvEnableDestructive + " is set — delete-style tools are registered and can run unattended")
-	}
+	logSurface(opts)
 
 	srv := server.New(client, opts)
 	if err := srv.Run(ctx, &mcp.StdioTransport{}); !cleanDisconnect(err) {
@@ -189,6 +189,16 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 	}
 	slog.Info("favro-mcp shut down cleanly")
 	return nil
+}
+
+// logSurface says which of the opt-in tools this run registers.
+func logSurface(opts server.Options) {
+	if opts.Destructive {
+		slog.Warn(config.EnvEnableDestructive + " is set — delete-style tools are registered and can run unattended")
+	}
+	if opts.UploadDir != "" {
+		slog.Info(config.EnvUploadDir + " is set — the upload tools read files from that directory only")
+	}
 }
 
 // dumpSchemaSurface writes the whole tool surface to w. The client it
@@ -200,10 +210,12 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 // is registered is a deployment decision rather than a wire one. A dump
 // that followed the flag would drop thirteen tools out of the committed
 // snapshot, and the schema-diff gate would then stop watching them for
-// the breaking changes it exists to catch.
+// the breaking changes it exists to catch. The upload tools are in it
+// for the same reason; listing reads no file, so any directory will do.
 func dumpSchemaSurface(ctx context.Context, stdout io.Writer) error {
 	srv := server.New(favroapi.NewClient(auth.Token{}), server.Options{
 		Destructive:      true,
+		UploadDir:        os.TempDir(),
 		CredentialSource: "none",
 		Version:          version.String(),
 	})

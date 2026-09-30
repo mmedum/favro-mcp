@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
 )
 
 func TestListTasklists_ForwardsCardCommonID(t *testing.T) {

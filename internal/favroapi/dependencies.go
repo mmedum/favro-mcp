@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
 )
 
 // dependenciesPath builds /cards/{cardId}/dependencies.

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/favro-mcp/internal/cache"
-	"github.com/mmedum/favro-mcp/internal/favro"
-	"github.com/mmedum/favro-mcp/internal/favroapi"
-	"github.com/mmedum/favro-mcp/internal/render"
+	"github.com/mmedum/favro-mcp/v3/internal/cache"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/render"
 )
 
 // Resolver bridges name-based lookups to Favro's id-based world.

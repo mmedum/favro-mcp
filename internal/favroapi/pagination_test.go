@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
 )
 
 // pagedHandler is a fake Favro that serves N pages of testEntities.

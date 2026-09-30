@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
 )
 
 // TestUploadAttachment_HappyPath pins the wire shape: POST
