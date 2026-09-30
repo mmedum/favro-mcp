@@ -7,9 +7,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
-	"github.com/mmedum/favro-mcp/internal/favroapi"
-	"github.com/mmedum/favro-mcp/internal/service"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/render"
+	"github.com/mmedum/favro-mcp/v3/internal/service"
 )
 
 const (
@@ -134,19 +135,34 @@ func registerUpdateWidget(reg *registry, r *service.Resolver) {
 }
 
 func registerDeleteWidget(reg *registry, r *service.Resolver) {
-	addTool(reg, &mcp.Tool{
+	addAsking(reg, &mcp.Tool{
 		Name: deleteWidgetToolName,
 		Description: "Delete a Favro widget by its widgetCommonId. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Cards on the widget are removed; columns on " +
 			"the widget become inaccessible. Pass `collection_id` to remove the widget from " +
 			"just that collection; omitting it deletes every instance across all " +
 			"collections the widget belongs to. On success the widget / column / " +
-			"search-cards caches are invalidated. Pass `dry_run: true` to preview.",
+			"search-cards caches are invalidated. Pass `dry_run: true` to preview." + asksFirst,
 		Annotations: mutating("Delete Favro widget", true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteWidgetInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
+		}
+		if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
+			w, err := r.Client().GetWidget(ctx, in.WidgetCommonID)
+			if err != nil {
+				return render.Question{}, err
+			}
+			var col favro.Collection
+			if in.CollectionID != "" {
+				if col, err = r.Client().GetCollection(ctx, in.CollectionID); err != nil {
+					return render.Question{}, err
+				}
+			}
+			return render.AskDeleteWidget(in.WidgetCommonID, w.Name, in.CollectionID, col.Name), nil
+		}); err != nil {
+			return nil, writeOutput[struct{}]{}, err
 		}
 		out, err := runWrite(
 			func() (struct{}, error) {

@@ -13,6 +13,16 @@ Without it they are absent from `tools/list` rather than guarded: a host
 in an auto-approve permission mode runs a tool without prompting, so
 being unregistered is the only guarantee.
 
+`favro_upload_attachment` and `favro_upload_comment_attachment` are not
+registered unless `FAVRO_UPLOAD_DIR` names the directory they read from.
+
+Ten writes ask the person through the client first, when it can ask:
+`favro_delete_tag`, `favro_delete_collection`, `favro_delete_widget`,
+`favro_delete_group`, `favro_delete_webhook`, `favro_delete_card` with
+`everywhere: true`, both uploads, and `favro_create_collection` or
+`favro_update_collection` making a collection public. A call the person
+did not confirm is `[blocked]`.
+
 The **Phase** column records which build phase shipped the tool. `parity`
 marks tools added by the API-parity pass that re-checked this client against
 Favro's published REST docs.
@@ -84,7 +94,7 @@ See the [README](../README.md) for install, auth and troubleshooting.
 | `favro_add_comment_to_card` | 6 | Mutating. Adds a comment to a card identified by one of `card_common_id` / `card_id` / `sequential_id` / `search_query`. With `search_query`, also pass `widget_common_id` OR `collection_id` for scope; the tool refuses ambiguous matches (top-2 search scores within 0.2) by returning the candidate list so the LLM can re-run with an explicit `card_common_id`. Comments aren't cached at the resolver layer. |
 | `favro_add_tag_to_card` | 6 | Mutating. Adds an existing tag to a card by tag NAME. **Hard-fails on unknown names** — typo prevention is the whole point. To add a brand-new tag, call `favro_create_tag` first. To bypass the exact-match guard (or to use a tagId directly), use `favro_update_card` with `add_tag_ids`. |
 | `favro_remove_tag_from_card` | 6 | Mutating. Removes a tag from a card by tag NAME. Same hard-fail semantics as add. |
-| `favro_upload_attachment` | 7 | Mutating. Uploads a local file as an attachment on a card via raw-bytes POST. Inputs: `card_id`, `file_path` (absolute), optional `filename` (defaults to the file's basename) and `mime_type` (omit to let Favro infer from the extension). Local file paths only — base64-inline body is deferred. 8 MiB upload cap enforced locally. Returns the created attachment object `{name, fileURL}` (Favro echoes the attachment, not the updated Card — verified live). Live success invalidates the search-cards cache. Pass `dry_run: true` to preview. |
+| `favro_upload_attachment` | 7 | Mutating. Uploads a local file as an attachment on a card via raw-bytes POST. Inputs: `card_id`, `file_path` (inside `FAVRO_UPLOAD_DIR`: relative to it, or absolute within it), optional `filename` (defaults to the file's basename) and `mime_type` (omit to let Favro infer from the extension). Local file paths only — base64-inline body is deferred. 8 MiB upload cap enforced locally. Returns the created attachment object `{name, fileURL}` (Favro echoes the attachment, not the updated Card — verified live). Live success invalidates the search-cards cache. Pass `dry_run: true` to preview. |
 | `favro_upload_comment_attachment` | parity | Mutating. Same contract as `favro_upload_attachment`, addressed by `comment_id` — the file lands on a comment rather than on the card itself. |
 | `favro_remove_attachment` | parity | **Destructive.** Detaches files from a card. Favro has no per-attachment DELETE; removal rides on `removeAttachments` in `PUT /cards/{cardId}`, and the list is matched by attachment **URL**, not display name — pass the `fileURL` values from `favro_get_card_full` or from an upload response. Favro returns 200 whether or not anything matched, so verify by re-reading the card. Not yet verified against a live tenant. Live success invalidates the search-cards cache. Pass `dry_run: true` to preview. |
 | `favro_list_tasks` | parity | Read-only. Lists checklist items on a card. Favro calls checklist items "tasks" and the checklists that hold them "tasklists". `card_common_id` required (cross-widget identity, not `card_id`); `task_list_id` narrows to one checklist. `favro_get_card_full` already reports done/total counts — reach for this when the item names matter. Optional `page` + `request_id`. |

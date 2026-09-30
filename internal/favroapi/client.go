@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/favro-mcp/internal/auth"
+	"github.com/mmedum/favro-mcp/v3/internal/auth"
 )
 
 const (
@@ -489,12 +489,16 @@ func classifyClientError(resp *http.Response) error {
 	}
 }
 
+// DryRun reports whether a write on ctx stops at its dry-run record:
+// the context asks for one, or the client forces them.
+func (c *Client) DryRun(ctx context.Context) bool { return c.ForceDryRun || IsDryRun(ctx) }
+
 // shouldDryRun returns true for mutating methods when the client or the
 // context has dry-run enabled. GETs always go through.
 func shouldDryRun(c *Client, ctx context.Context, method string) bool {
 	switch method {
 	case http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
-		return c.ForceDryRun || IsDryRun(ctx)
+		return c.DryRun(ctx)
 	default:
 		return false
 	}

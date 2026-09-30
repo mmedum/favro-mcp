@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
 )
 
 // ============================================================

@@ -18,8 +18,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/internal/auth"
-	"github.com/mmedum/favro-mcp/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/auth"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
 )
 
 // Token is a credential triple shaped like a credential triple and

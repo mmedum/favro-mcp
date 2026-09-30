@@ -5,7 +5,7 @@
   "display_name": "Favro",
   "version": "0.0.0-placeholder",
   "description": "Favro as MCP tools: read and write cards, collections, widgets, comments, custom fields and attachments, by name rather than by id.",
-  "long_description": "A single Go binary that speaks MCP over stdio, on your own machine, against your own Favro organization. macOS, Windows and Linux, on both architectures each. There is no server to host.\n\nYou need three things from Favro, and this install asks for all three: the email you sign in with, an API token, and the id of the organization to work in. Create the token in Favro under My Profile → API tokens. The organization id is the 24-character value in the URL when you open your organization in a browser — or install, run `favro-mcp doctor --show-ids` from a terminal, and it will list the ones your token can see.\n\nThe server is single-organization: it binds to that id at startup and no tool takes another. The delete-style tools are not registered unless FAVRO_ENABLE_DESTRUCTIVE is set, which the bundle does not set.",
+  "long_description": "A single Go binary that speaks MCP over stdio, on your own machine, against your own Favro organization. macOS, Windows and Linux, on both architectures each. There is no server to host.\n\nYou need three things from Favro, and this install asks for all three: the email you sign in with, an API token, and the id of the organization to work in. Create the token in Favro under My Profile → API tokens. The organization id is the 24-character value in the URL when you open your organization in a browser — or install, run `favro-mcp doctor --show-ids` from a terminal, and it will list the ones your token can see.\n\nThe server is single-organization: it binds to that id at startup and no tool takes another. The delete-style tools are not registered unless FAVRO_ENABLE_DESTRUCTIVE is set, which the bundle does not set. Uploading files to cards is off unless you choose an upload folder, and only files in it can be sent.",
   "author": {
     "name": "mmedum",
     "url": "https://github.com/mmedum"
@@ -33,7 +33,8 @@
       "env": {
         "FAVRO_USER_EMAIL": "${user_config.user_email}",
         "FAVRO_API_TOKEN": "${user_config.api_token}",
-        "FAVRO_ORGANIZATION_ID": "${user_config.organization_id}"
+        "FAVRO_ORGANIZATION_ID": "${user_config.organization_id}",
+        "FAVRO_UPLOAD_DIR": "${user_config.upload_dir}"
       },
       "platform_overrides": {
         "linux": {
@@ -64,6 +65,12 @@
       "title": "Organization id",
       "description": "The 24-character id of the organization to work in. This server binds to one and no tool takes another.",
       "required": true
+    },
+    "upload_dir": {
+      "type": "directory",
+      "title": "Upload folder",
+      "description": "The one folder files can be attached to cards from. Nothing outside it is read. Leave empty to turn uploads off.",
+      "required": false
     }
   },
   "compatibility": {

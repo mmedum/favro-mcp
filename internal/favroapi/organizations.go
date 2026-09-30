@@ -3,7 +3,7 @@ package favroapi
 import (
 	"context"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
 )
 
 // ListOrganizations returns one page of organizations the API token

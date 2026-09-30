@@ -7,9 +7,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
-	"github.com/mmedum/favro-mcp/internal/favroapi"
-	"github.com/mmedum/favro-mcp/internal/service"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/render"
+	"github.com/mmedum/favro-mcp/v3/internal/service"
 )
 
 const (
@@ -53,19 +54,31 @@ type deleteCollectionInput struct {
 	CollectionID string `json:"collection_id" jsonschema:"the Favro collectionId to delete"`
 }
 
+// publicSharing is the one sharing mode that reaches past the
+// organization: anyone on the internet with the link.
+func publicSharing(mode string) bool { return strings.EqualFold(strings.TrimSpace(mode), "public") }
+
 func registerCreateCollection(reg *registry, r *service.Resolver) {
-	addTool(reg, &mcp.Tool{
+	addAsking(reg, &mcp.Tool{
 		Name: createCollectionToolName,
 		Description: "Create a new Favro collection. `name` is required. Sharing defaults " +
 			"to specific-users-only; pass `public_sharing: 'organization'` for org-wide " +
 			"visibility. Use `share_to_users` to invite people (each entry needs email or " +
 			"userId plus a role). Successful live writes invalidate the collection cache. " +
-			"Pass `dry_run: true` to preview the request without contacting Favro.",
+			"Pass `dry_run: true` to preview the request without contacting Favro." +
+			asksFirstWhen("With `public_sharing: 'public'`"),
 		Annotations: mutating("Create Favro collection", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createCollectionInput) (*mcp.CallToolResult, writeOutput[favro.Collection], error) {
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
+		}
+		if publicSharing(in.PublicSharing) {
+			if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
+				return render.AskPublicCollection(createCollectionToolName, "", in.Name, true), nil
+			}); err != nil {
+				return nil, writeOutput[favro.Collection]{}, err
+			}
 		}
 		out, err := runWrite(
 			func() (favro.Collection, error) {
@@ -95,19 +108,33 @@ func registerCreateCollection(reg *registry, r *service.Resolver) {
 }
 
 func registerUpdateCollection(reg *registry, r *service.Resolver) {
-	addTool(reg, &mcp.Tool{
+	addAsking(reg, &mcp.Tool{
 		Name: updateCollectionToolName,
 		Description: "Update a Favro collection. Every body field is optional — pass at " +
 			"least one. `archive: true` archives, `archive: false` unarchives, omit to keep " +
 			"current. Membership uses two separate lists: `share_to_users` invites people " +
 			"who aren't in the collection yet, while `members` re-roles or (with " +
 			"`delete: true`) removes people who already are. Successful live writes " +
-			"invalidate the collection cache. Pass `dry_run: true` to preview.",
+			"invalidate the collection cache. Pass `dry_run: true` to preview." +
+			asksFirstWhen("When `public_sharing: 'public'` makes a collection public that was not"),
 		Annotations: mutating("Update Favro collection", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateCollectionInput) (*mcp.CallToolResult, writeOutput[favro.Collection], error) {
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
+		}
+		if publicSharing(in.PublicSharing) {
+			// Asked only when it widens: the collection's own sharing is
+			// read, not assumed from the call.
+			if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
+				col, err := r.Client().GetCollection(ctx, in.CollectionID)
+				if err != nil || publicSharing(col.PublicSharing) {
+					return render.Question{}, err
+				}
+				return render.AskPublicCollection(updateCollectionToolName, in.CollectionID, col.Name, false), nil
+			}); err != nil {
+				return nil, writeOutput[favro.Collection]{}, err
+			}
 		}
 		out, err := runWrite(
 			func() (favro.Collection, error) {
@@ -137,18 +164,24 @@ func registerUpdateCollection(reg *registry, r *service.Resolver) {
 }
 
 func registerDeleteCollection(reg *registry, r *service.Resolver) {
-	addTool(reg, &mcp.Tool{
+	addAsking(reg, &mcp.Tool{
 		Name: deleteCollectionToolName,
 		Description: "Delete a Favro collection by its collectionId. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Favro does not cascade-delete widgets when a " +
 			"collection is removed; widgets that lived only in this collection may become " +
 			"orphaned. On success the collection / widget / search-cards caches are " +
-			"invalidated. Pass `dry_run: true` to preview.",
+			"invalidated. Pass `dry_run: true` to preview." + asksFirst,
 		Annotations: mutating("Delete Favro collection", true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteCollectionInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
+		}
+		if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
+			col, err := r.Client().GetCollection(ctx, in.CollectionID)
+			return render.AskDeleteCollection(in.CollectionID, col.Name), err
+		}); err != nil {
+			return nil, writeOutput[struct{}]{}, err
 		}
 		out, err := runWrite(
 			func() (struct{}, error) {

@@ -11,14 +11,15 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
 )
 
-// writeTempFile drops `content` into a tmp file under t.TempDir and
+// writeTempFile drops `content` into a file in t's upload directory and
 // returns its absolute path. Used by every upload test.
 func writeTempFile(t *testing.T, name string, content []byte) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), name)
+	path := filepath.Join(uploadDirOf(t), name)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatalf("os.WriteFile(path, content, 0o600): %v", err)
 	}
@@ -151,7 +152,10 @@ func TestMCP_UploadAttachment_DryRun(t *testing.T) {
 func TestMCP_UploadAttachment_PathNotAFile(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := filepath.Join(uploadDirOf(t), "folder")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	cs := connectInMemoryWith(t, favroFixture(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
@@ -207,3 +211,90 @@ func TestMCP_UploadAttachment_MissingRequiredFields(t *testing.T) {
 // Phase 7.1). MCP-layer tests for it are gated until the right wire
 // shape is found; see favro.RemoveAttachment for the favro-layer
 // stub kept for future investigation.
+
+// The upload tools read inside FAVRO_UPLOAD_DIR and nowhere else: a path
+// relative to it or absolute within it is read, and a "..", an absolute
+// path elsewhere, or a link out of it is refused before anything is
+// read or sent.
+func TestMCP_UploadAttachment_ReadsOnlyTheUploadDir(t *testing.T) {
+	t.Parallel()
+
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("not for upload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := uploadDirOf(t)
+	inside := writeTempFile(t, "inside.txt", []byte("fine"))
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeTempFile(t, filepath.Join("sub", "deep.txt"), []byte("fine"))
+	if err := os.Symlink(outside, filepath.Join(dir, "link.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	var posts atomic.Int32
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posts.Add(1)
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"name":"x","fileURL":"https://favro.invalid/x"}`))
+	}))
+	cs := connectInMemoryWith(t, c)
+
+	for _, tc := range []struct {
+		path string
+		want string // "" when the upload goes through
+	}{
+		{"inside.txt", ""},
+		{inside, ""},
+		{"sub/deep.txt", ""},
+		{filepath.Join(dir, "sub", "..", "inside.txt"), ""},
+		{"../secret.txt", "inside FAVRO_UPLOAD_DIR"},
+		{outside, "inside FAVRO_UPLOAD_DIR"},
+		{"link.txt", "inside FAVRO_UPLOAD_DIR"},
+		{"sub/../../secret.txt", "inside FAVRO_UPLOAD_DIR"},
+		{"missing.txt", "[not_found]"},
+	} {
+		before := posts.Load()
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+			Name:      uploadAttachmentToolName,
+			Arguments: map[string]any{"card_id": "ci-1", "file_path": tc.path},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := serializedResponseString(t, res)
+		sent := posts.Load() - before
+		switch {
+		case tc.want == "" && (res.IsError || sent != 1):
+			t.Errorf("%s: refused: %s", tc.path, out)
+		case tc.want != "" && (!res.IsError || !strings.Contains(out, tc.want) || sent != 0):
+			t.Errorf("%s: %d sent: %s", tc.path, sent, out)
+		case tc.want != "" && strings.Contains(out, "secret"):
+			t.Errorf("%s: the refusal repeats the path: %s", tc.path, out)
+		}
+	}
+}
+
+// Without FAVRO_UPLOAD_DIR the upload tools are not registered.
+func TestUploadToolsNeedAnUploadDir(t *testing.T) {
+	t.Parallel()
+
+	for _, dir := range []string{"", uploadDirOf(t)} {
+		cs := connectInMemoryOpts(t, favroapi.NewClient(fixtureToken()), Options{Destructive: true, UploadDir: dir})
+		res, err := cs.ListTools(t.Context(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, tool := range res.Tools {
+			if tool.Name == uploadAttachmentToolName || tool.Name == uploadCommentAttachmentToolName {
+				n++
+			}
+		}
+		if want := map[bool]int{true: 0, false: 2}[dir == ""]; n != want || len(res.Tools) < 80 {
+			t.Errorf("upload dir %q: %d upload tools of %d, want %d", dir, n, len(res.Tools), want)
+		}
+	}
+}

@@ -17,13 +17,13 @@ import "sort"
 // than a request — and it is the only way to exercise a delete against
 // a tenant somebody works in.
 func Steps() []Step {
-	steps := append(seedSteps(), optionSteps()...)
+	steps := append(SeedSteps(), optionSteps()...)
 	steps = append(steps, extraSteps()...)
 	sort.SliceStable(steps, func(i, j int) bool { return rank(steps[i]) < rank(steps[j]) })
 	return steps
 }
 
-// seedSteps fill the id pool, and they are hand-written because their
+// SeedSteps fill the id pool, and they are hand-written because their
 // dependencies are Favro's: columns are listed per widget, comments and
 // checklists per card, and a card listing needs a widget or a
 // collection to scope it.
@@ -33,7 +33,7 @@ func Steps() []Step {
 // the id it is there to fetch; and they set no filter, because a
 // generated `name` filter is what made the first run list zero tags and
 // then skip every step needing a tag id.
-func seedSteps() []Step {
+func SeedSteps() []Step {
 	return []Step{
 		{Tool: "favro_ping", Args: map[string]any{}, Why: "seed: the server answers at all"},
 		{Tool: "favro_list_organizations", Args: map[string]any{}, Why: "seed: an organization id"},
@@ -834,21 +834,31 @@ func optionSteps() []Step {
 			Tool: "favro_upload_attachment",
 			Args: map[string]any{
 				"card_id":   AnyCardID,
+				"file_path": UploadFolder,
+				"dry_run":   true,
+			},
+			ExpectError: "invalid",
+			Why:         "the not-a-regular-file guard, live: a folder must be refused before anything is read into memory",
+		},
+		{
+			Tool: "favro_upload_attachment",
+			Args: map[string]any{
+				"card_id":   AnyCardID,
 				"file_path": "/dev/null",
 				"dry_run":   true,
 			},
 			ExpectError: "invalid",
-			Why:         "the not-a-regular-file guard, live: a device node must be refused before anything is read into memory",
+			Why:         "the upload directory holds: a path outside FAVRO_UPLOAD_DIR is refused before it is opened",
 		},
 		{
 			Tool: "favro_upload_comment_attachment",
 			Args: map[string]any{
 				"comment_id": AnyCommentID,
-				"file_path":  "/dev/null",
+				"file_path":  "../" + UploadFile,
 				"dry_run":    true,
 			},
 			ExpectError: "invalid",
-			Why:         "the not-a-regular-file guard, live: a device node must be refused before anything is read into memory",
+			Why:         "the upload directory holds on the comment path: a .. out of it is refused",
 		},
 	}
 }
@@ -857,7 +867,7 @@ func optionSteps() []Step {
 // the remaining reads, then everything that mutates — which by then has
 // real ids to work with, and carries dry_run regardless.
 func rank(s Step) int {
-	for i, seed := range seedSteps() {
+	for i, seed := range SeedSteps() {
 		if seed.Tool == s.Tool && len(s.Args) == len(seed.Args) && s.Why == seed.Why {
 			return i
 		}

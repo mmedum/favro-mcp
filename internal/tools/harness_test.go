@@ -7,13 +7,14 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/internal/auth"
-	"github.com/mmedum/favro-mcp/internal/favroapi"
-	"github.com/mmedum/favro-mcp/internal/favroapi/favroapitest"
+	"github.com/mmedum/favro-mcp/v3/internal/auth"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v3/internal/favroapi/favroapitest"
 )
 
 // These forward to the one shared fixture; see favroapitest for why
@@ -112,7 +113,25 @@ func connectInMemoryWith(t *testing.T, favroClient *favroapi.Client) *mcp.Client
 	// harness that quietly dropped thirteen of them would turn that
 	// rule into a smaller promise. TestDestructiveToolsAreOptIn is
 	// where the default is checked.
-	return connectInMemoryOpts(t, favroClient, Options{Destructive: true})
+	// The upload directory is the test's own, for the same reason:
+	// without one the upload tools are not registered.
+	return connectInMemoryOpts(t, favroClient, Options{Destructive: true, UploadDir: uploadDirOf(t)})
+}
+
+// uploadDirs is each test's FAVRO_UPLOAD_DIR, made on first use.
+var uploadDirs sync.Map
+
+// uploadDirOf is t's upload directory: the one the harness registers
+// the upload tools with, and the one writeTempFile writes into.
+func uploadDirOf(t *testing.T) string {
+	t.Helper()
+	if dir, ok := uploadDirs.Load(t); ok {
+		return dir.(string)
+	}
+	dir := t.TempDir()
+	uploadDirs.Store(t, dir)
+	t.Cleanup(func() { uploadDirs.Delete(t) })
+	return dir
 }
 
 // connectInMemoryOpts is connectInMemoryWith with the server options
