@@ -299,7 +299,7 @@ indistinguishable from one that simply has not happened yet.
 | `rate_limited` | 429, carrying `retry_after_seconds` in the message. Distinct from `unavailable` because the correct response is to wait a named duration rather than to retry | wait the named number of seconds |
 | `ambiguous` | a name matching several candidates | choose one; do not retry the name |
 | `blocked` | a write the person did not confirm when asked, an answer that does not belong to the call, or one `FAVRO_REQUIRE_PROMPT` refuses because the client cannot ask (§9.2). Nothing was changed | do not make the call again unless the person asks for it |
-| `ambiguous_outcome` | the person confirmed a write and the call ended before its result came back, so it may have happened (§9.2) | read the resource to see; never repeat the write to find out |
+| `ambiguous_outcome` | a write that may have happened and whose result never came back: Favro answered 5xx, or the connection was lost after the request went out, or the person confirmed a write and the call ended before its result (§9.2) | read the resource to see; never repeat the write to find out |
 
 The fallback for an error that names no class is `invalid`, and that is
 measured rather than neutral: every error this server's own layer
@@ -706,9 +706,12 @@ Stdout carries JSON-RPC frames only; logs go to stderr through `slog`.
 
 ## 11. Reliability
 
-- **Retry**: 429 once, honoring `Retry-After` capped at 30s; 5xx three
-  attempts on a 250ms / 1s / 4s schedule. A single request is capped at
-  30s including retries.
+- **Retry**: 429 once, honoring `Retry-After` capped at 30s; a read's
+  5xx three attempts on a 250ms / 1s / 4s schedule. A write is sent
+  once: a 5xx, or a transport failure after the dial, is
+  `ambiguous_outcome`, because Favro does not deduplicate writes. A
+  failed dial sent nothing and stays `unavailable`. A single request is
+  capped at 30s including retries.
 - **Rate-limit observation**: every response's `X-RateLimit-*` headers
   are recorded, and `favro_rate_limit_status` reports the most recent
   snapshot without spending a call.
@@ -1162,6 +1165,7 @@ it; **asserted**, meaning believed and not yet held by anything.
 
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
+| 2026-10-01 | A write retried after a 5xx or a lost connection is safe | Read `execute`; tests drove each write method against a server answering 500 and 503, then 404, and against one that closes the connection after reading the request | **Verified here — false.** Every method was retried on 5xx, so a POST created twice and a DELETE retried into the 404 its own first attempt caused, reported as `not_found`. A transport error after send was `unavailable`, which says retry. Writes now go once and fail as `ambiguous_outcome`; the `*url.Error` text also carried the query, an upload's filename included, and is stripped |
 | 2026-09-30 | Post-write read-back of card placement and custom fields (#77) | On a dormant board: a probe card created, a Text field used by no card on the board set, a Text field from another board set, moved to a second column with `favro_move_card`, moved back with `favro_update_card`, moved with `skip_verify`, then deleted and read back as gone. A second probe card set the Text field most cards on the board carry. Also read which fields the board's cards carry against each field's `widgetCommonId` | **Verified here.** Both moves read back verified; `skip_verify` added no note. Both unused fields came back absent from `customFields` after a 200, and the tool said so. The used field read back present with the value written, as `{customFieldId, value}`. The board's cards carry values for fields whose `widgetCommonId` is another board, so `widgetCommonId` does not say where a field is enabled. Not probed: a move Favro echoes but does not store (none seen), a cross-board write (it would add a card to a second board), and lanes (§15) |
 | 2026-09-30 | Asking the person works against a real organization | `livefavro -asks` on a build of this branch: a probe tag it created, deleted with a decline (still there) and then an accept (gone); both card upload and a public collection asked with names read from Favro and declined, and the collection read back as not created | **Verified here**, on protocol 2025-11-25, where the SDK asks inside the call. 2026-07-28 is stateless in go-sdk v1.8.0 (`server/discover` and per-request `_meta`), which the raw-JSON-RPC driver does not speak, so its round trip is held by the in-memory tests only. The comment upload was skipped: the organization has no comment to attach to |
 | 2026-09-30 | The SDK sends no `structuredContent` for a result that asks | Read `mcp/server.go:438–446` of go-sdk v1.8.0 in the module cache: when the handler's result has `InputRequests`, the output is not marshaled | **Verified here.** `addTool` must not fill `Content` for such a result either, since content and input requests are exclusive on the wire; it checks `InputRequests` before rendering a summary |

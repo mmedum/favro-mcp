@@ -125,8 +125,12 @@ func TestRedactPathIDs(t *testing.T) {
 		"/cards/" + markerCardID + "/attachments": "/cards/{id}/attachments",
 		"/comments/" + markerCardCommonID:         "/comments/{id}",
 		"/customfields":                           "/customfields",
-		"":                                        "",
-		"/":                                       "/",
+		// Favro's ids are lowercase hex, exactly 24 long: the boundary.
+		"/cards/aaaa456789abcdef01234567": "/cards/{id}",
+		// Endpoint names keep every letter and digit they use.
+		"/api/v1/organizations": "/api/v1/organizations",
+		"":                      "",
+		"/":                     "/",
 	}
 	for in, want := range cases {
 		if got := redactPathIDs(in); got != want {

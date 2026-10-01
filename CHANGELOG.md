@@ -8,6 +8,10 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Fixed
+- A write is sent once. A 5xx or a connection lost after the request went out used to repeat it, which could create a card or post a comment twice and report a retried delete as `not_found`; it is now `[ambiguous_outcome]` and says to read before writing again. Reads still retry a 5xx.
+- A transport error no longer repeats the request's query string, where an upload's filename rides.
+
 ## [3.1.0] - 2026-09-30
 
 ### Added

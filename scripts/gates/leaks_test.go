@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -23,6 +24,9 @@ func TestFindLeaksCatchesEachShape(t *testing.T) {
 		{"a token in the environment", "FAVRO_API_TOKEN=b2c3d4e5f6a7b8c9d0e1f2a3b4c5", "API token"},                      // leakcheck:allow gitleaks:allow
 		{"a link into the app", "see https://favro.com/organization/zk4CJpg5uozhL4R2W/board", "link into the Favro app"}, // leakcheck:allow
 		{"a card reference", "fixed in ZZQ-4182 yesterday", "card reference"},                                            // leakcheck:allow
+		{"a reserved name under a real country code", "someone@example.dk", "address at a real domain"},                  // leakcheck:allow
+		{"a reserved label inside a real domain", "someone@corp.test.com", "address at a real domain"},                   // leakcheck:allow
+		{"a real domain ending in a reserved name", "someone@notexample.com", "address at a real domain"},                // leakcheck:allow
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			found := findLeaks(tc.text)
@@ -41,14 +45,19 @@ func TestFindLeaksCatchesEachShape(t *testing.T) {
 // first run over this repository.
 func TestFindLeaksLeavesTheRepositoryAlone(t *testing.T) {
 	for _, tc := range []struct{ name, text string }{
-		{"a reserved documentation domain", "user@example.test and user@example.com"},             // leakcheck:allow
-		{"a Go identifier used as a value", `{"organization_id": smokeOrgID}`},                    // leakcheck:allow
-		{"a hyphenated fixture id", `OrganizationID: "org-stored"`},                               // leakcheck:allow
-		{"a synthetic id that says so", `"cardId": "synthetic0000000000000001"`},                  // leakcheck:allow
-		{"a standards citation", "ISO-8601 and GO-2026-4971 and BSD-3-Clause"},                    // leakcheck:allow
-		{"a git SHA", "pinned at 3d3c42e5aac5ba805825da76410c181273ba90b1"},                       // leakcheck:allow
-		{"the bare API host", "https://favro.com/api/v1/cards"},                                   // leakcheck:allow
-		{"a marked line", "FAVRO_API_TOKEN=b2c3d4e5f6a7b8c9d0e1f2a3b4c5 // " + "leakcheck:allow"}, // gitleaks:allow
+		{"a reserved documentation domain", "user@example.test and user@example.com"},                          // leakcheck:allow
+		{"a Go identifier used as a value", `{"organization_id": smokeOrgID}`},                                 // leakcheck:allow
+		{"a hyphenated fixture id", `OrganizationID: "org-stored"`},                                            // leakcheck:allow
+		{"a synthetic id that says so", `"cardId": "synthetic0000000000000001"`},                               // leakcheck:allow
+		{"a standards citation", "ISO-8601 and GO-2026-4971 and BSD-3-Clause"},                                 // leakcheck:allow
+		{"a git SHA", "pinned at 3d3c42e5aac5ba805825da76410c181273ba90b1"},                                    // leakcheck:allow
+		{"the bare API host", "https://favro.com/api/v1/cards"},                                                // leakcheck:allow
+		{"a marked line", "FAVRO_API_TOKEN=b2c3d4e5f6a7b8c9d0e1f2a3b4c5 // " + "leakcheck:allow"},              // gitleaks:allow
+		{"reserved names, any case and depth", "a@mail.invalid b@host.localhost c@corp.example D@EXAMPLE.ORG"}, // leakcheck:allow
+		{"a synthetic id made of a run", `"cardId": "aaaa0000000000000000bbbb"`},                               // leakcheck:allow
+		{"an invented organization id in the environment", "FAVRO_ORGANIZATION_ID=org-fixture-1"},              // leakcheck:allow
+		{"an invented token by keyword", `"api_token": "fixture-token-0123456789"`},                            // leakcheck:allow
+		{"an invented token in the environment", "FAVRO_API_TOKEN=placeholder-0123456789"},                     // leakcheck:allow
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if found := findLeaks(allowed(tc.text)); len(found) > 0 {
@@ -123,8 +132,15 @@ func TestLeaksReadsTheRepository(t *testing.T) {
 	if err := leaks(&out, nil); err != nil {
 		t.Fatalf("the repository should be clean: %v", err)
 	}
-	if !strings.Contains(out.String(), "files scanned") {
-		t.Errorf("the gate must say how much it read, got %q", out.String())
+	var scanned int
+	if _, err := fmt.Sscanf(out.String(), "leaks ok: %d files scanned", &scanned); err != nil {
+		t.Fatalf("the gate must say how much it read, got %q: %v", out.String(), err)
+	}
+	// The repository held 298 text files on 2026-10-01; the floor sits
+	// well below that so it fails on a scan that stopped reading, not
+	// on a cleanup.
+	if scanned < 200 {
+		t.Errorf("leaks scanned %d files, want at least 200", scanned)
 	}
 }
 

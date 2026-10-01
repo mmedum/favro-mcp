@@ -21,7 +21,7 @@ func TestMCP_ListCards_HappyPath(t *testing.T) {
 			Pages:     2,
 			RequestID: "req-cards",
 			Entities: []favro.Card{
-				{CardCommonID: "card-c-1", Name: "Print visitor passes", SequentialID: 42},
+				{CardCommonID: "card-c-1", Name: "Water the office plants", SequentialID: 42},
 			},
 		})
 	}))
@@ -42,8 +42,8 @@ func TestMCP_ListCards_HappyPath(t *testing.T) {
 	if len(out.Items) != 1 {
 		t.Fatalf("len(out.Items) = %d, want 1", len(out.Items))
 	}
-	if got := out.Items[0].Name; got != "Print visitor passes" {
-		t.Errorf("out.Items[0].Name = %v, want %v", got, "Print visitor passes")
+	if got := out.Items[0].Name; got != "Water the office plants" {
+		t.Errorf("out.Items[0].Name = %v, want %v", got, "Water the office plants")
 	}
 	if got := out.Items[0].SequentialID; got != 42 {
 		t.Errorf("out.Items[0].SequentialID = %v, want %v", got, 42)

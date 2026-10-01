@@ -111,6 +111,23 @@ func (e *TransientError) Error() string {
 	return fmt.Sprintf("Favro transient failure (HTTP %d after %d attempts)", e.Status, e.Attempts)
 }
 
+// AmbiguousWriteError is a write that may have reached Favro and whose
+// answer did not come back: a 5xx, or a connection lost after the
+// request went out. Favro does not deduplicate writes, so it is never
+// sent again, and the caller is told to read before it does anything.
+type AmbiguousWriteError struct {
+	Method string
+	Path   string
+	Err    error
+}
+
+func (e *AmbiguousWriteError) Error() string {
+	return fmt.Sprintf("Favro %s %s may have been applied: %v. Do not repeat it; read the resource first to see whether it took effect",
+		e.Method, e.Path, e.Err)
+}
+
+func (e *AmbiguousWriteError) Unwrap() error { return e.Err }
+
 // APIError is the catch-all for any non-success status the typed
 // errors above don't cover.
 type APIError struct {
@@ -214,6 +231,10 @@ func (e *ValidationError) ErrorClass() render.Class { return render.ClassInvalid
 
 // ErrorClass reports a 5xx that survived the retry budget.
 func (e *TransientError) ErrorClass() render.Class { return render.ClassUnavailable }
+
+// ErrorClass reports a write that may have happened. It wins over the
+// class of what it wraps, because unavailable says to retry.
+func (e *AmbiguousWriteError) ErrorClass() render.Class { return render.ClassAmbiguousOutcome }
 
 // ErrorClass reports a write Favro accepted and did not perform.
 //
