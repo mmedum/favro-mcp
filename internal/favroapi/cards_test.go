@@ -508,6 +508,17 @@ func TestCreateCard_HappyPath(t *testing.T) {
 			"tagIds":["t-1","t-2"],
 			"assignmentIds":["u-1"]
 		}`, rec.Body)
+		// An unset format is markdown on a write, so the card that comes
+		// back shows the description as Favro stored it.
+		if got := rec.Query.Get("descriptionFormat"); got != "markdown" {
+			t.Errorf("descriptionFormat = %q, want %q", got, "markdown")
+		}
+		if got := rec.Headers.Get("Content-Type"); got != "application/json" {
+			t.Errorf("Content-Type = %q, want %q", got, "application/json")
+		}
+		if got := rec.Headers.Get("User-Agent"); got != "favro-mcp/client" {
+			t.Errorf("User-Agent = %q, want %q", got, "favro-mcp/client")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"cardId":"ci-new","cardCommonId":"cc-new","name":"new card","widgetCommonId":"w-1","columnId":"col-1"}`))
 	}}

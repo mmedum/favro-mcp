@@ -776,3 +776,30 @@ func TestDo_TransportErrorCarriesNoQuery(t *testing.T) {
 		}
 	}
 }
+
+// TestDecodeErrorCarriesABoundedBodyPrefix pins the diagnostic on a
+// response that does not decode: the start of the body, clipped at 256
+// bytes, so a malformed answer is recognizable from the tool error.
+func TestDecodeErrorCarriesABoundedBodyPrefix(t *testing.T) {
+	t.Parallel()
+
+	// Valid JSON for 400 bytes, then broken, so the decoder reads past
+	// the cap before it fails.
+	body := `{"name":"` + strings.Repeat("x", 400) + `",}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	var out map[string]any
+	err := c.GetJSON(context.Background(), "/cards", nil, &out)
+	if err == nil {
+		t.Fatal("GetJSON of a broken body: no error")
+	}
+	want := fmt.Sprintf("body-prefix=%q)", `{"name":"`+strings.Repeat("x", 247))
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("GetJSON of a broken body: error %q, want it to contain %q", err, want)
+	}
+}

@@ -116,6 +116,22 @@ func TestUploadAttachment_OversizeCap(t *testing.T) {
 	}
 }
 
+// TestUploadAttachment_ExactlyAtCapIsAllowed is the other side of the
+// cap: a file of exactly the limit goes through.
+func TestUploadAttachment_ExactlyAtCapIsAllowed(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	atCap := make([]byte, UploadAttachmentMaxBytes)
+	_, err := c.UploadAttachment(WithDryRun(context.Background()), "ci-1", "x.txt", "", atCap)
+	if !errors.Is(err, ErrDryRun) {
+		t.Errorf("upload of exactly %d bytes: got %v, want the dry-run record", UploadAttachmentMaxBytes, err)
+	}
+}
+
 // TestUploadAttachment_DryRun_ReturnsRecord pins the dry-run
 // contract. Body is the raw bytes; Content-Type override survives
 // to the redacted DryRunRecord headers.
