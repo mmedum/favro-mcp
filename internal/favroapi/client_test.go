@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mmedum/favro-mcp/v3/internal/auth"
+	"github.com/mmedum/favro-mcp/v3/internal/render"
 )
 
 // fixtureToken provides obviously-fake credentials for tests. None of
@@ -657,5 +658,121 @@ func TestDryRun_ForceDryRunOnClient_NoRoundTrip(t *testing.T) {
 	err := c.PostJSON(context.Background(), "/tags", map[string]any{"name": "x"}, nil)
 	if !errors.Is(err, ErrDryRun) {
 		t.Fatalf("got %v, want ErrDryRun", err)
+	}
+}
+
+// TestDo_WriteIsNotRepeatedAfter5xx pins that a write is sent once.
+// Favro answering 5xx does not say the write failed, only that the
+// answer did; a second POST creates a second card. The error has to say
+// the write may have landed, so the caller reads before it retries.
+func TestDo_WriteIsNotRepeatedAfter5xx(t *testing.T) {
+	t.Parallel()
+
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		for _, status := range []int{http.StatusInternalServerError, http.StatusServiceUnavailable} {
+			t.Run(fmt.Sprintf("%s_%d", method, status), func(t *testing.T) {
+				t.Parallel()
+				var calls atomic.Int32
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					// A retried DELETE would see the card gone; the 404
+					// must never be what the caller is told.
+					if calls.Add(1) > 1 {
+						w.WriteHeader(http.StatusNotFound)
+						return
+					}
+					w.WriteHeader(status)
+				}))
+				t.Cleanup(srv.Close)
+				c := newTestClient(srv)
+
+				resp, err := c.Do(context.Background(), method, "/cards", nil, map[string]string{"name": "x"})
+				drainAndClose(resp)
+				if got := calls.Load(); got != 1 {
+					t.Errorf("%s answered %d: sent %d times, want 1", method, status, got)
+				}
+				if got := render.Classify(err); got != render.ClassAmbiguousOutcome {
+					t.Errorf("%s answered %d: class %q (%v), want %q", method, status, got, err, render.ClassAmbiguousOutcome)
+				}
+			})
+		}
+	}
+}
+
+// TestDo_WriteCutOffAfterSendIsAmbiguous covers a connection that dies
+// after the request went out: the write may have landed.
+func TestDo_WriteCutOffAfterSendIsAmbiguous(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack: %v", err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	cases := []struct {
+		method string
+		want   render.Class
+	}{
+		{http.MethodGet, render.ClassUnavailable},
+		{http.MethodPost, render.ClassAmbiguousOutcome},
+		{http.MethodDelete, render.ClassAmbiguousOutcome},
+	}
+	for _, tc := range cases {
+		calls.Store(0)
+		resp, err := c.Do(context.Background(), tc.method, "/cards", nil, nil)
+		drainAndClose(resp)
+		if got := render.Classify(err); got != tc.want {
+			t.Errorf("%s cut off after send: class %q (%v), want %q", tc.method, got, err, tc.want)
+		}
+		if tc.method != http.MethodGet {
+			if got := calls.Load(); got != 1 {
+				t.Errorf("%s cut off after send: sent %d times, want 1", tc.method, got)
+			}
+		}
+	}
+}
+
+// TestDo_WriteThatNeverConnectedIsUnavailable covers the one transport
+// failure that proves nothing was sent: the dial itself failed.
+func TestDo_WriteThatNeverConnectedIsUnavailable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.NotFoundHandler())
+	c := newTestClient(srv)
+	srv.Close() // nothing listens on the address any more
+
+	resp, err := c.Do(context.Background(), http.MethodPost, "/cards", nil, map[string]string{"name": "x"})
+	drainAndClose(resp)
+	if got := render.Classify(err); got != render.ClassUnavailable {
+		t.Errorf("POST to a closed port: class %q (%v), want %q", got, err, render.ClassUnavailable)
+	}
+}
+
+// TestDo_TransportErrorCarriesNoQuery pins that a transport failure
+// does not repeat the query string. An upload's filename rides there,
+// and *url.Error prints the whole URL.
+func TestDo_TransportErrorCarriesNoQuery(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.NotFoundHandler())
+	c := newTestClient(srv)
+	srv.Close()
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		resp, err := c.Do(context.Background(), method, "/cards/attachment", url.Values{"filename": {"canary-q7.pdf"}}, nil)
+		drainAndClose(resp)
+		if err == nil {
+			t.Fatalf("%s to a closed port: no error", method)
+		}
+		if strings.Contains(err.Error(), "canary-q7") {
+			t.Errorf("%s transport error carries the query: %v", method, err)
+		}
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -307,7 +308,10 @@ func (b *boundedBuffer) escapedString() string {
 // Retry policy (per plan §7):
 //   - 429: single retry honoring Retry-After capped at 30s, then
 //     RateLimitError.
-//   - 5xx: exponential backoff (250ms, 1s, 4s), max 3 attempts total.
+//   - 5xx on a read: exponential backoff (250ms, 1s, 4s), max 3
+//     attempts total.
+//   - 5xx on a write, or a write cut off after it was sent: never
+//     retried; AmbiguousWriteError.
 //   - 401 / 403 / 404: never retried.
 func (c *Client) Do(ctx context.Context, method, path string, query url.Values, body any, opts ...RequestOption) (*http.Response, error) {
 	method = strings.ToUpper(method)
@@ -383,7 +387,7 @@ func (c *Client) attempt(ctx context.Context, httpClient *http.Client, method, f
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("favro %s %s: %w", method, redactPath(fullURL), err)
+		return nil, transportError(method, fullURL, err)
 	}
 	if c.rl != nil {
 		c.rl.record(parseRateLimitHeaders(resp))
@@ -396,7 +400,7 @@ func (c *Client) attempt(ctx context.Context, httpClient *http.Client, method, f
 		return nil, c.handle429(ctx, resp, attempt)
 	}
 	if resp.StatusCode >= 500 {
-		return nil, c.handle5xx(ctx, resp, attempt)
+		return nil, c.handle5xx(ctx, resp, method, fullURL, attempt)
 	}
 	return nil, classifyClientError(resp)
 }
@@ -419,13 +423,55 @@ func (c *Client) handle429(ctx context.Context, resp *http.Response, attempt int
 }
 
 // handle5xx implements the exponential-backoff retry policy for 5xx.
-// Returns nil to signal "retry"; otherwise a TransientError.
-func (c *Client) handle5xx(ctx context.Context, resp *http.Response, attempt int) error {
+// Returns nil to signal "retry"; otherwise a TransientError. Only a
+// read is retried: a 5xx does not say a write failed, so a write is
+// sent once and its 5xx is an AmbiguousWriteError.
+func (c *Client) handle5xx(ctx context.Context, resp *http.Response, method, fullURL string, attempt int) error {
 	drainAndClose(resp)
+	if !safeToRepeat(method) {
+		return &AmbiguousWriteError{
+			Method: method,
+			Path:   redactPath(fullURL),
+			Err:    &TransientError{Status: resp.StatusCode, Attempts: attempt},
+		}
+	}
 	if attempt >= transientMaxAttempts {
 		return &TransientError{Status: resp.StatusCode, Attempts: attempt}
 	}
 	return sleepCtx(ctx, transientBackoffSchedule[attempt-1])
+}
+
+// transportError is a request that got no response. A write that got
+// past the dial may have reached Favro, so it is ambiguous rather than
+// unavailable, which would say to retry.
+func transportError(method, fullURL string, err error) error {
+	// *url.Error prints the whole URL, query included, and an upload's
+	// filename rides in the query.
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		urlErr.URL = redactPath(urlErr.URL)
+	}
+	err = fmt.Errorf("favro %s %s: %w", method, redactPath(fullURL), err)
+	if !safeToRepeat(method) && !failedToDial(err) {
+		return &AmbiguousWriteError{Method: method, Path: redactPath(fullURL), Err: err}
+	}
+	return err
+}
+
+// safeToRepeat reports whether a request may be sent again after it
+// may have reached Favro. Only reads: a repeated POST creates a second
+// card, and a repeated DELETE answers 404 for the card the first one
+// removed.
+func safeToRepeat(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead
+}
+
+// failedToDial reports whether err is a connection that was never
+// made, which is the one transport failure that proves the request
+// was not sent.
+func failedToDial(err error) bool {
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr.Op == "dial"
 }
 
 // buildRequest composes a fresh *http.Request for one attempt. The body
