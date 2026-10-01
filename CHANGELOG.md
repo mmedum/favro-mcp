@@ -8,6 +8,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-10-01
+
 ### Fixed
 - A write is sent once. A 5xx or a connection lost after the request went out used to repeat it, which could create a card or post a comment twice and report a retried delete as `not_found`; it is now `[ambiguous_outcome]` and says to read before writing again. Reads still retry a 5xx.
 - A transport error no longer repeats the request's query string, where an upload's filename rides.
@@ -350,7 +352,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/mmedum/favro-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/favro-mcp/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/mmedum/favro-mcp/compare/v2.1.1...v3.0.0
 [2.1.1]: https://github.com/mmedum/favro-mcp/compare/v2.1.0...v2.1.1
