@@ -611,7 +611,7 @@ func TestGetFullCard_HappyPath_ByCardID(t *testing.T) {
 		cards: []favro.Card{{
 			CardID:         "c-1",
 			CardCommonID:   "cc-1",
-			Name:           "Print visitor passes",
+			Name:           "Water the office plants",
 			WidgetCommonID: "w-1",
 			ColumnID:       "col-2",
 			Tags:           []string{"tag-1", "tag-missing"},
@@ -660,8 +660,8 @@ func TestGetFullCard_HappyPath_ByCardID(t *testing.T) {
 		t.Fatalf("err: %v", err)
 	}
 
-	if got := got.Name; got != "Print visitor passes" {
-		t.Errorf("got.Name = %v, want %v", got, "Print visitor passes")
+	if got := got.Name; got != "Water the office plants" {
+		t.Errorf("got.Name = %v, want %v", got, "Water the office plants")
 	}
 	if got := got.WidgetName; got != "Sprint Board" {
 		t.Errorf("got.WidgetName = %v, want %v", got, "Sprint Board")
@@ -730,7 +730,7 @@ func TestGetFullCard_HappyPath_BySequentialID(t *testing.T) {
 		cards: []favro.Card{{
 			CardID:             "c-1",
 			CardCommonID:       "cc-1",
-			Name:               "Visitor flow",
+			Name:               "Synthetic board",
 			SequentialID:       42,
 			SequentialIDPrefix: "VP",
 		}},
@@ -740,8 +740,8 @@ func TestGetFullCard_HappyPath_BySequentialID(t *testing.T) {
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if got := got.Name; got != "Visitor flow" {
-		t.Errorf("got.Name = %v, want %v", got, "Visitor flow")
+	if got := got.Name; got != "Synthetic board" {
+		t.Errorf("got.Name = %v, want %v", got, "Synthetic board")
 	}
 	if got := got.SequentialID; got != 42 {
 		t.Errorf("got.SequentialID = %v, want %v", got, 42)

@@ -189,13 +189,13 @@ func TestNamesAreNotRedacted(t *testing.T) {
 	t.Parallel()
 
 	r := New()
-	const line = `{"name":"Print visitor passes","cardId":"` + cardID + `"}`
+	const line = `{"name":"Water the office plants","cardId":"` + cardID + `"}`
 
 	got := r.String(line)
 	if strings.Contains(got, cardID) {
 		t.Errorf("the id must go: %q", got)
 	}
-	if !strings.Contains(got, "Print visitor passes") {
+	if !strings.Contains(got, "Water the office plants") {
 		t.Errorf("the name is expected to survive, and the doc says so: %q", got)
 	}
 }

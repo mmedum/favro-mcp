@@ -28,7 +28,7 @@ func TestListCards_NoFilters(t *testing.T) {
 				{
 					CardID:             "card-i-1",
 					CardCommonID:       "card-c-1",
-					Name:               "Print visitor passes",
+					Name:               "Water the office plants",
 					SequentialID:       42,
 					SequentialIDPrefix: "VP",
 					Position:           3,
@@ -54,8 +54,8 @@ func TestListCards_NoFilters(t *testing.T) {
 	if len(env.Entities) != 1 {
 		t.Fatalf("len(env.Entities) = %d, want 1", len(env.Entities))
 	}
-	if got := env.Entities[0].Name; got != "Print visitor passes" {
-		t.Errorf("env.Entities[0].Name = %v, want %v", got, "Print visitor passes")
+	if got := env.Entities[0].Name; got != "Water the office plants" {
+		t.Errorf("env.Entities[0].Name = %v, want %v", got, "Water the office plants")
 	}
 	if got := env.Entities[0].SequentialID; got != 42 {
 		t.Errorf("env.Entities[0].SequentialID = %v, want %v", got, 42)

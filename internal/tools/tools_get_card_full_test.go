@@ -23,7 +23,7 @@ func TestMCP_GetCardFull_HappyPath(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(favro.Card{
 				CardID:         "c-1",
 				CardCommonID:   "cc-1",
-				Name:           "Print visitor passes",
+				Name:           "Water the office plants",
 				WidgetCommonID: "w-1",
 				ColumnID:       "col-2",
 				Tags:           []string{"tag-1"},
@@ -70,8 +70,8 @@ func TestMCP_GetCardFull_HappyPath(t *testing.T) {
 	}
 
 	out := decodeStructured[service.FullCard](t, res)
-	if got := out.Name; got != "Print visitor passes" {
-		t.Errorf("out.Name = %v, want %v", got, "Print visitor passes")
+	if got := out.Name; got != "Water the office plants" {
+		t.Errorf("out.Name = %v, want %v", got, "Water the office plants")
 	}
 	if got := out.WidgetName; got != "Sprint Board" {
 		t.Errorf("out.WidgetName = %v, want %v", got, "Sprint Board")
