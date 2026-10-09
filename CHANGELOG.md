@@ -8,6 +8,12 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Changed
+- `golangci-lint` v2.13.2 → v2.14.0, and the minimum is now v2.14.0: older builds cannot read the type data Go 1.27.2 writes.
+
+### Security
+- Built with Go 1.27.2, which fixes ten advisories in `net/http`, its HTTP/2 code, `crypto/tls`, `net/textproto` and `os` that `govulncheck` found reachable from this server: [GO-2026-6603](https://pkg.go.dev/vuln/GO-2026-6603), [GO-2026-6604](https://pkg.go.dev/vuln/GO-2026-6604), [GO-2026-6605](https://pkg.go.dev/vuln/GO-2026-6605), [GO-2026-6607](https://pkg.go.dev/vuln/GO-2026-6607), [GO-2026-6608](https://pkg.go.dev/vuln/GO-2026-6608), [GO-2026-6610](https://pkg.go.dev/vuln/GO-2026-6610), [GO-2026-6611](https://pkg.go.dev/vuln/GO-2026-6611), [GO-2026-6612](https://pkg.go.dev/vuln/GO-2026-6612), [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613) and [GO-2026-6617](https://pkg.go.dev/vuln/GO-2026-6617).
+
 ## [3.1.1] - 2026-10-01
 
 ### Fixed

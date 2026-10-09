@@ -151,7 +151,7 @@ func UploadDir(raw string) (string, error) {
 		return "", fmt.Errorf("%q is not an absolute path", raw)
 	}
 	dir := filepath.Clean(raw)
-	info, err := os.Stat(dir)
+	info, err := os.Stat(dir) //nolint:gosec // G703: the person names this directory; it is checked absolute and cleaned above
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("%q cannot be read: %w", dir, err)
