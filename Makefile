@@ -23,7 +23,7 @@ BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
 # says so as "can't load config", which names the wrong thing. `gates
 # pins` holds each of these to exactly one version, and holds the
 # gitleaks pin to the one CI installs.
-GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 GOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@v1.8.0
 GOLICENSES    ?= github.com/google/go-licenses@v1.6.0
 GITLEAKS      ?= github.com/zricethezav/gitleaks/v8@v8.30.1

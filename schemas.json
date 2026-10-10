@@ -1639,6 +1639,9 @@
       }
     },
     {
+      "_meta": {
+        "anthropic/requiresUserInteraction": true
+      },
       "annotations": {
         "destructiveHint": false,
         "idempotentHint": false,
@@ -2961,6 +2964,9 @@
       }
     },
     {
+      "_meta": {
+        "anthropic/requiresUserInteraction": true
+      },
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
@@ -3052,6 +3058,9 @@
       }
     },
     {
+      "_meta": {
+        "anthropic/requiresUserInteraction": true
+      },
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
@@ -3401,6 +3410,9 @@
       }
     },
     {
+      "_meta": {
+        "anthropic/requiresUserInteraction": true
+      },
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
@@ -3486,6 +3498,9 @@
       }
     },
     {
+      "_meta": {
+        "anthropic/requiresUserInteraction": true
+      },
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
@@ -3741,6 +3756,9 @@
       }
     },
     {
+      "_meta": {
+        "anthropic/requiresUserInteraction": true
+      },
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
@@ -3826,6 +3844,9 @@
       }
     },
     {
+      "_meta": {
+        "anthropic/requiresUserInteraction": true
+      },
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": false,
@@ -10968,6 +10989,9 @@
       }
     },
     {
+      "_meta": {
+        "anthropic/requiresUserInteraction": true
+      },
       "annotations": {
         "destructiveHint": false,
         "idempotentHint": false,
@@ -12523,6 +12547,9 @@
       }
     },
     {
+      "_meta": {
+        "anthropic/requiresUserInteraction": true
+      },
       "annotations": {
         "destructiveHint": false,
         "idempotentHint": false,
@@ -12635,6 +12662,9 @@
       }
     },
     {
+      "_meta": {
+        "anthropic/requiresUserInteraction": true
+      },
       "annotations": {
         "destructiveHint": false,
         "idempotentHint": false,

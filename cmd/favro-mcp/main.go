@@ -174,11 +174,12 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 	client.ForceDryRun = *dryRun
 
 	opts := server.Options{
-		Destructive:      cfg.Destructive,
-		RequirePrompt:    cfg.RequirePrompt,
-		UploadDir:        cfg.UploadDir,
-		CredentialSource: rt.Source,
-		Version:          version.String(),
+		Destructive:             cfg.Destructive,
+		RequirePrompt:           cfg.RequirePrompt,
+		SuppressInteractionHint: cfg.SuppressInteractionHint,
+		UploadDir:               cfg.UploadDir,
+		CredentialSource:        rt.Source,
+		Version:                 version.String(),
 	}
 	logSurface(opts)
 
@@ -191,10 +192,14 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 	return nil
 }
 
-// logSurface says which of the opt-in tools this run registers.
+// logSurface says which of the opt-in tools this run registers, and
+// when the writes that ask the person go without the client's mark.
 func logSurface(opts server.Options) {
 	if opts.Destructive {
 		slog.Warn(config.EnvEnableDestructive + " is set — delete-style tools are registered and can run unattended")
+	}
+	if opts.SuppressInteractionHint {
+		slog.Warn(config.EnvInteractionHint + " is false — the writes that ask the person carry no requiresUserInteraction mark")
 	}
 	if opts.UploadDir != "" {
 		slog.Info(config.EnvUploadDir + " is set — the upload tools read files from that directory only")

@@ -21,8 +21,8 @@ make lint        # golangci-lint + gofumpt diff + goimports
 make build       # build ./bin/favro-mcp
 ```
 
-Go 1.27 required — `go.mod` is the single source of truth. `golangci-lint` must be
-v2.13.1 or newer; older builds refuse a config targeting Go 1.27.
+Go 1.27.2 required — `go.mod` is the single source of truth. `golangci-lint` must be
+v2.14.0 or newer; older builds cannot read the type data Go 1.27.2 writes.
 
 ## Dogfooding the local build
 
