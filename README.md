@@ -15,7 +15,7 @@ tool supports `dry_run`.
 
 > **Unofficial.** Not affiliated with or endorsed by Favro.
 
-**Requirements:** Go 1.27 to build from source; a Favro account with an API
+**Requirements:** Go 1.27.2 to build from source; a Favro account with an API
 token. See [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 ## Installation
@@ -54,7 +54,7 @@ cd favro-mcp
 make build       # → bin/favro-mcp
 ```
 
-Requires Go 1.27, the version `go.mod` declares. Under the default
+Requires Go 1.27.2, the version `go.mod` declares. Under the default
 `GOTOOLCHAIN=auto` an older toolchain downloads it on demand; under
 `GOTOOLCHAIN=local` the build fails instead of downgrading.
 
