@@ -8,6 +8,10 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- For a client that cannot ask the person, the ten writes the server asks about carry Claude Code's `requiresUserInteraction` mark, so Claude Code prompts before every call of them. A client that can ask never sees the mark, so the person answers once, to the server's question. With `FAVRO_REQUIRE_PROMPT` set there is no mark either, since the server refuses those calls.
+- `FAVRO_INTERACTION_HINT=false` drops that mark. Headless, Claude Code refuses a marked tool, so an unattended deployment whose client cannot ask needs it.
+
 ### Changed
 - `golangci-lint` v2.13.2 → v2.14.0, and the minimum is now v2.14.0: older builds cannot read the type data Go 1.27.2 writes.
 

@@ -677,6 +677,22 @@ instead. Two failures have classes of their own (§6.2): `blocked` for
 anything refused before the write, and `ambiguous_outcome` for a
 confirmed write whose result never came back.
 
+For such a client the ten tools carry Claude Code's
+`anthropic/requiresUserInteraction` mark, which makes Claude Code prompt
+on every call, under any allow rule. `addAsking` sets it, so a tool that
+asks has it and no other tool does. A client that can ask gets none:
+`tools/list` middleware drops the mark from a copy of each tool, since
+the server's tool is listed to every session. With both, the person
+would answer twice for one call, and only the server's question shows
+what the write acts on. That holds for the three tools that ask only
+sometimes too: the server asks in exactly the case they guard, and
+favro never marked their other calls. Under `FAVRO_REQUIRE_PROMPT` no
+tool is marked: the server refuses a client that cannot ask, and the
+client's prompt would ask the person to approve a call that cannot run.
+Headless, Claude Code refuses a marked tool, so
+`FAVRO_INTERACTION_HINT=false` drops the mark for an unattended
+deployment (§18, 2026-10-10).
+
 ## 10. Auth, config, process model
 
 Favro authenticates with **HTTP Basic: user email + API token**. There is
@@ -776,6 +792,7 @@ the standard lists it as a thing that bites).
 | Tag tools hard-fail unknown names | A typo cannot create an org-global tag; creating one is explicit |
 | Destructive tools behind an env flag | The delete-style tools leave the default surface; breaking change; changelog says why. Which ones is read from the annotation, never from a list |
 | Stdlib tests (A4) | Two dependencies gone; thousands of assertion lines rewritten once |
+| `requiresUserInteraction` only for a client that cannot ask (maintainer, 2026-10-09, for every server of theirs) | The ten asking tools prompt once in Claude Code, through the server's question. A Claude Code `Elicitation` hook that accepts confirms them alone, as it did before 3.2.0, when no tool had the mark. An unattended client that cannot ask sets `FAVRO_INTERACTION_HINT=false` |
 | API surface snapshot committed (A5) | CI holds the completeness claim offline; the fetch stays manual and is named in the release checklist |
 
 ## 15. What must be verified live
@@ -1165,6 +1182,7 @@ it; **asserted**, meaning believed and not yet held by anything.
 
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
+| 2026-10-10 | A tool the server asks about should also carry Claude Code's `requiresUserInteraction` mark | code.claude.com/docs/en/mcp, "Require approval for a specific tool" and "Respond to MCP elicitation requests", and /docs/en/hooks, "Elicitation output", as read for gitlab-mcp and google-chat-mcp on 2026-10-09 and 2026-10-10; MCP Go SDK v1.8.0 `ClientCapabilities`, which reads the request's `_meta` before the session's; `TestTheMarkIsOnlyForAClientThatCannotAsk` on three protocols as three kinds of client, which fails when the middleware edits the server's own tool | **Adopted, and held here by the test.** Claude Code prompts for a marked tool on every call, which no allow rule skips, and refuses one headless. With the server's question as well, a delete asked twice in google-docs-mcp. So only a client that cannot ask gets the mark, on exactly the ten tools that ask (§9.2). A client may declare form elicitation to `tools/list` and none to `tools/call`, and get neither the mark nor a question; it gains nothing, since a client that declares form elicitation can accept the question itself, and `FAVRO_REQUIRE_PROMPT=true` refuses such a call. One prompt in Claude Code not yet seen live |
 | 2026-10-01 | A write retried after a 5xx or a lost connection is safe | Read `execute`; tests drove each write method against a server answering 500 and 503, then 404, and against one that closes the connection after reading the request | **Verified here — false.** Every method was retried on 5xx, so a POST created twice and a DELETE retried into the 404 its own first attempt caused, reported as `not_found`. A transport error after send was `unavailable`, which says retry. Writes now go once and fail as `ambiguous_outcome`; the `*url.Error` text also carried the query, an upload's filename included, and is stripped |
 | 2026-09-30 | Post-write read-back of card placement and custom fields (#77) | On a dormant board: a probe card created, a Text field used by no card on the board set, a Text field from another board set, moved to a second column with `favro_move_card`, moved back with `favro_update_card`, moved with `skip_verify`, then deleted and read back as gone. A second probe card set the Text field most cards on the board carry. Also read which fields the board's cards carry against each field's `widgetCommonId` | **Verified here.** Both moves read back verified; `skip_verify` added no note. Both unused fields came back absent from `customFields` after a 200, and the tool said so. The used field read back present with the value written, as `{customFieldId, value}`. The board's cards carry values for fields whose `widgetCommonId` is another board, so `widgetCommonId` does not say where a field is enabled. Not probed: a move Favro echoes but does not store (none seen), a cross-board write (it would add a card to a second board), and lanes (§15) |
 | 2026-09-30 | Asking the person works against a real organization | `livefavro -asks` on a build of this branch: a probe tag it created, deleted with a decline (still there) and then an accept (gone); both card upload and a public collection asked with names read from Favro and declined, and the collection read back as not created | **Verified here**, on protocol 2025-11-25, where the SDK asks inside the call. 2026-07-28 is stateless in go-sdk v1.8.0 (`server/discover` and per-request `_meta`), which the raw-JSON-RPC driver does not speak, so its round trip is held by the in-memory tests only. The comment upload was skipped: the organization has no comment to attach to |

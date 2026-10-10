@@ -50,6 +50,13 @@ const (
 	// client cannot ask them, rather than making them on the arguments
 	// alone.
 	EnvRequirePrompt = "FAVRO_REQUIRE_PROMPT"
+
+	// EnvInteractionHint, set to false, takes Claude Code's
+	// requiresUserInteraction mark off the writes that ask the person.
+	// On by default. Claude Code prompts for a marked tool on every
+	// call, and headless it refuses one, so a deployment with nobody at
+	// the keyboard turns it off.
+	EnvInteractionHint = "FAVRO_INTERACTION_HINT"
 )
 
 // Config is the resolved settings.
@@ -70,6 +77,10 @@ type Config struct {
 
 	// RequirePrompt refuses an asking write when the client cannot ask.
 	RequirePrompt bool
+
+	// SuppressInteractionHint takes the requiresUserInteraction mark off
+	// the asking writes. Negative so that the zero value is the default.
+	SuppressInteractionHint bool
 
 	// Warnings is what Load could not read, as sentences ready to log.
 	//
@@ -126,6 +137,19 @@ func Load() Config {
 				fmt.Sprintf("unreadable %s %q — treated as true; set it to true or false", EnvRequirePrompt, raw))
 		default:
 			cfg.RequirePrompt = on
+		}
+	}
+
+	// Unreadable here means on, too: only a deliberate false takes the
+	// mark off.
+	if raw := os.Getenv(EnvInteractionHint); raw != "" {
+		on, err := strconv.ParseBool(raw)
+		switch {
+		case err != nil:
+			cfg.Warnings = append(cfg.Warnings,
+				fmt.Sprintf("unreadable %s %q — treated as true; set it to true or false", EnvInteractionHint, raw))
+		default:
+			cfg.SuppressInteractionHint = !on
 		}
 	}
 

@@ -34,6 +34,17 @@ type Options struct {
 	// made on the arguments alone.
 	RequirePrompt bool
 
+	// SuppressInteractionHint is FAVRO_INTERACTION_HINT=false: the
+	// writes that ask the person go without Claude Code's
+	// requiresUserInteraction mark. It is negative so that the zero
+	// value, which the schema dump uses, is the ordinary server.
+	//
+	// The mark is absolute where Claude Code reads it: an allow rule
+	// does not skip it, and headless, with nobody to prompt, the call is
+	// refused. A deployment that runs with nobody at the keyboard turns
+	// it off on purpose.
+	SuppressInteractionHint bool
+
 	// UploadDir is FAVRO_UPLOAD_DIR, the one directory the upload tools
 	// read from. Empty, and they are not registered.
 	UploadDir string
@@ -69,8 +80,12 @@ func Register(srv *mcp.Server, client *favroapi.Client, opts Options) {
 	reg := &registry{
 		srv: srv, destructive: opts.Destructive, asking: newAsking(slog.Default()),
 		requirePrompt: opts.RequirePrompt, uploadDir: opts.UploadDir,
+		interactionHint: !opts.SuppressInteractionHint && !opts.RequirePrompt,
 	}
 	srv.AddReceivingMiddleware(askFailures(reg.asking))
+	if reg.interactionHint {
+		srv.AddReceivingMiddleware(interactionHint())
+	}
 	resolver := service.NewResolver(client)
 
 	registerPing(reg, client, opts.CredentialSource, opts.Version)

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -77,6 +78,51 @@ func newAsking(lg *slog.Logger) *asking {
 
 // asks reports whether the tool was registered to ask.
 func (a *asking) asks(tool string) bool { return a.tools[tool] }
+
+// interactionKey is Claude Code's mark for a tool it prompts for on
+// every call, even under an allow rule. Headless, it refuses the call
+// instead (FAVRO_INTERACTION_HINT).
+const interactionKey = "anthropic/requiresUserInteraction"
+
+// interactionHint is receiving middleware for tools/list. Only the tools
+// that ask carry the mark, and a client that can ask gets none of them:
+// the server's question is the confirmation then, and it shows what the
+// write acts on, where the client's prompt shows the arguments. With
+// both, the person would answer twice for one call. A tool that asks
+// only sometimes loses it too, since the server asks in exactly the case
+// it guards. A client that cannot ask keeps every mark: there it is the
+// only per-call prompt.
+func interactionHint() mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			res, err := next(ctx, method, req)
+			list, ok := res.(*mcp.ListToolsResult)
+			if err != nil || !ok {
+				return res, err
+			}
+			lr, ok := req.(*mcp.ListToolsRequest)
+			if !ok || !canAsk(lr.ClientCapabilities()) {
+				return res, err
+			}
+			// The tools are the server's own; copy before changing one.
+			out := *list
+			out.Tools = make([]*mcp.Tool, len(list.Tools))
+			for i, t := range list.Tools {
+				out.Tools[i] = t
+				if _, marked := t.Meta[interactionKey]; marked {
+					c := *t
+					c.Meta = maps.Clone(t.Meta)
+					delete(c.Meta, interactionKey)
+					if len(c.Meta) == 0 {
+						c.Meta = nil
+					}
+					out.Tools[i] = &c
+				}
+			}
+			return &out, nil
+		}
+	}
+}
 
 // askState is what a requestState carries. It binds the answer to the
 // tool, to the call's arguments, and to what the question binds
@@ -229,19 +275,21 @@ func (a *asking) personFor(req *mcp.CallToolRequest, tool string, in any, requir
 
 // clientAsks reports whether the client can show a form, and whether a
 // requestState travels through it, which it does from 2026-07-28.
-func clientAsks(req *mcp.CallToolRequest) (canAsk, travels bool) {
+func clientAsks(req *mcp.CallToolRequest) (asks, travels bool) {
 	travels = true
-	if c := req.ClientCapabilities(); c != nil && c.Elicitation != nil {
-		// Form is what an empty elicitation capability declares; only a
-		// client that declares URL alone cannot show a form.
-		canAsk = c.Elicitation.Form != nil || c.Elicitation.URL == nil
-	}
 	if req.Session != nil {
 		if ip := req.Session.InitializeParams(); ip != nil {
 			travels = ip.ProtocolVersion >= statelessProtocol
 		}
 	}
-	return canAsk, travels
+	return canAsk(req.ClientCapabilities()), travels
+}
+
+// canAsk reports whether a client can put a form to the person. Form is
+// what an empty elicitation capability declares; only a client that
+// declares URL alone cannot show a form.
+func canAsk(c *mcp.ClientCapabilities) bool {
+	return c != nil && c.Elicitation != nil && (c.Elicitation.Form != nil || c.Elicitation.URL == nil)
 }
 
 // answered is the client's answer to the question, as one word for the
@@ -348,12 +396,23 @@ func confirmFirst(ctx context.Context, dry bool, question func() (render.Questio
 // write, through confirmFirst. It is the only way to put a person on a
 // handler's context, so a handler that asks, registered any other way,
 // is refused as a defect rather than run unasked.
+//
+// It also gives the tool Claude Code's mark, which interactionHint takes
+// off again for a client that can ask. Under FAVRO_REQUIRE_PROMPT the
+// mark is left off: a client that cannot ask is refused by the server,
+// so its prompt would ask the person to approve a call that cannot run.
 func addAsking[In, Out any](reg *registry, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
 	if !reg.admits(t) {
 		return
 	}
 	name := t.Name
 	reg.asking.tools[name] = true
+	if reg.interactionHint {
+		if t.Meta == nil {
+			t.Meta = mcp.Meta{}
+		}
+		t.Meta[interactionKey] = true
+	}
 	addTool(reg, t, func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		var zero Out
 		p, err := reg.asking.personFor(req, name, in, reg.requirePrompt)

@@ -110,6 +110,21 @@ const uploadFile = "notes.txt"
 // changes the options, and more the client's.
 func connectAsking(t *testing.T, protocol string, p *answerer, adjust func(*Options), more ...func(*mcp.ClientOptions)) (*mcp.ClientSession, *fakeFavro, string) {
 	t.Helper()
+	srv, fake, dir := askingServer(t, adjust)
+	o := &mcp.ClientOptions{}
+	if p != nil {
+		o.ElicitationHandler = p.handle
+	}
+	for _, fn := range more {
+		fn(o)
+	}
+	return connectTo(t, srv, protocol, o), fake, dir
+}
+
+// askingServer is a server with the whole surface over a fresh fake, and
+// the upload directory it reads; adjust changes the options.
+func askingServer(t *testing.T, adjust func(*Options)) (*mcp.Server, *fakeFavro, string) {
+	t.Helper()
 	fake := &fakeFavro{tagName: "Urgent", sharing: "users"}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, uploadFile), []byte("draft notes"), 0o600); err != nil {
@@ -121,26 +136,26 @@ func connectAsking(t *testing.T, protocol string, p *answerer, adjust func(*Opti
 	}
 	srv := mcp.NewServer(&mcp.Implementation{Name: ServerName, Version: "test"}, nil)
 	Register(srv, favroFixture(t, fake), opts)
+	return srv, fake, dir
+}
+
+// connectTo connects a new client with o to srv, on protocol (the SDK's
+// newest when empty).
+func connectTo(t *testing.T, srv *mcp.Server, protocol string, o *mcp.ClientOptions) *mcp.ClientSession {
+	t.Helper()
 	ct, st := mcp.NewInMemoryTransports()
 	ss, err := srv.Connect(context.Background(), st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ss.Close() })
-	o := &mcp.ClientOptions{}
-	if p != nil {
-		o.ElicitationHandler = p.handle
-	}
-	for _, fn := range more {
-		fn(o)
-	}
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, o).
 		Connect(context.Background(), ct, &mcp.ClientSessionOptions{ProtocolVersion: protocol})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cs.Close() })
-	return cs, fake, dir
+	return cs
 }
 
 // askCase is a call that reaches its tool's write, the write as the
@@ -308,6 +323,87 @@ func TestAClientThatCannotAsk(t *testing.T) {
 			t.Errorf("required: %d writes: %s", n, text(res))
 		case !require && (res.IsError || n != 1 || fake.count("GET /tags/tg-1") != 0):
 			t.Errorf("not required: %d writes, %d reads: %s", n, fake.count("GET /tags/tg-1"), text(res))
+		}
+	}
+}
+
+// marks lists the tools cs sees, each with whether it carries Claude
+// Code's requiresUserInteraction mark.
+func marks(t *testing.T, cs *mcp.ClientSession) map[string]bool {
+	t.Helper()
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Tools) < registeredToolCount {
+		t.Fatalf("%d tools listed; the whole surface was not registered", len(res.Tools))
+	}
+	marked := map[string]bool{}
+	for _, tool := range res.Tools {
+		marked[tool.Name] = tool.Meta["anthropic/requiresUserInteraction"] == true
+	}
+	return marked
+}
+
+// The tools that ask carry the mark only for a client that cannot ask;
+// with both, the person would answer twice for one call. That holds for a
+// tool that asks only sometimes too, and a tool that never asks has no
+// mark. The clients share one server and the one that can ask lists
+// first, so a mark taken off the server's own tool, rather than a copy,
+// goes missing for the clients after it.
+func TestTheMarkIsOnlyForAClientThatCannotAsk(t *testing.T) {
+	// TestEveryAskingToolHasACase holds askCases to the tools that ask.
+	asking := slices.Sorted(maps.Keys(askCases))
+	if len(asking) < 10 {
+		t.Fatalf("%d asking tools; the ten that ask were not all found", len(asking))
+	}
+	p := &answerer{action: "accept"}
+	urlOnly := &mcp.ClientCapabilities{Elicitation: &mcp.ElicitationCapabilities{URL: &mcp.URLElicitationCapabilities{}}}
+	clients := []struct {
+		name   string
+		opts   *mcp.ClientOptions
+		canAsk bool
+	}{
+		{"form elicitation", &mcp.ClientOptions{ElicitationHandler: p.handle}, true},
+		{"no elicitation", &mcp.ClientOptions{}, false},
+		{"URL elicitation only", &mcp.ClientOptions{ElicitationHandler: p.handle, Capabilities: urlOnly}, false},
+	}
+	for _, protocol := range protocols {
+		srv, _, _ := askingServer(t, nil)
+		for _, c := range clients {
+			var got []string
+			for name, m := range marks(t, connectTo(t, srv, protocol, c.opts)) {
+				if m {
+					got = append(got, name)
+				}
+			}
+			slices.Sort(got)
+			var want []string
+			if !c.canAsk {
+				want = asking
+			}
+			if !slices.Equal(got, want) {
+				t.Errorf("%s, %s: marked %v, want %v", protocol, c.name, got, want)
+			}
+		}
+	}
+}
+
+// FAVRO_INTERACTION_HINT=false takes the mark off every tool, even for a
+// client that cannot ask: Claude Code refuses a marked tool headless, so
+// an unattended deployment needs the way out. FAVRO_REQUIRE_PROMPT does
+// too, since the server refuses such a client's asking writes, and the
+// person would approve a prompt for a call that cannot run.
+func TestTheMarkCanBeTurnedOff(t *testing.T) {
+	for name, adjust := range map[string]func(*Options){
+		"FAVRO_INTERACTION_HINT=false": func(o *Options) { o.SuppressInteractionHint = true },
+		"FAVRO_REQUIRE_PROMPT=true":    func(o *Options) { o.RequirePrompt = true },
+	} {
+		srv, _, _ := askingServer(t, adjust)
+		for tool, m := range marks(t, connectTo(t, srv, "", &mcp.ClientOptions{})) {
+			if m {
+				t.Errorf("%s: %s carries the mark", name, tool)
+			}
 		}
 	}
 }

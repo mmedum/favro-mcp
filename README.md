@@ -91,7 +91,7 @@ Two sources, checked in order; the first one that produces a complete `(email, t
 1. **Environment variables** — `FAVRO_USER_EMAIL`, `FAVRO_API_TOKEN`, `FAVRO_ORGANIZATION_ID`.
 2. **OS keyring** — populated once via `favro-mcp auth login` (cross-platform: macOS Keychain, Windows Credential Manager, Linux Secret Service).
 
-Five more variables change how the server runs rather than who it runs as:
+Six more variables change how the server runs rather than who it runs as:
 
 | Variable | Effect |
 | --- | --- |
@@ -100,11 +100,16 @@ Five more variables change how the server runs rather than who it runs as:
 | `FAVRO_ENABLE_DESTRUCTIVE` | Set to `true` to register the delete-style tools. Off by default, and "off" means they are absent from `tools/list` rather than guarded — a host in an auto-approve mode runs a tool without prompting, so not registering it is the only guarantee. Anything the value cannot be read as `true` leaves them off. |
 | `FAVRO_UPLOAD_DIR` | The one directory the upload tools read files from, as an absolute path. Unset, and they are not registered. Nothing outside it is read, and a link out of it is refused. |
 | `FAVRO_REQUIRE_PROMPT` | Set to `true` to refuse the writes that ask the person when the client cannot ask them. |
+| `FAVRO_INTERACTION_HINT` | Set to `false` to take Claude Code's `requiresUserInteraction` mark off the writes that ask the person, for a client that cannot ask. On by default. Headless, Claude Code refuses a marked tool, so turn it off only for a deployment with nobody at the keyboard. |
 
 Before the deletes Favro cannot undo, before an upload, and before
 making a collection public, the server asks the person through the
 client when it can, and names what would go. A call they did not
 confirm comes back `[blocked]`.
+
+For a client that cannot ask, those ten writes carry Claude Code's
+`requiresUserInteraction` mark instead, so it prompts on every call. A
+client that can ask gets no mark, so you answer once.
 
 ### `auth` subcommands
 

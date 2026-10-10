@@ -14,6 +14,7 @@ the OS keyring, which `favro-mcp auth login` writes.
 | `FAVRO_ENABLE_DESTRUCTIVE` | `false` | Register the delete-style tools. See below — "off" means absent from `tools/list`, not guarded. Anything unreadable as a bool leaves them off. |
 | `FAVRO_UPLOAD_DIR` | unset | The one directory the upload tools read files from. Unset, and they are not registered. It must be an absolute path to a directory that exists; anything else is logged at startup and leaves uploads off. See below. |
 | `FAVRO_REQUIRE_PROMPT` | `false` | Refuse the writes that ask the person when the client cannot ask them, rather than making them on the arguments alone. A value this server cannot read counts as `true`, and it says so. |
+| `FAVRO_INTERACTION_HINT` | `true` | For a client that cannot ask, mark the writes that ask the person with Claude Code's `requiresUserInteraction`, which makes Claude Code prompt on every call of them. A client that can ask never gets the mark, and with `FAVRO_REQUIRE_PROMPT` set no client does, since the server refuses those calls. Set it to `false` only for a deployment with nobody at the keyboard: headless, Claude Code refuses a marked tool. A value this server cannot read counts as `true`, and it says so. |
 | `FAVRO_MCP_SKIP_VALIDATE` | unset | Any non-empty value skips the startup credential check. For protocol-only tests that never reach Favro. |
 
 ## Credential resolution
@@ -109,6 +110,12 @@ accepting it is the confirmation. A call the person did not confirm
 comes back `[blocked]` and nothing is changed. A dry run asks nothing.
 A client that cannot ask gets no question unless `FAVRO_REQUIRE_PROMPT`
 is set, which refuses those writes instead.
+
+A client that cannot ask also sees those ten tools marked with Claude
+Code's `requiresUserInteraction`, so Claude Code prompts before every
+call of them. A client that can ask sees no mark, so the person answers
+once, to the server's question. `FAVRO_INTERACTION_HINT=false` drops the
+mark.
 
 ## Startup behavior
 

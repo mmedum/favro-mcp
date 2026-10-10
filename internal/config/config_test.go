@@ -144,6 +144,39 @@ func TestLoadRequirePrompt(t *testing.T) {
 	}
 }
 
+// TestLoadInteractionHint pins the parse. The mark is on unless the
+// variable says false; a value Go cannot read keeps it on, and says so.
+func TestLoadInteractionHint(t *testing.T) {
+	for _, tc := range []struct {
+		env              string
+		suppressed, warn bool
+	}{
+		{"", false, false},
+		{"true", false, false},
+		{"false", true, false},
+		{"0", true, false},
+		{"off", false, true},
+	} {
+		t.Setenv(EnvInteractionHint, tc.env)
+		cfg := Load()
+		// Only this variable's warnings: another one set in the shell
+		// must not decide the case.
+		var mine []string
+		for _, w := range cfg.Warnings {
+			if strings.Contains(w, EnvInteractionHint) {
+				mine = append(mine, w)
+			}
+		}
+		warned := strings.Join(mine, "\n")
+		if cfg.SuppressInteractionHint != tc.suppressed || (warned != "") != tc.warn {
+			t.Errorf("%q: SuppressInteractionHint %v, warnings %q", tc.env, cfg.SuppressInteractionHint, warned)
+		}
+		if tc.warn && !strings.Contains(warned, "treated as true") {
+			t.Errorf("%q: the warning does not say what it means: %q", tc.env, warned)
+		}
+	}
+}
+
 // TestLoadUploadDir pins what FAVRO_UPLOAD_DIR accepts: an absolute path
 // to a directory that exists, cleaned. Anything else leaves uploads off
 // and says why.

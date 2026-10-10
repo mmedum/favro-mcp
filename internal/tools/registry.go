@@ -57,6 +57,11 @@ type registry struct {
 	asking        *asking
 	requirePrompt bool
 
+	// interactionHint puts Claude Code's requiresUserInteraction mark on
+	// the tools registered through addAsking. It is false when
+	// FAVRO_INTERACTION_HINT is, and under FAVRO_REQUIRE_PROMPT.
+	interactionHint bool
+
 	// uploadDir is FAVRO_UPLOAD_DIR, the one directory the upload tools
 	// read from. Empty, and they are not registered.
 	uploadDir string
