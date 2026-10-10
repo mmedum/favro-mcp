@@ -1,6 +1,6 @@
 # Architecture — favro-mcp
 
-**Status, 2026-10-01.** Released: v3.1.1, which sends a write once and reports one that may have landed as `[ambiguous_outcome]`. The server's own feature phases
+**Status, 2026-10-10.** Released: v3.2.0, which marks the ten writes that ask the person with Claude Code's `requiresUserInteraction` for a client that cannot ask, and never for one that can, so the person answers once (§9.2); built with Go 1.27.2. One prompt in Claude Code is not yet seen live. v3.1.1 sends a write once and reports one that may have landed as `[ambiguous_outcome]`. The server's own feature phases
 (0–9) are complete and shipped, and **every phase of the alignment
 program in §16 is done**, A6's evals included — the note that said they
 needed a model API key was wrong, since the siblings drive the model

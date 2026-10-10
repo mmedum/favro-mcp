@@ -8,6 +8,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-10
+
 ### Added
 - For a client that cannot ask the person, the ten writes the server asks about carry Claude Code's `requiresUserInteraction` mark, so Claude Code prompts before every call of them. A client that can ask never sees the mark, so the person answers once, to the server's question. With `FAVRO_REQUIRE_PROMPT` set there is no mark either, since the server refuses those calls.
 - `FAVRO_INTERACTION_HINT=false` drops that mark. Headless, Claude Code refuses a marked tool, so an unattended deployment whose client cannot ask needs it.
@@ -362,7 +364,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v3.1.1...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/mmedum/favro-mcp/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/mmedum/favro-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/favro-mcp/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/mmedum/favro-mcp/compare/v2.1.1...v3.0.0
