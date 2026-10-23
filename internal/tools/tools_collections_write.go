@@ -137,7 +137,7 @@ func registerUpdateCollection(reg *registry, r *service.Resolver) {
 		// re-sending a role someone holds widens nothing.
 		held := func() (map[string]string, error) {
 			col, err := r.Client().GetCollection(ctx, in.CollectionID)
-			return heldShares(col.SharedToUsers), err
+			return heldBy(sharedGrants("", col.SharedToUsers)), err
 		}
 		grants := append(sharedGrants("share_to_users", in.ShareToUsers), sharedGrants("members", in.Members)...)
 		if err := checkGrants(ctx, r, updateCollectionToolName, "admin", held, grants); err != nil {
@@ -221,14 +221,6 @@ var errWidenWitness = render.Sentinel(render.ClassConflict,
 		"may not open the collection the person approved; nothing was changed. Read it with "+
 		"favro_get_collection and pass the name it holds")
 
-// The notes favro_widen_collection_sharing's read-back emits.
-const (
-	noteSharingVerified  = "verified by reading the collection back: public_sharing is %q."
-	noteSharingIgnored   = "public_sharing did not change: the collection was read back after the write and reports %q, not %q. Favro answered 200 for a write it did not store."
-	noteSharingUnchecked = "the write was sent, but reading the collection back to verify it failed (%v). Favro answers 200 for a body it ignored, so treat this write as unconfirmed."
-	noteSharingWas       = "public_sharing was %q before this call."
-)
-
 func registerWidenCollectionSharing(reg *registry, r *service.Resolver) {
 	addTool(reg, &mcp.Tool{
 		Name: widenCollectionSharingToolName,
@@ -243,7 +235,7 @@ func registerWidenCollectionSharing(reg *registry, r *service.Resolver) {
 		Annotations: mutating("Widen Favro collection sharing", true),
 		Meta:        promptEveryCall(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in widenCollectionSharingInput) (*mcp.CallToolResult, writeOutput[favro.Collection], error) {
-		mode := strings.ToLower(strings.TrimSpace(in.PublicSharing))
+		mode := sharingMode(in.PublicSharing)
 		if mode != sharingOrganization && mode != sharingPublic {
 			return nil, writeOutput[favro.Collection]{}, errWidenMode
 		}
@@ -284,7 +276,7 @@ func sharingReadBack(ctx context.Context, r *service.Resolver, id, mode string) 
 	col, err := r.Client().GetCollection(ctx, id)
 	switch {
 	case err != nil:
-		return fmt.Sprintf(noteSharingUnchecked, err)
+		return fmt.Sprintf(noteReadBackFailed, "collection", err)
 	case !strings.EqualFold(col.PublicSharing, mode):
 		return fmt.Sprintf(noteSharingIgnored, col.PublicSharing, mode)
 	}

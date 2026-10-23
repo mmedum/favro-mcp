@@ -2,6 +2,7 @@ package tools
 
 import (
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -184,9 +185,7 @@ func TestOrdinaryWritesShareOnlyInsideTheOrganization(t *testing.T) {
 			for _, dry := range []bool{false, true} {
 				f := newSharingFavro(t)
 				args := map[string]any{"dry_run": dry}
-				for k, v := range tc.args {
-					args[k] = v
-				}
+				maps.Copy(args, tc.args)
 				res := f.call(t, tc.tool, args)
 				text := resultText(res)
 				if !res.IsError || !strings.HasPrefix(text, "["+tc.class+"] ") {
@@ -308,9 +307,7 @@ func TestWidenCollectionSharing(t *testing.T) {
 	t.Parallel()
 	args := func(over map[string]any) map[string]any {
 		a := map[string]any{"collection_id": "c-1", "collection_name": "Eng", "public_sharing": "public", "confirm": true}
-		for k, v := range over {
-			a[k] = v
-		}
+		maps.Copy(a, over)
 		return a
 	}
 
@@ -402,9 +399,7 @@ func TestDeleteWidgetNamesItsScope(t *testing.T) {
 			_, _ = w.Write([]byte(`{}`))
 		}))
 		args := map[string]any{"widget_common_id": "w-1", "confirm": true}
-		for k, v := range tc.args {
-			args[k] = v
-		}
+		maps.Copy(args, tc.args)
 		res, err := connectInMemoryWith(t, c).CallTool(t.Context(), &mcp.CallToolParams{Name: deleteWidgetToolName, Arguments: args})
 		if err != nil {
 			t.Fatal(err)

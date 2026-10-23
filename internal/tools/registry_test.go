@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -51,10 +52,10 @@ func TestDestructiveToolsAreOptIn(t *testing.T) {
 	all := listToolsWith(t, Options{Destructive: true})
 	def := listToolsWith(t, Options{})
 
-	var destructive []string
+	var gated []string
 	for name, tool := range all {
-		if tool.Annotations != nil && tool.Annotations.DestructiveHint != nil && *tool.Annotations.DestructiveHint {
-			destructive = append(destructive, name)
+		if destructive(tool) {
+			gated = append(gated, name)
 		}
 	}
 
@@ -62,25 +63,25 @@ func TestDestructiveToolsAreOptIn(t *testing.T) {
 	// print the same sentence otherwise, and this repository has
 	// fifteen — a number that is allowed to change, but not to become
 	// zero without somebody noticing.
-	if len(destructive) < 15 {
-		t.Errorf("read %d destructive tools out of a surface of %d; the annotation-derived set cannot have shrunk that far: got %v, want at least %v", len(destructive), len(all), len(destructive), 15)
+	if len(gated) < 15 {
+		t.Errorf("read %d destructive tools out of a surface of %d; the annotation-derived set cannot have shrunk that far: got %v, want at least %v", len(gated), len(all), len(gated), 15)
 	}
-	if len(all) <= len(destructive) {
-		t.Errorf("the surface is not all deletes: got %v, want greater than %v", len(all), len(destructive))
+	if len(all) <= len(gated) {
+		t.Errorf("the surface is not all deletes: got %v, want greater than %v", len(all), len(gated))
 	}
 
-	for _, name := range destructive {
+	for _, name := range gated {
 		if _, present := def[name]; present {
 			t.Errorf("%s is annotated destructive but is registered without FAVRO_ENABLE_DESTRUCTIVE: %q present", name, name)
 		}
 	}
-	if len(def) != len(all)-len(destructive) {
+	if len(def) != len(all)-len(gated) {
 		t.Fatalf("the default surface must differ from the full one by exactly the destructive tools: got %d", len(def))
 	}
 
 	for name := range all {
-		if _, gated := def[name]; !gated {
-			if !slices.Contains(destructive, name) {
+		if _, kept := def[name]; !kept {
+			if !slices.Contains(gated, name) {
 				t.Errorf("%s disappeared from the default surface without being annotated destructive: %q missing", name, name)
 			}
 		}
@@ -514,10 +515,7 @@ func TestEveryDestructiveCallNeedsConfirm(t *testing.T) {
 			continue
 		}
 		checked++
-		args := map[string]any{}
-		for k, v := range smokeToolInputs[tool.Name] {
-			args[k] = v
-		}
+		args := maps.Clone(smokeToolInputs[tool.Name])
 		args["dry_run"] = false
 		before := requests.Load()
 		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tool.Name, Arguments: args})

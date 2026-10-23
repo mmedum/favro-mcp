@@ -55,12 +55,6 @@ type registry struct {
 	uploadDir string
 }
 
-// admits reports whether t is registered at all: a tool annotated
-// destructive only when the flag is set.
-func (reg *registry) admits(t *mcp.Tool) bool {
-	return !destructive(t) || reg.destructive
-}
-
 // destructive reports whether t is annotated destructive.
 func destructive(t *mcp.Tool) bool {
 	return t.Annotations != nil && t.Annotations.DestructiveHint != nil && *t.Annotations.DestructiveHint
@@ -151,10 +145,10 @@ func requireRules[In any](t *mcp.Tool, gated bool) {
 // **The error class.** Errors leave as "[class] actionable message",
 // classified from the error's own type rather than from its text.
 func addTool[In, Out any](reg *registry, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
-	if !reg.admits(t) {
+	gated := destructive(t)
+	if gated && !reg.destructive {
 		return
 	}
-	gated := destructive(t)
 	requireRules[In](t, gated)
 
 	// The output schema is generated here rather than left to the SDK,

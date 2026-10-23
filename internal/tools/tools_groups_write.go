@@ -95,7 +95,7 @@ func registerUpdateGroup(reg *registry, r *service.Resolver) {
 		// replaces the whole one, so everyone who stays is in it.
 		held := func() (map[string]string, error) {
 			g, err := r.Client().GetGroup(ctx, in.GroupID)
-			return heldMembers(g.Members), err
+			return heldBy(memberGrants(g.Members)), err
 		}
 		if err := checkGrants(ctx, r, updateGroupToolName, "administrator", held, memberGrants(in.Members)); err != nil {
 			return nil, writeOutput[favro.Group]{}, err

@@ -38,9 +38,12 @@ type grant struct {
 	remove bool
 }
 
+// isGroup is a grant that names a group rather than a person.
+func (g grant) isGroup() bool { return strings.EqualFold(g.typ, "group") }
+
 // key is who the grant names, as held keys it.
 func (g grant) key() string {
-	if strings.EqualFold(g.typ, "group") {
+	if g.isGroup() {
 		return "group:" + g.groupID
 	}
 	return "user:" + g.userID
@@ -70,23 +73,12 @@ func memberGrants(members []favro.GroupMember) []grant {
 	return out
 }
 
-// heldShares is who a collection already shares with, by grant key,
-// with their role.
-func heldShares(users []favro.SharedUser) map[string]string {
-	held := make(map[string]string, len(users))
-	for _, u := range users {
-		g := grant{typ: u.Type, userID: u.UserID, groupID: u.GroupID}
-		held[g.key()] = u.Role
-	}
-	return held
-}
-
-// heldMembers is who a group already holds, by grant key, with their
-// role.
-func heldMembers(members []favro.GroupMember) map[string]string {
-	held := make(map[string]string, len(members))
-	for _, m := range members {
-		held[grant{userID: m.UserID}.key()] = m.Role
+// heldBy is who already has access, read from Favro as grants, by
+// grant key, with their role.
+func heldBy(grants []grant) map[string]string {
+	held := make(map[string]string, len(grants))
+	for _, g := range grants {
+		held[g.key()] = g.role
 	}
 	return held
 }
@@ -140,7 +132,7 @@ func checkOwners(tool, owner string, had map[string]string, given []grant) ([]gr
 				"access; nothing was changed. This server makes nobody a new %s; the person can do that in Favro",
 				tool, g.at, owner, owner)
 		}
-		if _, ok := had[g.key()]; !ok && !strings.EqualFold(g.typ, "group") {
+		if _, ok := had[g.key()]; !ok && !g.isGroup() {
 			newcomers = append(newcomers, g)
 		}
 	}
@@ -181,7 +173,7 @@ func checkShape(tool string, g grant) error {
 		return render.Errorf(render.ClassBlocked, "%s: %s shares with the whole organization; nothing was changed. "+
 			"favro_widen_collection_sharing with public_sharing: 'organization' does that, and is registered only "+
 			"with FAVRO_ENABLE_DESTRUCTIVE=true", tool, g.at)
-	case g.typ != "" && !strings.EqualFold(g.typ, "user") && !strings.EqualFold(g.typ, "group"):
+	case g.typ != "" && !strings.EqualFold(g.typ, "user") && !g.isGroup():
 		return render.Errorf(render.ClassBlocked, "%s: %s has type %q; this server shares only with a user or a "+
 			"group. Nothing was changed", tool, g.at, g.typ)
 	case g.mail != "":
@@ -189,9 +181,9 @@ func checkShape(tool string, g grant) error {
 			"outside the organization; nothing was changed. Name people already in it by userId, which "+
 			"favro_resolve_user finds. This server sends no invitations; the person can invite anyone else in Favro",
 			tool, g.at)
-	case strings.EqualFold(g.typ, "group") && g.groupID == "":
+	case g.isGroup() && g.groupID == "":
 		return fmt.Errorf("%s: %s is a group and names no groupId", tool, g.at)
-	case !strings.EqualFold(g.typ, "group") && g.userID == "":
+	case !g.isGroup() && g.userID == "":
 		return fmt.Errorf("%s: %s names no userId; name people already in the organization by userId, which "+
 			"favro_resolve_user finds", tool, g.at)
 	}
@@ -230,10 +222,13 @@ const (
 	sharingPublic       = "public"
 )
 
+// sharingMode is a public_sharing value as Favro spells the modes.
+func sharingMode(mode string) string { return strings.ToLower(strings.TrimSpace(mode)) }
+
 // checkPublicSharing refuses a mode the ordinary collection writes do
 // not set: anything but 'users', which is the default and the narrowest.
 func checkPublicSharing(tool, mode string) error {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
+	switch sharingMode(mode) {
 	case "", sharingUsers:
 		return nil
 	case sharingOrganization, sharingPublic:

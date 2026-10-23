@@ -448,10 +448,10 @@ type session struct {
 	stdout *bufio.Reader
 	nextID int
 
-	// onElicit, when set, declares form elicitation and answers each
-	// question the server puts with elicitation/create: it gets the
-	// message and returns the action.
-	onElicit func(message string) string
+	// onElicit, when set, declares form elicitation and hears each
+	// question the server puts with elicitation/create, which is then
+	// declined.
+	onElicit func(message string)
 }
 
 func start(bin string, env ...string) (*session, error) {
@@ -460,7 +460,7 @@ func start(bin string, env ...string) (*session, error) {
 
 // startWith is start with, when onElicit is set, a client that can be
 // asked.
-func startWith(bin string, onElicit func(string) string, env ...string) (*session, error) {
+func startWith(bin string, onElicit func(string), env ...string) (*session, error) {
 	cmd := exec.Command(bin)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stderr = nil // the server's own logs are not this transcript
@@ -641,19 +641,16 @@ func (s *session) request(method string, params any) (json.RawMessage, error) {
 	return nil, fmt.Errorf("%s: no answer within %s", method, callTimeout)
 }
 
-// answer replies to a request the server made: a question through
-// onElicit, and anything else as not supported.
+// answer replies to a request the server made: a question, heard by
+// onElicit and declined, and anything else as not supported.
 func (s *session) answer(id json.RawMessage, method string, params json.RawMessage) error {
 	if method == "elicitation/create" && s.onElicit != nil {
 		var p struct {
 			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(params, &p)
-		result := map[string]any{"action": s.onElicit(p.Message)}
-		if result["action"] == "accept" {
-			result["content"] = map[string]any{}
-		}
-		return s.write(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+		s.onElicit(p.Message)
+		return s.write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"action": "decline"}})
 	}
 	return s.write(map[string]any{
 		"jsonrpc": "2.0", "id": id,

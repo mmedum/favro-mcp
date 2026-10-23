@@ -49,7 +49,7 @@ const (
 	// EnvRequirePrompt was removed with the question it governed: the
 	// server no longer asks the person, and the client's own approval
 	// decides each call. It is read only to refuse a configuration that
-	// still turns it on (removedSettings).
+	// still turns it on (Load).
 	EnvRequirePrompt = "FAVRO_REQUIRE_PROMPT"
 )
 
@@ -121,7 +121,19 @@ func Load() Config {
 		}
 	}
 
-	cfg.Refusals = removedSet(os.Getenv)
+	// A removed setting set to anything but false is refused: a value
+	// that is not a boolean may mean on. FAVRO_INTERACTION_HINT went in
+	// the same release and is not read at all: false asked for no mark,
+	// which nothing sets by default any more, and true was every
+	// install's default.
+	if raw := strings.TrimSpace(os.Getenv(EnvRequirePrompt)); raw != "" {
+		if on, err := strconv.ParseBool(raw); err != nil || on {
+			cfg.Refusals = append(cfg.Refusals, EnvRequirePrompt+" was removed: the server no longer asks the "+
+				"person, and the client's own approval decides each call. Unset it to start the server. Leave "+
+				EnvEnableDestructive+" off for a client that runs with nobody watching, and list the writes you "+
+				"want to approve under your client's ask rules, as the README shows")
+		}
+	}
 
 	if raw := strings.TrimSpace(os.Getenv(EnvUploadDir)); raw != "" {
 		dir, err := UploadDir(raw)
@@ -135,31 +147,6 @@ func Load() Config {
 	}
 
 	return cfg
-}
-
-// removedSettings are the settings a release took out, each with what
-// to do instead. FAVRO_INTERACTION_HINT went in the same release and is
-// not read at all: false asked for no mark, which nothing sets by
-// default any more, and true was every install's default.
-var removedSettings = []struct{ name, instead string }{
-	{EnvRequirePrompt, "leave " + EnvEnableDestructive + " off for a client that runs with nobody watching, " +
-		"and list the writes you want to approve under your client's ask rules, as the README shows"},
-}
-
-// removedSet is a refusal for each removed setting that is set to
-// anything but false. Off, or unset, is still accepted; a value that is
-// not a boolean is refused, since it may mean on.
-func removedSet(getenv func(string) string) []string {
-	var out []string
-	for _, r := range removedSettings {
-		raw := strings.TrimSpace(getenv(r.name))
-		if on, err := strconv.ParseBool(raw); raw == "" || (err == nil && !on) {
-			continue
-		}
-		out = append(out, fmt.Sprintf("%s was removed: the server no longer asks the person, and the client's "+
-			"own approval decides each call. Unset it to start the server, and %s", r.name, r.instead))
-	}
-	return out
 }
 
 // UploadDir checks a FAVRO_UPLOAD_DIR value: an absolute path to a

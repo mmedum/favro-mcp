@@ -42,8 +42,7 @@ func runWrites(bin string, env []string, out *printer, red *redact.Redactor) err
 	c.check(len(qs) == 0, "the server asked the person nothing", strings.Join(qs, " | "))
 
 	out.line("")
-	out.line("%d passed, %d failed, %d skipped; %d distinct values redacted",
-		c.passed, c.failed, c.skipped, red.Count())
+	out.line("%d passed, %d failed; %d distinct values redacted", c.passed, c.failed, red.Count())
 	if c.failed > 0 {
 		return fmt.Errorf("%d checks failed", c.failed)
 	}
@@ -66,17 +65,16 @@ func (c *checks) check(ok bool, what, detail string) {
 	c.out.line("FAIL %s: %s", what, firstLine(detail))
 }
 
-// listener keeps any question the server puts, and declines it.
+// listener keeps any question the server puts; the session declines it.
 type listener struct {
 	mu        sync.Mutex
 	questions []string
 }
 
-func (l *listener) ask(message string) string {
+func (l *listener) ask(message string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.questions = append(l.questions, message)
-	return "decline"
 }
 
 func (l *listener) asked() []string {
