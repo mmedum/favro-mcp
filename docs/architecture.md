@@ -1,6 +1,6 @@
 # Architecture — favro-mcp
 
-**Status, 2026-10-23.** Released: v3.2.0, which marked the ten writes that asked the person with Claude Code's `requiresUserInteraction` for a client that could not ask. Unreleased, for 4.0.0: the server asks nobody and per-call approval is the client's (§9.2, B2); every destructive call takes `confirm: true`; five tools carry the mark; widening a collection's sharing is its own tool, and the ordinary writes share only inside the organization. Not yet run live. The server's own feature phases
+**Status, 2026-10-23.** Released: v4.0.0, in which the server asks nobody and per-call approval is the client's (§9.2, B2); every destructive call takes `confirm: true`; five tools carry the mark; widening a collection's sharing is its own tool, and the ordinary writes share only inside the organization; built with Go 1.27.3. Run live the same day: `make live` passed 120 steps, failed none and skipped 19, and `livefavro -writes` passed 15 checks, failed none and left no probe. Owed (§15): what Favro does with an invitation by email, and a share with a group that holds a guest, tried by hand. v3.2.0 marked the ten writes that asked the person with Claude Code's `requiresUserInteraction` for a client that could not ask. The server's own feature phases
 (0–9) are complete and shipped, and **every phase of the alignment
 program in §16 is done**, A6's evals included — the note that said they
 needed a model API key was wrong, since the siblings drive the model
@@ -897,6 +897,19 @@ Not yet verified against a real organization, and each one is a place
    read-back is no longer the caller's job. What stays open is whether
    the echo-but-don't-store case happens at all: every move probed live
    so far landed.
+7. Two of 4.0.0's sharing checks, which the 2026-10-23 live run could
+   not reach (§9.2):
+   - **What Favro does with an email it does not know**, in
+     `shareToUsers` or a group's `members` (§18, open). The ordinary
+     writes refuse an email whatever the answer. A widening tool for
+     invitations by email, admins and guest owners or editors waits on
+     it.
+   - **A share with a group that holds a guest.** The organization the
+     run reads lists only `administrator` and `fullMember` (§18), so
+     the refusal of such a group is held by tests alone. It needs a
+     group with a guest in it, tried by hand: sharing a collection with
+     that group must be refused `[blocked]` and name
+     `favro_widen_collection_sharing`.
 
 **Not verifiable, recorded so it stops being carried as pending:**
 whether a **lane** move carries the `widgetCommonId` requirement the
@@ -1111,7 +1124,11 @@ phase An" before the next begins.
   true` on every destructive call; the mark on five tools;
   `favro_widen_collection_sharing`; the ordinary writes share only inside
   the organization; `favro_delete_widget` names its scope. The module
-  path moves to `/v4`. Follow-up, not in B2: `favro_update_group`'s
+  path moves to `/v4`. Run live on 2026-10-23: `make live` passed 120
+  steps, failed none and skipped 19; `livefavro -writes` passed 15
+  checks, failed none, and its sweep found no probe left. Each run
+  failed first on the driver, not the server (§18). Two checks wait on a
+  person (§15). Follow-up, not in B2: `favro_update_group`'s
   members as add and remove lists, so leaving someone out stops removing
   them; and a widening tool for invitations by email, admins and guest
   owners, after a live check of what Favro does with an unknown address.

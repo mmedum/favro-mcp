@@ -8,6 +8,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-10-23
+
 ### Added
 - `favro_widen_collection_sharing` opens a collection to the whole organization (`public_sharing: 'organization'`) or to anyone with its link (`'public'`). It is destructive, so registered only with `FAVRO_ENABLE_DESTRUCTIVE`; it takes `confirm: true` and the collection's name as a witness, and reads the collection back.
 - `favro_delete_widget` takes `everywhere: true` for the delete from every collection.
@@ -391,7 +393,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/mmedum/favro-mcp/compare/v3.2.0...v4.0.0
 [3.2.0]: https://github.com/mmedum/favro-mcp/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/mmedum/favro-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/favro-mcp/compare/v3.0.0...v3.1.0
