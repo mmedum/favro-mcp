@@ -102,7 +102,8 @@ Four more variables change how the server runs rather than who it runs as:
 
 `FAVRO_REQUIRE_PROMPT` is removed. Set to anything but `false`, the
 server refuses to start; unset it. `FAVRO_INTERACTION_HINT` is removed
-too and no longer read.
+too: set to `false`, it is ignored with a warning, and the marked tools
+keep their mark.
 
 ### Approving calls
 

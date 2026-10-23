@@ -127,7 +127,6 @@ func TestWarningsNameTheVariable(t *testing.T) {
 // A removed setting still turned on refuses to start: ignored, it
 // would quietly allow what its owner set it to stop. Off and unset are
 // still accepted, and a value that is not a boolean may mean on.
-// FAVRO_INTERACTION_HINT went in the same release and is not read.
 func TestARemovedSettingIsRefusedUnlessOff(t *testing.T) {
 	for _, tc := range []struct {
 		env     string
@@ -141,7 +140,6 @@ func TestARemovedSettingIsRefusedUnlessOff(t *testing.T) {
 		{"yes", true},
 	} {
 		t.Setenv(EnvRequirePrompt, tc.env)
-		t.Setenv("FAVRO_INTERACTION_HINT", "false")
 		cfg := Load()
 		if got := len(cfg.Refusals) == 1; got != tc.refused || len(cfg.Refusals) > 1 {
 			t.Errorf("FAVRO_REQUIRE_PROMPT=%q: refusals %q, want refused %v", tc.env, cfg.Refusals, tc.refused)
@@ -149,10 +147,36 @@ func TestARemovedSettingIsRefusedUnlessOff(t *testing.T) {
 		if tc.refused && len(cfg.Refusals) == 1 && !strings.HasPrefix(cfg.Refusals[0], "FAVRO_REQUIRE_PROMPT was removed") {
 			t.Errorf("FAVRO_REQUIRE_PROMPT=%q: the refusal does not name the setting: %q", tc.env, cfg.Refusals[0])
 		}
+	}
+}
+
+// FAVRO_INTERACTION_HINT=false took the mark off, so that `claude -p`
+// could run the marked deletes. It is ignored now, which only makes the
+// server stricter, so the server starts; but a deployment that relied
+// on it hears why those calls are refused. Unset or true changes
+// nothing and says nothing.
+func TestARemovedHintIsWarnedWhenOff(t *testing.T) {
+	for _, tc := range []struct {
+		env    string
+		warned bool
+	}{
+		{"", false},
+		{"true", false},
+		{"false", true},
+		{"0", true},
+		{"nope", true},
+	} {
+		t.Setenv(EnvInteractionHint, tc.env)
+		cfg := Load()
+		var warned []string
 		for _, w := range cfg.Warnings {
-			if strings.Contains(w, "FAVRO_INTERACTION_HINT") {
-				t.Errorf("FAVRO_INTERACTION_HINT is still read: %q", w)
+			if strings.HasPrefix(w, "FAVRO_INTERACTION_HINT was removed and is ignored") {
+				warned = append(warned, w)
 			}
+		}
+		if (len(warned) == 1) != tc.warned || len(warned) > 1 || len(cfg.Refusals) != 0 {
+			t.Errorf("FAVRO_INTERACTION_HINT=%q: warnings %q, refusals %q; want warned %v and no refusal",
+				tc.env, cfg.Warnings, cfg.Refusals, tc.warned)
 		}
 	}
 }

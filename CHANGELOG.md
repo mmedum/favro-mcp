@@ -24,7 +24,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ### Removed
 - **Breaking:** `FAVRO_REQUIRE_PROMPT`. Set to anything but `false`, the server refuses to start; unset it, and leave `FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody watching.
-- `FAVRO_INTERACTION_HINT`, which is no longer read.
+- **Breaking:** `FAVRO_INTERACTION_HINT`. Set to `false`, it is ignored with a warning: the five marked tools keep the mark, so `claude -p` refuses them.
 
 ## [3.2.0] - 2026-10-10
 

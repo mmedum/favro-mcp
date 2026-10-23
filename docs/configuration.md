@@ -14,6 +14,7 @@ the OS keyring, which `favro-mcp auth login` writes.
 | `FAVRO_ENABLE_DESTRUCTIVE` | `false` | Register the destructive tools: the deletes, and `favro_widen_collection_sharing`. See below — "off" means absent from `tools/list`, not guarded. Anything unreadable as a bool leaves them off. |
 | `FAVRO_UPLOAD_DIR` | unset | The one directory the upload tools read files from. Unset, and they are not registered. It must be an absolute path to a directory that exists; anything else is logged at startup and leaves uploads off. See below. |
 | `FAVRO_REQUIRE_PROMPT` | removed | It refused the writes that asked the person when the client could not ask. The server asks nobody now, so the setting is gone: set to anything but `false`, the server refuses to start rather than quietly allow what it was set to stop, and `doctor` reports it. Unset it, and leave `FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody watching. |
+| `FAVRO_INTERACTION_HINT` | removed | Set to `false`, it took Claude Code's `requiresUserInteraction` mark off the writes the server asked about. The five marked tools now always carry the mark, so Claude Code prompts on every call of them and refuses them where it cannot prompt. Set to anything but `true`, it is ignored with a warning; unset it. |
 | `FAVRO_MCP_SKIP_VALIDATE` | unset | Any non-empty value skips the startup credential check. For protocol-only tests that never reach Favro. |
 
 ## Credential resolution

@@ -724,7 +724,10 @@ could not ask, went with the question. Set to anything but `false`, the
 server refuses to start rather than quietly allow what its owner set it
 to stop, and `doctor` reports it as a failed check. Leave
 `FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody
-watching. `FAVRO_INTERACTION_HINT` went too and is not read.
+watching. `FAVRO_INTERACTION_HINT` went too. Set to `false`, it is
+ignored with a startup warning that `doctor` repeats: ignoring it only
+makes the server stricter, but a headless deployment that relied on it
+learns why Claude Code now refuses the marked tools.
 
 Two tests hold the rest. The test harness's client declares form
 elicitation and fails any test whose call puts a question to it, so every

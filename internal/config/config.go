@@ -51,6 +51,12 @@ const (
 	// decides each call. It is read only to refuse a configuration that
 	// still turns it on (Load).
 	EnvRequirePrompt = "FAVRO_REQUIRE_PROMPT"
+
+	// EnvInteractionHint, set to false, took Claude Code's
+	// requiresUserInteraction mark off the writes the server asked
+	// about. It was removed in the same release, and is read only to
+	// warn a configuration that still turns the mark off.
+	EnvInteractionHint = "FAVRO_INTERACTION_HINT"
 )
 
 // Config is the resolved settings.
@@ -122,16 +128,25 @@ func Load() Config {
 	}
 
 	// A removed setting set to anything but false is refused: a value
-	// that is not a boolean may mean on. FAVRO_INTERACTION_HINT went in
-	// the same release and is not read at all: false asked for no mark,
-	// which nothing sets by default any more, and true was every
-	// install's default.
+	// that is not a boolean may mean on.
 	if raw := strings.TrimSpace(os.Getenv(EnvRequirePrompt)); raw != "" {
 		if on, err := strconv.ParseBool(raw); err != nil || on {
 			cfg.Refusals = append(cfg.Refusals, EnvRequirePrompt+" was removed: the server no longer asks the "+
 				"person, and the client's own approval decides each call. Unset it to start the server. Leave "+
 				EnvEnableDestructive+" off for a client that runs with nobody watching, and list the writes you "+
 				"want to approve under your client's ask rules, as the README shows")
+		}
+	}
+
+	// FAVRO_INTERACTION_HINT=false took the mark off. Ignoring it only
+	// makes the server stricter, so the server starts, but a deployment
+	// that relied on it is told why Claude Code now refuses those calls
+	// where it cannot prompt. true was the default, and changes nothing.
+	if raw := strings.TrimSpace(os.Getenv(EnvInteractionHint)); raw != "" {
+		if on, err := strconv.ParseBool(raw); err != nil || !on {
+			cfg.Warnings = append(cfg.Warnings, EnvInteractionHint+" was removed and is ignored: the widest "+
+				"destructive tools always carry Claude Code's requiresUserInteraction mark, so Claude Code prompts "+
+				"on every call of them and refuses them where it cannot prompt, as in `claude -p`. Unset it")
 		}
 	}
 
