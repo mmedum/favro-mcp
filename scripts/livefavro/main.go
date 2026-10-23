@@ -24,6 +24,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -37,6 +38,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
 	"github.com/mmedum/favro-mcp/v4/internal/livecover"
 	"github.com/mmedum/favro-mcp/v4/internal/redact"
 )
@@ -60,7 +62,14 @@ func main() {
 		"organization, read back and narrowed again")
 	flag.Parse()
 
-	if err := run(*bin, *only, *verbose, *writes); err != nil {
+	// The account the server signs in as, read where the server reads
+	// it: the environment, then the keyring. The share steps name its
+	// userId, and its credentials are redacted literally.
+	signedIn, err := auth.ResolveDefault(context.Background())
+	if err != nil {
+		fatal(fmt.Errorf("reading the credentials the server signs in with: %w", err))
+	}
+	if err := run(*bin, *only, *verbose, *writes, signedIn.Token); err != nil {
 		fatal(err)
 	}
 }
@@ -69,8 +78,10 @@ func main() {
 // Redactor, and the `transcript` gate allows it by name.
 //
 // It is safe because of what reaches it: run returns either an error
-// this file wrote or one from a JSON-RPC frame, and a step's failure
-// detail is printed through the redactor long before it gets here. It
+// this file wrote or one from a JSON-RPC frame, a step's failure detail
+// is printed through the redactor long before it gets here, and
+// internal/auth's errors name a missing field or source, never a
+// credential's value. It
 // is a named function rather than an inline Fprintln so that the rule
 // the gate enforces is "one exception, this one" rather than "some
 // prints are fine".
@@ -79,18 +90,14 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-func run(bin, only string, verbose, writes bool) (err error) {
+func run(bin, only string, verbose, writes bool, signedIn auth.Token) (err error) {
 	if _, err := os.Stat(bin); err != nil { //nolint:gosec // G703: bin is the server the maintainer named with -bin
 		return fmt.Errorf("%s: %w (run `make build` first)", bin, err)
 	}
 
 	// The credentials this process holds are redacted literally, because
 	// no pattern should be trusted to find a token.
-	red := redact.New(
-		os.Getenv("FAVRO_USER_EMAIL"),
-		os.Getenv("FAVRO_API_TOKEN"),
-		os.Getenv("FAVRO_ORGANIZATION_ID"),
-	)
+	red := redact.New(signedIn.Email, signedIn.APIToken, signedIn.OrganizationID)
 	out := newPrinter(red)
 
 	// The cleanups run however the run ends: finished, failed or
@@ -137,7 +144,7 @@ func run(bin, only string, verbose, writes bool) (err error) {
 		}
 	}
 
-	tally := runSteps(srv, out, newPool(), steps, tools, verbose)
+	tally := runSteps(srv, out, newPool(signedIn.Email), steps, tools, verbose)
 
 	out.line("")
 	out.line("%d passed, %d failed, %d skipped; %d distinct values redacted",
@@ -318,10 +325,14 @@ type pool struct {
 	// Values keep their JSON type: a sequential id is an integer on the
 	// wire and sending "42" would fail the tool's own input schema.
 	byPlaceholder map[livecover.Placeholder]any
+	// ownEmail is the address the server signs in with. The result
+	// entry that carries it with a userId is the signed-in account,
+	// whose userId resolves OwnUserID.
+	ownEmail string
 }
 
-func newPool() *pool {
-	return &pool{byPlaceholder: map[livecover.Placeholder]any{}}
+func newPool(ownEmail string) *pool {
+	return &pool{byPlaceholder: map[livecover.Placeholder]any{}, ownEmail: strings.TrimSpace(ownEmail)}
 }
 
 // wireKeys maps a placeholder to the JSON keys a Favro response uses
@@ -368,6 +379,32 @@ func (p *pool) absorb(res *callResult) {
 			}
 		}
 	})
+	p.absorbOwn(decoded)
+}
+
+// absorbOwn records the signed-in account's userId from the first
+// object that carries it beside the account's email, as an entry in the
+// users listing does.
+func (p *pool) absorbOwn(v any) {
+	if _, seen := p.byPlaceholder[livecover.OwnUserID]; seen || p.ownEmail == "" {
+		return
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		email, _ := t["email"].(string)
+		id, _ := t["userId"].(string)
+		if id != "" && strings.EqualFold(strings.TrimSpace(email), p.ownEmail) {
+			p.byPlaceholder[livecover.OwnUserID] = id
+			return
+		}
+		for _, child := range t {
+			p.absorbOwn(child)
+		}
+	case []any:
+		for _, child := range t {
+			p.absorbOwn(child)
+		}
+	}
 }
 
 // walk visits every scalar field in a decoded JSON value.

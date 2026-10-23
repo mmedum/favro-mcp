@@ -158,11 +158,26 @@ func probeTag(sc *scratch, c *checks) error {
 	res, err = sc.call("favro_get_tag", tag)
 	c.check(succeeded(res, err), "the tag is still there", detail(res, err))
 
-	res, err = sc.call("favro_delete_tag", map[string]any{"tag_id": id, "confirm": true})
-	c.check(succeeded(res, err), "favro_delete_tag with confirm deletes it", detail(res, err))
-	res, err = sc.call("favro_get_tag", tag)
-	c.check(refused(res, err, "not_found"), "the tag is gone", detail(res, err))
+	deleteAndReadBack(sc, c, probeKinds["favro_create_tag"], id)
 	return nil
+}
+
+// deleteAndReadBack deletes a probe with confirm and reads it back by
+// id, which must find it gone.
+//
+// Gone is the read refused as not_found or as forbidden, after a delete
+// that succeeded. Favro answered 403 for a collection this run had just
+// deleted, as it does for one the token cannot see (2026-10-23). Any
+// other answer fails, and so does either refusal after a delete that
+// failed.
+func deleteAndReadBack(sc *scratch, c *checks, kind probeKind, id string) {
+	res, err := sc.call(kind.delete, map[string]any{kind.idArg: id, "confirm": true})
+	deleted := succeeded(res, err)
+	c.check(deleted, kind.delete+" with confirm deletes it", detail(res, err))
+
+	res, err = sc.call(kind.read, map[string]any{kind.idArg: id})
+	gone := refused(res, err, "not_found") || refused(res, err, "forbidden")
+	c.check(deleted && gone, "the "+kind.noun+" is gone", detail(res, err))
 }
 
 // probeCollection runs a probe collection through the sharing writes:
@@ -215,9 +230,6 @@ func probeCollection(sc *scratch, c *checks) error {
 
 	res, err = sc.call("favro_delete_collection", col)
 	c.check(refused(res, err, "blocked"), "favro_delete_collection without confirm is [blocked]", detail(res, err))
-	res, err = sc.call("favro_delete_collection", map[string]any{"collection_id": id, "confirm": true})
-	c.check(succeeded(res, err), "favro_delete_collection with confirm deletes it", detail(res, err))
-	res, err = sc.call("favro_get_collection", col)
-	c.check(refused(res, err, "not_found"), "the collection is gone", detail(res, err))
+	deleteAndReadBack(sc, c, probeKinds["favro_create_collection"], id)
 	return nil
 }

@@ -97,7 +97,9 @@ the run did not create. Every step that writes carries `dry_run: true`,
 which the `live-cover` gate holds, and the server runs with `--dry-run`,
 so it builds and validates requests and sends none. The run makes its
 own `FAVRO_UPLOAD_DIR`, so the upload steps read a file it wrote and
-nothing else.
+nothing else. The share steps name the signed-in account, which the
+users listing finds by the email the server signs in with, and expect a
+userId outside the organization to be refused.
 
 `go run ./scripts/livefavro -writes` checks the writes the steps can only
 preview. It is the one mode that writes: it creates a probe tag and

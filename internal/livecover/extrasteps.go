@@ -98,7 +98,7 @@ func extraSteps() []Step {
 			Tool: "favro_create_collection",
 			Args: map[string]any{
 				"name":           "livefavro probe",
-				"share_to_users": []any{map[string]any{"userId": AnyUserID, "role": "guest"}},
+				"share_to_users": []any{map[string]any{"userId": OwnUserID, "role": "guest"}},
 				"dry_run":        true,
 			},
 			Why: "dry-run: the write-side sharing key, which §7.4 records Favro spelling differently from the read",
@@ -107,7 +107,7 @@ func extraSteps() []Step {
 			Tool: "favro_create_group",
 			Args: map[string]any{
 				"name":    "livefavro probe",
-				"members": []any{map[string]any{"userId": AnyUserID, "role": "member"}},
+				"members": []any{map[string]any{"userId": OwnUserID, "role": "member"}},
 				"dry_run": true,
 			},
 			Why: "dry-run: a group created with its membership in one call, after the user is read as a member of the organization",
@@ -246,8 +246,8 @@ func extraSteps() []Step {
 			Tool: "favro_update_collection",
 			Args: map[string]any{
 				"collection_id":  AnyCollectionID,
-				"share_to_users": []any{map[string]any{"userId": AnyUserID, "role": "guest"}},
-				"members":        []any{map[string]any{"userId": AnyUserID, "role": "guest"}},
+				"share_to_users": []any{map[string]any{"userId": OwnUserID, "role": "guest"}},
+				"members":        []any{map[string]any{"userId": OwnUserID, "role": "guest"}},
 				"dry_run":        true,
 			},
 			Why: "dry-run: the sharing keys, where §7.4 records Favro reading one name and writing another",
@@ -256,7 +256,7 @@ func extraSteps() []Step {
 			Tool: "favro_update_group",
 			Args: map[string]any{
 				"group_id": AnyGroupID,
-				"members":  []any{map[string]any{"userId": AnyUserID, "role": "member"}},
+				"members":  []any{map[string]any{"userId": OwnUserID, "role": "member"}},
 				"dry_run":  true,
 			},
 			Why: "dry-run: whole-list membership, which §7.4 records the docs disagreeing about, read against who the group holds",
@@ -321,10 +321,40 @@ func extraSteps() []Step {
 			ExpectError: "blocked",
 		},
 		{
+			Tool: "favro_create_collection",
+			Args: map[string]any{
+				"name":           "livefavro probe",
+				"share_to_users": []any{map[string]any{"userId": OutsideUserID, "role": "guest"}},
+				"dry_run":        true,
+			},
+			Why:         "a userId the organization does not list, refused after reading who the organization holds",
+			ExpectError: "blocked",
+		},
+		{
+			Tool: "favro_create_group",
+			Args: map[string]any{
+				"name":    "livefavro probe",
+				"members": []any{map[string]any{"userId": OutsideUserID, "role": "member"}},
+				"dry_run": true,
+			},
+			Why:         "the same for a new group's members",
+			ExpectError: "blocked",
+		},
+		{
+			Tool: "favro_update_collection",
+			Args: map[string]any{
+				"collection_id":  AnyCollectionID,
+				"share_to_users": []any{map[string]any{"userId": OutsideUserID, "role": "guest"}},
+				"dry_run":        true,
+			},
+			Why:         "the same on an update, after reading who the collection is shared with",
+			ExpectError: "blocked",
+		},
+		{
 			Tool: "favro_update_group",
 			Args: map[string]any{
 				"group_id": AnyGroupID,
-				"members":  []any{map[string]any{"userId": "livefavro-no-such-user", "role": "member"}},
+				"members":  []any{map[string]any{"userId": OutsideUserID, "role": "member"}},
 				"dry_run":  true,
 			},
 			Why:         "a userId the organization does not list, refused after reading who the group and the organization hold",

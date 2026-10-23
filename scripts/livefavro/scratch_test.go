@@ -10,7 +10,10 @@ import (
 )
 
 // fakeFavro records the calls that reached it, and answers each tool
-// with the next of its queued results, or an empty result.
+// with the next of its queued results, or an empty result. A queued
+// answer that starts with "{" is the result's structured half, one that
+// starts with "[" is an error's text, as "[forbidden] …", and anything
+// else is the result's readable half.
 type fakeFavro struct {
 	calls   []string
 	results map[string][]string
@@ -24,21 +27,36 @@ func (f *fakeFavro) call(tool string, args map[string]any) (*callResult, error) 
 	f.calls = append(f.calls, tool+" "+string(body))
 	res := &callResult{StructuredContent: json.RawMessage(`{}`)}
 	if queue := f.results[tool]; len(queue) > 0 {
-		res.StructuredContent = json.RawMessage(queue[0])
+		answer := queue[0]
 		f.results[tool] = queue[1:]
+		if strings.HasPrefix(answer, "{") {
+			res.StructuredContent = json.RawMessage(answer)
+			return res, nil
+		}
+		text, err := json.Marshal(answer)
+		if err != nil {
+			return nil, err
+		}
+		frame := fmt.Sprintf(`{"isError":%t,"content":[{"type":"text","text":%s}]}`, strings.HasPrefix(answer, "["), text)
+		if err := json.Unmarshal([]byte(frame), res); err != nil {
+			return nil, err
+		}
 	}
 	return res, nil
 }
 
 var scratchTools = map[string]tool{
-	"favro_get_tag":            {readOnly: true},
-	"favro_create_tag":         {},
-	"favro_delete_tag":         {},
-	"favro_create_card":        {},
-	"favro_update_card":        {},
-	"favro_resolve_tag":        {readOnly: true},
-	"favro_resolve_collection": {readOnly: true},
-	"favro_delete_collection":  {},
+	"favro_get_tag":                  {readOnly: true},
+	"favro_create_tag":               {},
+	"favro_delete_tag":               {},
+	"favro_create_card":              {},
+	"favro_update_card":              {},
+	"favro_resolve_tag":              {readOnly: true},
+	"favro_resolve_collection":       {readOnly: true},
+	"favro_get_collection":           {readOnly: true},
+	"favro_widen_collection_sharing": {},
+	"favro_update_collection":        {},
+	"favro_delete_collection":        {},
 }
 
 // The -writes run sends a write only to an object it created. The guard

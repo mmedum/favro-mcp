@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/livecover"
 	"github.com/mmedum/favro-mcp/v4/internal/redact"
 )
 
@@ -33,7 +35,7 @@ func TestTheStepsRunThroughAServerStartedWithDryRun(t *testing.T) {
 	t.Setenv("LIVEFAVRO_HELPER", "server")
 	t.Setenv("LIVEFAVRO_ARGS_FILE", argsFile)
 
-	if err := run(os.Args[0], "favro_ping", false, false); err != nil {
+	if err := run(os.Args[0], "favro_ping", false, false, auth.Token{}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(argsFile)
@@ -42,6 +44,39 @@ func TestTheStepsRunThroughAServerStartedWithDryRun(t *testing.T) {
 	}
 	if string(got) != "--dry-run" {
 		t.Errorf("the steps' server was started with %q, want --dry-run", got)
+	}
+}
+
+// The share steps name the signed-in account, found in the users
+// listing by the address the server signs in with. AnyUserID stays the
+// first userId a result carried, which need not be a member.
+func TestThePoolFindsTheSignedInAccountByItsEmail(t *testing.T) {
+	const users = `{"items":[
+		{"userId":"user-someone-else","name":"Someone","organizationRole":"fullMember"},
+		{"userId":"user-also-else","email":"also@example.test","organizationRole":"fullMember"},
+		{"userId":"user-signed-in","email":"Signed.In@Example.test","organizationRole":"administrator"}
+	]}`
+	cases := []struct {
+		name, email string
+		want        any // OwnUserID's value, or nil when it stays unresolved
+	}{
+		{"the entry with the account's email, in any case", " signed.in@example.test ", "user-signed-in"},
+		{"no entry, when no email is known", "", nil},
+		{"no entry, when none carries the email", "elsewhere@example.test", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newPool(tc.email)
+			p.absorb(&callResult{StructuredContent: json.RawMessage(users)})
+
+			own, seen := p.byPlaceholder[livecover.OwnUserID]
+			if (tc.want == nil && seen) || (tc.want != nil && own != tc.want) {
+				t.Errorf("OwnUserID resolved to %v (seen %v), want %v", own, seen, tc.want)
+			}
+			if got := p.byPlaceholder[livecover.AnyUserID]; got != "user-someone-else" {
+				t.Errorf("AnyUserID resolved to %v, want the first userId, user-someone-else", got)
+			}
+		})
 	}
 }
 

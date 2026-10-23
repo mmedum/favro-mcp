@@ -21,7 +21,8 @@ type probeKind struct {
 	resolve string // the read that finds it by name
 	found   string // the id's key in that read's candidates
 	delete  string
-	idArg   string // the delete's id argument
+	idArg   string // the delete's id argument, and the read's
+	read    string // the read that fetches it by id
 }
 
 // probeKinds are the only creates the -writes run may send. Each says
@@ -31,12 +32,12 @@ var probeKinds = map[string]probeKind{
 	"favro_create_tag": {
 		noun: "tag", idKey: "tagId",
 		resolve: "favro_resolve_tag", found: "tag_id",
-		delete: "favro_delete_tag", idArg: "tag_id",
+		delete: "favro_delete_tag", idArg: "tag_id", read: "favro_get_tag",
 	},
 	"favro_create_collection": {
 		noun: "collection", idKey: "collectionId",
 		resolve: "favro_resolve_collection", found: "collection_id",
-		delete: "favro_delete_collection", idArg: "collection_id",
+		delete: "favro_delete_collection", idArg: "collection_id", read: "favro_get_collection",
 	},
 }
 
