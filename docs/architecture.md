@@ -257,7 +257,7 @@ Dependencies, all pinned, and after A4 the whole direct list:
 `go.mod` only as another module's indirect requirement, and depguard
 denies importing either.
 
-Toolchain: Go 1.27 (`go.mod` is the single source of truth — every CI job
+Toolchain: Go 1.27.3 (`go.mod` is the single source of truth — every CI job
 resolves via `go-version-file: go.mod`, and there is no N-1 matrix entry).
 
 ## 6. Addressing and error classes

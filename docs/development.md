@@ -1,6 +1,6 @@
 # Development
 
-Go 1.27. `go.mod` is the single source of truth — every CI job resolves
+Go 1.27.3. `go.mod` is the single source of truth — every CI job resolves
 the toolchain with `go-version-file: go.mod`, and there is deliberately
 no N-1 matrix entry.
 

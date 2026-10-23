@@ -32,6 +32,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - `make live` shares in its dry runs with the signed-in account, found in `favro_list_users` by the email it signs in with, and expects `[blocked]` for a userId outside the organization. It sent a share entry's userId as its unresolved placeholder, which the server refused as outside the organization; it now resolves a placeholder at any depth.
 - `livefavro -writes` counts a read-back refused as `[not_found]` or `[forbidden]` as gone once its delete succeeded: Favro answers 403 for a collection the run has just deleted.
 
+### Security
+- Built with Go 1.27.3, which fixes [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) in `crypto/x509`, which `govulncheck` found reachable: intermediate certificates known to be compromised are no longer trusted.
+
 ## [3.2.0] - 2026-10-10
 
 ### Added
