@@ -1,4 +1,4 @@
-module github.com/mmedum/favro-mcp/v3
+module github.com/mmedum/favro-mcp/v4
 
 go 1.27.2
 

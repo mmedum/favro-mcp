@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/favro-mcp/v3/internal/auth"
-	"github.com/mmedum/favro-mcp/v3/internal/config"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
-	"github.com/mmedum/favro-mcp/v3/internal/redact"
-	"github.com/mmedum/favro-mcp/v3/internal/version"
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/config"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/redact"
+	"github.com/mmedum/favro-mcp/v4/internal/version"
 )
 
 // `favro-mcp doctor` answers the question every first-run bug report is

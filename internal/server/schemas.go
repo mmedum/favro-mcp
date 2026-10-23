@@ -11,7 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/tools"
+	"github.com/mmedum/favro-mcp/v4/internal/tools"
 )
 
 // sdkModule is the import path whose version the dump reports. Read from

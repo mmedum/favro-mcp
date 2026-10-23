@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mmedum/favro-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/mmedum/favro-mcp/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/mmedum/favro-mcp)](https://github.com/mmedum/favro-mcp/releases/latest)
-[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/favro-mcp/v3.svg)](https://pkg.go.dev/github.com/mmedum/favro-mcp/v3)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/favro-mcp/v4.svg)](https://pkg.go.dev/github.com/mmedum/favro-mcp/v4)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for [Favro](https://favro.com), written in Go.

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mmedum/favro-mcp/v3/internal/livecover"
-	"github.com/mmedum/favro-mcp/v3/internal/redact"
+	"github.com/mmedum/favro-mcp/v4/internal/livecover"
+	"github.com/mmedum/favro-mcp/v4/internal/redact"
 )
 
 // runAsks checks asking the person against a real organization, and

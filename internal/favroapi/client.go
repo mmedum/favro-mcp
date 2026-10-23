@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/favro-mcp/v3/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
 )
 
 const (

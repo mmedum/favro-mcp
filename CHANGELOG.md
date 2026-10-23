@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Changed
+- **Breaking:** the Go module path is `github.com/mmedum/favro-mcp/v4`.
+
 ## [3.2.0] - 2026-10-10
 
 ### Added

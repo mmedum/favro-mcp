@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/v3/internal/livecover"
+	"github.com/mmedum/favro-mcp/v4/internal/livecover"
 )
 
 // TestLiveCoverAgainstThisRepository is the gate against the surface it

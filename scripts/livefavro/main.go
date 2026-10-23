@@ -36,8 +36,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/favro-mcp/v3/internal/livecover"
-	"github.com/mmedum/favro-mcp/v3/internal/redact"
+	"github.com/mmedum/favro-mcp/v4/internal/livecover"
+	"github.com/mmedum/favro-mcp/v4/internal/redact"
 )
 
 const (

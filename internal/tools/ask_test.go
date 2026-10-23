@@ -14,7 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
 )
 
 // The protocols a question goes out on: before 2026-07-28 the SDK asks

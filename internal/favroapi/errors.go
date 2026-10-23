@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/mmedum/favro-mcp/v3/internal/render"
+	"github.com/mmedum/favro-mcp/v4/internal/render"
 )
 
 // AuthError indicates Favro rejected the credentials at the auth

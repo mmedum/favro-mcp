@@ -10,8 +10,8 @@ import (
 	"github.com/zalando/go-keyring"
 	"golang.org/x/term"
 
-	"github.com/mmedum/favro-mcp/v3/internal/auth"
-	"github.com/mmedum/favro-mcp/v3/internal/config"
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 // TestMain installs go-keyring's in-memory mock before any test in this
