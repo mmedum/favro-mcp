@@ -104,6 +104,21 @@ func refuseUnconfirmed(tool string, in any) error {
 		"Pass confirm: true only when the person asked for this call, or dry_run: true to preview it", tool)
 }
 
+// before is what addTool does ahead of every handler. A call that asks
+// for a dry run is one for every write its handler makes, whether or not
+// the handler puts the dry run on its own context, and a dry run needs
+// no confirm on that promise. A destructive call that is not one, by
+// its arguments or by --dry-run, needs confirm: true.
+func (reg *registry) before(ctx context.Context, tool string, gated bool, in any) (context.Context, error) {
+	if d, ok := in.(dryRunner); ok && d.dryRun() {
+		ctx = favroapi.WithDryRun(ctx)
+	}
+	if gated && !reg.client.DryRun(ctx) {
+		return ctx, refuseUnconfirmed(tool, in)
+	}
+	return ctx, nil
+}
+
 // requireRules panics on a tool that breaks a rule of §9.2: a
 // destructive tool whose input does not embed confirmInput, or a tool
 // that carries the mark and is not destructive.
@@ -167,16 +182,9 @@ func addTool[In, Out any](reg *registry, t *mcp.Tool, h mcp.ToolHandlerFor[In, O
 
 	mcp.AddTool(reg.srv, t, func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		var zero Out
-		// A call that asks for a dry run is one for every write its
-		// handler makes, whether or not the handler puts the dry run on
-		// its own context. A dry run needs no confirm on that promise.
-		if d, ok := any(in).(dryRunner); ok && d.dryRun() {
-			ctx = favroapi.WithDryRun(ctx)
-		}
-		if gated && !reg.client.DryRun(ctx) {
-			if err := refuseUnconfirmed(t.Name, in); err != nil {
-				return nil, zero, render.Error(err)
-			}
+		ctx, err := reg.before(ctx, t.Name, gated, in)
+		if err != nil {
+			return nil, zero, render.Error(err)
 		}
 		res, out, err := h(ctx, req, in)
 		if err != nil {

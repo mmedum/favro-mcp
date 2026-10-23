@@ -49,7 +49,7 @@ const (
 	// EnvRequirePrompt was removed with the question it governed: the
 	// server no longer asks the person, and the client's own approval
 	// decides each call. It is read only to refuse a configuration that
-	// still turns it on (Load).
+	// still turns it on (readRemoved).
 	EnvRequirePrompt = "FAVRO_REQUIRE_PROMPT"
 
 	// EnvInteractionHint, set to false, took Claude Code's
@@ -127,6 +127,27 @@ func Load() Config {
 		}
 	}
 
+	cfg.readRemoved()
+
+	if raw := strings.TrimSpace(os.Getenv(EnvUploadDir)); raw != "" {
+		dir, err := UploadDir(raw)
+		switch {
+		case err != nil:
+			cfg.Warnings = append(cfg.Warnings,
+				fmt.Sprintf("ignoring %s: %v — the upload tools stay unregistered", EnvUploadDir, err))
+		default:
+			cfg.UploadDir = dir
+		}
+	}
+
+	return cfg
+}
+
+// readRemoved describes the settings a release took out that the
+// environment still sets: in Refusals one that turned a guard on, so the
+// server does not start, and in Warnings one whose loss only makes the
+// server stricter.
+func (cfg *Config) readRemoved() {
 	// A removed setting set to anything but false is refused: a value
 	// that is not a boolean may mean on.
 	if raw := strings.TrimSpace(os.Getenv(EnvRequirePrompt)); raw != "" {
@@ -149,19 +170,6 @@ func Load() Config {
 				"on every call of them and refuses them where it cannot prompt, as in `claude -p`. Unset it")
 		}
 	}
-
-	if raw := strings.TrimSpace(os.Getenv(EnvUploadDir)); raw != "" {
-		dir, err := UploadDir(raw)
-		switch {
-		case err != nil:
-			cfg.Warnings = append(cfg.Warnings,
-				fmt.Sprintf("ignoring %s: %v — the upload tools stay unregistered", EnvUploadDir, err))
-		default:
-			cfg.UploadDir = dir
-		}
-	}
-
-	return cfg
 }
 
 // UploadDir checks a FAVRO_UPLOAD_DIR value: an absolute path to a
