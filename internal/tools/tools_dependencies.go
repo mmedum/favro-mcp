@@ -6,8 +6,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
 )
 
 const (
@@ -43,14 +43,23 @@ type updateDependencyInput struct {
 	IsBefore         *bool  `json:"is_before" jsonschema:"true if the linked card must be done before this one, false if after"`
 }
 
+// replaceDependenciesInput is writeDependenciesInput for the one of the
+// two that drops every link it does not name.
+type replaceDependenciesInput struct {
+	writeDependenciesInput
+	confirmInput
+}
+
 type deleteDependencyInput struct {
 	dryRunInput
+	confirmInput
 	CardID           string `json:"card_id" jsonschema:"the per-widget cardId that owns the dependency"`
 	DependencyCardID string `json:"dependency_card_id" jsonschema:"the per-widget cardId of the link to remove"`
 }
 
 type deleteAllDependenciesInput struct {
 	dryRunInput
+	confirmInput
 	CardID string `json:"card_id" jsonschema:"the per-widget cardId to clear every dependency from"`
 }
 
@@ -112,7 +121,7 @@ func registerWriteDependencies(reg *registry, client *favroapi.Client) {
 			"list. Destructive — MCP hosts may warn before auto-confirming. Pass " +
 			"`dry_run: true` to preview.",
 		Annotations: mutating("Replace Favro card dependencies", true),
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in writeDependenciesInput) (*mcp.CallToolResult, writeOutput[favro.CardDependencies], error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in replaceDependenciesInput) (*mcp.CallToolResult, writeOutput[favro.CardDependencies], error) {
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)

@@ -8,7 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
 )
 
 func TestMCP_CreateGroup_HappyPath(t *testing.T) {
@@ -135,7 +135,7 @@ func TestMCP_DeleteGroup_HappyPath(t *testing.T) {
 	cs := connectInMemoryWith(t, c)
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      deleteGroupToolName,
-		Arguments: map[string]any{"group_id": "g-1"},
+		Arguments: map[string]any{"group_id": "g-1", "confirm": true},
 	})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)

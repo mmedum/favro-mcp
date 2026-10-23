@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/favro-mcp/v3/internal/livecover"
+	"github.com/mmedum/favro-mcp/v4/internal/livecover"
 )
 
 // liveCoverWaivedPath records the tools and options the live driver
@@ -23,6 +23,7 @@ const (
 	minCoverOptions    = 300
 	minCoverSteps      = 80
 	minCoverWaiverText = 40
+	minCoverWriteSteps = 60
 )
 
 // liveCover fails on any tool or option the live driver never
@@ -45,13 +46,18 @@ func liveCover(w io.Writer, _ []string) error {
 		return err
 	}
 
-	schema, err := toolOptions(filepath.Join(root, "schemas.json"))
+	schemaPath := filepath.Join(root, "schemas.json")
+	schema, err := toolOptions(schemaPath)
 	if err != nil {
 		return err
 	}
 	if len(schema) < minCoverTools {
 		return fmt.Errorf("read %d tools from schemas.json, expected at least %d — run `make schemas`",
 			len(schema), minCoverTools)
+	}
+	readOnly, err := readOnlyTools(schemaPath)
+	if err != nil {
+		return err
 	}
 
 	waived, err := readLiveWaivers(filepath.Join(root, filepath.FromSlash(liveCoverWaivedPath)))
@@ -69,7 +75,11 @@ func liveCover(w io.Writer, _ []string) error {
 		return fmt.Errorf("compared %d options, expected at least %d", cov.Options, minCoverOptions)
 	}
 
-	var problems []string
+	problems, writes := stepsWithoutDryRun(steps, readOnly)
+	if writes < minCoverWriteSteps {
+		return fmt.Errorf("found %d steps that write, expected at least %d — readOnlyHint is not being read",
+			writes, minCoverWriteSteps)
+	}
 	for _, tool := range cov.MissingTools {
 		problems = append(problems, fmt.Sprintf(
 			"%s is registered and no step calls it — add one to internal/livecover, or waive it in %s",
@@ -87,9 +97,54 @@ func liveCover(w io.Writer, _ []string) error {
 	}
 
 	_, err = fmt.Fprintf(w,
-		"live-cover ok: %d steps over %d tools and %d options; %d covered, %d waived with a reason\n",
-		len(steps), cov.Tools, cov.Options, cov.OptionsCovered, len(waived))
+		"live-cover ok: %d steps over %d tools and %d options; %d covered, %d waived with a reason; "+
+			"%d steps write, each with dry_run: true\n",
+		len(steps), cov.Tools, cov.Options, cov.OptionsCovered, len(waived), writes)
 	return err
+}
+
+// stepsWithoutDryRun names every step that calls a tool which is not
+// read-only and does not carry dry_run: true, and counts the steps that
+// write.
+//
+// The steps run against the first collection, widget, card, user, tag
+// and group the organization lists: objects the run did not create, in
+// an organization people work in. A step's dry_run is what keeps a
+// delete there a preview. The driver also starts the server with
+// --dry-run, and this keeps the steps from relying on that flag alone.
+// A tool is read-only by its own readOnlyHint, so a tool the schema
+// does not list counts as one that writes.
+func stepsWithoutDryRun(steps []livecover.Step, readOnly map[string]bool) (problems []string, writes int) {
+	for _, s := range steps {
+		if readOnly[s.Tool] {
+			continue
+		}
+		writes++
+		if dry, _ := s.Args["dry_run"].(bool); !dry {
+			problems = append(problems, fmt.Sprintf(
+				"a %s step (%q) writes without dry_run: true, against an object the run did not create",
+				s.Tool, s.Why))
+		}
+	}
+	return problems, writes
+}
+
+// readOnlyTools reads which tools the committed schema dump marks
+// readOnlyHint.
+func readOnlyTools(path string) (map[string]bool, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	dump, err := parseSchemas(body)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	out := make(map[string]bool, len(dump.Tools))
+	for _, t := range dump.Tools {
+		out[t.Name] = t.Annotations.ReadOnlyHint
+	}
+	return out, nil
 }
 
 // staleLiveWaivers reports waivers for something that is covered, or

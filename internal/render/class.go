@@ -75,15 +75,16 @@ const (
 	ClassAmbiguous Class = "ambiguous"
 )
 
-// The two that asking the person forces (§9.2).
+// The two that writes force (§9.2, §11).
 const (
-	// ClassBlocked is a write the person did not confirm, or one this
-	// server would not make without asking them. Nothing was changed;
-	// the caller does not make the call again unless the person asks.
+	// ClassBlocked is a write this server refuses as asked: a destructive
+	// call without confirm: true, or one an ordinary tool would widen
+	// access with. Nothing was changed; the caller does not make the call
+	// again unless the person asks for it.
 	ClassBlocked Class = "blocked"
-	// ClassAmbiguousOutcome is a write the person confirmed whose result
-	// never came back, so it may have happened. The caller reads the
-	// resource to see, and never repeats the write to find out.
+	// ClassAmbiguousOutcome is a write whose result never came back, so
+	// it may have happened. The caller reads the resource to see, and
+	// never repeats the write to find out.
 	ClassAmbiguousOutcome Class = "ambiguous_outcome"
 )
 

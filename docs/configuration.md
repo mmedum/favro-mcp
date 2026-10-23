@@ -11,10 +11,10 @@ the OS keyring, which `favro-mcp auth login` writes.
 | `FAVRO_API_TOKEN` | keyring, else unset | A Favro API token, created under My Profile → API tokens. The password half. |
 | `FAVRO_ORGANIZATION_ID` | keyring, else unset | The organization every request is scoped to. This server is single-org and no tool takes another. |
 | `FAVRO_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`, case-insensitive. Logs go to stderr. A value this server cannot read falls back to `info` and says so. |
-| `FAVRO_ENABLE_DESTRUCTIVE` | `false` | Register the delete-style tools. See below — "off" means absent from `tools/list`, not guarded. Anything unreadable as a bool leaves them off. |
+| `FAVRO_ENABLE_DESTRUCTIVE` | `false` | Register the destructive tools: the deletes, and `favro_widen_collection_sharing`. See below — "off" means absent from `tools/list`, not guarded. Anything unreadable as a bool leaves them off. |
 | `FAVRO_UPLOAD_DIR` | unset | The one directory the upload tools read files from. Unset, and they are not registered. It must be an absolute path to a directory that exists; anything else is logged at startup and leaves uploads off. See below. |
-| `FAVRO_REQUIRE_PROMPT` | `false` | Refuse the writes that ask the person when the client cannot ask them, rather than making them on the arguments alone. A value this server cannot read counts as `true`, and it says so. |
-| `FAVRO_INTERACTION_HINT` | `true` | For a client that cannot ask, mark the writes that ask the person with Claude Code's `requiresUserInteraction`, which makes Claude Code prompt on every call of them. A client that can ask never gets the mark, and with `FAVRO_REQUIRE_PROMPT` set no client does, since the server refuses those calls. Set it to `false` only for a deployment with nobody at the keyboard: headless, Claude Code refuses a marked tool. A value this server cannot read counts as `true`, and it says so. |
+| `FAVRO_REQUIRE_PROMPT` | removed | It refused the writes that asked the person when the client could not ask. The server asks nobody now, so the setting is gone: set to anything but `false`, the server refuses to start rather than quietly allow what it was set to stop, and `doctor` reports it. Unset it, and leave `FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody watching. |
+| `FAVRO_INTERACTION_HINT` | removed | Set to `false`, it took Claude Code's `requiresUserInteraction` mark off the writes the server asked about. The five marked tools now always carry the mark, so Claude Code prompts on every call of them and refuses them where it cannot prompt. Set to anything but `true`, it is ignored with a warning; unset it. |
 | `FAVRO_MCP_SKIP_VALIDATE` | unset | Any non-empty value skips the startup credential check. For protocol-only tests that never reach Favro. |
 
 ## Credential resolution
@@ -69,13 +69,14 @@ id you are bound to is or is not one of the ids the token can see.
 unsafe to share. **Neither mode prints the token.**
 
 `--dump-schemas` reports the whole surface regardless of
-`FAVRO_ENABLE_DESTRUCTIVE`, because it is a record of every schema this
+`FAVRO_ENABLE_DESTRUCTIVE` and `FAVRO_UPLOAD_DIR`, because it is a record of every schema this
 binary can serve; whether a tool is registered is a deployment decision
 rather than a wire one.
 
 ## The destructive flag
 
-There are fourteen delete-style tools. Unset, they are not in
+There are fifteen destructive tools: the deletes, and
+`favro_widen_collection_sharing`. Unset, they are not in
 `tools/list` at all. That is the
 point: a client-side confirmation prompt is not a safety layer, because a
 host in an auto-approve permission mode runs a tool annotated
@@ -86,6 +87,10 @@ unattended is the one that was never registered.
 Which tools those are is read from the annotation at registration, never
 from a list of names, so a delete tool added later is gated by having
 been written rather than by somebody remembering to add it.
+
+Registered, each one still refuses a call without `confirm: true`, unless
+it is a dry run. That is a sign the caller meant the call, not approval:
+the model sets it.
 
 `dry_run` is not a second guard for this. It is a per-call preview,
 useful for checking what a write would send; it does not stop a host from
@@ -100,28 +105,36 @@ to it, or absolute within it. A `..` or a symbolic link that leaves it is
 refused before anything is read. Use a directory that holds only what you
 would attach to a card.
 
-## Asking the person
+## Approving calls
 
-Before ten writes the server asks the person through the client, when
-the client can: the deletes of a tag, collection, widget, group or
-webhook, deleting a card from every widget, both uploads, and making a
-collection public. The question names what the write would act on;
-accepting it is the confirmation. A call the person did not confirm
-comes back `[blocked]` and nothing is changed. A dry run asks nothing.
-A client that cannot ask gets no question unless `FAVRO_REQUIRE_PROMPT`
-is set, which refuses those writes instead.
+The server asks the person nothing; the MCP client approves each call.
+claude.ai and Codex prompt by `destructiveHint`, which the fifteen
+destructive tools carry, and VS Code prompts on every tool without
+`readOnlyHint`, which only the reads carry.
 
-A client that cannot ask also sees those ten tools marked with Claude
-Code's `requiresUserInteraction`, so Claude Code prompts before every
-call of them. A client that can ask sees no mark, so the person answers
-once, to the server's question. `FAVRO_INTERACTION_HINT=false` drops the
-mark.
+Five tools carry Claude Code's `requiresUserInteraction`, so Claude Code
+prompts on every call of them whatever its rules say, and refuses them
+where it cannot prompt: `favro_delete_tag`, `favro_delete_group`,
+`favro_delete_widget`, `favro_delete_collection` and
+`favro_widen_collection_sharing`. For the rest, list the calls you want
+to approve under `permissions.ask`; the README has an example.
+
+The ordinary collection, group and widget writes share only inside the
+organization: members by userId, and groups whose members all are. An
+email, `type: 'organization'`, a new admin or group administrator,
+someone whose organization role is not `administrator` or `fullMember`,
+a group that holds such a person or cannot be read, `owner_role:
+'guests'` or `edit_role: 'guests'`, and `public_sharing: 'organization'`
+or `'public'` are refused `[blocked]`. Opening a collection is
+`favro_widen_collection_sharing`, which needs the destructive flag.
 
 ## Startup behavior
 
-The server resolves credentials, then validates them against Favro with
-one `GET /organizations`, then serves. **If either step fails it logs the
-reason and exits non-zero** rather than starting and failing per call.
+The server refuses to start while a removed setting is turned on
+(`FAVRO_REQUIRE_PROMPT`). Then it resolves credentials, validates them
+against Favro with one `GET /organizations`, and serves. **If any step
+fails it logs the reason and exits non-zero** rather than starting and
+failing per call.
 `FAVRO_MCP_SKIP_VALIDATE` skips the live half.
 
 A host shows that as "failed to connect", which says less than it could —

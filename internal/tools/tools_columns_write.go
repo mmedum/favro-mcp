@@ -7,9 +7,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
-	"github.com/mmedum/favro-mcp/v3/internal/service"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/service"
 )
 
 const (
@@ -40,6 +40,7 @@ type updateColumnInput struct {
 // deleteColumnInput is the input for favro_delete_column.
 type deleteColumnInput struct {
 	dryRunInput
+	confirmInput
 	ColumnID       string `json:"column_id" jsonschema:"the Favro columnId to delete"`
 	WidgetCommonID string `json:"widget_common_id,omitempty" jsonschema:"optional widgetCommonId; if known, lets the cache invalidation be scoped to one widget rather than sweeping all column caches"`
 }

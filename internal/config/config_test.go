@@ -124,55 +124,59 @@ func TestWarningsNameTheVariable(t *testing.T) {
 	}
 }
 
-// TestLoadRequirePrompt pins the parse. The variable exists to refuse,
-// so a value Go cannot read means on, and says so.
-func TestLoadRequirePrompt(t *testing.T) {
+// A removed setting still turned on refuses to start: ignored, it
+// would quietly allow what its owner set it to stop. Off and unset are
+// still accepted, and a value that is not a boolean may mean on.
+func TestARemovedSettingIsRefusedUnlessOff(t *testing.T) {
 	for _, tc := range []struct {
-		env        string
-		want, warn bool
+		env     string
+		refused bool
 	}{
-		{"", false, false},
-		{"true", true, false},
-		{"0", false, false},
-		{"yes", true, true},
+		{"", false},
+		{"false", false},
+		{" 0 ", false},
+		{"true", true},
+		{"1", true},
+		{"yes", true},
 	} {
 		t.Setenv(EnvRequirePrompt, tc.env)
 		cfg := Load()
-		if cfg.RequirePrompt != tc.want || (len(cfg.Warnings) > 0) != tc.warn {
-			t.Errorf("%q: RequirePrompt %v, warnings %q", tc.env, cfg.RequirePrompt, cfg.Warnings)
+		if got := len(cfg.Refusals) == 1; got != tc.refused || len(cfg.Refusals) > 1 {
+			t.Errorf("FAVRO_REQUIRE_PROMPT=%q: refusals %q, want refused %v", tc.env, cfg.Refusals, tc.refused)
+		}
+		if tc.refused && len(cfg.Refusals) == 1 && !strings.HasPrefix(cfg.Refusals[0], "FAVRO_REQUIRE_PROMPT was removed") {
+			t.Errorf("FAVRO_REQUIRE_PROMPT=%q: the refusal does not name the setting: %q", tc.env, cfg.Refusals[0])
 		}
 	}
 }
 
-// TestLoadInteractionHint pins the parse. The mark is on unless the
-// variable says false; a value Go cannot read keeps it on, and says so.
-func TestLoadInteractionHint(t *testing.T) {
+// FAVRO_INTERACTION_HINT=false took the mark off, so that `claude -p`
+// could run the marked deletes. It is ignored now, which only makes the
+// server stricter, so the server starts; but a deployment that relied
+// on it hears why those calls are refused. Unset or true changes
+// nothing and says nothing.
+func TestARemovedHintIsWarnedWhenOff(t *testing.T) {
 	for _, tc := range []struct {
-		env              string
-		suppressed, warn bool
+		env    string
+		warned bool
 	}{
-		{"", false, false},
-		{"true", false, false},
-		{"false", true, false},
-		{"0", true, false},
-		{"off", false, true},
+		{"", false},
+		{"true", false},
+		{"false", true},
+		{"0", true},
+		{"nope", true},
 	} {
 		t.Setenv(EnvInteractionHint, tc.env)
 		cfg := Load()
-		// Only this variable's warnings: another one set in the shell
-		// must not decide the case.
-		var mine []string
+		var warned []string
 		for _, w := range cfg.Warnings {
-			if strings.Contains(w, EnvInteractionHint) {
-				mine = append(mine, w)
+			if strings.HasPrefix(w, "FAVRO_INTERACTION_HINT was removed and is ignored") {
+				warned = append(warned, w)
 			}
 		}
-		warned := strings.Join(mine, "\n")
-		if cfg.SuppressInteractionHint != tc.suppressed || (warned != "") != tc.warn {
-			t.Errorf("%q: SuppressInteractionHint %v, warnings %q", tc.env, cfg.SuppressInteractionHint, warned)
-		}
-		if tc.warn && !strings.Contains(warned, "treated as true") {
-			t.Errorf("%q: the warning does not say what it means: %q", tc.env, warned)
+		if (len(warned) == 1) != tc.warned || len(warned) > 1 || len(cfg.Refusals) != 0 {
+			t.Errorf("FAVRO_INTERACTION_HINT=%q: warnings %q, refusals %q; want warned %v and no refusal",
+				tc.env, cfg.Warnings, cfg.Refusals, tc.warned)
 		}
 	}
 }

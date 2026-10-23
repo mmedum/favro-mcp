@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
 )
 
 // scoreEpsilon is the comparison tolerance for resolver score
@@ -372,6 +372,38 @@ func TestResolveUser_HappyPath(t *testing.T) {
 	}
 	if got := calls.Load(); got != 1 {
 		t.Errorf("calls.Load() = %v, want %v", got, 1)
+	}
+}
+
+// OrganizationRoles answers from the user cache, and reads the
+// organization again when the cache lacks someone asked about, since
+// they may have joined since it was filled. Someone still missing has
+// no entry.
+func TestOrganizationRoles(t *testing.T) {
+	t.Parallel()
+
+	r, calls := resolverFixture(t, [][]favro.User{{
+		{UserID: "u-1", OrganizationRole: "fullMember"},
+		{UserID: "u-2", OrganizationRole: "guest"},
+	}})
+	for _, tc := range []struct {
+		ids       []string
+		wantCalls int32
+	}{
+		{[]string{"u-1"}, 1},          // cold: one read
+		{[]string{"u-1", "u-2"}, 1},   // warm and complete: none
+		{[]string{"u-1", "u-new"}, 2}, // warm and lacking someone: read again
+	} {
+		roles, err := r.OrganizationRoles(context.Background(), tc.ids)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if roles["u-1"] != "fullMember" || roles["u-2"] != "guest" || len(roles) != 2 {
+			t.Errorf("%v: roles = %v, want u-1 fullMember and u-2 guest only", tc.ids, roles)
+		}
+		if got := calls.Load(); got != tc.wantCalls {
+			t.Errorf("%v: %d reads of /users so far, want %d", tc.ids, got, tc.wantCalls)
+		}
 	}
 }
 

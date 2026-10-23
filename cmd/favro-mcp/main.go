@@ -32,11 +32,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/auth"
-	"github.com/mmedum/favro-mcp/v3/internal/config"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
-	"github.com/mmedum/favro-mcp/v3/internal/server"
-	"github.com/mmedum/favro-mcp/v3/internal/version"
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/config"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/server"
+	"github.com/mmedum/favro-mcp/v4/internal/version"
 )
 
 func main() {
@@ -138,6 +138,12 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 		slog.Info("--dry-run set; all mutating Favro requests will short-circuit and return a DryRunRecord")
 	}
 
+	// A removed setting still turned on stops the server here, after the
+	// schema dump, which describes the surface rather than a deployment.
+	if err := refuseRemoved(cfg); err != nil {
+		return err
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -174,12 +180,10 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 	client.ForceDryRun = *dryRun
 
 	opts := server.Options{
-		Destructive:             cfg.Destructive,
-		RequirePrompt:           cfg.RequirePrompt,
-		SuppressInteractionHint: cfg.SuppressInteractionHint,
-		UploadDir:               cfg.UploadDir,
-		CredentialSource:        rt.Source,
-		Version:                 version.String(),
+		Destructive:      cfg.Destructive,
+		UploadDir:        cfg.UploadDir,
+		CredentialSource: rt.Source,
+		Version:          version.String(),
 	}
 	logSurface(opts)
 
@@ -192,14 +196,23 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 	return nil
 }
 
-// logSurface says which of the opt-in tools this run registers, and
-// when the writes that ask the person go without the client's mark.
+// refuseRemoved logs each removed setting the environment still turns
+// on, and fails when there is one: ignored, it would quietly allow what
+// its owner set it to stop.
+func refuseRemoved(cfg config.Config) error {
+	if len(cfg.Refusals) == 0 {
+		return nil
+	}
+	for _, r := range cfg.Refusals {
+		slog.Error(r) //nolint:gosec // G706: the message names a variable, not its value
+	}
+	return errors.New("a removed setting is still set; see the log above")
+}
+
+// logSurface says which of the opt-in tools this run registers.
 func logSurface(opts server.Options) {
 	if opts.Destructive {
-		slog.Warn(config.EnvEnableDestructive + " is set — delete-style tools are registered and can run unattended")
-	}
-	if opts.SuppressInteractionHint {
-		slog.Warn(config.EnvInteractionHint + " is false — the writes that ask the person carry no requiresUserInteraction mark")
+		slog.Warn(config.EnvEnableDestructive + " is set — the destructive tools are registered and can run unattended")
 	}
 	if opts.UploadDir != "" {
 		slog.Info(config.EnvUploadDir + " is set — the upload tools read files from that directory only")
@@ -213,8 +226,8 @@ func logSurface(opts server.Options) {
 // Destructive is on here regardless of the environment: this file is
 // the record of every schema this binary can serve, and whether a tool
 // is registered is a deployment decision rather than a wire one. A dump
-// that followed the flag would drop thirteen tools out of the committed
-// snapshot, and the schema-diff gate would then stop watching them for
+// that followed the flag would drop the destructive tools out of the
+// committed snapshot, and the schema-diff gate would then stop watching them for
 // the breaking changes it exists to catch. The upload tools are in it
 // for the same reason; listing reads no file, so any directory will do.
 func dumpSchemaSurface(ctx context.Context, stdout io.Writer) error {
@@ -280,7 +293,7 @@ Environment:
   %s     Favro organization id; the server is single-org.
   %s           debug | info | warn | error  (default: info)
   %s   When set, skip the startup /organizations ping.
-  %s  Set to true to register the delete-style tools (default: off).
+  %s  Set to true to register the destructive tools (default: off).
 `, auth.EnvUserEmail, auth.EnvAPIToken, auth.EnvOrganizationID,
 		config.EnvLogLevel, config.EnvSkipValidate, config.EnvEnableDestructive)
 }

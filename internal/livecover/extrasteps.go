@@ -98,7 +98,7 @@ func extraSteps() []Step {
 			Tool: "favro_create_collection",
 			Args: map[string]any{
 				"name":           "livefavro probe",
-				"share_to_users": []any{map[string]any{"userId": AnyUserID, "role": "guest"}},
+				"share_to_users": []any{map[string]any{"userId": OwnUserID, "role": "guest"}},
 				"dry_run":        true,
 			},
 			Why: "dry-run: the write-side sharing key, which §7.4 records Favro spelling differently from the read",
@@ -107,10 +107,10 @@ func extraSteps() []Step {
 			Tool: "favro_create_group",
 			Args: map[string]any{
 				"name":    "livefavro probe",
-				"members": []any{map[string]any{"userId": AnyUserID, "role": "administrator"}},
+				"members": []any{map[string]any{"userId": OwnUserID, "role": "member"}},
 				"dry_run": true,
 			},
-			Why: "dry-run: a group created with its membership in one call",
+			Why: "dry-run: a group created with its membership in one call, after the user is read as a member of the organization",
 		},
 		{
 			Tool: "favro_create_tasklist",
@@ -246,8 +246,8 @@ func extraSteps() []Step {
 			Tool: "favro_update_collection",
 			Args: map[string]any{
 				"collection_id":  AnyCollectionID,
-				"share_to_users": []any{map[string]any{"userId": AnyUserID, "role": "guest"}},
-				"members":        []any{map[string]any{"userId": AnyUserID, "role": "guest"}},
+				"share_to_users": []any{map[string]any{"userId": OwnUserID, "role": "guest"}},
+				"members":        []any{map[string]any{"userId": OwnUserID, "role": "guest"}},
 				"dry_run":        true,
 			},
 			Why: "dry-run: the sharing keys, where §7.4 records Favro reading one name and writing another",
@@ -256,10 +256,10 @@ func extraSteps() []Step {
 			Tool: "favro_update_group",
 			Args: map[string]any{
 				"group_id": AnyGroupID,
-				"members":  []any{map[string]any{"userId": AnyUserID, "role": "administrator"}},
+				"members":  []any{map[string]any{"userId": OwnUserID, "role": "member"}},
 				"dry_run":  true,
 			},
-			Why: "dry-run: whole-list membership, which §7.4 records the docs disagreeing about",
+			Why: "dry-run: whole-list membership, which §7.4 records the docs disagreeing about, read against who the group holds",
 		},
 		{
 			Tool: "favro_update_comment",
@@ -292,6 +292,107 @@ func extraSteps() []Step {
 				"dry_run":    true,
 			},
 			Why: "the same on the comment path",
+		},
+
+		// What the ordinary writes refuse, so the refusal is seen
+		// against a real organization. Each carries dry_run as well:
+		// the refusal comes first either way, and if it ever did not,
+		// nothing is written.
+		{
+			Tool:        "favro_create_collection",
+			Args:        map[string]any{"name": "livefavro probe", "public_sharing": "public", "dry_run": true},
+			Why:         "a public collection is its own tool's, never this one's",
+			ExpectError: "blocked",
+		},
+		{
+			Tool:        "favro_update_collection",
+			Args:        map[string]any{"collection_id": AnyCollectionID, "public_sharing": "organization", "dry_run": true},
+			Why:         "nor the whole organization, on an update",
+			ExpectError: "blocked",
+		},
+		{
+			Tool: "favro_create_collection",
+			Args: map[string]any{
+				"name":           "livefavro probe",
+				"share_to_users": []any{map[string]any{"email": "livefavro-probe@example.invalid", "role": "view"}},
+				"dry_run":        true,
+			},
+			Why:         "an invitation by email, which may reach outside the organization",
+			ExpectError: "blocked",
+		},
+		{
+			Tool: "favro_create_collection",
+			Args: map[string]any{
+				"name":           "livefavro probe",
+				"share_to_users": []any{map[string]any{"userId": OutsideUserID, "role": "guest"}},
+				"dry_run":        true,
+			},
+			Why:         "a userId the organization does not list, refused after reading who the organization holds",
+			ExpectError: "blocked",
+		},
+		{
+			Tool: "favro_create_group",
+			Args: map[string]any{
+				"name":    "livefavro probe",
+				"members": []any{map[string]any{"userId": OutsideUserID, "role": "member"}},
+				"dry_run": true,
+			},
+			Why:         "the same for a new group's members",
+			ExpectError: "blocked",
+		},
+		{
+			Tool: "favro_update_collection",
+			Args: map[string]any{
+				"collection_id":  AnyCollectionID,
+				"share_to_users": []any{map[string]any{"userId": OutsideUserID, "role": "guest"}},
+				"dry_run":        true,
+			},
+			Why:         "the same on an update, after reading who the collection is shared with",
+			ExpectError: "blocked",
+		},
+		{
+			Tool: "favro_update_group",
+			Args: map[string]any{
+				"group_id": AnyGroupID,
+				"members":  []any{map[string]any{"userId": OutsideUserID, "role": "member"}},
+				"dry_run":  true,
+			},
+			Why:         "a userId the organization does not list, refused after reading who the group and the organization hold",
+			ExpectError: "blocked",
+		},
+		{
+			Tool:        "favro_create_widget",
+			Args:        map[string]any{"collection_id": AnyCollectionID, "name": "livefavro probe", "owner_role": "guests", "dry_run": true},
+			Why:         "guests made the widget's owners",
+			ExpectError: "blocked",
+		},
+		{
+			Tool:        "favro_update_widget",
+			Args:        map[string]any{"widget_common_id": AnyWidgetCommonID, "edit_role": "guests", "dry_run": true},
+			Why:         "guests made the widget's editors",
+			ExpectError: "blocked",
+		},
+		{
+			Tool: "favro_widen_collection_sharing",
+			Args: map[string]any{
+				"collection_id":   AnyCollectionID,
+				"collection_name": "livefavro probe: not this collection's name",
+				"public_sharing":  "organization",
+				"confirm":         true,
+				"dry_run":         true,
+			},
+			Why:         "the collection is read and its name held against the witness, which differs; -writes opens a probe collection",
+			ExpectError: "conflict",
+		},
+		{
+			Tool: "favro_delete_widget",
+			Args: map[string]any{
+				"widget_common_id": AnyWidgetCommonID,
+				"everywhere":       true,
+				"confirm":          true,
+				"dry_run":          true,
+			},
+			Why: "dry-run: the delete from every collection, named rather than reached by omission",
 		},
 	}
 }

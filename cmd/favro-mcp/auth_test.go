@@ -11,7 +11,7 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/mmedum/favro-mcp/v3/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
 )
 
 func TestRunAuth_NoArgs_PrintsUsage(t *testing.T) {

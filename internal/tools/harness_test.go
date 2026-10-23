@@ -12,9 +12,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/auth"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi/favroapitest"
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi/favroapitest"
 )
 
 // These forward to the one shared fixture; see favroapitest for why
@@ -138,7 +138,6 @@ func uploadDirOf(t *testing.T) string {
 // spelled out, for the tests whose subject is what gets registered.
 func connectInMemoryOpts(t *testing.T, favroClient *favroapi.Client, opts Options) *mcp.ClientSession {
 	t.Helper()
-	ctx := t.Context()
 
 	// The server is built here rather than through internal/server,
 	// which imports this package: an in-package test cannot import its
@@ -150,7 +149,24 @@ func connectInMemoryOpts(t *testing.T, favroClient *favroapi.Client, opts Option
 	opts.CredentialSource = "env"
 	opts.Version = "v0.1.0-test"
 	Register(srv, favroClient, opts)
-	client := mcp.NewClient(&mcp.Implementation{Name: "favro-mcp-test", Version: "v0.0.0"}, nil)
+	return connectServer(t, srv)
+}
+
+// connectServer runs srv over in-memory transports and connects a
+// client to it, for the tests that build their own server.
+func connectServer(t *testing.T, srv *mcp.Server) *mcp.ClientSession {
+	t.Helper()
+	ctx := t.Context()
+
+	// The client can ask the person, and the server asks nobody (§9.2):
+	// a question put to it fails the test that made the call, whichever
+	// tool that was.
+	client := mcp.NewClient(&mcp.Implementation{Name: "favro-mcp-test", Version: "v0.0.0"}, &mcp.ClientOptions{
+		ElicitationHandler: func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+			t.Errorf("the server asked the person something, and it asks nobody: %q", req.Params.Message)
+			return &mcp.ElicitResult{Action: "decline"}, nil
+		},
+	})
 
 	clientT, serverT := mcp.NewInMemoryTransports()
 
@@ -235,6 +251,7 @@ func TestMCP_ToolsList_IncludesFavroPing(t *testing.T) {
 		createCollectionToolName,
 		updateCollectionToolName,
 		deleteCollectionToolName,
+		widenCollectionSharingToolName,
 		createWidgetToolName,
 		updateWidgetToolName,
 		deleteWidgetToolName,
@@ -300,7 +317,7 @@ func TestMCP_ToolsList_NoUnlistedTools(t *testing.T) {
 
 // registeredToolCount is the number of tools New() registers. Bump it
 // together with the name list in TestMCP_ToolsList_IncludesFavroPing.
-const registeredToolCount = 85
+const registeredToolCount = 86
 
 func TestMCP_FavroPing_ReturnsExpectedFields(t *testing.T) {
 	t.Parallel()

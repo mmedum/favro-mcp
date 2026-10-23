@@ -1,12 +1,12 @@
 # Architecture — favro-mcp
 
-**Status, 2026-10-10.** Released: v3.2.0, which marks the ten writes that ask the person with Claude Code's `requiresUserInteraction` for a client that cannot ask, and never for one that can, so the person answers once (§9.2); built with Go 1.27.2. One prompt in Claude Code is not yet seen live. v3.1.1 sends a write once and reports one that may have landed as `[ambiguous_outcome]`. The server's own feature phases
+**Status, 2026-10-23.** Released: v4.0.0, in which the server asks nobody and per-call approval is the client's (§9.2, B2); every destructive call takes `confirm: true`; five tools carry the mark; widening a collection's sharing is its own tool, and the ordinary writes share only inside the organization; built with Go 1.27.3. Run live the same day: `make live` passed 120 steps, failed none and skipped 19, and `livefavro -writes` passed 15 checks, failed none and left no probe. Owed (§15): what Favro does with an invitation by email, and a share with a group that holds a guest, tried by hand. v3.2.0 marked the ten writes that asked the person with Claude Code's `requiresUserInteraction` for a client that could not ask. The server's own feature phases
 (0–9) are complete and shipped, and **every phase of the alignment
 program in §16 is done**, A6's evals included — the note that said they
 needed a model API key was wrong, since the siblings drive the model
-through the `claude` CLI. **B1 shipped in 3.0.0**: the server asks the
-person before ten writes (§9.2), and uploads read one configured
-directory (§9.1). Where a sentence below describes something that
+through the `claude` CLI. **B1 shipped in 3.0.0**: the server asked the
+person before ten writes, which B2 removes (§9.2), and uploads read one
+configured directory (§9.1). Where a sentence below describes something that
 does not exist, it says so and names the phase that builds it.
 
 This document is the design, the decided constraints, the evidence and
@@ -257,7 +257,7 @@ Dependencies, all pinned, and after A4 the whole direct list:
 `go.mod` only as another module's indirect requirement, and depguard
 denies importing either.
 
-Toolchain: Go 1.27 (`go.mod` is the single source of truth — every CI job
+Toolchain: Go 1.27.3 (`go.mod` is the single source of truth — every CI job
 resolves via `go-version-file: go.mod`, and there is no N-1 matrix entry).
 
 ## 6. Addressing and error classes
@@ -298,8 +298,8 @@ indistinguishable from one that simply has not happened yet.
 | `forbidden` | Favro's 403, which it uses both for "no permission" and for "exists but not visible to this token" (§2.6). Collapsing it into `not_found` would tell a model to stop looking for something that is there | try a different route to the resource, or ask for access |
 | `rate_limited` | 429, carrying `retry_after_seconds` in the message. Distinct from `unavailable` because the correct response is to wait a named duration rather than to retry | wait the named number of seconds |
 | `ambiguous` | a name matching several candidates | choose one; do not retry the name |
-| `blocked` | a write the person did not confirm when asked, an answer that does not belong to the call, or one `FAVRO_REQUIRE_PROMPT` refuses because the client cannot ask (§9.2). Nothing was changed | do not make the call again unless the person asks for it |
-| `ambiguous_outcome` | a write that may have happened and whose result never came back: Favro answered 5xx, or the connection was lost after the request went out, or the person confirmed a write and the call ended before its result (§9.2) | read the resource to see; never repeat the write to find out |
+| `blocked` | a write this server refuses as asked: a destructive call without `confirm: true`, or an ordinary write that would widen access — a public or organization-wide collection, an invitation by email, a new admin, someone outside the organization, guests as a widget's owners or editors (§9.2). Nothing was changed | do not make the call again unless the person asks for it |
+| `ambiguous_outcome` | a write that may have happened and whose result never came back: Favro answered 5xx, or the connection was lost after the request went out (§11) | read the resource to see; never repeat the write to find out |
 
 The fallback for an error that names no class is `invalid`, and that is
 measured rather than neutral: every error this server's own layer
@@ -456,7 +456,7 @@ the obvious assumption is the other one.
 
 ## 8. Tool surface
 
-85 tools (2026-09-14). The full reference is `docs/TOOLS.md`; the README
+86 tools (2026-10-23). The full reference is `docs/TOOLS.md`; the README
 keeps only the five worth reaching for first. Conventions that hold
 across all of them:
 
@@ -610,8 +610,9 @@ every level, and a test that exercises one call site proves it for one
 call site.
 
 **Safety.** §8's destructive-tool gate; §4.2's dry-run; §4.3's hard-fail
-on unknown tag names; the upload directory (§9.1); asking the person
-(§9.2). Reads are budgeted only by pagination.
+on unknown tag names; the upload directory (§9.1); `confirm: true`, the
+sharing refusals and the mark (§9.2). Reads are budgeted only by
+pagination.
 
 ### 9.1 Uploads read one directory
 
@@ -632,66 +633,121 @@ says it is regular, since opening a named pipe would wait for a writer.
 A refusal names `file_path`, not the path, because the path may be what
 a card's text suggested.
 
-### 9.2 Asking the person
+### 9.2 Per-call approval is the client's
 
-Ten writes are put to the person through the client before they are
-made, as an MCP form elicitation with no fields: accepting is the
-confirmation. They are the ones that cannot be undone or that send
-something past the people who can already see it:
+From 4.0.0 the server asks the person nothing. From 3.0.0 to 3.2.0 it
+put a form with no fields to the person, through MCP form elicitation,
+before ten writes. The maintainer removed it on 2026-10-23, for every
+server of theirs, on the evidence of §18 (2026-10-23):
 
-- `favro_delete_tag`, `favro_delete_collection`, `favro_delete_widget`,
-  `favro_delete_group`, `favro_delete_webhook`, and `favro_delete_card`
-  with `everywhere: true`. Favro has no undo and no trash for these.
-- `favro_upload_attachment` and `favro_upload_comment_attachment`: a
-  file leaves this computer. The question names the path and the size,
-  and the answer is bound to the file's content, so a file changed
-  while the person reads is not sent.
-- `favro_create_collection` and `favro_update_collection` when they make
-  a collection public: anyone on the internet with the link can see it.
-  An update asks only when the collection is not already public, which
-  it reads rather than assumes.
+- The specification puts consent to each tool call on the host. It lets
+  a server ask through elicitation but never makes the answer consent:
+  the client gathers it "from the user or other sources".
+- Most widely used servers confirm nothing themselves: 83 of the 91 with
+  risky writes among the 110 most used. The 8 that ask each pick their
+  own scope.
+- Clients answered the question with nobody there (a Claude Code
+  `Elicitation` hook once installed, Codex with full access), did not
+  draw it, or left it hanging, and no client's allow and ask rules match
+  it.
+- A question on every call is answered without reading.
 
-The other deletes (a comment, a column, a task, one widget's copy of a
-card and the rest) do not ask: they reach one item somebody named, and
-the destructive flag already gates them. Comments do not ask either;
-whether Favro notifies on a mention is not established.
+What stays is what holds on every client:
 
-The mechanism is the one the siblings run, ported rather than depended
-on. A tool asks by being registered through `addAsking`, which puts a
-person on the handler's context; the handler calls `confirmFirst` after
-every other check and just before the write, and a dry run asks
-nothing. The question is built from a fresh read, so it names what the
-write acts on rather than an id. On protocol 2026-07-28 the first call
-returns the question and a signed `requestState`, and the call comes
-back with the answer; before it, the SDK asks inside the call. The state
-is an HMAC over the tool, the arguments and what the question binds,
-with a key drawn per process, a nonce spent once, and a five-minute
-expiry when it travels through the client. Any answer but accept is
-refused before the handler reads anything. What the question showed is
-checked again on the answering round, so a tag renamed in between is
-refused rather than deleted under a name the person never saw.
+1. **Registration.** A destructive tool exists only with
+   `FAVRO_ENABLE_DESTRUCTIVE=true` (§8); the upload tools only with
+   `FAVRO_UPLOAD_DIR` (§9.1). A client that runs with nobody watching
+   gets neither.
+2. **`confirm: true`** on every destructive call. `addTool` refuses
+   `[blocked]` a destructive call without it, unless it is a dry run, and
+   registration panics on a destructive tool whose input does not embed
+   it, so no delete can forget it. It is a witness that the caller meant
+   the call, never approval: the model sets it.
+3. **Sharing stays inside the organization.** A client remembers an
+   approval per tool, never per argument, so a wide share carried as an
+   argument rides along unseen once the tool is always allowed. The
+   ordinary writes therefore refuse `[blocked]`:
+   - `public_sharing: 'organization'` or `'public'` in
+     `favro_create_collection` and `favro_update_collection`;
+   - a share or member entry that names someone by email, which may send
+     an invitation outside the organization, or by `type: 'organization'`;
+   - a userId the organization does not list, or whose
+     `organizationRole` is not `administrator` or `fullMember` (a guest,
+     an external member, a disabled account, or a role Favro adds later);
+   - a new collection `admin` or group `administrator`, who can change who
+     else has access;
+   - `owner_role: 'guests'` or `edit_role: 'guests'` on a widget, which
+     makes people outside the organization its owners or editors;
+   - an entry flagged `delete: true` that names someone with no access.
+     The entry goes to Favro as given, and Favro may ignore the flag on a
+     create, on `shareToUsers` and on a group's whole-list update (§7.4),
+     so a removal's shape is checked like any entry's and only someone
+     who has access can be removed;
+   - a group that holds anyone whose `organizationRole` is not
+     `administrator` or `fullMember`, read from the group's members, or a
+     group whose members cannot be read: sharing with the group shares
+     with everyone in it. The refusal names
+     `favro_widen_collection_sharing` (maintainer, 2026-10-23, the rule
+     chat uses for groups in spaces that admit outsiders).
 
-A client that cannot ask gets no question, and the arguments are the
-guard, as before. `FAVRO_REQUIRE_PROMPT=true` refuses those writes
-instead. Two failures have classes of their own (§6.2): `blocked` for
-anything refused before the write, and `ambiguous_outcome` for a
-confirmed write whose result never came back.
+   An entry that gives someone no more than they already hold widens
+   nothing and goes through: an update reads the collection's shares or
+   the group's members first. That matters for `favro_update_group`,
+   whose list replaces the whole one, so a group's administrator and its
+   guests are re-sent as they are. Raising someone above the role they
+   hold is a new grant, and is refused unless they are a member of the
+   organization. Opening a collection to the organization or to
+   anyone with its link is `favro_widen_collection_sharing`: destructive,
+   so registered only with the flag, `confirm: true`, and a
+   `collection_name` witness that must match Favro's, so the client's
+   prompt shows which collection it opens. It reads the collection back
+   and says in `notes` whether the mode took. Invitations by email,
+   admins and guests as a widget's owners or editors have no tool yet; a
+   widening tool for them waits on a live check of what Favro does with
+   an unknown address.
+4. **Witnesses and guards.** `favro_delete_widget` names its scope:
+   `collection_id`, or `everywhere: true`, never the wider delete by
+   omission. §4.3's tag guard and §4.7's read-backs are unchanged.
+5. **`dry_run`** on every write.
+6. **Annotations.** `readOnlyHint` is set only on the reads, and
+   `destructiveHint` on the fifteen destructive tools. claude.ai and
+   Codex prompt by `destructiveHint`; VS Code ignores it and prompts on
+   every tool without `readOnlyHint`.
+7. **The mark.** Five tools carry Claude Code's
+   `anthropic/requiresUserInteraction`: `favro_delete_tag`,
+   `favro_delete_group`, `favro_delete_collection` and
+   `favro_delete_widget`, whose loss reaches past the one item: a tag
+   comes off every card that carries it, a group off every share,
+   assignment and custom field that names it, a widget takes its cards
+   with it, and a collection leaves widgets that lived only in it where
+   nobody finds them. And
+   `favro_widen_collection_sharing`, a domain-wide or public share. Claude
+   Code (v2.1.199 or later) prompts on every call of them in every
+   interactive mode and denies the call where no prompt can be drawn.
+   `addTool` refuses the mark on anything but a destructive tool. No other
+   tool carries it: a delete made many times in a row would bring back a
+   prompt nobody reads. For the rest, the operator decides with Claude
+   Code's `permissions.ask`; the README gives rules for the writes that
+   publish, share, send or delete.
 
-For such a client the ten tools carry Claude Code's
-`anthropic/requiresUserInteraction` mark, which makes Claude Code prompt
-on every call, under any allow rule. `addAsking` sets it, so a tool that
-asks has it and no other tool does. A client that can ask gets none:
-`tools/list` middleware drops the mark from a copy of each tool, since
-the server's tool is listed to every session. With both, the person
-would answer twice for one call, and only the server's question shows
-what the write acts on. That holds for the three tools that ask only
-sometimes too: the server asks in exactly the case they guard, and
-favro never marked their other calls. Under `FAVRO_REQUIRE_PROMPT` no
-tool is marked: the server refuses a client that cannot ask, and the
-client's prompt would ask the person to approve a call that cannot run.
-Headless, Claude Code refuses a marked tool, so
-`FAVRO_INTERACTION_HINT=false` drops the mark for an unattended
-deployment (§18, 2026-10-10).
+`FAVRO_REQUIRE_PROMPT`, which refused the asking writes on a client that
+could not ask, went with the question. Set to anything but `false`, the
+server refuses to start rather than quietly allow what its owner set it
+to stop, and `doctor` reports it as a failed check. Leave
+`FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody
+watching. `FAVRO_INTERACTION_HINT` went too. Set to `false`, it is
+ignored with a startup warning that `doctor` repeats: ignoring it only
+makes the server stricter, but a headless deployment that relied on it
+learns why Claude Code now refuses the marked tools.
+
+Two tests hold the rest. The test harness's client declares form
+elicitation and fails any test whose call puts a question to it, so every
+tool is held to asking nobody. `TestNoToolWritesTheServersOwnSettings`
+follows every package the tools import and refuses a call that writes
+the environment, a file or the keyring outside `auth.KeyringSource`,
+which no such package may name, and any assignment to the registry's
+flags after `Register` (standard §3: the model never widens its own
+reach).
 
 ## 10. Auth, config, process model
 
@@ -792,7 +848,8 @@ the standard lists it as a thing that bites).
 | Tag tools hard-fail unknown names | A typo cannot create an org-global tag; creating one is explicit |
 | Destructive tools behind an env flag | The delete-style tools leave the default surface; breaking change; changelog says why. Which ones is read from the annotation, never from a list |
 | Stdlib tests (A4) | Two dependencies gone; thousands of assertion lines rewritten once |
-| `requiresUserInteraction` only for a client that cannot ask (maintainer, 2026-10-09, for every server of theirs) | The ten asking tools prompt once in Claude Code, through the server's question. A Claude Code `Elicitation` hook that accepts confirms them alone, as it did before 3.2.0, when no tool had the mark. An unattended client that cannot ask sets `FAVRO_INTERACTION_HINT=false` |
+| The server asks nobody; per-call approval is the client's (maintainer, 2026-10-23, for every server of theirs) | No form elicitation, no `FAVRO_REQUIRE_PROMPT` (set, it refuses to start). Registration, `confirm: true`, the sharing refusals, the witnesses and `dry_run` stay. Five tools carry `requiresUserInteraction`, unconditionally (§9.2) |
+| Widening a collection's sharing is its own tool; `organization` counts as domain-wide (maintainer, 2026-10-23) | `favro_widen_collection_sharing` is destructive, so organization-visible collections need `FAVRO_ENABLE_DESTRUCTIVE`. The ordinary writes take only members of the organization by userId and groups whose members all are, and make no new admin, and no guest a widget's owner or editor |
 | API surface snapshot committed (A5) | CI holds the completeness claim offline; the fetch stays manual and is named in the release checklist |
 
 ## 15. What must be verified live
@@ -840,6 +897,19 @@ Not yet verified against a real organization, and each one is a place
    read-back is no longer the caller's job. What stays open is whether
    the echo-but-don't-store case happens at all: every move probed live
    so far landed.
+7. Two of 4.0.0's sharing checks, which the 2026-10-23 live run could
+   not reach (§9.2):
+   - **What Favro does with an email it does not know**, in
+     `shareToUsers` or a group's `members` (§18, open). The ordinary
+     writes refuse an email whatever the answer. A widening tool for
+     invitations by email, admins and guest owners or editors waits on
+     it.
+   - **A share with a group that holds a guest.** The organization the
+     run reads lists only `administrator` and `fullMember` (§18), so
+     the refusal of such a group is held by tests alone. It needs a
+     group with a guest in it, tried by hand: sharing a collection with
+     that group must be refused `[blocked]` and name
+     `favro_widen_collection_sharing`.
 
 **Not verifiable, recorded so it stops being carried as pending:**
 whether a **lane** move carries the `widgetCommonId` requirement the
@@ -1043,11 +1113,25 @@ phase An" before the next begins.
   §18 has it.
 
 - **B1 — asking the person, and uploads from one directory (3.0.0).**
-  §9.1 and §9.2. The module path moves to `/v3`, because removing the
+  §9.1 and §9.2 as they stood. The module path moves to `/v3`, because removing the
   upload tools from the default surface is breaking. The questions, the
   signed state and `quoted()` are ported from the sibling that last
   fixed them, including links broken in any script and refusals before
   the retry reads.
+
+- **B2 — the client decides (4.0.0).** §9.2. The question and
+  `FAVRO_REQUIRE_PROMPT` go, and the setting refuses to start; `confirm:
+  true` on every destructive call; the mark on five tools;
+  `favro_widen_collection_sharing`; the ordinary writes share only inside
+  the organization; `favro_delete_widget` names its scope. The module
+  path moves to `/v4`. Run live on 2026-10-23: `make live` passed 120
+  steps, failed none and skipped 19; `livefavro -writes` passed 15
+  checks, failed none, and its sweep found no probe left. Each run
+  failed first on the driver, not the server (§18). Two checks wait on a
+  person (§15). Follow-up, not in B2: `favro_update_group`'s
+  members as add and remove lists, so leaving someone out stops removing
+  them; and a widening tool for invitations by email, admins and guest
+  owners, after a live check of what Favro does with an unknown address.
 
 ### Closing a phase
 
@@ -1151,6 +1235,7 @@ decision rather than drift.
 | §7 Verify against the discovery document or specification, never the reference page's prose | There is no discovery document; verification is a live read-back | Favro publishes a reference page that has been observed to disagree with the live API, and returns 200 for a body it ignores (§2.1). The stronger rule replaces the weaker one rather than excusing it: §4.7 |
 | §1 An API-coverage gate where the server speaks to a documented API surface | The surface snapshot is scraped from the reference page rather than fetched as a machine-readable document | Same cause. The snapshot is still machine-owned and rewritten only by `gates api-diff`; the hand-written file carries verdicts only (A5) |
 | §3 A read-only mode registers only read tools and requests read-only scopes | Read-only mode is the absence of `FAVRO_ENABLE_DESTRUCTIVE` plus `--dry-run`; there are no scopes to request | Favro's API tokens carry the user's own permissions and cannot be scoped down at issue time. The honest mitigation is the README's advice to issue the token from a least-privileged service user |
+| §3 Every risky variant is its own tool, never an argument | `favro_delete_card` and `favro_delete_widget` take `everywhere: true` for the delete from every widget or collection | Both variants are deletes, behind the same flag and `confirm: true`, so a client that always allows the tool has already allowed a delete; the wider one is named in the arguments a client's prompt shows, and `favro_delete_widget` refuses the call that names neither (maintainer, 2026-10-23) |
 | §10b Every server ships a `.mcpb` | Ships both, since A7 | The `.plugin` is the install path this server actually has users on. Dropping it to satisfy the letter of the rule would break them, so the `.mcpb` was added beside it rather than instead of it |
 | §10b "Say in the manifest that the bundle does not log you in" | The manifest says the opposite: this bundle *is* the whole setup | The siblings cannot log a user in because they need an OAuth Desktop client and a terminal `login` first. Favro is a token, so `user_config` collects all three values the server needs and the install is complete. The rule's purpose — do not ship an install that appears to work and then fails on the first call — is met by saying which three values, and where in Favro to find them |
 
@@ -1182,14 +1267,22 @@ it; **asserted**, meaning believed and not yet held by anything.
 
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
-| 2026-10-10 | A tool the server asks about should also carry Claude Code's `requiresUserInteraction` mark | code.claude.com/docs/en/mcp, "Require approval for a specific tool" and "Respond to MCP elicitation requests", and /docs/en/hooks, "Elicitation output", as read for gitlab-mcp and google-chat-mcp on 2026-10-09 and 2026-10-10; MCP Go SDK v1.8.0 `ClientCapabilities`, which reads the request's `_meta` before the session's; `TestTheMarkIsOnlyForAClientThatCannotAsk` on three protocols as three kinds of client, which fails when the middleware edits the server's own tool | **Adopted, and held here by the test.** Claude Code prompts for a marked tool on every call, which no allow rule skips, and refuses one headless. With the server's question as well, a delete asked twice in google-docs-mcp. So only a client that cannot ask gets the mark, on exactly the ten tools that ask (§9.2). A client may declare form elicitation to `tools/list` and none to `tools/call`, and get neither the mark nor a question; it gains nothing, since a client that declares form elicitation can accept the question itself, and `FAVRO_REQUIRE_PROMPT=true` refuses such a call. One prompt in Claude Code not yet seen live |
+| 2026-10-23 | `make live`'s share steps refused as `[blocked]` because the members check refuses a real member | `make live` with temporary driver output, redacted: which result resolved `{own_user_id}`, the keys and roles of each users-listing entry, and the arguments each share step sent | **Verified here — false.** The driver found the signed-in account's entry in the users listing, and `favro_resolve_user` and `favro_get_user` returned the same `userId` with `organizationRole: fullMember`. The driver then sent the literal `"{own_user_id}"`: it resolved a placeholder at the top level and inside a list, not inside a map inside a list, which is every share entry's shape. The server refused that string correctly, and the earlier failure naming `AnyUserID` was the same. The driver now resolves a placeholder at any depth, and `TestEveryPlaceholderAStepNamesIsResolvedOrSkipsTheStep` holds every step |
+| 2026-10-23 | Reading a collection back after deleting it answers 404 | `livefavro -writes`: a probe collection deleted with `confirm: true`, then `favro_get_collection`; the sweep found nothing left by name | **Verified here — false.** Favro answered 403, as for a collection the token cannot see. The driver counts `[not_found]` or `[forbidden]` on that read-back as gone, and only after the delete succeeded |
+| 2026-10-23 | A server should confirm its riskiest writes with the person itself, through MCP form elicitation | `~/.claude/mcp-approval-evidence.md`, every quote re-read at its source on 2026-10-23: the MCP specification (`server/tools`, `client/elicitation`: the client may gather an answer "from the user or other sources"); 110 servers, the top 100 by public usage signals and ten first-party ones; Claude Code's hooks and the open reports of an elicitation declined undrawn, left hanging or cut to three lines; Codex accepting a form with no fields under full access; Anthropic's figures on approved prompts (93–97%) and planted commands caught (13.6%) | **Refuted (adopted: documents and source, not probed live here).** The specification gives per-call consent to the client and never makes the answer a consent control. 83 of the 91 servers with risky writes never ask; the 8 that do pick their own scope. No client's permission rules match a question, and several answer or drop it with nobody looking. So from 4.0.0 the server asks nobody (§9.2), and the rows below dated 2026-09-30 and 2026-10-10 describe the question this replaces |
+| 2026-10-23 | claude.ai, Codex and VS Code prompt by `destructiveHint` | The same evidence file, its check S10: Codex's source in its default `auto` tool mode, claude.ai's documentation, VS Code's source | **Corrected (adopted).** Codex and claude.ai prompt by `destructiveHint`. VS Code never reads it and prompts on every tool without `readOnlyHint: true`. `TestEveryToolIsAnnotated` keeps `readOnlyHint` off every tool that writes, and `destructiveHint` is true on the fifteen destructive tools |
+| 2026-10-23 | Claude Code's `requiresUserInteraction` prompts on every call under any allow rule, and refuses a marked tool headless | The same evidence file, check S15: code.claude.com/docs/en/mcp and the Claude Code changelog | **Refined (adopted).** From v2.1.199 Claude Code prompts on every call in every interactive mode, allow rules and hooks included, with no "don't ask again" from v2.1.246; where no prompt can be drawn (dontAsk, `-p` without a permission host) it denies the call, and an Agent SDK host's `canUseTool` can approve it. Anthropic documents it for "tools whose permission prompt is itself the point". It now sits unconditionally on five tools (§9.2), held by `TestOnlyTheWidestWritesPrompt`; the 2026-10-10 row's middleware is gone |
+| 2026-10-23 | Widening access may be an argument of an ordinary write | The same evidence file, checks S11 and S13: claude.ai, Codex, VS Code and Copilot remember "always allow" per tool; Claude Code matches an MCP argument only in a command-line deny rule; Notion, Slack, Canva, Figma, Asana and Airtable offer no sharing tool, and Box ships its sharing tools off | **Refuted for this server (adopted).** A client's standing approval of `favro_update_collection` would carry `public_sharing: 'public'`, an invitation by email or a new admin unseen. They are refused there, and opening a collection is `favro_widen_collection_sharing` behind the destructive flag (§9.2), held by `TestOrdinaryWritesShareOnlyInsideTheOrganization` and `TestCollectionWritesRefuseWideSharing` |
+| 2026-10-23 | Favro's members are the users whose `organizationRole` is `administrator` or `fullMember`; `guest`, `externalMember` and `disabled` are not | Favro's REST reference, the organization roles it lists for a user; `make live` on 2026-10-23, the keys and roles of every entry `GET /users` returned | **Verified here in part.** Every entry carried `userId`, `email`, `name` and `organizationRole`, spelled so, as non-empty strings, and the only roles returned were `administrator` and `fullMember`. The signed-in account, a `fullMember`, passes the members check in the share steps. `guest`, `externalMember` and `disabled` were not seen and rest on the reference. The ordinary writes share only with those two roles and refuse every other value, a new one included, so a wrong vocabulary refuses a member rather than admitting a guest |
+| 2026-10-23 | What Favro does with an email it does not know, in `shareToUsers` or a group's `members` | Nothing yet | **Open.** The ordinary writes refuse an email whatever the answer. A widening tool for invitations, admins and guest widget owners or editors waits on a live probe of this |
+| 2026-10-10 | A tool the server asks about should also carry Claude Code's `requiresUserInteraction` mark | code.claude.com/docs/en/mcp, "Require approval for a specific tool" and "Respond to MCP elicitation requests", and /docs/en/hooks, "Elicitation output", as read for gitlab-mcp and google-chat-mcp on 2026-10-09 and 2026-10-10; MCP Go SDK v1.8.0 `ClientCapabilities`, which reads the request's `_meta` before the session's; `TestTheMarkIsOnlyForAClientThatCannotAsk` on three protocols as three kinds of client, which fails when the middleware edits the server's own tool | **Adopted, and held here by the test.** Claude Code prompts for a marked tool on every call, which no allow rule skips, and refuses one headless. With the server's question as well, a delete asked twice in google-docs-mcp. So only a client that cannot ask gets the mark, on exactly the ten tools that ask (§9.2). A client may declare form elicitation to `tools/list` and none to `tools/call`, and get neither the mark nor a question; it gains nothing, since a client that declares form elicitation can accept the question itself, and `FAVRO_REQUIRE_PROMPT=true` refuses such a call. One prompt in Claude Code not yet seen live. **Superseded 2026-10-23**: the server asks nobody, and the mark is on five tools for every client |
 | 2026-10-01 | A write retried after a 5xx or a lost connection is safe | Read `execute`; tests drove each write method against a server answering 500 and 503, then 404, and against one that closes the connection after reading the request | **Verified here — false.** Every method was retried on 5xx, so a POST created twice and a DELETE retried into the 404 its own first attempt caused, reported as `not_found`. A transport error after send was `unavailable`, which says retry. Writes now go once and fail as `ambiguous_outcome`; the `*url.Error` text also carried the query, an upload's filename included, and is stripped |
 | 2026-09-30 | Post-write read-back of card placement and custom fields (#77) | On a dormant board: a probe card created, a Text field used by no card on the board set, a Text field from another board set, moved to a second column with `favro_move_card`, moved back with `favro_update_card`, moved with `skip_verify`, then deleted and read back as gone. A second probe card set the Text field most cards on the board carry. Also read which fields the board's cards carry against each field's `widgetCommonId` | **Verified here.** Both moves read back verified; `skip_verify` added no note. Both unused fields came back absent from `customFields` after a 200, and the tool said so. The used field read back present with the value written, as `{customFieldId, value}`. The board's cards carry values for fields whose `widgetCommonId` is another board, so `widgetCommonId` does not say where a field is enabled. Not probed: a move Favro echoes but does not store (none seen), a cross-board write (it would add a card to a second board), and lanes (§15) |
-| 2026-09-30 | Asking the person works against a real organization | `livefavro -asks` on a build of this branch: a probe tag it created, deleted with a decline (still there) and then an accept (gone); both card upload and a public collection asked with names read from Favro and declined, and the collection read back as not created | **Verified here**, on protocol 2025-11-25, where the SDK asks inside the call. 2026-07-28 is stateless in go-sdk v1.8.0 (`server/discover` and per-request `_meta`), which the raw-JSON-RPC driver does not speak, so its round trip is held by the in-memory tests only. The comment upload was skipped: the organization has no comment to attach to |
-| 2026-09-30 | The SDK sends no `structuredContent` for a result that asks | Read `mcp/server.go:438–446` of go-sdk v1.8.0 in the module cache: when the handler's result has `InputRequests`, the output is not marshaled | **Verified here.** `addTool` must not fill `Content` for such a result either, since content and input requests are exclusive on the wire; it checks `InputRequests` before rendering a summary |
+| 2026-09-30 | Asking the person works against a real organization | `livefavro -asks` on a build of this branch: a probe tag it created, deleted with a decline (still there) and then an accept (gone); both card upload and a public collection asked with names read from Favro and declined, and the collection read back as not created | **Verified here**, on protocol 2025-11-25, where the SDK asks inside the call. 2026-07-28 is stateless in go-sdk v1.8.0 (`server/discover` and per-request `_meta`), which the raw-JSON-RPC driver does not speak, so its round trip is held by the in-memory tests only. The comment upload was skipped: the organization has no comment to attach to. **Superseded 2026-10-23**: the question is gone, and `livefavro -writes` drives `confirm: true` and the sharing writes instead |
+| 2026-09-30 | The SDK sends no `structuredContent` for a result that asks | Read `mcp/server.go:438–446` of go-sdk v1.8.0 in the module cache: when the handler's result has `InputRequests`, the output is not marshaled | **Verified here.** `addTool` must not fill `Content` for such a result either, since content and input requests are exclusive on the wire; it checks `InputRequests` before rendering a summary. **Superseded 2026-10-23**: no tool returns input requests any more, and the check went with the question |
 | 2026-09-30 | `os.Root` keeps an upload inside `FAVRO_UPLOAD_DIR` | `TestMCP_UploadAttachment_ReadsOnlyTheUploadDir`: a relative path, an absolute one inside, a `..` that stays inside, a `..` out, an absolute path elsewhere, and a symbolic link out, each through the real tool | **Verified here.** Every way out is refused before a byte is read or a request sent, and the refusal does not repeat the path |
-| 2026-09-30 | An empty form is a valid elicitation, and a client that cannot ask declares nothing | The sibling that built this first checked the MCP specification's schema (properties is an open map with no minimum) and the SDK's capability handling | **Adopted.** The same two known client limits apply: one client auto-accepts an empty form under its most permissive policy, and one reports a skipped question as an accept |
-| 2026-09-30 | `public_sharing: 'public'` opens a collection to anyone with the link | This repository's own schema text, written from Favro's reference | **Asserted.** Not probed live: making a real collection public to test it is the act the question guards |
+| 2026-09-30 | An empty form is a valid elicitation, and a client that cannot ask declares nothing | The sibling that built this first checked the MCP specification's schema (properties is an open map with no minimum) and the SDK's capability handling | **Adopted.** The same two known client limits apply: one client auto-accepts an empty form under its most permissive policy, and one reports a skipped question as an accept. **Superseded 2026-10-23**: the server puts no form |
+| 2026-09-30 | `public_sharing: 'public'` opens a collection to anyone with the link | This repository's own schema text, written from Favro's reference | **Asserted.** Not probed live: making a real collection public to test it is the act it would test. `livefavro -writes` opens a probe collection to the organization only, and reads it back |
 | 2026-09-18 | A card write carrying `widgetCommonId` detaches a nested card | Reported with a live repro against a real organization, then re-run against the released v2.0.1 binary as a control: five behaviors, the control failing on exactly the orphaning row and matching everywhere else | **Verified by the reporter — the claim is true.** A rename is enough, and the 200 is byte-identical to a write that changed nothing structural, so nothing in the answer says the card moved. The control run is what makes it evidence rather than a demonstration. Guarded in `settleParent`, wired into `favro_update_card` **and** `favro_move_card` — the first patch covered only the former, and since `errMoveNeedsWidget` every column move carries `widgetCommonId`, which made the unguarded tool the one the other's description recommends. The breadth is settled by the row below rather than by this one |
 | 2026-09-18 | How far a write carrying `widgetCommonId` re-seats a card | Probed live on a dormant board: a card nested under a parent, in a non-default column, at an explicit `listPosition`; PUT `{widgetCommonId, name}` and read back, diffing `parentCardId`, `columnId`, `laneId`, `listPosition`, `sheetPosition` | **Verified here — the earlier wording was too broad.** Only `parentCardId` is dropped. `columnId` and `listPosition` came back unchanged, and `sheetPosition` was assigned rather than reset. So "re-seats the card from the body alone" overstated it, and §7.4 now says the narrower thing the evidence supports: the guard covers the whole bug rather than a third of it. The write's own response omitted `parentCardId` while the card still had one moments earlier, which is the §2.1 shape — the answer is identical whether or not anything was lost. `laneId` untested: no board reached live has lanes |
 | 2026-09-13 | The SDK writes the same bytes into `content` and `structuredContent` when a tool declares an output schema | Read `mcp/server.go:398–435` in the module cache: the marshaled output becomes `StructuredContent`, and when `res.Content` is nil the same serialized JSON is added as a `TextContent` block | **Verified here.** Every tool in this repository returns a typed output and a nil result, so every one of them is in that state. Standard §2 forbids it: the two halves must both be present and must not be the same bytes. Fixed in A2 at `addTool`, so the fix is one function rather than 83 handlers that each have to remember |

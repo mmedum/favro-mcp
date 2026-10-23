@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/favro-mcp/v3/internal/cache"
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
-	"github.com/mmedum/favro-mcp/v3/internal/render"
+	"github.com/mmedum/favro-mcp/v4/internal/cache"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/render"
 )
 
 // Resolver bridges name-based lookups to Favro's id-based world.
@@ -362,6 +362,36 @@ func (r *Resolver) listAllUsers(ctx context.Context, forceRefresh bool) ([]favro
 // write — which is the failure CLAUDE.md names as load-bearing.
 func (r *Resolver) invalidateUserCache() {
 	r.userCache.Invalidate(userCacheKey)
+}
+
+// OrganizationRoles is the organizationRole of each user the
+// organization lists, by userId, from the user cache when one is warm.
+// A warm cache that lacks one of ids is read again, since that person
+// may have joined since it was filled; an id still missing then is not
+// in the organization, and has no entry.
+func (r *Resolver) OrganizationRoles(ctx context.Context, ids []string) (map[string]string, error) {
+	users, cached, err := r.listAllUsers(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	roles := organizationRoles(users)
+	for _, id := range ids {
+		if _, ok := roles[id]; !ok && cached {
+			if users, _, err = r.listAllUsers(ctx, true); err != nil {
+				return nil, err
+			}
+			return organizationRoles(users), nil
+		}
+	}
+	return roles, nil
+}
+
+func organizationRoles(users []favro.User) map[string]string {
+	roles := make(map[string]string, len(users))
+	for _, u := range users {
+		roles[u.UserID] = u.OrganizationRole
+	}
+	return roles
 }
 
 // ResolveUser matches name against display-name OR email so an LLM

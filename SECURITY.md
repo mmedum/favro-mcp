@@ -30,9 +30,10 @@ multi-tenant boundary to cross.
   `favro-mcp doctor` in either of its modes.
 - **Stdout carries MCP JSON-RPC frames and nothing else.** Diagnostics go
   to stderr through `slog`, and no payload is logged.
-- **Delete-style tools are not registered** unless
-  `FAVRO_ENABLE_DESTRUCTIVE=true`. A host running in an auto-approve mode
-  will call an annotated tool without prompting, which is why this is a
-  registration decision rather than a per-call one.
+- **Destructive tools are not registered** unless
+  `FAVRO_ENABLE_DESTRUCTIVE=true`, and each call must pass `confirm:
+  true`. A host running in an auto-approve mode will call an annotated
+  tool without prompting, which is why this is a registration decision
+  rather than a per-call one.
 - **Every mutating tool takes `dry_run`**, gated in the HTTP client
   rather than in each tool, so a dry run cannot reach the network.

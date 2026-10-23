@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -9,7 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
 )
 
 func TestMCP_CreateCollection_HappyPath(t *testing.T) {
@@ -148,7 +147,7 @@ func TestMCP_DeleteCollection_HappyPath(t *testing.T) {
 	cs := connectInMemoryWith(t, c)
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      deleteCollectionToolName,
-		Arguments: map[string]any{"collection_id": "c-1"},
+		Arguments: map[string]any{"collection_id": "c-1", "confirm": true},
 	})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
@@ -202,34 +201,22 @@ func TestMCP_DeleteCollection_MissingCollectionID(t *testing.T) {
 func TestMCP_CreateCollection_SendsShareToUsers(t *testing.T) {
 	t.Parallel()
 
-	var body []byte
-	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ = io.ReadAll(r.Body)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"collectionId":"c-new","name":"Eng"}`))
-	}))
-
-	cs := connectInMemoryWith(t, c)
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: createCollectionToolName,
-		Arguments: map[string]any{
-			"name": "Eng",
-			"share_to_users": []map[string]any{
-				{"email": "someone@example.invalid", "role": "edit"},
-			},
+	f := newSharingFavro(t)
+	res := f.call(t, createCollectionToolName, map[string]any{
+		"name": "Eng",
+		"share_to_users": []map[string]any{
+			{"userId": "u-3", "role": "edit"},
 		},
 	})
-	if err := err; err != nil {
-		t.Fatalf("err: %v", err)
-	}
 	if res.IsError {
-		t.Error("res.IsError = true, want false")
+		t.Errorf("res.IsError = true, want false: %s", resultText(res))
 	}
 
-	if !strings.Contains(string(body), `"shareToUsers":[{"email":"someone@example.invalid","role":"edit"}]`) {
-		t.Errorf("string(body) does not contain %q", `"shareToUsers":[{"email":"someone@example.invalid","role":"edit"}]`)
+	_, _, body := f.made()
+	if !strings.Contains(body, `"shareToUsers":[{"userId":"u-3","role":"edit"}]`) {
+		t.Errorf("body %s does not contain %q", body, `"shareToUsers":[{"userId":"u-3","role":"edit"}]`)
 	}
-	if strings.Contains(string(body), `"sharedToUsers"`) {
+	if strings.Contains(body, `"sharedToUsers"`) {
 		t.Errorf("the read-shaped key is ignored by Favro on write: %q present", `"sharedToUsers"`)
 	}
 }
@@ -237,38 +224,26 @@ func TestMCP_CreateCollection_SendsShareToUsers(t *testing.T) {
 func TestMCP_UpdateCollection_SeparatesInvitesFromMemberChanges(t *testing.T) {
 	t.Parallel()
 
-	var body []byte
-	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ = io.ReadAll(r.Body)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"collectionId":"c-1","name":"Eng"}`))
-	}))
-
-	cs := connectInMemoryWith(t, c)
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: updateCollectionToolName,
-		Arguments: map[string]any{
-			"collection_id": "c-1",
-			"share_to_users": []map[string]any{
-				{"email": "new@example.invalid", "role": "view"},
-			},
-			"members": []map[string]any{
-				{"userId": "u-1", "role": "admin"},
-				{"userId": "u-2", "delete": true},
-			},
+	f := newSharingFavro(t)
+	res := f.call(t, updateCollectionToolName, map[string]any{
+		"collection_id": "c-1",
+		"share_to_users": []map[string]any{
+			{"userId": "u-3", "role": "view"},
+		},
+		"members": []map[string]any{
+			{"userId": "u-1", "role": "admin"},
+			{"userId": "u-2", "delete": true},
 		},
 	})
-	if err := err; err != nil {
-		t.Fatalf("err: %v", err)
-	}
 	if res.IsError {
-		t.Error("res.IsError = true, want false")
+		t.Errorf("res.IsError = true, want false: %s", resultText(res))
 	}
 
-	if !strings.Contains(string(body), `"shareToUsers":[{"email":"new@example.invalid","role":"view"}]`) {
-		t.Errorf("string(body) does not contain %q", `"shareToUsers":[{"email":"new@example.invalid","role":"view"}]`)
+	_, _, body := f.made()
+	if !strings.Contains(body, `"shareToUsers":[{"userId":"u-3","role":"view"}]`) {
+		t.Errorf("body %s does not contain %q", body, `"shareToUsers":[{"userId":"u-3","role":"view"}]`)
 	}
-	if !strings.Contains(string(body), `"members":[{"userId":"u-1","role":"admin"},{"userId":"u-2","delete":true}]`) {
-		t.Errorf("string(body) does not contain %q", `"members":[{"userId":"u-1","role":"admin"},{"userId":"u-2","delete":true}]`)
+	if !strings.Contains(body, `"members":[{"userId":"u-1","role":"admin"},{"userId":"u-2","delete":true}]`) {
+		t.Errorf("body %s does not contain %q", body, `"members":[{"userId":"u-1","role":"admin"},{"userId":"u-2","delete":true}]`)
 	}
 }

@@ -1,6 +1,6 @@
 # Development
 
-Go 1.27. `go.mod` is the single source of truth — every CI job resolves
+Go 1.27.3. `go.mod` is the single source of truth — every CI job resolves
 the toolchain with `go-version-file: go.mod`, and there is deliberately
 no N-1 matrix entry.
 
@@ -92,16 +92,27 @@ The standard library, not testify: `if got != want { t.Errorf(…) }`.
 make live      # drives the built binary against a real organization
 ```
 
-Every mutating step carries `dry_run`, so it builds and validates
-requests and sends none. The run makes its own `FAVRO_UPLOAD_DIR`, so the
-upload steps read a file it wrote and nothing else.
+The steps run against the first objects the organization lists, which
+the run did not create. Every step that writes carries `dry_run: true`,
+which the `live-cover` gate holds, and the server runs with `--dry-run`,
+so it builds and validates requests and sends none. The run makes its
+own `FAVRO_UPLOAD_DIR`, so the upload steps read a file it wrote and
+nothing else. The share steps name the signed-in account, which the
+users listing finds by the email the server signs in with, and expect a
+userId outside the organization to be refused.
 
-`go run ./scripts/livefavro -asks` checks asking the person instead. It
-is the one mode that writes: it creates a probe tag, asks to delete it
-and declines, then accepts and checks it is gone. The uploads and making
-a collection public are asked about with real names and declined, and
-the collection is read back to show nothing was created. It deletes
-nothing it did not create.
+`go run ./scripts/livefavro -writes` checks the writes the steps can only
+preview. It is the one mode that writes: it creates a probe tag and
+deletes it, first without `confirm: true`, which must leave it, then
+with. It creates a probe collection, checks a public create is refused
+and nothing was created, opens the collection to the organization with
+`favro_widen_collection_sharing` (refused first with a name that is not
+its own), reads it back, narrows it again and deletes it. Its client can
+be asked, and the run fails if the server asks anything. It sends a
+write only to an object it created, and refuses any other before it is
+sent. However the run ends, including on SIGINT, SIGTERM or SIGHUP, it
+looks for each probe by name, deletes it and reads that it is gone,
+and names any probe that is still there.
 
 It prints only through `internal/redact`, and
 **a transcript is never committed** — the redactor removes ids and
