@@ -18,6 +18,35 @@ func TestLiveCoverAgainstThisRepository(t *testing.T) {
 	}
 	out.mustSay(t, "steps over")
 	out.mustSay(t, "waived with a reason")
+	out.mustSay(t, "each with dry_run: true")
+}
+
+// The steps run against objects the organization already holds, so a
+// step that writes and does not carry dry_run: true writes to one.
+func TestStepsWithoutDryRunNamesEveryWriteThatLacksIt(t *testing.T) {
+	readOnly := map[string]bool{"favro_get_card": true, "favro_delete_card": false}
+	steps := []livecover.Step{
+		{Tool: "favro_get_card", Args: map[string]any{"card_id": livecover.AnyCardID}, Why: "a read needs none"},
+		{Tool: "favro_delete_card", Args: map[string]any{"confirm": true, "dry_run": true}, Why: "carries it"},
+		{Tool: "favro_delete_card", Args: map[string]any{"confirm": true}, Why: "omits it"},
+		{Tool: "favro_delete_card", Args: map[string]any{"confirm": true, "dry_run": false}, Why: "turns it off"},
+		{Tool: "favro_delete_card", Args: map[string]any{"confirm": true, "dry_run": "true"}, Why: "sends a string"},
+		{Tool: "favro_not_in_the_schema", Args: map[string]any{}, Why: "an unknown tool writes"},
+	}
+
+	problems, writes := stepsWithoutDryRun(steps, readOnly)
+	if writes != 5 {
+		t.Errorf("counted %d steps that write, want 5", writes)
+	}
+	want := []string{
+		`a favro_delete_card step ("omits it") writes without dry_run: true, against an object the run did not create`,
+		`a favro_delete_card step ("turns it off") writes without dry_run: true, against an object the run did not create`,
+		`a favro_delete_card step ("sends a string") writes without dry_run: true, against an object the run did not create`,
+		`a favro_not_in_the_schema step ("an unknown tool writes") writes without dry_run: true, against an object the run did not create`,
+	}
+	if strings.Join(problems, "\n") != strings.Join(want, "\n") {
+		t.Errorf("problems:\n%s\nwant:\n%s", strings.Join(problems, "\n"), strings.Join(want, "\n"))
+	}
 }
 
 // TestTranscriptAgainstThisRepository likewise.

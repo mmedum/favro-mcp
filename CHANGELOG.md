@@ -26,6 +26,10 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - **Breaking:** `FAVRO_REQUIRE_PROMPT`. Set to anything but `false`, the server refuses to start; unset it, and leave `FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody watching.
 - **Breaking:** `FAVRO_INTERACTION_HINT`. Set to `false`, it is ignored with a warning: the five marked tools keep the mark, so `claude -p` refuses them.
 
+### Fixed
+- `make live` starts the server with `--dry-run`, and the `live-cover` gate fails on a step that writes without `dry_run: true`. The steps run against the first objects the organization lists, and each step's own `dry_run` was all that kept a delete there a preview.
+- `livefavro -writes` sends a write only to an object it created. However the run ends, SIGINT, SIGTERM and SIGHUP included, it deletes its probes by name and reads them back; it used to ignore a failed cleanup, and a signal skipped cleanup entirely.
+
 ## [3.2.0] - 2026-10-10
 
 ### Added

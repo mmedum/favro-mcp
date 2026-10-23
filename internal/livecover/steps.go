@@ -11,7 +11,9 @@ import "sort"
 // somebody writes a step in a loop.
 //
 // **Every mutating step carries dry_run.** Nothing here writes to the
-// organization it runs against. The dry-run path is still real
+// organization it runs against. The live-cover gate fails on a step
+// whose tool is not read-only, by its readOnlyHint, and lacks it; the
+// driver also starts the server with --dry-run. The dry-run path is still real
 // coverage — the tool resolves names, builds the request and validates
 // its arguments before the client's gate turns it into a record rather
 // than a request — and it is the only way to exercise a delete against

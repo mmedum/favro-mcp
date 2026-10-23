@@ -92,9 +92,12 @@ The standard library, not testify: `if got != want { t.Errorf(…) }`.
 make live      # drives the built binary against a real organization
 ```
 
-Every mutating step carries `dry_run`, so it builds and validates
-requests and sends none. The run makes its own `FAVRO_UPLOAD_DIR`, so the
-upload steps read a file it wrote and nothing else.
+The steps run against the first objects the organization lists, which
+the run did not create. Every step that writes carries `dry_run: true`,
+which the `live-cover` gate holds, and the server runs with `--dry-run`,
+so it builds and validates requests and sends none. The run makes its
+own `FAVRO_UPLOAD_DIR`, so the upload steps read a file it wrote and
+nothing else.
 
 `go run ./scripts/livefavro -writes` checks the writes the steps can only
 preview. It is the one mode that writes: it creates a probe tag and
@@ -103,8 +106,11 @@ with. It creates a probe collection, checks a public create is refused
 and nothing was created, opens the collection to the organization with
 `favro_widen_collection_sharing` (refused first with a name that is not
 its own), reads it back, narrows it again and deletes it. Its client can
-be asked, and the run fails if the server asks anything. It deletes
-nothing it did not create.
+be asked, and the run fails if the server asks anything. It sends a
+write only to an object it created, and refuses any other before it is
+sent. However the run ends, including on SIGINT, SIGTERM or SIGHUP, it
+looks for each probe by name, deletes it and reads that it is gone,
+and names any probe that is still there.
 
 It prints only through `internal/redact`, and
 **a transcript is never committed** — the redactor removes ids and

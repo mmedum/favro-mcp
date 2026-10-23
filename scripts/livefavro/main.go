@@ -34,6 +34,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mmedum/favro-mcp/v4/internal/livecover"
@@ -78,8 +79,8 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-func run(bin, only string, verbose, writes bool) error {
-	if _, err := os.Stat(bin); err != nil {
+func run(bin, only string, verbose, writes bool) (err error) {
+	if _, err := os.Stat(bin); err != nil { //nolint:gosec // G703: bin is the server the maintainer named with -bin
 		return fmt.Errorf("%s: %w (run `make build` first)", bin, err)
 	}
 
@@ -92,23 +93,31 @@ func run(bin, only string, verbose, writes bool) error {
 	)
 	out := newPrinter(red)
 
+	// The cleanups run however the run ends: finished, failed or
+	// interrupted. A deferred call alone does not run on a signal.
+	lc := &lifecycle{}
+	defer lc.watch(out)()
+	defer func() { err = errors.Join(err, lc.cleanup()) }()
+
 	uploadDir, err := makeUploadDir()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.RemoveAll(uploadDir) }()
+	lc.atExit(func() error { return os.RemoveAll(uploadDir) })
 
 	// Destructive tools are registered so their dry-run paths can be
-	// exercised. Nothing here sends a live write: every mutating step
-	// carries dry_run, and the client's gate turns that into a record
-	// rather than a request. -writes is the exception, and runWrites
-	// says what it writes.
+	// exercised. -writes is the one mode that writes, and runWrites says
+	// what.
 	env := []string{"FAVRO_ENABLE_DESTRUCTIVE=true", "FAVRO_UPLOAD_DIR=" + uploadDir}
 	if writes {
-		return runWrites(bin, env, out, red)
+		return runWrites(lc, bin, env, out, red)
 	}
 
-	srv, err := start(bin, env...)
+	// The steps run against the first objects the organization lists,
+	// which the run did not create. Every step that writes carries
+	// dry_run, which the live-cover gate holds, and --dry-run makes the
+	// server's client refuse to send any write whatever a step carries.
+	srv, err := lc.launch(bin, []string{"--dry-run"}, nil, env...)
 	if err != nil {
 		return err
 	}
@@ -165,10 +174,10 @@ type tally struct{ passed, failed, skipped int }
 // runSteps executes each step in order, feeding every result back into
 // the pool so a later step can be called against something this
 // organization actually has.
-func runSteps(srv *session, out *printer, p *pool, steps []livecover.Step, tools map[string]bool, verbose bool) tally {
+func runSteps(srv *session, out *printer, p *pool, steps []livecover.Step, tools map[string]tool, verbose bool) tally {
 	var t tally
 	for _, step := range steps {
-		if !tools[step.Tool] {
+		if _, registered := tools[step.Tool]; !registered {
 			out.line("SKIP %-38s not registered", step.Tool)
 			t.skipped++
 			continue
@@ -251,8 +260,10 @@ func firstLine(s string) string {
 }
 
 // printer is the only thing in this program that writes to the
-// terminal, and it redacts everything on the way.
+// terminal, and it redacts everything on the way. It is safe to share
+// with the goroutine that handles an interrupt.
 type printer struct {
+	mu  sync.Mutex
 	red *redact.Redactor
 	w   *bufio.Writer
 }
@@ -263,6 +274,8 @@ func newPrinter(red *redact.Redactor) *printer {
 
 // line prints one redacted line.
 func (p *printer) line(format string, args ...any) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	_, _ = p.w.WriteString(p.red.Stringf(format, args...))
 	_ = p.w.WriteByte('\n')
 	_ = p.w.Flush()
@@ -454,14 +467,10 @@ type session struct {
 	onElicit func(message string)
 }
 
-func start(bin string, env ...string) (*session, error) {
-	return startWith(bin, nil, env...)
-}
-
-// startWith is start with, when onElicit is set, a client that can be
-// asked.
-func startWith(bin string, onElicit func(string), env ...string) (*session, error) {
-	cmd := exec.Command(bin)
+// start runs the server with args, and, when onElicit is set, a client
+// that can be asked.
+func start(bin string, args []string, onElicit func(string), env ...string) (*session, error) {
+	cmd := exec.Command(bin, args...) //nolint:gosec // G204: running the server the maintainer named, with flags this file writes, is the job
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stderr = nil // the server's own logs are not this transcript
 
@@ -536,23 +545,32 @@ func (s *session) initialize() error {
 	return s.notify("notifications/initialized")
 }
 
-// listTools returns the registered tool names.
-func (s *session) listTools() (map[string]bool, error) {
+// tool is what tools/list says about one tool.
+type tool struct {
+	// readOnly is the tool's own readOnlyHint.
+	readOnly bool
+}
+
+// listTools returns the registered tools, by name.
+func (s *session) listTools() (map[string]tool, error) {
 	raw, err := s.request("tools/list", map[string]any{})
 	if err != nil {
 		return nil, err
 	}
 	var result struct {
 		Tools []struct {
-			Name string `json:"name"`
+			Name        string `json:"name"`
+			Annotations struct {
+				ReadOnlyHint bool `json:"readOnlyHint"`
+			} `json:"annotations"`
 		} `json:"tools"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, err
 	}
-	out := map[string]bool{}
+	out := map[string]tool{}
 	for _, t := range result.Tools {
-		out[t.Name] = true
+		out[t.Name] = tool{readOnly: t.Annotations.ReadOnlyHint}
 	}
 	return out, nil
 }
