@@ -30,7 +30,8 @@ organization role is not `administrator` or `fullMember`, `owner_role:
 'guests'` or `edit_role: 'guests'`, and `public_sharing: 'organization'`
 or `'public'` are refused `[blocked]`. An entry that gives someone no more
 than they already hold goes through; raising someone who is not a member
-is refused.
+is refused, and so is an entry flagged `delete: true` that names someone
+with no access.
 
 The **Phase** column records which build phase shipped the tool. `parity`
 marks tools added by the API-parity pass that re-checked this client against

@@ -677,7 +677,12 @@ What stays is what holds on every client:
    - a new collection `admin` or group `administrator`, who can change who
      else has access;
    - `owner_role: 'guests'` or `edit_role: 'guests'` on a widget, which
-     makes people outside the organization its owners or editors.
+     makes people outside the organization its owners or editors;
+   - an entry flagged `delete: true` that names someone with no access.
+     The entry goes to Favro as given, and Favro may ignore the flag on a
+     create, on `shareToUsers` and on a group's whole-list update (§7.4),
+     so a removal's shape is checked like any entry's and only someone
+     who has access can be removed.
 
    An entry that gives someone no more than they already hold widens
    nothing and goes through: an update reads the collection's shares or

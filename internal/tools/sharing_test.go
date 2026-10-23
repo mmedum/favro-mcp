@@ -170,6 +170,18 @@ func TestOrdinaryWritesShareOnlyInsideTheOrganization(t *testing.T) {
 				map[string]any{"userId": "u-guest", "role": "administrator"},
 			},
 		}, "blocked", false},
+		"an invitation by email, flagged as a removal": {createCollectionToolName, map[string]any{
+			"name": "x", "share_to_users": share(map[string]any{"email": "someone@example.invalid", "role": "admin", "delete": true}),
+		}, "blocked", false},
+		"the whole organization as an entry, flagged as a removal": {updateCollectionToolName, map[string]any{
+			"collection_id": "c-1", "share_to_users": share(map[string]any{"type": "organization", "role": "edit", "delete": true}),
+		}, "blocked", false},
+		"an outsider made group administrator, flagged as a removal": {createGroupToolName, map[string]any{
+			"name": "x", "members": share(map[string]any{"userId": "u-ext", "role": "administrator", "delete": true}),
+		}, "blocked", false},
+		"a removal of someone with no access": {updateGroupToolName, map[string]any{
+			"group_id": "g-1", "members": share(map[string]any{"userId": "u-ext", "delete": true}),
+		}, "blocked", false},
 		"guests as a widget's owners on create": {createWidgetToolName, map[string]any{
 			"collection_id": "c-1", "name": "x", "owner_role": "guests",
 		}, "blocked", false},
@@ -196,7 +208,7 @@ func TestOrdinaryWritesShareOnlyInsideTheOrganization(t *testing.T) {
 				}
 				// The organization has a tool of its own, and the refusal
 				// names it; nothing else here does.
-				if names := strings.Contains(text, widenCollectionSharingToolName); names != (name == "the whole organization as an entry") {
+				if names := strings.Contains(text, widenCollectionSharingToolName); names != strings.HasPrefix(name, "the whole organization as an entry") {
 					t.Errorf("%s dry_run=%v: names %s: %v in %q", tc.tool, dry, widenCollectionSharingToolName, names, text)
 				}
 				writes, reads, _ := f.made()
@@ -223,12 +235,16 @@ func TestOrdinaryWritesShareOnlyInsideTheOrganization(t *testing.T) {
 // out: widening is what favro_widen_collection_sharing is for.
 func TestEverySharingArgumentRefusesItsWidestValue(t *testing.T) {
 	t.Parallel()
-	widest := map[string]any{
-		"share_to_users": []any{map[string]any{"email": "someone@example.invalid", "role": "view"}},
-		"members":        []any{map[string]any{"email": "someone@example.invalid", "role": "member"}},
-		"owner_role":     "guests",
-		"edit_role":      "guests",
-		"public_sharing": "public",
+	// An entry flagged as a removal is sent as given too, and Favro may
+	// ignore the flag, so each list is tried with one as well.
+	invite := map[string]any{"email": "someone@example.invalid", "role": "view"}
+	flagged := map[string]any{"userId": "u-ext", "role": "edit", "delete": true}
+	widest := map[string][]any{
+		"share_to_users": {[]any{invite}, []any{flagged}},
+		"members":        {[]any{invite}, []any{flagged}},
+		"owner_role":     {"guests"},
+		"edit_role":      {"guests"},
+		"public_sharing": {"public"},
 	}
 	checked := 0
 	for name, tool := range listToolsWith(t, Options{Destructive: true, UploadDir: t.TempDir()}) {
@@ -236,24 +252,23 @@ func TestEverySharingArgumentRefusesItsWidestValue(t *testing.T) {
 			continue
 		}
 		for prop := range inputProperties(t, tool) {
-			value, ok := widest[prop]
-			if !ok {
-				continue
-			}
-			checked++
-			f := newSharingFavro(t)
-			args := maps.Clone(smokeToolInputs[name])
-			args[prop], args["dry_run"] = value, false
-			res := f.call(t, name, args)
-			if writes, _, _ := f.made(); !strings.HasPrefix(resultText(res), "[blocked] ") || len(writes) != 0 {
-				t.Errorf("%s with the widest %s: got %q and writes %v, want [blocked] and none",
-					name, prop, resultText(res), writes)
+			for _, value := range widest[prop] {
+				checked++
+				f := newSharingFavro(t)
+				args := maps.Clone(smokeToolInputs[name])
+				args[prop], args["dry_run"] = value, false
+				res := f.call(t, name, args)
+				if writes, _, _ := f.made(); !strings.HasPrefix(resultText(res), "[blocked] ") || len(writes) != 0 {
+					t.Errorf("%s with %s %v: got %q and writes %v, want [blocked] and none",
+						name, prop, value, resultText(res), writes)
+				}
 			}
 		}
 	}
-	// Six tools take eleven of these between them.
-	if checked < 11 {
-		t.Errorf("checked %d sharing arguments, want at least 11", checked)
+	// Six tools take eleven of these arguments between them, five of
+	// them lists.
+	if checked < 16 {
+		t.Errorf("checked %d sharing values, want at least 16", checked)
 	}
 }
 
@@ -285,9 +300,15 @@ func TestWhatIsAlreadyHeldIsNotANewGrant(t *testing.T) {
 		"a member already shared, raised": {updateCollectionToolName, map[string]any{
 			"collection_id": "c-1", "share_to_users": []any{map[string]any{"userId": "u-2", "role": "edit"}},
 		}, `"shareToUsers":[{"userId":"u-2","role":"edit"}]`},
-		"a removal names anyone": {updateCollectionToolName, map[string]any{
-			"collection_id": "c-1", "members": []any{map[string]any{"userId": "u-nobody", "delete": true}},
-		}, `"members":[{"userId":"u-nobody","delete":true}]`},
+		"a collection's guest removed": {updateCollectionToolName, map[string]any{
+			"collection_id": "c-1", "members": []any{map[string]any{"userId": "u-guest", "delete": true}},
+		}, `"members":[{"userId":"u-guest","delete":true}]`},
+		"a group's guest removed": {updateGroupToolName, map[string]any{
+			"group_id": "g-1", "members": []any{
+				map[string]any{"userId": "u-admin", "role": "administrator"},
+				map[string]any{"userId": "u-guest", "delete": true},
+			},
+		}, `"members":[{"userId":"u-admin","role":"administrator"},{"userId":"u-guest","delete":true}]`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

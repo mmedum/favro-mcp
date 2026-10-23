@@ -34,7 +34,9 @@ type grant struct {
 	at                         string
 	typ, userID, groupID, mail string
 	role                       string
-	// remove is an entry that takes access away, which widens nothing.
+	// remove is an entry flagged delete: true. It is sent as given, and
+	// Favro may ignore the flag, so it widens nothing only when it names
+	// someone who already has access.
 	remove bool
 }
 
@@ -95,27 +97,22 @@ func noneHeld() (map[string]string, error) { return nil, nil }
 // who already has access, from Favro for an update: an entry that gives
 // someone no more than they already hold widens nothing, which matters
 // for favro_update_group, whose member list replaces the whole one. The
-// entries' own shape is checked first, so such a refusal costs no
-// request, and nothing is read for a call that only removes.
+// entries' own shape is checked first, removals included, so such a
+// refusal costs no request.
 func checkGrants(ctx context.Context, r *service.Resolver, tool, owner string, held heldFunc, grants []grant) error {
-	var given []grant
 	for _, g := range grants {
-		if g.remove {
-			continue
-		}
 		if err := checkShape(tool, g); err != nil {
 			return err
 		}
-		given = append(given, g)
 	}
-	if len(given) == 0 {
+	if len(grants) == 0 {
 		return nil
 	}
 	had, err := held()
 	if err != nil {
 		return err
 	}
-	widened, err := checkOwners(tool, owner, had, given)
+	widened, err := checkOwners(tool, owner, had, grants)
 	if err != nil || len(widened) == 0 {
 		return err
 	}
@@ -140,22 +137,54 @@ func roleRank(role string) int {
 	return 4
 }
 
-// checkOwners refuses a grant that makes a new owner, and returns the
-// people the grants would give more than they hold: everyone who holds
-// nothing yet, and anyone raised above the role they have.
+// checkOwners refuses a grant that makes a new owner, and a removal of
+// someone who has no access, which Favro may read as adding them if it
+// ignores the flag. It returns the people the grants would give more
+// than they hold: everyone who holds nothing yet, and anyone raised
+// above the role they have.
 func checkOwners(tool, owner string, had map[string]string, given []grant) ([]grant, error) {
 	var widened []grant
 	for _, g := range given {
-		if strings.EqualFold(strings.TrimSpace(g.role), owner) && !strings.EqualFold(had[g.key()], owner) {
+		held, ok := had[g.key()]
+		if g.remove && !ok {
+			return nil, render.Errorf(render.ClassBlocked, "%s: %s removes someone who has no access here, and "+
+				"Favro may read it as adding them; nothing was changed. Remove only someone the %s already holds",
+				tool, g.at, holder(owner))
+		}
+		if strings.EqualFold(strings.TrimSpace(g.role), owner) && !strings.EqualFold(held, owner) {
 			return nil, render.Errorf(render.ClassBlocked, "%s: %s would make a new %s, who can change who else has "+
 				"access; nothing was changed. This server makes nobody a new %s; the person can do that in Favro",
 				tool, g.at, owner, owner)
 		}
-		if held, ok := had[g.key()]; !g.isGroup() && (!ok || roleRank(g.role) > roleRank(held)) {
+		if widens(g, held, ok) {
 			widened = append(widened, g)
 		}
 	}
 	return widened, nil
+}
+
+// widens reports whether g gives a person more than they hold: held is
+// their role, and ok whether they have one. A group is not a person, and
+// a removal that names no role raises nobody.
+func widens(g grant, held string, ok bool) bool {
+	switch {
+	case g.isGroup():
+		return false
+	case !ok:
+		return true
+	case g.remove && g.role == "":
+		return false
+	}
+	return roleRank(g.role) > roleRank(held)
+}
+
+// holder is what holds the access a write with this owner role
+// changes.
+func holder(owner string) string {
+	if owner == "administrator" {
+		return "group"
+	}
+	return "collection"
 }
 
 // checkMembers refuses a grant to someone the organization does not
