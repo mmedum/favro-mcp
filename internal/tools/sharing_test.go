@@ -213,6 +213,47 @@ func TestOrdinaryWritesShareOnlyInsideTheOrganization(t *testing.T) {
 	}
 }
 
+// Every ordinary write that takes a sharing argument refuses its
+// widest value before anything is written. The tools and arguments come
+// from the registered input schemas, so a write added later that takes
+// one of these is held by taking it. The destructive tools are left
+// out: widening is what favro_widen_collection_sharing is for.
+func TestEverySharingArgumentRefusesItsWidestValue(t *testing.T) {
+	t.Parallel()
+	widest := map[string]any{
+		"share_to_users": []any{map[string]any{"email": "someone@example.invalid", "role": "view"}},
+		"members":        []any{map[string]any{"email": "someone@example.invalid", "role": "member"}},
+		"owner_role":     "guests",
+		"edit_role":      "guests",
+		"public_sharing": "public",
+	}
+	checked := 0
+	for name, tool := range listToolsWith(t, Options{Destructive: true, UploadDir: t.TempDir()}) {
+		if destructive(tool) {
+			continue
+		}
+		for prop := range inputProperties(t, tool) {
+			value, ok := widest[prop]
+			if !ok {
+				continue
+			}
+			checked++
+			f := newSharingFavro(t)
+			args := maps.Clone(smokeToolInputs[name])
+			args[prop], args["dry_run"] = value, false
+			res := f.call(t, name, args)
+			if writes, _, _ := f.made(); !strings.HasPrefix(resultText(res), "[blocked] ") || len(writes) != 0 {
+				t.Errorf("%s with the widest %s: got %q and writes %v, want [blocked] and none",
+					name, prop, resultText(res), writes)
+			}
+		}
+	}
+	// Six tools take eleven of these between them.
+	if checked < 11 {
+		t.Errorf("checked %d sharing arguments, want at least 11", checked)
+	}
+}
+
 // What someone already holds is not a new grant. favro_update_group's
 // list replaces the whole one, so everyone who stays is re-sent with the
 // role they hold, a guest and an administrator among them; refusing them
