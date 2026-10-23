@@ -145,7 +145,7 @@ func optionSteps() []Step {
 				"full_members_can_add_widgets": false,
 				"icon_name":                    "rocket",
 				"name":                         "livefavro probe",
-				"public_sharing":               "organization",
+				"public_sharing":               "users",
 				"star_page":                    false,
 			},
 			Why: "dry-run: builds the request without sending it",
@@ -225,6 +225,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_all_dependencies",
 			Args: map[string]any{
+				"confirm": true,
 				"card_id": AnyCardID,
 				"dry_run": true,
 			},
@@ -233,6 +234,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_card",
 			Args: map[string]any{
+				"confirm":    true,
 				"card_id":    AnyCardID,
 				"dry_run":    true,
 				"everywhere": false,
@@ -242,6 +244,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_collection",
 			Args: map[string]any{
+				"confirm":       true,
 				"collection_id": AnyCollectionID,
 				"dry_run":       true,
 			},
@@ -250,6 +253,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_column",
 			Args: map[string]any{
+				"confirm":          true,
 				"column_id":        AnyColumnID,
 				"dry_run":          true,
 				"widget_common_id": AnyWidgetCommonID,
@@ -259,6 +263,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_comment",
 			Args: map[string]any{
+				"confirm":    true,
 				"comment_id": AnyCommentID,
 				"dry_run":    true,
 			},
@@ -267,6 +272,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_dependency",
 			Args: map[string]any{
+				"confirm":            true,
 				"card_id":            AnyCardID,
 				"dependency_card_id": "livefavro probe",
 				"dry_run":            true,
@@ -276,6 +282,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_group",
 			Args: map[string]any{
+				"confirm":  true,
 				"dry_run":  true,
 				"group_id": AnyGroupID,
 			},
@@ -284,6 +291,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_tag",
 			Args: map[string]any{
+				"confirm": true,
 				"dry_run": true,
 				"tag_id":  AnyTagID,
 			},
@@ -292,6 +300,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_task",
 			Args: map[string]any{
+				"confirm": true,
 				"dry_run": true,
 				"task_id": AnyTaskID,
 			},
@@ -300,6 +309,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_tasklist",
 			Args: map[string]any{
+				"confirm":      true,
 				"dry_run":      true,
 				"task_list_id": AnyTaskListID,
 			},
@@ -308,6 +318,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_webhook",
 			Args: map[string]any{
+				"confirm":    true,
 				"dry_run":    true,
 				"webhook_id": "wh-probe",
 			},
@@ -316,6 +327,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_delete_widget",
 			Args: map[string]any{
+				"confirm":          true,
 				"collection_id":    AnyCollectionID,
 				"dry_run":          true,
 				"widget_common_id": AnyWidgetCommonID,
@@ -579,6 +591,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_remove_attachment",
 			Args: map[string]any{
+				"confirm":   true,
 				"card_id":   AnyCardID,
 				"dry_run":   true,
 				"file_urls": []string{"https://example.invalid/not-attached.txt"},
@@ -598,6 +611,7 @@ func optionSteps() []Step {
 		{
 			Tool: "favro_replace_dependencies",
 			Args: map[string]any{
+				"confirm":      true,
 				"card_id":      AnyCardID,
 				"dependencies": []map[string]any{{"cardId": AnyCardCommonID, "isBefore": false}},
 				"dry_run":      true,
@@ -733,7 +747,7 @@ func optionSteps() []Step {
 				"full_members_can_add_widgets": false,
 				"icon_name":                    "rocket",
 				"name":                         "livefavro probe",
-				"public_sharing":               "organization",
+				"public_sharing":               "users",
 				"star_page":                    false,
 			},
 			Why: "dry-run: builds the request without sending it",

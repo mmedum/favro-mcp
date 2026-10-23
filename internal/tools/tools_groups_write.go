@@ -9,7 +9,6 @@ import (
 
 	"github.com/mmedum/favro-mcp/v4/internal/favro"
 	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
-	"github.com/mmedum/favro-mcp/v4/internal/render"
 	"github.com/mmedum/favro-mcp/v4/internal/service"
 )
 
@@ -23,7 +22,7 @@ const (
 type createGroupInput struct {
 	dryRunInput
 	Name    string              `json:"name" jsonschema:"the group name (required)"`
-	Members []favro.GroupMember `json:"members,omitempty" jsonschema:"optional initial member list. Each entry identifies a person by userId or email plus a role ('administrator' / 'member'). Resolve userIds via favro_resolve_user."`
+	Members []favro.GroupMember `json:"members,omitempty" jsonschema:"optional initial member list. Each entry names a member of the organization by userId (from favro_resolve_user) plus role 'member'. An email, role 'administrator' or someone who is not a member of the organization is refused."`
 }
 
 // updateGroupInput is the input for favro_update_group. Members,
@@ -34,12 +33,13 @@ type updateGroupInput struct {
 	dryRunInput
 	GroupID string              `json:"group_id" jsonschema:"the Favro groupId to update. Resolve via favro_resolve_group."`
 	Name    string              `json:"name,omitempty" jsonschema:"new group name; omit to keep current"`
-	Members []favro.GroupMember `json:"members,omitempty" jsonschema:"the group's full intended member list — it REPLACES the existing one, so include everyone who should remain. Each entry identifies a person by userId or email plus a role ('administrator' / 'member'). A per-entry delete: true is accepted (Favro documents it) but whole-list replacement is what was observed live."`
+	Members []favro.GroupMember `json:"members,omitempty" jsonschema:"the group's full intended member list — it REPLACES the existing one, so include everyone who should remain, with the role they hold. Each entry names a person by userId plus a role ('administrator' / 'member'). Someone new must be a member of the organization; an email, or making someone administrator who is not one already, is refused. A per-entry delete: true is accepted (Favro documents it) but whole-list replacement is what was observed live."`
 }
 
 // deleteGroupInput is the input for favro_delete_group.
 type deleteGroupInput struct {
 	dryRunInput
+	confirmInput
 	GroupID string `json:"group_id" jsonschema:"the Favro groupId to delete"`
 }
 
@@ -47,10 +47,14 @@ func registerCreateGroup(reg *registry, r *service.Resolver) {
 	addTool(reg, &mcp.Tool{
 		Name: createGroupToolName,
 		Description: "Create a new org-global Favro group. `name` is required; `members` is " +
-			"optional (Favro creates an empty group when omitted). Successful live writes " +
-			"invalidate the group cache. Pass `dry_run: true` to preview.",
+			"optional (Favro creates an empty group when omitted) and takes members of the " +
+			"organization by userId. Successful live writes invalidate the group cache. Pass " +
+			"`dry_run: true` to preview.",
 		Annotations: mutating("Create Favro group", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createGroupInput) (*mcp.CallToolResult, writeOutput[favro.Group], error) {
+		if err := checkGrants(ctx, r, createGroupToolName, "administrator", noneHeld, memberGrants(in.Members)); err != nil {
+			return nil, writeOutput[favro.Group]{}, err
+		}
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
@@ -81,11 +85,21 @@ func registerUpdateGroup(reg *registry, r *service.Resolver) {
 			"sending, and drop anyone who should leave. (Favro's docs describe add/remove " +
 			"delta semantics with a per-entry `delete` flag, but a live test observed whole" +
 			"-list replacement; sending the full list is correct under either reading, " +
-			"whereas sending only a delta is not.) Each entry identifies a person by " +
-			"userId or email plus a role. Successful live writes invalidate the group " +
+			"whereas sending only a delta is not.) Each entry names a person by userId plus " +
+			"a role; someone new must be a member of the organization, and nobody becomes " +
+			"administrator who is not one already. Successful live writes invalidate the group " +
 			"cache. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Update Favro group", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateGroupInput) (*mcp.CallToolResult, writeOutput[favro.Group], error) {
+		// Who is in the group is read, not assumed from the call: the list
+		// replaces the whole one, so everyone who stays is in it.
+		held := func() (map[string]string, error) {
+			g, err := r.Client().GetGroup(ctx, in.GroupID)
+			return heldMembers(g.Members), err
+		}
+		if err := checkGrants(ctx, r, updateGroupToolName, "administrator", held, memberGrants(in.Members)); err != nil {
+			return nil, writeOutput[favro.Group]{}, err
+		}
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
@@ -107,23 +121,18 @@ func registerUpdateGroup(reg *registry, r *service.Resolver) {
 }
 
 func registerDeleteGroup(reg *registry, r *service.Resolver) {
-	addAsking(reg, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: deleteGroupToolName,
 		Description: "Delete a Favro group by its groupId. Destructive — MCP hosts may warn " +
 			"before auto-confirming. The group is removed from any sharing / assignment / " +
 			"custom-field references it appeared in. Successful live writes invalidate the " +
-			"group cache. Pass `dry_run: true` to preview." + asksFirst,
+			"group cache. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Delete Favro group", true),
+		Meta:        promptEveryCall(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteGroupInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
-		}
-		if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
-			g, err := r.Client().GetGroup(ctx, in.GroupID)
-			return render.AskDeleteGroup(in.GroupID, g.Name), err
-		}); err != nil {
-			return nil, writeOutput[struct{}]{}, err
 		}
 		out, err := runWrite(
 			func() (struct{}, error) {

@@ -62,6 +62,26 @@ func TestToolsDocumentedReadsBothDirections(t *testing.T) {
 // A design document's status line claims something no tag can derive, so
 // nothing but this will catch it. A sibling's said v0.5.0 five releases
 // after v0.5.0.
+// A permission rule for a tool the binary does not register asks
+// nobody, so each one is held to the registered list, and a README with
+// none is a check reading nothing.
+func TestPermissionRulesNameRegisteredTools(t *testing.T) {
+	registered := []string{"favro_ping", "favro_delete_tag"}
+	for _, tc := range []struct {
+		readme string
+		want   string
+	}{
+		{`"ask": ["mcp__favro__favro_delete_tag", "mcp__favro__favro_ping"]`, ""},
+		{`"ask": ["mcp__favro__favro_delete_tag", "mcp__favro__favro_delete_teg"]`, "permission rule for favro_delete_teg"},
+		{"no rules here", "gives no `permissions.ask` rule"},
+	} {
+		got := strings.Join(permissionRulesRegistered(tc.readme, registered), "\n")
+		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+			t.Errorf("%s: got %q, want %q", tc.readme, got, tc.want)
+		}
+	}
+}
+
 func TestStatusCurrentComparesAgainstTheNewestHeading(t *testing.T) {
 	arch := "**Status, 2026-09-13.** Released: v1.1.2. The rest of the document.\n"
 	changelog := "## [Unreleased]\n\n## [1.1.2] - 2026-08-27\n\n## [1.1.1] - 2026-08-26\n"

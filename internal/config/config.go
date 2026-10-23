@@ -46,17 +46,11 @@ const (
 	// a card's text can suggest to a model.
 	EnvUploadDir = "FAVRO_UPLOAD_DIR"
 
-	// EnvRequirePrompt refuses the writes that ask the person when the
-	// client cannot ask them, rather than making them on the arguments
-	// alone.
+	// EnvRequirePrompt was removed with the question it governed: the
+	// server no longer asks the person, and the client's own approval
+	// decides each call. It is read only to refuse a configuration that
+	// still turns it on (removedSettings).
 	EnvRequirePrompt = "FAVRO_REQUIRE_PROMPT"
-
-	// EnvInteractionHint, set to false, takes Claude Code's
-	// requiresUserInteraction mark off the writes that ask the person.
-	// On by default. Claude Code prompts for a marked tool on every
-	// call, and headless it refuses one, so a deployment with nobody at
-	// the keyboard turns it off.
-	EnvInteractionHint = "FAVRO_INTERACTION_HINT"
 )
 
 // Config is the resolved settings.
@@ -75,12 +69,11 @@ type Config struct {
 	// from, or empty when uploads are off.
 	UploadDir string
 
-	// RequirePrompt refuses an asking write when the client cannot ask.
-	RequirePrompt bool
-
-	// SuppressInteractionHint takes the requiresUserInteraction mark off
-	// the asking writes. Negative so that the zero value is the default.
-	SuppressInteractionHint bool
+	// Refusals are the removed settings this environment still turns on,
+	// as sentences ready to log. The server does not start while there
+	// is one: ignored, a setting would quietly allow what its owner set
+	// it to stop.
+	Refusals []string
 
 	// Warnings is what Load could not read, as sentences ready to log.
 	//
@@ -92,7 +85,9 @@ type Config struct {
 
 // Load reads the environment. It never fails: a value this package
 // cannot read falls back to the safe default and is described in
-// Warnings, so the caller can say so once a logger exists.
+// Warnings, so the caller can say so once a logger exists. A removed
+// setting still turned on is described in Refusals, and the server
+// refuses to start on it; the other commands still run.
 //
 // Nothing here reads a flag, because the flags that exist (--dry-run,
 // --version, --dump-schemas) are a different kind of thing: they select
@@ -126,32 +121,7 @@ func Load() Config {
 		}
 	}
 
-	// Unreadable here means on: the variable exists to refuse, and a
-	// typo in it must not quietly stop refusing.
-	if raw := os.Getenv(EnvRequirePrompt); raw != "" {
-		on, err := strconv.ParseBool(raw)
-		switch {
-		case err != nil:
-			cfg.RequirePrompt = true
-			cfg.Warnings = append(cfg.Warnings,
-				fmt.Sprintf("unreadable %s %q — treated as true; set it to true or false", EnvRequirePrompt, raw))
-		default:
-			cfg.RequirePrompt = on
-		}
-	}
-
-	// Unreadable here means on, too: only a deliberate false takes the
-	// mark off.
-	if raw := os.Getenv(EnvInteractionHint); raw != "" {
-		on, err := strconv.ParseBool(raw)
-		switch {
-		case err != nil:
-			cfg.Warnings = append(cfg.Warnings,
-				fmt.Sprintf("unreadable %s %q — treated as true; set it to true or false", EnvInteractionHint, raw))
-		default:
-			cfg.SuppressInteractionHint = !on
-		}
-	}
+	cfg.Refusals = removedSet(os.Getenv)
 
 	if raw := strings.TrimSpace(os.Getenv(EnvUploadDir)); raw != "" {
 		dir, err := UploadDir(raw)
@@ -165,6 +135,31 @@ func Load() Config {
 	}
 
 	return cfg
+}
+
+// removedSettings are the settings a release took out, each with what
+// to do instead. FAVRO_INTERACTION_HINT went in the same release and is
+// not read at all: false asked for no mark, which nothing sets by
+// default any more, and true was every install's default.
+var removedSettings = []struct{ name, instead string }{
+	{EnvRequirePrompt, "leave " + EnvEnableDestructive + " off for a client that runs with nobody watching, " +
+		"and list the writes you want to approve under your client's ask rules, as the README shows"},
+}
+
+// removedSet is a refusal for each removed setting that is set to
+// anything but false. Off, or unset, is still accepted; a value that is
+// not a boolean is refused, since it may mean on.
+func removedSet(getenv func(string) string) []string {
+	var out []string
+	for _, r := range removedSettings {
+		raw := strings.TrimSpace(getenv(r.name))
+		if on, err := strconv.ParseBool(raw); raw == "" || (err == nil && !on) {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s was removed: the server no longer asks the person, and the client's "+
+			"own approval decides each call. Unset it to start the server, and %s", r.name, r.instead))
+	}
+	return out
 }
 
 // UploadDir checks a FAVRO_UPLOAD_DIR value: an absolute path to a

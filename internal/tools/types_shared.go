@@ -137,6 +137,8 @@ type dryRunInput struct {
 	DryRun bool `json:"dry_run,omitempty" jsonschema:"if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run."`
 }
 
+func (d dryRunInput) dryRun() bool { return d.DryRun }
+
 // writeOutput is the standard output shape for every mutating tool.
 // Either Result (live mode) OR WouldCall+RequestBody+StateDiff
 // (dry-run) is populated; DryRun is true exactly when the latter

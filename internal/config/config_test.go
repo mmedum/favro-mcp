@@ -124,55 +124,35 @@ func TestWarningsNameTheVariable(t *testing.T) {
 	}
 }
 
-// TestLoadRequirePrompt pins the parse. The variable exists to refuse,
-// so a value Go cannot read means on, and says so.
-func TestLoadRequirePrompt(t *testing.T) {
+// A removed setting still turned on refuses to start: ignored, it
+// would quietly allow what its owner set it to stop. Off and unset are
+// still accepted, and a value that is not a boolean may mean on.
+// FAVRO_INTERACTION_HINT went in the same release and is not read.
+func TestARemovedSettingIsRefusedUnlessOff(t *testing.T) {
 	for _, tc := range []struct {
-		env        string
-		want, warn bool
+		env     string
+		refused bool
 	}{
-		{"", false, false},
-		{"true", true, false},
-		{"0", false, false},
-		{"yes", true, true},
+		{"", false},
+		{"false", false},
+		{" 0 ", false},
+		{"true", true},
+		{"1", true},
+		{"yes", true},
 	} {
 		t.Setenv(EnvRequirePrompt, tc.env)
+		t.Setenv("FAVRO_INTERACTION_HINT", "false")
 		cfg := Load()
-		if cfg.RequirePrompt != tc.want || (len(cfg.Warnings) > 0) != tc.warn {
-			t.Errorf("%q: RequirePrompt %v, warnings %q", tc.env, cfg.RequirePrompt, cfg.Warnings)
+		if got := len(cfg.Refusals) == 1; got != tc.refused || len(cfg.Refusals) > 1 {
+			t.Errorf("FAVRO_REQUIRE_PROMPT=%q: refusals %q, want refused %v", tc.env, cfg.Refusals, tc.refused)
 		}
-	}
-}
-
-// TestLoadInteractionHint pins the parse. The mark is on unless the
-// variable says false; a value Go cannot read keeps it on, and says so.
-func TestLoadInteractionHint(t *testing.T) {
-	for _, tc := range []struct {
-		env              string
-		suppressed, warn bool
-	}{
-		{"", false, false},
-		{"true", false, false},
-		{"false", true, false},
-		{"0", true, false},
-		{"off", false, true},
-	} {
-		t.Setenv(EnvInteractionHint, tc.env)
-		cfg := Load()
-		// Only this variable's warnings: another one set in the shell
-		// must not decide the case.
-		var mine []string
+		if tc.refused && len(cfg.Refusals) == 1 && !strings.HasPrefix(cfg.Refusals[0], "FAVRO_REQUIRE_PROMPT was removed") {
+			t.Errorf("FAVRO_REQUIRE_PROMPT=%q: the refusal does not name the setting: %q", tc.env, cfg.Refusals[0])
+		}
 		for _, w := range cfg.Warnings {
-			if strings.Contains(w, EnvInteractionHint) {
-				mine = append(mine, w)
+			if strings.Contains(w, "FAVRO_INTERACTION_HINT") {
+				t.Errorf("FAVRO_INTERACTION_HINT is still read: %q", w)
 			}
-		}
-		warned := strings.Join(mine, "\n")
-		if cfg.SuppressInteractionHint != tc.suppressed || (warned != "") != tc.warn {
-			t.Errorf("%q: SuppressInteractionHint %v, warnings %q", tc.env, cfg.SuppressInteractionHint, warned)
-		}
-		if tc.warn && !strings.Contains(warned, "treated as true") {
-			t.Errorf("%q: the warning does not say what it means: %q", tc.env, warned)
 		}
 	}
 }

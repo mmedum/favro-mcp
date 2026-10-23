@@ -139,7 +139,7 @@ func TestMCP_DeleteWidget_HappyPath(t *testing.T) {
 	cs := connectInMemoryWith(t, c)
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      deleteWidgetToolName,
-		Arguments: map[string]any{"widget_common_id": "w-1"},
+		Arguments: map[string]any{"widget_common_id": "w-1", "everywhere": true, "confirm": true},
 	})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)

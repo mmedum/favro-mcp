@@ -54,11 +54,12 @@ func main() {
 	bin := flag.String("bin", defaultBinary, "the built server to drive")
 	only := flag.String("only", "", "run only the steps for this tool")
 	verbose := flag.Bool("v", false, "print each result, redacted")
-	asks := flag.Bool("asks", false, "run the asking checks instead of the steps: a probe tag this run creates is "+
-		"asked about, declined and then deleted, and the uploads and a public collection are asked about and declined")
+	writes := flag.Bool("writes", false, "run the write checks instead of the steps: a probe tag and a probe "+
+		"collection this run creates are deleted without and with confirm, and the collection is opened to the "+
+		"organization, read back and narrowed again")
 	flag.Parse()
 
-	if err := run(*bin, *only, *verbose, *asks); err != nil {
+	if err := run(*bin, *only, *verbose, *writes); err != nil {
 		fatal(err)
 	}
 }
@@ -77,7 +78,7 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-func run(bin, only string, verbose, asks bool) error {
+func run(bin, only string, verbose, writes bool) error {
 	if _, err := os.Stat(bin); err != nil {
 		return fmt.Errorf("%s: %w (run `make build` first)", bin, err)
 	}
@@ -100,11 +101,11 @@ func run(bin, only string, verbose, asks bool) error {
 	// Destructive tools are registered so their dry-run paths can be
 	// exercised. Nothing here sends a live write: every mutating step
 	// carries dry_run, and the client's gate turns that into a record
-	// rather than a request. -asks is the exception, and runAsks says
-	// what it writes.
+	// rather than a request. -writes is the exception, and runWrites
+	// says what it writes.
 	env := []string{"FAVRO_ENABLE_DESTRUCTIVE=true", "FAVRO_UPLOAD_DIR=" + uploadDir}
-	if asks {
-		return runAsks(bin, env, out, red)
+	if writes {
+		return runWrites(bin, env, out, red)
 	}
 
 	srv, err := start(bin, env...)

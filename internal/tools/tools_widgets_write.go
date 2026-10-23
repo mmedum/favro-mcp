@@ -27,7 +27,7 @@ type createWidgetInput struct {
 	Type                  string `json:"type,omitempty" jsonschema:"widget type: 'backlog', 'board', 'calendar', 'table', or 'matrix'. Empty lets Favro pick its default ('backlog')."`
 	Color                 string `json:"color,omitempty" jsonschema:"optional palette color"`
 	BreakdownCardCommonID string `json:"breakdown_card_common_id,omitempty" jsonschema:"optional breakdown cardCommonId — pins the widget to a parent card's breakdown view"`
-	OwnerRole             string `json:"owner_role,omitempty" jsonschema:"role required to act as owner ('owners', 'fullMembers', 'guests'); Favro picks a default when omitted"`
+	OwnerRole             string `json:"owner_role,omitempty" jsonschema:"role required to act as owner ('owners' or 'fullMembers'); Favro picks a default when omitted. 'guests' is refused: it makes people outside the organization owners."`
 	EditRole              string `json:"edit_role,omitempty" jsonschema:"role required to edit the widget; same value vocabulary as owner_role"`
 }
 
@@ -39,18 +39,27 @@ type updateWidgetInput struct {
 	Type                  string `json:"type,omitempty" jsonschema:"new widget type; omit to keep current"`
 	Color                 string `json:"color,omitempty" jsonschema:"new palette color; omit to keep current"`
 	BreakdownCardCommonID string `json:"breakdown_card_common_id,omitempty" jsonschema:"new breakdown cardCommonId; omit to keep current"`
-	OwnerRole             string `json:"owner_role,omitempty" jsonschema:"new owner role; omit to keep current"`
+	OwnerRole             string `json:"owner_role,omitempty" jsonschema:"new owner role ('owners' or 'fullMembers'); omit to keep current. 'guests' is refused: it makes people outside the organization owners."`
 	EditRole              string `json:"edit_role,omitempty" jsonschema:"new edit role; omit to keep current"`
 	Archive               *bool  `json:"archive,omitempty" jsonschema:"true to archive, false to unarchive; omit to keep current. Requires collection_id."`
 	CollectionID          string `json:"collection_id,omitempty" jsonschema:"the collectionId the archive applies to. REQUIRED whenever archive is set — a widget can belong to several collections."`
 }
 
-// deleteWidgetInput is the input for favro_delete_widget.
+// deleteWidgetInput is the input for favro_delete_widget. The wider
+// delete is never what an omission gets: a call names one collection,
+// or says everywhere.
 type deleteWidgetInput struct {
 	dryRunInput
+	confirmInput
 	WidgetCommonID string `json:"widget_common_id" jsonschema:"the Favro widgetCommonId to delete"`
-	CollectionID   string `json:"collection_id,omitempty" jsonschema:"delete the widget only from this collection. Omit to delete every instance of the widget across all collections it belongs to."`
+	CollectionID   string `json:"collection_id,omitempty" jsonschema:"delete the widget from this collection only. Pass this or everywhere: true, not both."`
+	Everywhere     bool   `json:"everywhere,omitempty" jsonschema:"true deletes every instance of the widget, in every collection it belongs to. Pass this or collection_id, not both."`
 }
+
+// errDeleteWidgetScope is a favro_delete_widget call that names neither
+// one collection nor every one, or both.
+var errDeleteWidgetScope = render.Sentinel(render.ClassInvalid,
+	"favro_delete_widget: pass collection_id to delete the widget from one collection, or everywhere: true to delete it from every collection it is in; exactly one of them")
 
 func registerCreateWidget(reg *registry, r *service.Resolver) {
 	addTool(reg, &mcp.Tool{
@@ -61,6 +70,9 @@ func registerCreateWidget(reg *registry, r *service.Resolver) {
 			"live writes invalidate the widget cache. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Create Favro widget", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createWidgetInput) (*mcp.CallToolResult, writeOutput[favro.Widget], error) {
+		if err := checkOwnerRole(in.OwnerRole); err != nil {
+			return nil, writeOutput[favro.Widget]{}, err
+		}
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
@@ -105,6 +117,9 @@ func registerUpdateWidget(reg *registry, r *service.Resolver) {
 			"widget cache. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Update Favro widget", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateWidgetInput) (*mcp.CallToolResult, writeOutput[favro.Widget], error) {
+		if err := checkOwnerRole(in.OwnerRole); err != nil {
+			return nil, writeOutput[favro.Widget]{}, err
+		}
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
@@ -135,34 +150,23 @@ func registerUpdateWidget(reg *registry, r *service.Resolver) {
 }
 
 func registerDeleteWidget(reg *registry, r *service.Resolver) {
-	addAsking(reg, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: deleteWidgetToolName,
 		Description: "Delete a Favro widget by its widgetCommonId. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Cards on the widget are removed; columns on " +
 			"the widget become inaccessible. Pass `collection_id` to remove the widget from " +
-			"just that collection; omitting it deletes every instance across all " +
-			"collections the widget belongs to. On success the widget / column / " +
-			"search-cards caches are invalidated. Pass `dry_run: true` to preview." + asksFirst,
+			"just that collection, or `everywhere: true` to delete every instance across all " +
+			"collections the widget belongs to; one of the two is required. On success the " +
+			"widget / column / search-cards caches are invalidated. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Delete Favro widget", true),
+		Meta:        promptEveryCall(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteWidgetInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
+		if (in.CollectionID == "") == !in.Everywhere {
+			return nil, writeOutput[struct{}]{}, errDeleteWidgetScope
+		}
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
-		}
-		if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
-			w, err := r.Client().GetWidget(ctx, in.WidgetCommonID)
-			if err != nil {
-				return render.Question{}, err
-			}
-			var col favro.Collection
-			if in.CollectionID != "" {
-				if col, err = r.Client().GetCollection(ctx, in.CollectionID); err != nil {
-					return render.Question{}, err
-				}
-			}
-			return render.AskDeleteWidget(in.WidgetCommonID, w.Name, in.CollectionID, col.Name), nil
-		}); err != nil {
-			return nil, writeOutput[struct{}]{}, err
 		}
 		out, err := runWrite(
 			func() (struct{}, error) {

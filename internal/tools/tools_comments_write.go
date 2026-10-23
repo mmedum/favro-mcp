@@ -35,6 +35,7 @@ type updateCommentInput struct {
 // deleteCommentInput is the input for favro_delete_comment.
 type deleteCommentInput struct {
 	dryRunInput
+	confirmInput
 	CommentID string `json:"comment_id" jsonschema:"the Favro commentId to delete"`
 }
 

@@ -364,6 +364,36 @@ func (r *Resolver) invalidateUserCache() {
 	r.userCache.Invalidate(userCacheKey)
 }
 
+// OrganizationRoles is the organizationRole of each user the
+// organization lists, by userId, from the user cache when one is warm.
+// A warm cache that lacks one of ids is read again, since that person
+// may have joined since it was filled; an id still missing then is not
+// in the organization, and has no entry.
+func (r *Resolver) OrganizationRoles(ctx context.Context, ids []string) (map[string]string, error) {
+	users, cached, err := r.listAllUsers(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	roles := organizationRoles(users)
+	for _, id := range ids {
+		if _, ok := roles[id]; !ok && cached {
+			if users, _, err = r.listAllUsers(ctx, true); err != nil {
+				return nil, err
+			}
+			return organizationRoles(users), nil
+		}
+	}
+	return roles, nil
+}
+
+func organizationRoles(users []favro.User) map[string]string {
+	roles := make(map[string]string, len(users))
+	for _, u := range users {
+		roles[u.UserID] = u.OrganizationRole
+	}
+	return roles
+}
+
 // ResolveUser matches name against display-name OR email so an LLM
 // asking for "casper@example.com" or "Casper" both work. Email
 // matches use the same score scale as name matches; the per-item

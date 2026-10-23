@@ -956,7 +956,7 @@ func TestMCP_DeleteCard_HappyPath(t *testing.T) {
 	cs := connectInMemoryWith(t, c)
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      deleteCardToolName,
-		Arguments: map[string]any{"card_id": "ci-1"},
+		Arguments: map[string]any{"card_id": "ci-1", "confirm": true},
 	})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
@@ -991,6 +991,7 @@ func TestMCP_DeleteCard_Everywhere(t *testing.T) {
 		Arguments: map[string]any{
 			"card_id":    "ci-1",
 			"everywhere": true,
+			"confirm":    true,
 		},
 	})
 	if err := err; err != nil {

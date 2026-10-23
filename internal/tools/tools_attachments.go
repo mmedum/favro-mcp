@@ -65,6 +65,7 @@ type uploadCommentAttachmentInput struct {
 // removeAttachmentInput is the input for favro_remove_attachment.
 type removeAttachmentInput struct {
 	dryRunInput
+	confirmInput
 	CardID   string   `json:"card_id" jsonschema:"the per-widget cardId to detach files from"`
 	FileURLs []string `json:"file_urls" jsonschema:"the attachment fileURL values to detach, exactly as favro_get_card_full or favro_upload_attachment returned them. Favro matches on the URL, not the display name; the presigned query string is stripped for you."`
 }
@@ -73,7 +74,7 @@ func registerUploadAttachment(reg *registry, r *service.Resolver) {
 	if reg.uploadDir == "" {
 		return
 	}
-	addAsking(reg, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: uploadAttachmentToolName,
 		Description: "Upload a local file as an attachment on a Favro card via raw-bytes POST. " +
 			"Reads `file_path` from the directory FAVRO_UPLOAD_DIR names, and from nowhere else; " +
@@ -84,24 +85,16 @@ func registerUploadAttachment(reg *registry, r *service.Resolver) {
 			"attachment object `{name, fileURL}` (Favro echoes the attachment, NOT the updated " +
 			"Card — verified live). Successful live writes invalidate the search-cards cache " +
 			"(cached card payloads carry stale attachment lists otherwise). Pass `dry_run: true` " +
-			"to preview without contacting Favro. Use favro_remove_attachment to detach a file." + asksFirst,
+			"to preview without contacting Favro. Use favro_remove_attachment to detach a file.",
 		Annotations: mutating("Upload Favro attachment", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in uploadAttachmentInput) (*mcp.CallToolResult, writeOutput[favro.CardAttachment], error) {
-		content, up, err := prepareUpload(reg.uploadDir, uploadAttachmentToolName, in.FilePath, in.Filename, in.CardID)
+		content, filename, err := prepareUpload(reg.uploadDir, in.FilePath, in.Filename)
 		if err != nil {
 			return nil, writeOutput[favro.CardAttachment]{}, err
 		}
-		filename := up.Filename
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
-		}
-		if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
-			card, err := r.Client().GetCard(ctx, in.CardID)
-			up.Card = card.Name
-			return render.AskUpload(up), err
-		}); err != nil {
-			return nil, writeOutput[favro.CardAttachment]{}, err
 		}
 		out, err := runWrite(
 			func() (favro.CardAttachment, error) {
@@ -121,20 +114,17 @@ func registerUploadAttachment(reg *registry, r *service.Resolver) {
 	})
 }
 
-// prepareUpload reads the file both upload tools send, names it, and
-// fills what their question shares; each adds its own target.
-func prepareUpload(dir, tool, filePath, filename, targetID string) ([]byte, render.Upload, error) {
+// prepareUpload reads the file both upload tools send, and names it:
+// filename, or the file's own name when that is empty.
+func prepareUpload(dir, filePath, filename string) ([]byte, string, error) {
 	content, rel, err := readAttachmentFile(dir, filePath)
 	if err != nil {
-		return nil, render.Upload{}, err
+		return nil, "", err
 	}
 	if filename == "" {
 		filename = path.Base(rel)
 	}
-	return content, render.Upload{
-		Tool: tool, Path: rel, Size: int64(len(content)), Sum: render.SumBytes(content),
-		Filename: filename, TargetID: targetID,
-	}, nil
+	return content, filename, nil
 }
 
 // readAttachmentFile reads the file at name inside dir, and nothing
@@ -231,31 +221,23 @@ func registerUploadCommentAttachment(reg *registry, r *service.Resolver) {
 	if reg.uploadDir == "" {
 		return
 	}
-	addAsking(reg, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: uploadCommentAttachmentToolName,
 		Description: "Upload a local file as an attachment on a Favro comment via raw-bytes " +
 			"POST to `/comments/{commentId}/attachment`. Same contract as " +
 			"favro_upload_attachment, but the file lands on a comment rather than on the " +
 			"card itself: reads `file_path` from FAVRO_UPLOAD_DIR only, `filename` defaults to the " +
 			"basename, 8 MiB cap enforced before any HTTP work, returns the created " +
-			"attachment object `{name, fileURL}`. Pass `dry_run: true` to preview." + asksFirst,
+			"attachment object `{name, fileURL}`. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Upload Favro comment attachment", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in uploadCommentAttachmentInput) (*mcp.CallToolResult, writeOutput[favro.CardAttachment], error) {
-		content, up, err := prepareUpload(reg.uploadDir, uploadCommentAttachmentToolName, in.FilePath, in.Filename, in.CommentID)
+		content, filename, err := prepareUpload(reg.uploadDir, in.FilePath, in.Filename)
 		if err != nil {
 			return nil, writeOutput[favro.CardAttachment]{}, err
 		}
-		filename := up.Filename
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
-		}
-		if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
-			comment, err := r.Client().GetComment(ctx, in.CommentID)
-			up.OnComment, up.Comment = true, comment.Body
-			return render.AskUpload(up), err
-		}); err != nil {
-			return nil, writeOutput[favro.CardAttachment]{}, err
 		}
 		out, err := runWrite(
 			func() (favro.CardAttachment, error) {

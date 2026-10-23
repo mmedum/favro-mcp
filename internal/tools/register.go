@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"log/slog"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
@@ -28,22 +26,6 @@ type Options struct {
 	// signal a client may act on and not a control. The only tool that
 	// cannot be run unattended is one that is not there.
 	Destructive bool
-
-	// RequirePrompt is FAVRO_REQUIRE_PROMPT: the writes that ask the
-	// person are refused when the client cannot ask them, rather than
-	// made on the arguments alone.
-	RequirePrompt bool
-
-	// SuppressInteractionHint is FAVRO_INTERACTION_HINT=false: the
-	// writes that ask the person go without Claude Code's
-	// requiresUserInteraction mark. It is negative so that the zero
-	// value, which the schema dump uses, is the ordinary server.
-	//
-	// The mark is absolute where Claude Code reads it: an allow rule
-	// does not skip it, and headless, with nobody to prompt, the call is
-	// refused. A deployment that runs with nobody at the keyboard turns
-	// it off on purpose.
-	SuppressInteractionHint bool
 
 	// UploadDir is FAVRO_UPLOAD_DIR, the one directory the upload tools
 	// read from. Empty, and they are not registered.
@@ -77,15 +59,7 @@ type Options struct {
 // per-tool would each maintain their own cache and burn the rate-limit
 // budget on parallel cold-start fetches.
 func Register(srv *mcp.Server, client *favroapi.Client, opts Options) {
-	reg := &registry{
-		srv: srv, destructive: opts.Destructive, asking: newAsking(slog.Default()),
-		requirePrompt: opts.RequirePrompt, uploadDir: opts.UploadDir,
-		interactionHint: !opts.SuppressInteractionHint && !opts.RequirePrompt,
-	}
-	srv.AddReceivingMiddleware(askFailures(reg.asking))
-	if reg.interactionHint {
-		srv.AddReceivingMiddleware(interactionHint())
-	}
+	reg := &registry{srv: srv, destructive: opts.Destructive, uploadDir: opts.UploadDir}
 	resolver := service.NewResolver(client)
 
 	registerPing(reg, client, opts.CredentialSource, opts.Version)
@@ -125,6 +99,7 @@ func Register(srv *mcp.Server, client *favroapi.Client, opts Options) {
 	registerCreateCollection(reg, resolver)
 	registerUpdateCollection(reg, resolver)
 	registerDeleteCollection(reg, resolver)
+	registerWidenCollectionSharing(reg, resolver)
 	registerCreateWidget(reg, resolver)
 	registerUpdateWidget(reg, resolver)
 	registerDeleteWidget(reg, resolver)

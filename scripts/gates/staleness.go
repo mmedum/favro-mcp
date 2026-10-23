@@ -81,6 +81,7 @@ func staleness(w io.Writer, bin string) error {
 
 	var problems []string
 	problems = append(problems, toolsDocumented(tools, readme, registered)...)
+	problems = append(problems, permissionRulesRegistered(readme, registered)...)
 	problems = append(problems, countsMatch(readme, len(registered))...)
 	problems = append(problems, envDocumented(root, readme, docs["docs/configuration.md"])...)
 	problems = append(problems, gatesDocumented(docs["docs/development.md"])...)
@@ -176,6 +177,28 @@ func toolsDocumented(toolsDoc, readme string, registered []string) []string {
 	for _, name := range tabled {
 		if !slices.Contains(registered, name) {
 			problems = append(problems, "docs/TOOLS.md names a tool that is not registered: "+name)
+		}
+	}
+	return problems
+}
+
+// permissionRule is a Claude Code permission rule for one of this
+// server's tools, under the server name the README configures.
+var permissionRule = regexp.MustCompile(`"mcp__favro__([a-z0-9_]+)"`)
+
+// permissionRulesRegistered holds the README's permission rules to the
+// tools the binary registers. A rule for a tool that does not exist
+// matches nothing, so the person it was written to ask is never asked.
+func permissionRulesRegistered(readme string, registered []string) []string {
+	rules := permissionRule.FindAllStringSubmatch(readme, -1)
+	if len(rules) == 0 {
+		return []string{"README.md gives no `permissions.ask` rule for this server's tools; " +
+			"the check has nothing to hold (if the example was removed on purpose, remove this rule with it)"}
+	}
+	var problems []string
+	for _, m := range rules {
+		if !slices.Contains(registered, m[1]) {
+			problems = append(problems, "README.md gives a permission rule for "+m[1]+", which the binary does not register")
 		}
 	}
 	return problems

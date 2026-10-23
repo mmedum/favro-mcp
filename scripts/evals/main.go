@@ -201,12 +201,15 @@ func (h *harness) teardown() {
 	if h.box.WidgetCommonID != "" {
 		if _, err := h.Call("favro_delete_widget", map[string]any{
 			"widget_common_id": h.box.WidgetCommonID,
+			"everywhere":       true,
+			"confirm":          true,
 		}); err != nil {
 			out.fail("  could not delete the board: %v", err)
 		}
 	}
 	if _, err := h.Call("favro_delete_collection", map[string]any{
 		"collection_id": h.box.CollectionID,
+		"confirm":       true,
 	}); err != nil {
 		out.fail("  COULD NOT DELETE collection %s — remove it by hand: %v",
 			h.box.CollectionID, err)

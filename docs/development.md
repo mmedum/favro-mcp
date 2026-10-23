@@ -96,11 +96,14 @@ Every mutating step carries `dry_run`, so it builds and validates
 requests and sends none. The run makes its own `FAVRO_UPLOAD_DIR`, so the
 upload steps read a file it wrote and nothing else.
 
-`go run ./scripts/livefavro -asks` checks asking the person instead. It
-is the one mode that writes: it creates a probe tag, asks to delete it
-and declines, then accepts and checks it is gone. The uploads and making
-a collection public are asked about with real names and declined, and
-the collection is read back to show nothing was created. It deletes
+`go run ./scripts/livefavro -writes` checks the writes the steps can only
+preview. It is the one mode that writes: it creates a probe tag and
+deletes it, first without `confirm: true`, which must leave it, then
+with. It creates a probe collection, checks a public create is refused
+and nothing was created, opens the collection to the organization with
+`favro_widen_collection_sharing` (refused first with a name that is not
+its own), reads it back, narrows it again and deletes it. Its client can
+be asked, and the run fails if the server asks anything. It deletes
 nothing it did not create.
 
 It prints only through `internal/redact`, and

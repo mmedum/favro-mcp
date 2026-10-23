@@ -8,8 +8,23 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `favro_widen_collection_sharing` opens a collection to the whole organization (`public_sharing: 'organization'`) or to anyone with its link (`'public'`). It is destructive, so registered only with `FAVRO_ENABLE_DESTRUCTIVE`; it takes `confirm: true` and the collection's name as a witness, and reads the collection back.
+- `favro_delete_widget` takes `everywhere: true` for the delete from every collection.
+
 ### Changed
 - **Breaking:** the Go module path is `github.com/mmedum/favro-mcp/v4`.
+- **Breaking:** the server no longer asks the person before a write; your MCP client's own approval decides each call. The README gives Claude Code `permissions.ask` rules for the writes that share, publish, send a file or delete.
+- **Breaking:** every destructive tool refuses a call without `confirm: true` as `[blocked]`, unless it is a dry run.
+- **Breaking:** `favro_create_collection` and `favro_update_collection` refuse `public_sharing: 'organization'` and `'public'`; `favro_widen_collection_sharing` sets them.
+- **Breaking:** the collection and group writes share only with members of the organization, by `userId`, and with groups. An email, `type: 'organization'`, a new collection `admin` or group `administrator`, and a user whose organization role is not `administrator` or `fullMember` are refused as `[blocked]`; an entry repeating what someone already holds goes through.
+- **Breaking:** `favro_create_widget` and `favro_update_widget` refuse `owner_role: 'guests'`.
+- **Breaking:** `favro_delete_widget` deletes from every collection only with `everywhere: true`, and refuses a call that names neither that nor `collection_id`.
+- **Breaking:** Claude Code's `requiresUserInteraction` is on `favro_delete_tag`, `favro_delete_group`, `favro_delete_widget`, `favro_delete_collection` and `favro_widen_collection_sharing` for every client, and on no other tool. Claude Code prompts on every call of them and refuses them where it cannot prompt, as in `claude -p`.
+
+### Removed
+- **Breaking:** `FAVRO_REQUIRE_PROMPT`. Set to anything but `false`, the server refuses to start; unset it, and leave `FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody watching.
+- `FAVRO_INTERACTION_HINT`, which is no longer read.
 
 ## [3.2.0] - 2026-10-10
 

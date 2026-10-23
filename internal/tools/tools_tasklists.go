@@ -47,6 +47,7 @@ type updateTasklistInput struct {
 
 type deleteTasklistInput struct {
 	dryRunInput
+	confirmInput
 	TaskListID string `json:"task_list_id" jsonschema:"the Favro taskListId to delete"`
 }
 
