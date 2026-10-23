@@ -138,7 +138,6 @@ func uploadDirOf(t *testing.T) string {
 // spelled out, for the tests whose subject is what gets registered.
 func connectInMemoryOpts(t *testing.T, favroClient *favroapi.Client, opts Options) *mcp.ClientSession {
 	t.Helper()
-	ctx := t.Context()
 
 	// The server is built here rather than through internal/server,
 	// which imports this package: an in-package test cannot import its
@@ -150,6 +149,15 @@ func connectInMemoryOpts(t *testing.T, favroClient *favroapi.Client, opts Option
 	opts.CredentialSource = "env"
 	opts.Version = "v0.1.0-test"
 	Register(srv, favroClient, opts)
+	return connectServer(t, srv)
+}
+
+// connectServer runs srv over in-memory transports and connects a
+// client to it, for the tests that build their own server.
+func connectServer(t *testing.T, srv *mcp.Server) *mcp.ClientSession {
+	t.Helper()
+	ctx := t.Context()
+
 	// The client can ask the person, and the server asks nobody (§9.2):
 	// a question put to it fails the test that made the call, whichever
 	// tool that was.

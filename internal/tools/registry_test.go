@@ -499,12 +499,18 @@ func inputProperties(t *testing.T, tool *mcp.Tool) map[string]schemaProperty {
 func TestEveryDestructiveCallNeedsConfirm(t *testing.T) {
 	t.Parallel()
 
-	var requests atomic.Int32
-	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var requests, writes atomic.Int32
+	count := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+		if r.Method != http.MethodGet {
+			writes.Add(1)
+		}
 		smokeFixtureHandler(t).ServeHTTP(w, r)
-	}))
-	cs := connectInMemoryWith(t, c)
+	})
+	cs := connectInMemoryWith(t, favroFixture(t, count))
+	flagged := favroFixture(t, count)
+	flagged.ForceDryRun = true
+	forced := connectInMemoryWith(t, flagged)
 	res, err := cs.ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -538,9 +544,59 @@ func TestEveryDestructiveCallNeedsConfirm(t *testing.T) {
 		if res.IsError {
 			t.Errorf("%s as a dry run without confirm was refused: %s", tool.Name, serializedResponseString(t, res))
 		}
+
+		// --dry-run makes every call a dry run, whatever the arguments.
+		args["dry_run"] = false
+		before = writes.Load()
+		res, err = forced.CallTool(t.Context(), &mcp.CallToolParams{Name: tool.Name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.IsError {
+			t.Errorf("%s under --dry-run without confirm was refused: %s", tool.Name, serializedResponseString(t, res))
+		}
+		if n := writes.Load() - before; n != 0 {
+			t.Errorf("%s under --dry-run wrote to Favro %d times", tool.Name, n)
+		}
 	}
 	if checked < 15 {
 		t.Errorf("checked %d destructive tools, want at least 15", checked)
+	}
+}
+
+// A dry run needs no confirm, so it must not rest on each handler
+// putting the dry run on the context its writes use: addTool does that
+// for every input that asks for one.
+func TestADryRunWritesNothingWhateverTheHandlerDoes(t *testing.T) {
+	t.Parallel()
+
+	var writes atomic.Int32
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writes.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	type input struct {
+		dryRunInput
+		confirmInput
+	}
+	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
+	addTool(&registry{srv: srv, destructive: true, client: c},
+		&mcp.Tool{Name: "favro_delete_forgetfully", Annotations: mutating("x", true)},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ input) (*mcp.CallToolResult, struct{}, error) {
+			_ = c.DeleteTag(ctx, "t-1") // the handler's own dry-run handling, forgotten
+			return nil, struct{}{}, nil
+		})
+	res, err := connectServer(t, srv).CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "favro_delete_forgetfully", Arguments: map[string]any{"dry_run": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError || writes.Load() != 0 {
+		t.Errorf("a dry run without confirm: error %v, writes %d; want a result and no write", res.IsError, writes.Load())
 	}
 }
 

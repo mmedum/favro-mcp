@@ -9,6 +9,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
 	"github.com/mmedum/favro-mcp/v4/internal/render"
 )
 
@@ -53,6 +54,10 @@ type registry struct {
 	// uploadDir is FAVRO_UPLOAD_DIR, the one directory the upload tools
 	// read from. Empty, and they are not registered.
 	uploadDir string
+
+	// client is the Favro client the tools write through, read here
+	// only for --dry-run, which makes every call a dry run.
+	client *favroapi.Client
 }
 
 // destructive reports whether t is annotated destructive.
@@ -88,13 +93,10 @@ type confirmer interface{ confirmed() bool }
 // dryRunner is an input that embeds dryRunInput.
 type dryRunner interface{ dryRun() bool }
 
-// refuseUnconfirmed refuses a destructive call that is not a dry run and
-// does not carry confirm: true, before its handler reads or writes
-// anything.
+// refuseUnconfirmed refuses a destructive call that does not carry
+// confirm: true, before its handler reads or writes anything. addTool
+// asks it only of a call that is not a dry run.
 func refuseUnconfirmed(tool string, in any) error {
-	if d, ok := in.(dryRunner); ok && d.dryRun() {
-		return nil
-	}
 	if c, ok := in.(confirmer); ok && c.confirmed() {
 		return nil
 	}
@@ -165,7 +167,13 @@ func addTool[In, Out any](reg *registry, t *mcp.Tool, h mcp.ToolHandlerFor[In, O
 
 	mcp.AddTool(reg.srv, t, func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		var zero Out
-		if gated {
+		// A call that asks for a dry run is one for every write its
+		// handler makes, whether or not the handler puts the dry run on
+		// its own context. A dry run needs no confirm on that promise.
+		if d, ok := any(in).(dryRunner); ok && d.dryRun() {
+			ctx = favroapi.WithDryRun(ctx)
+		}
+		if gated && !reg.client.DryRun(ctx) {
 			if err := refuseUnconfirmed(t.Name, in); err != nil {
 				return nil, zero, render.Error(err)
 			}

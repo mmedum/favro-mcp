@@ -59,7 +59,7 @@ type Options struct {
 // per-tool would each maintain their own cache and burn the rate-limit
 // budget on parallel cold-start fetches.
 func Register(srv *mcp.Server, client *favroapi.Client, opts Options) {
-	reg := &registry{srv: srv, destructive: opts.Destructive, uploadDir: opts.UploadDir}
+	reg := &registry{srv: srv, destructive: opts.Destructive, uploadDir: opts.UploadDir, client: client}
 	resolver := service.NewResolver(client)
 
 	registerPing(reg, client, opts.CredentialSource, opts.Version)
