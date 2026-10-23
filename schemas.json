@@ -1681,7 +1681,7 @@
             "type": "string"
           },
           "share_to_users": {
-            "description": "people and groups to share the collection with. Each entry names a member of the organization by userId (from favro_resolve_user), or a group by type 'group' and groupId, plus a role (guest / view / edit). An email, type 'organization', role 'admin' or someone who is not a member of the organization is refused.",
+            "description": "people and groups to share the collection with. Each entry names a member of the organization by userId (from favro_resolve_user), or a group by type 'group' and groupId, plus a role (guest / view / edit). An email, type 'organization', role 'admin', someone who is not a member of the organization, or a group that holds such a person is refused.",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -11130,7 +11130,7 @@
             "type": "string"
           },
           "share_to_users": {
-            "description": "people and groups to ADD to the collection. Each entry names a member of the organization by userId (from favro_resolve_user), or a group by type 'group' and groupId, plus a role. An email, type 'organization', role 'admin' or someone who is not a member of the organization is refused.",
+            "description": "people and groups to ADD to the collection. Each entry names a member of the organization by userId (from favro_resolve_user), or a group by type 'group' and groupId, plus a role. An email, type 'organization', role 'admin', someone who is not a member of the organization, or a group that holds such a person is refused.",
             "items": {
               "additionalProperties": false,
               "properties": {

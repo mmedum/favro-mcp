@@ -67,6 +67,11 @@ func (f *sharingFavro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case call == "GET /groups/g-1" || strings.HasSuffix(call, " /groups/g-1") || call == "POST /groups":
 		_, _ = w.Write([]byte(`{"groupId":"g-1","name":"Team","members":[` +
 			`{"userId":"u-admin","role":"administrator"},{"userId":"u-guest","role":"member"}]}`))
+	case call == "GET /groups/g-members":
+		_, _ = w.Write([]byte(`{"groupId":"g-members","name":"Members","members":[` +
+			`{"userId":"u-1","role":"member"},{"userId":"u-admin","role":"administrator"}]}`))
+	case call == "GET /groups/g-gone":
+		http.Error(w, `{"message":"not found"}`, http.StatusNotFound)
 	case strings.HasPrefix(r.URL.Path, "/widgets"):
 		_, _ = w.Write([]byte(`{"widgetCommonId":"w-1","name":"Board","collectionIds":["c-1"]}`))
 	default:
@@ -269,6 +274,43 @@ func TestEverySharingArgumentRefusesItsWidestValue(t *testing.T) {
 	// them lists.
 	if checked < 16 {
 		t.Errorf("checked %d sharing values, want at least 16", checked)
+	}
+}
+
+// A group is shared only when everyone in it is a member of the
+// organization, read from the group itself: a group that holds a guest
+// shares with that guest. A group whose members cannot be read is
+// refused too, since who it would share with is not known.
+func TestAGroupIsSharedOnlyWhenEveryoneInItIsAMember(t *testing.T) {
+	t.Parallel()
+	group := func(id string) map[string]any {
+		return map[string]any{
+			"name": "x", "share_to_users": []any{map[string]any{"type": "group", "groupId": id, "role": "view"}},
+		}
+	}
+	for name, tc := range map[string]struct {
+		args    map[string]any
+		refused bool
+	}{
+		"a group that holds a guest":           {group("g-1"), true},
+		"a group whose members cannot be read": {group("g-gone"), true},
+		"a group of members only":              {group("g-members"), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newSharingFavro(t)
+			res := f.call(t, createCollectionToolName, tc.args)
+			text := resultText(res)
+			writes, _, body := f.made()
+			switch {
+			case tc.refused && (!strings.HasPrefix(text, "[blocked] ") || len(writes) != 0):
+				t.Errorf("got %q and writes %v, want [blocked] and none", text, writes)
+			case tc.refused && !strings.Contains(text, widenCollectionSharingToolName):
+				t.Errorf("the refusal does not name %s: %q", widenCollectionSharingToolName, text)
+			case !tc.refused && (res.IsError || !strings.Contains(body, `"groupId":"g-members"`)):
+				t.Errorf("got %q and body %s, want the group shared", text, body)
+			}
+		})
 	}
 }
 

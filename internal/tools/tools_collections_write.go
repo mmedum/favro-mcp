@@ -30,7 +30,7 @@ type createCollectionInput struct {
 	PublicSharing            string             `json:"public_sharing,omitempty" jsonschema:"'users', the default: only the people and groups it is shared with. 'organization' and 'public' are refused; favro_widen_collection_sharing sets them."`
 	FullMembersCanAddWidgets *bool              `json:"full_members_can_add_widgets,omitempty" jsonschema:"if true, full org members (not just owners) can add widgets to this collection"`
 	StarPage                 *bool              `json:"star_page,omitempty" jsonschema:"if true, star the new collection for the authenticated user"`
-	ShareToUsers             []favro.SharedUser `json:"share_to_users,omitempty" jsonschema:"people and groups to share the collection with. Each entry names a member of the organization by userId (from favro_resolve_user), or a group by type 'group' and groupId, plus a role (guest / view / edit). An email, type 'organization', role 'admin' or someone who is not a member of the organization is refused."`
+	ShareToUsers             []favro.SharedUser `json:"share_to_users,omitempty" jsonschema:"people and groups to share the collection with. Each entry names a member of the organization by userId (from favro_resolve_user), or a group by type 'group' and groupId, plus a role (guest / view / edit). An email, type 'organization', role 'admin', someone who is not a member of the organization, or a group that holds such a person is refused."`
 }
 
 // updateCollectionInput is the input for favro_update_collection.
@@ -44,7 +44,7 @@ type updateCollectionInput struct {
 	PublicSharing            string             `json:"public_sharing,omitempty" jsonschema:"'users' narrows the collection to the people and groups it is shared with; omit to keep current. 'organization' and 'public' are refused; favro_widen_collection_sharing sets them."`
 	FullMembersCanAddWidgets *bool              `json:"full_members_can_add_widgets,omitempty" jsonschema:"flip the full-members-can-add-widgets flag; omit to keep current"`
 	StarPage                 *bool              `json:"star_page,omitempty" jsonschema:"true to star the collection for the authenticated user, false to unstar"`
-	ShareToUsers             []favro.SharedUser `json:"share_to_users,omitempty" jsonschema:"people and groups to ADD to the collection. Each entry names a member of the organization by userId (from favro_resolve_user), or a group by type 'group' and groupId, plus a role. An email, type 'organization', role 'admin' or someone who is not a member of the organization is refused."`
+	ShareToUsers             []favro.SharedUser `json:"share_to_users,omitempty" jsonschema:"people and groups to ADD to the collection. Each entry names a member of the organization by userId (from favro_resolve_user), or a group by type 'group' and groupId, plus a role. An email, type 'organization', role 'admin', someone who is not a member of the organization, or a group that holds such a person is refused."`
 	Members                  []favro.SharedUser `json:"members,omitempty" jsonschema:"role changes for people ALREADY in the collection. Each entry names them by userId plus either a new role or delete: true to remove them. Making someone admin who is not one already is refused."`
 	Archive                  *bool              `json:"archive,omitempty" jsonschema:"true to archive, false to unarchive; omit to keep current archive state"`
 }

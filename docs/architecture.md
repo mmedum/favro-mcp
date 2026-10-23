@@ -682,7 +682,13 @@ What stays is what holds on every client:
      The entry goes to Favro as given, and Favro may ignore the flag on a
      create, on `shareToUsers` and on a group's whole-list update (§7.4),
      so a removal's shape is checked like any entry's and only someone
-     who has access can be removed.
+     who has access can be removed;
+   - a group that holds anyone whose `organizationRole` is not
+     `administrator` or `fullMember`, read from the group's members, or a
+     group whose members cannot be read: sharing with the group shares
+     with everyone in it. The refusal names
+     `favro_widen_collection_sharing` (maintainer, 2026-10-23, the rule
+     chat uses for groups in spaces that admit outsiders).
 
    An entry that gives someone no more than they already hold widens
    nothing and goes through: an update reads the collection's shares or
@@ -843,7 +849,7 @@ the standard lists it as a thing that bites).
 | Destructive tools behind an env flag | The delete-style tools leave the default surface; breaking change; changelog says why. Which ones is read from the annotation, never from a list |
 | Stdlib tests (A4) | Two dependencies gone; thousands of assertion lines rewritten once |
 | The server asks nobody; per-call approval is the client's (maintainer, 2026-10-23, for every server of theirs) | No form elicitation, no `FAVRO_REQUIRE_PROMPT` (set, it refuses to start). Registration, `confirm: true`, the sharing refusals, the witnesses and `dry_run` stay. Five tools carry `requiresUserInteraction`, unconditionally (§9.2) |
-| Widening a collection's sharing is its own tool; `organization` counts as domain-wide (maintainer, 2026-10-23) | `favro_widen_collection_sharing` is destructive, so organization-visible collections need `FAVRO_ENABLE_DESTRUCTIVE`. The ordinary writes take only members of the organization by userId and groups, and make no new admin, and no guest a widget's owner or editor |
+| Widening a collection's sharing is its own tool; `organization` counts as domain-wide (maintainer, 2026-10-23) | `favro_widen_collection_sharing` is destructive, so organization-visible collections need `FAVRO_ENABLE_DESTRUCTIVE`. The ordinary writes take only members of the organization by userId and groups whose members all are, and make no new admin, and no guest a widget's owner or editor |
 | API surface snapshot committed (A5) | CI holds the completeness claim offline; the fetch stays manual and is named in the release checklist |
 
 ## 15. What must be verified live

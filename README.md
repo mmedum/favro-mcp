@@ -148,9 +148,10 @@ What holds whatever the client does:
   `confirm: true`; `dry_run: true` previews without it.
 - **Sharing stays inside the organization.** The ordinary collection,
   group and widget writes share only with members of the organization,
-  named by userId, and with its groups. An invitation by email, a new
-  admin, someone outside the organization, guests as a widget's owners
-  or editors, and a public or organization-wide collection are refused.
+  named by userId, and with groups of members. An invitation by email,
+  a new admin, someone outside the organization, a group that holds
+  someone outside it, guests as a widget's owners or editors, and a
+  public or organization-wide collection are refused.
   `favro_widen_collection_sharing` opens a collection, and takes the
   collection's name as well as its id, so the prompt shows which one.
 - **No wider delete by omission.** `favro_delete_widget` takes

@@ -120,12 +120,13 @@ where it cannot prompt: `favro_delete_tag`, `favro_delete_group`,
 to approve under `permissions.ask`; the README has an example.
 
 The ordinary collection, group and widget writes share only inside the
-organization: members by userId, and groups. An email, `type:
-'organization'`, a new admin or group administrator, someone whose
-organization role is not `administrator` or `fullMember`, `owner_role:
+organization: members by userId, and groups whose members all are. An
+email, `type: 'organization'`, a new admin or group administrator,
+someone whose organization role is not `administrator` or `fullMember`,
+a group that holds such a person or cannot be read, `owner_role:
 'guests'` or `edit_role: 'guests'`, and `public_sharing: 'organization'`
-or `'public'` are refused `[blocked]`. Opening a collection is `favro_widen_collection_sharing`,
-which needs the destructive flag.
+or `'public'` are refused `[blocked]`. Opening a collection is
+`favro_widen_collection_sharing`, which needs the destructive flag.
 
 ## Startup behavior
 

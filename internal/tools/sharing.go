@@ -14,8 +14,8 @@ import (
 // approval per tool, never per argument, so a wide share carried as an
 // argument rides along unseen once the tool is always allowed. The
 // ordinary writes therefore give access only to people already in the
-// organization, named by userId, and to its groups, and make nobody a
-// new owner. Opening a collection to the whole organization or to anyone
+// organization, named by userId, and to groups whose members all are,
+// and make nobody a new owner. Opening a collection to the whole organization or to anyone
 // with its link is favro_widen_collection_sharing, behind the
 // destructive flag. Invitations by email, admins, and guests made a
 // widget's owners or editors have no tool here at all; the person does
@@ -116,7 +116,25 @@ func checkGrants(ctx context.Context, r *service.Resolver, tool, owner string, h
 	if err != nil || len(widened) == 0 {
 		return err
 	}
-	return checkMembers(ctx, r, tool, widened)
+	return checkWidened(ctx, r, tool, widened)
+}
+
+// checkWidened refuses a grant that would give someone outside the
+// organization more than they hold: a person directly, or anyone in a
+// group.
+func checkWidened(ctx context.Context, r *service.Resolver, tool string, widened []grant) error {
+	var people, groups []grant
+	for _, g := range widened {
+		if g.isGroup() {
+			groups = append(groups, g)
+		} else {
+			people = append(people, g)
+		}
+	}
+	if err := checkGroups(ctx, r, tool, groups); err != nil || len(people) == 0 {
+		return err
+	}
+	return checkMembers(ctx, r, tool, people)
 }
 
 // roleRank orders the roles a grant can give, narrowest first: a
@@ -163,13 +181,11 @@ func checkOwners(tool, owner string, had map[string]string, given []grant) ([]gr
 	return widened, nil
 }
 
-// widens reports whether g gives a person more than they hold: held is
-// their role, and ok whether they have one. A group is not a person, and
-// a removal that names no role raises nobody.
+// widens reports whether g gives a person or a group more than they
+// hold: held is their role, and ok whether they have one. A removal that
+// names no role raises nobody.
 func widens(g grant, held string, ok bool) bool {
 	switch {
-	case g.isGroup():
-		return false
 	case !ok:
 		return true
 	case g.remove && g.role == "":
@@ -212,6 +228,41 @@ func checkMembers(ctx context.Context, r *service.Resolver, tool string, widened
 	}
 	return nil
 }
+
+// checkGroups refuses a grant to a group that holds anyone the
+// organization does not list as a member, read from the group: sharing
+// with the group shares with them. A group whose members cannot be read
+// is refused too, since who it would share with is not known.
+func checkGroups(ctx context.Context, r *service.Resolver, tool string, groups []grant) error {
+	for _, g := range groups {
+		group, err := r.Client().GetGroup(ctx, g.groupID)
+		if err != nil {
+			return render.Errorf(render.ClassBlocked, "%s: %s names a group whose members could not be read (%v), "+
+				"so who it would share with is not known; nothing was changed. %s", tool, g.at, err, widerGroup)
+		}
+		ids := make([]string, len(group.Members))
+		for i, m := range group.Members {
+			ids[i] = m.UserID
+		}
+		roles, err := r.OrganizationRoles(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if !insideRoles[roles[id]] {
+				return render.Errorf(render.ClassBlocked, "%s: %s names a group that holds someone who is not a "+
+					"member of the organization, who would gain access with it; nothing was changed. %s",
+					tool, g.at, widerGroup)
+			}
+		}
+	}
+	return nil
+}
+
+// widerGroup is what a refusal of a group says to do instead.
+const widerGroup = "This server shares only with groups of members. favro_widen_collection_sharing opens a " +
+	"collection past the people it is shared with, and is registered only with FAVRO_ENABLE_DESTRUCTIVE=true; " +
+	"the person can share with this group in Favro"
 
 // checkShape refuses an entry by its shape alone: whom it names and how,
 // before anything is read.
