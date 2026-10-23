@@ -18,7 +18,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 - **Breaking:** every destructive tool refuses a call without `confirm: true` as `[blocked]`, unless it is a dry run.
 - **Breaking:** `favro_create_collection` and `favro_update_collection` refuse `public_sharing: 'organization'` and `'public'`; `favro_widen_collection_sharing` sets them.
 - **Breaking:** the collection and group writes share only with members of the organization, by `userId`, and with groups. An email, `type: 'organization'`, a new collection `admin` or group `administrator`, and a user whose organization role is not `administrator` or `fullMember` are refused as `[blocked]`; an entry repeating what someone already holds goes through.
-- **Breaking:** `favro_create_widget` and `favro_update_widget` refuse `owner_role: 'guests'`.
+- **Breaking:** `favro_create_widget` and `favro_update_widget` refuse `owner_role: 'guests'` and `edit_role: 'guests'`.
 - **Breaking:** `favro_delete_widget` deletes from every collection only with `everywhere: true`, and refuses a call that names neither that nor `collection_id`.
 - **Breaking:** Claude Code's `requiresUserInteraction` is on `favro_delete_tag`, `favro_delete_group`, `favro_delete_widget`, `favro_delete_collection` and `favro_widen_collection_sharing` for every client, and on no other tool. Claude Code prompts on every call of them and refuses them where it cannot prompt, as in `claude -p`.
 

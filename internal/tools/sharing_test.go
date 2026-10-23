@@ -172,6 +172,12 @@ func TestOrdinaryWritesShareOnlyInsideTheOrganization(t *testing.T) {
 		"guests as a widget's owners on update": {updateWidgetToolName, map[string]any{
 			"widget_common_id": "w-1", "owner_role": " Guests ",
 		}, "blocked", false},
+		"guests as a widget's editors on create": {createWidgetToolName, map[string]any{
+			"collection_id": "c-1", "name": "x", "owner_role": "owners", "edit_role": "guests",
+		}, "blocked", false},
+		"guests as a widget's editors on update": {updateWidgetToolName, map[string]any{
+			"widget_common_id": "w-1", "edit_role": " Guests ",
+		}, "blocked", false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

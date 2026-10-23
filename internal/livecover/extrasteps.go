@@ -337,6 +337,12 @@ func extraSteps() []Step {
 			ExpectError: "blocked",
 		},
 		{
+			Tool:        "favro_update_widget",
+			Args:        map[string]any{"widget_common_id": AnyWidgetCommonID, "edit_role": "guests", "dry_run": true},
+			Why:         "guests made the widget's editors",
+			ExpectError: "blocked",
+		},
+		{
 			Tool: "favro_widen_collection_sharing",
 			Args: map[string]any{
 				"collection_id":   AnyCollectionID,

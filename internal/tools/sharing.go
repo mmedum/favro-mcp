@@ -17,8 +17,9 @@ import (
 // organization, named by userId, and to its groups, and make nobody a
 // new owner. Opening a collection to the whole organization or to anyone
 // with its link is favro_widen_collection_sharing, behind the
-// destructive flag. Invitations by email, admins and guests made widget
-// owners have no tool here at all; the person does those in Favro.
+// destructive flag. Invitations by email, admins, and guests made a
+// widget's owners or editors have no tool here at all; the person does
+// those in Favro.
 
 // insideRoles are the organization roles of the people inside it. Any
 // other role, and a role Favro adds later, is someone this server does
@@ -204,10 +205,20 @@ var errOwnerRoleGuests = render.Sentinel(render.ClassBlocked,
 		"nothing was changed. This server makes no guest an owner; the person can do that in Favro. Omit "+
 		"owner_role to keep the current one")
 
-// checkOwnerRole refuses owner_role 'guests'.
-func checkOwnerRole(role string) error {
-	if strings.EqualFold(strings.TrimSpace(role), "guests") {
+// errEditRoleGuests is a widget write that would let every guest on the
+// widget edit it.
+var errEditRoleGuests = render.Sentinel(render.ClassBlocked,
+	"edit_role 'guests' lets every guest on the widget edit it, people outside the organization among them; "+
+		"nothing was changed. This server gives no guest edit rights; the person can do that in Favro. Omit "+
+		"edit_role to keep the current one")
+
+// checkWidgetRoles refuses owner_role or edit_role 'guests'.
+func checkWidgetRoles(ownerRole, editRole string) error {
+	if strings.EqualFold(strings.TrimSpace(ownerRole), "guests") {
 		return errOwnerRoleGuests
+	}
+	if strings.EqualFold(strings.TrimSpace(editRole), "guests") {
+		return errEditRoleGuests
 	}
 	return nil
 }

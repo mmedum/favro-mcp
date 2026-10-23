@@ -149,7 +149,7 @@ What holds whatever the client does:
   group and widget writes share only with members of the organization,
   named by userId, and with its groups. An invitation by email, a new
   admin, someone outside the organization, guests as a widget's owners
-  and a public or organization-wide collection are refused.
+  or editors, and a public or organization-wide collection are refused.
   `favro_widen_collection_sharing` opens a collection, and takes the
   collection's name as well as its id, so the prompt shows which one.
 - **No wider delete by omission.** `favro_delete_widget` takes

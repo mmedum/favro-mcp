@@ -2704,7 +2704,7 @@
             "type": "boolean"
           },
           "edit_role": {
-            "description": "role required to edit the widget; same value vocabulary as owner_role",
+            "description": "role required to edit the widget ('owners' or 'fullMembers'); Favro picks a default when omitted. 'guests' is refused: it lets people outside the organization edit it.",
             "type": "string"
           },
           "name": {
@@ -12420,7 +12420,7 @@
             "type": "boolean"
           },
           "edit_role": {
-            "description": "new edit role; omit to keep current",
+            "description": "new edit role ('owners' or 'fullMembers'); omit to keep current. 'guests' is refused: it lets people outside the organization edit it.",
             "type": "string"
           },
           "name": {

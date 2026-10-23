@@ -122,8 +122,8 @@ The ordinary collection, group and widget writes share only inside the
 organization: members by userId, and groups. An email, `type:
 'organization'`, a new admin or group administrator, someone whose
 organization role is not `administrator` or `fullMember`, `owner_role:
-'guests'`, and `public_sharing: 'organization'` or `'public'` are refused
-`[blocked]`. Opening a collection is `favro_widen_collection_sharing`,
+'guests'` or `edit_role: 'guests'`, and `public_sharing: 'organization'`
+or `'public'` are refused `[blocked]`. Opening a collection is `favro_widen_collection_sharing`,
 which needs the destructive flag.
 
 ## Startup behavior

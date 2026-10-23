@@ -28,7 +28,7 @@ type createWidgetInput struct {
 	Color                 string `json:"color,omitempty" jsonschema:"optional palette color"`
 	BreakdownCardCommonID string `json:"breakdown_card_common_id,omitempty" jsonschema:"optional breakdown cardCommonId — pins the widget to a parent card's breakdown view"`
 	OwnerRole             string `json:"owner_role,omitempty" jsonschema:"role required to act as owner ('owners' or 'fullMembers'); Favro picks a default when omitted. 'guests' is refused: it makes people outside the organization owners."`
-	EditRole              string `json:"edit_role,omitempty" jsonschema:"role required to edit the widget; same value vocabulary as owner_role"`
+	EditRole              string `json:"edit_role,omitempty" jsonschema:"role required to edit the widget ('owners' or 'fullMembers'); Favro picks a default when omitted. 'guests' is refused: it lets people outside the organization edit it."`
 }
 
 // updateWidgetInput is the input for favro_update_widget.
@@ -40,7 +40,7 @@ type updateWidgetInput struct {
 	Color                 string `json:"color,omitempty" jsonschema:"new palette color; omit to keep current"`
 	BreakdownCardCommonID string `json:"breakdown_card_common_id,omitempty" jsonschema:"new breakdown cardCommonId; omit to keep current"`
 	OwnerRole             string `json:"owner_role,omitempty" jsonschema:"new owner role ('owners' or 'fullMembers'); omit to keep current. 'guests' is refused: it makes people outside the organization owners."`
-	EditRole              string `json:"edit_role,omitempty" jsonschema:"new edit role; omit to keep current"`
+	EditRole              string `json:"edit_role,omitempty" jsonschema:"new edit role ('owners' or 'fullMembers'); omit to keep current. 'guests' is refused: it lets people outside the organization edit it."`
 	Archive               *bool  `json:"archive,omitempty" jsonschema:"true to archive, false to unarchive; omit to keep current. Requires collection_id."`
 	CollectionID          string `json:"collection_id,omitempty" jsonschema:"the collectionId the archive applies to. REQUIRED whenever archive is set — a widget can belong to several collections."`
 }
@@ -70,7 +70,7 @@ func registerCreateWidget(reg *registry, r *service.Resolver) {
 			"live writes invalidate the widget cache. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Create Favro widget", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createWidgetInput) (*mcp.CallToolResult, writeOutput[favro.Widget], error) {
-		if err := checkOwnerRole(in.OwnerRole); err != nil {
+		if err := checkWidgetRoles(in.OwnerRole, in.EditRole); err != nil {
 			return nil, writeOutput[favro.Widget]{}, err
 		}
 		writeCtx := ctx
@@ -117,7 +117,7 @@ func registerUpdateWidget(reg *registry, r *service.Resolver) {
 			"widget cache. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Update Favro widget", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateWidgetInput) (*mcp.CallToolResult, writeOutput[favro.Widget], error) {
-		if err := checkOwnerRole(in.OwnerRole); err != nil {
+		if err := checkWidgetRoles(in.OwnerRole, in.EditRole); err != nil {
 			return nil, writeOutput[favro.Widget]{}, err
 		}
 		writeCtx := ctx
