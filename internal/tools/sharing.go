@@ -92,9 +92,9 @@ func noneHeld() (map[string]string, error) { return nil, nil }
 // checkGrants refuses the grants of an ordinary write that reach past
 // the organization or make a new owner. owner is the role that makes
 // one: "admin" on a collection, "administrator" on a group. held reads
-// who already has access, from Favro for an update: an entry repeating
-// what someone already holds widens nothing, which matters for
-// favro_update_group, whose member list replaces the whole one. The
+// who already has access, from Favro for an update: an entry that gives
+// someone no more than they already hold widens nothing, which matters
+// for favro_update_group, whose member list replaces the whole one. The
 // entries' own shape is checked first, so such a refusal costs no
 // request, and nothing is read for a call that only removes.
 func checkGrants(ctx context.Context, r *service.Resolver, tool, owner string, held heldFunc, grants []grant) error {
@@ -115,42 +115,61 @@ func checkGrants(ctx context.Context, r *service.Resolver, tool, owner string, h
 	if err != nil {
 		return err
 	}
-	newcomers, err := checkOwners(tool, owner, had, given)
-	if err != nil || len(newcomers) == 0 {
+	widened, err := checkOwners(tool, owner, had, given)
+	if err != nil || len(widened) == 0 {
 		return err
 	}
-	return checkMembers(ctx, r, tool, newcomers)
+	return checkMembers(ctx, r, tool, widened)
+}
+
+// roleRank orders the roles a grant can give, narrowest first: a
+// collection's guest, view, edit and admin, and a group's member and
+// administrator. A role this server does not know ranks above them all,
+// so giving it counts as a raise.
+func roleRank(role string) int {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "guest", "member":
+		return 0
+	case "view":
+		return 1
+	case "edit":
+		return 2
+	case "admin", "administrator":
+		return 3
+	}
+	return 4
 }
 
 // checkOwners refuses a grant that makes a new owner, and returns the
-// people the grants name who hold nothing yet.
+// people the grants would give more than they hold: everyone who holds
+// nothing yet, and anyone raised above the role they have.
 func checkOwners(tool, owner string, had map[string]string, given []grant) ([]grant, error) {
-	var newcomers []grant
+	var widened []grant
 	for _, g := range given {
 		if strings.EqualFold(strings.TrimSpace(g.role), owner) && !strings.EqualFold(had[g.key()], owner) {
 			return nil, render.Errorf(render.ClassBlocked, "%s: %s would make a new %s, who can change who else has "+
 				"access; nothing was changed. This server makes nobody a new %s; the person can do that in Favro",
 				tool, g.at, owner, owner)
 		}
-		if _, ok := had[g.key()]; !ok && !g.isGroup() {
-			newcomers = append(newcomers, g)
+		if held, ok := had[g.key()]; !g.isGroup() && (!ok || roleRank(g.role) > roleRank(held)) {
+			widened = append(widened, g)
 		}
 	}
-	return newcomers, nil
+	return widened, nil
 }
 
-// checkMembers refuses a newcomer the organization does not list as a
-// member.
-func checkMembers(ctx context.Context, r *service.Resolver, tool string, newcomers []grant) error {
-	ids := make([]string, len(newcomers))
-	for i, g := range newcomers {
+// checkMembers refuses a grant to someone the organization does not
+// list as a member.
+func checkMembers(ctx context.Context, r *service.Resolver, tool string, widened []grant) error {
+	ids := make([]string, len(widened))
+	for i, g := range widened {
 		ids[i] = g.userID
 	}
 	roles, err := r.OrganizationRoles(ctx, ids)
 	if err != nil {
 		return err
 	}
-	for _, g := range newcomers {
+	for _, g := range widened {
 		role, ok := roles[g.userID]
 		switch {
 		case !ok:

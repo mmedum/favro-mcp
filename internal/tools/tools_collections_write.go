@@ -134,7 +134,7 @@ func registerUpdateCollection(reg *registry, r *service.Resolver) {
 			return nil, writeOutput[favro.Collection]{}, err
 		}
 		// Who already has access is read, not assumed from the call:
-		// re-sending a role someone holds widens nothing.
+		// a role no higher than someone holds widens nothing.
 		held := func() (map[string]string, error) {
 			col, err := r.Client().GetCollection(ctx, in.CollectionID)
 			return heldBy(sharedGrants("", col.SharedToUsers)), err

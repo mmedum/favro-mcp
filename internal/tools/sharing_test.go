@@ -62,7 +62,7 @@ func (f *sharingFavro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			`{"userId":"u-ext","name":"An External","organizationRole":"externalMember"}]}`))
 	case call == "GET /collections/c-1" || strings.HasSuffix(call, " /collections/c-1") || call == "POST /collections":
 		_, _ = w.Write([]byte(`{"collectionId":"c-1","name":"Eng","publicSharing":"` + f.sharing + `",` +
-			`"sharedToUsers":[{"userId":"u-1","role":"admin"},{"userId":"u-guest","role":"view"},` +
+			`"sharedToUsers":[{"userId":"u-1","role":"admin"},{"userId":"u-2","role":"view"},{"userId":"u-guest","role":"view"},` +
 			`{"type":"group","groupId":"g-1","role":"edit"}]}`))
 	case call == "GET /groups/g-1" || strings.HasSuffix(call, " /groups/g-1") || call == "POST /groups":
 		_, _ = w.Write([]byte(`{"groupId":"g-1","name":"Team","members":[` +
@@ -142,6 +142,9 @@ func TestOrdinaryWritesShareOnlyInsideTheOrganization(t *testing.T) {
 		}, "blocked", false},
 		"a guest of the organization": {createCollectionToolName, map[string]any{
 			"name": "x", "share_to_users": share(map[string]any{"userId": "u-guest", "role": "view"}),
+		}, "blocked", true},
+		"a guest already shared, raised": {updateCollectionToolName, map[string]any{
+			"collection_id": "c-1", "members": share(map[string]any{"userId": "u-guest", "role": "edit"}),
 		}, "blocked", true},
 		"an external member": {updateCollectionToolName, map[string]any{
 			"collection_id": "c-1", "share_to_users": share(map[string]any{"userId": "u-ext", "role": "view"}),
@@ -279,6 +282,9 @@ func TestWhatIsAlreadyHeldIsNotANewGrant(t *testing.T) {
 				map[string]any{"type": "group", "groupId": "g-1", "role": "view"},
 			},
 		}, `"members":[{"userId":"u-1","role":"admin"},{"userId":"u-guest","role":"guest"},{"type":"group","groupId":"g-1","role":"view"}]`},
+		"a member already shared, raised": {updateCollectionToolName, map[string]any{
+			"collection_id": "c-1", "share_to_users": []any{map[string]any{"userId": "u-2", "role": "edit"}},
+		}, `"shareToUsers":[{"userId":"u-2","role":"edit"}]`},
 		"a removal names anyone": {updateCollectionToolName, map[string]any{
 			"collection_id": "c-1", "members": []any{map[string]any{"userId": "u-nobody", "delete": true}},
 		}, `"members":[{"userId":"u-nobody","delete":true}]`},

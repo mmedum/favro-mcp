@@ -679,11 +679,13 @@ What stays is what holds on every client:
    - `owner_role: 'guests'` or `edit_role: 'guests'` on a widget, which
      makes people outside the organization its owners or editors.
 
-   An entry repeating what someone already holds widens nothing and goes
-   through: an update reads the collection's shares or the group's
-   members first. That matters for `favro_update_group`, whose list
-   replaces the whole one, so a group's administrator and its guests are
-   re-sent as they are. Opening a collection to the organization or to
+   An entry that gives someone no more than they already hold widens
+   nothing and goes through: an update reads the collection's shares or
+   the group's members first. That matters for `favro_update_group`,
+   whose list replaces the whole one, so a group's administrator and its
+   guests are re-sent as they are. Raising someone above the role they
+   hold is a new grant, and is refused unless they are a member of the
+   organization. Opening a collection to the organization or to
    anyone with its link is `favro_widen_collection_sharing`: destructive,
    so registered only with the flag, `confirm: true`, and a
    `collection_name` witness that must match Favro's, so the client's
