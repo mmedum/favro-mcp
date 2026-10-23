@@ -157,7 +157,15 @@ func probeTag(srv *session, c *checks) error {
 func probeCollection(srv *session, c *checks) error {
 	refusedName := probeName("public")
 	res, err := srv.call("favro_create_collection", map[string]any{"name": refusedName, "public_sharing": "public"})
-	c.check(refused(res, err, "blocked"), "favro_create_collection with public_sharing public is [blocked]", res.text())
+	wasRefused := refused(res, err, "blocked")
+	c.check(wasRefused, "favro_create_collection with public_sharing public is [blocked]", res.text())
+	if !wasRefused {
+		// A create that went through opened a collection to anyone with
+		// its link: take it down before anything else.
+		if id, err := createdID(res, err, "collectionId"); err == nil {
+			_, _ = srv.call("favro_delete_collection", map[string]any{"collection_id": id, "confirm": true})
+		}
+	}
 	res, err = srv.call("favro_resolve_collection", map[string]any{"name": refusedName, "force_refresh": true})
 	c.check(succeeded(res, err) && strings.Contains(string(res.StructuredContent), `"candidates":[]`),
 		"the refused collection was not created", res.text())
