@@ -80,6 +80,60 @@ func TestThePoolFindsTheSignedInAccountByItsEmail(t *testing.T) {
 	}
 }
 
+// Every placeholder a step names is resolved before it is sent, however
+// deep it sits, and a step naming one nothing has supplied is skipped.
+// A share entry is a map inside a list, and the driver sent its
+// "{own_user_id}" as written; the server refused it as nobody in the
+// organization, which read as the server refusing the signed-in account.
+func TestEveryPlaceholderAStepNamesIsResolvedOrSkipsTheStep(t *testing.T) {
+	full := newPool("")
+	for _, ph := range livecover.Placeholders {
+		full.byPlaceholder[ph] = "resolved-" + strings.Trim(string(ph), "{}")
+	}
+	named := map[livecover.Placeholder]int{}
+	for _, step := range livecover.Steps() {
+		sent, err := json.Marshal(step.Args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var namesOne bool
+		for _, ph := range livecover.Placeholders {
+			n := strings.Count(string(sent), `"`+string(ph)+`"`)
+			named[ph] += n
+			namesOne = namesOne || n > 0
+		}
+
+		args, missing := full.resolve(step.Args)
+		if missing != "" {
+			t.Errorf("%s (%q): %s unresolved with every placeholder supplied", step.Tool, step.Why, missing)
+			continue
+		}
+		got, err := json.Marshal(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ph := range livecover.Placeholders {
+			if strings.Contains(string(got), `"`+string(ph)+`"`) {
+				t.Errorf("%s (%q) sends %s as written: %s", step.Tool, step.Why, ph, got)
+			}
+		}
+
+		if _, missing := newPool("").resolve(step.Args); namesOne && missing == "" {
+			t.Errorf("%s (%q) names a placeholder and was not skipped with none supplied", step.Tool, step.Why)
+		}
+	}
+	// The floor: every placeholder was found in some step, so the check
+	// read the steps that carry them.
+	for _, ph := range livecover.Placeholders {
+		if named[ph] == 0 {
+			t.Errorf("no step names %s, so its resolution was not checked", ph)
+		}
+	}
+	if named[livecover.OwnUserID] < 4 {
+		t.Errorf("found %s in %d places, want at least the four share steps' entries", livecover.OwnUserID, named[livecover.OwnUserID])
+	}
+}
+
 // The driver printed its summary and then hung forever, holding the
 // server process open, because stop closed the wrong end of the stdin
 // pipe: StdinPipe sets cmd.Stdin to the READ end and returns the write

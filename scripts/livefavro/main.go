@@ -453,6 +453,11 @@ func (p *pool) resolve(args map[string]any) (map[string]any, string) {
 // value resolves one argument, descending into the slices and maps a
 // composite option carries — a dependency entry names a card the same
 // way a top-level argument does.
+//
+// A map is resolved wherever it sits. A share entry is a map inside a
+// []any, and without the map case its placeholder went out as the
+// literal "{own_user_id}", which the server rightly refused as nobody
+// in the organization.
 func (p *pool) value(v any) (any, string) {
 	switch t := v.(type) {
 	case livecover.Placeholder:
@@ -461,6 +466,8 @@ func (p *pool) value(v any) (any, string) {
 			return nil, string(t)
 		}
 		return resolved, ""
+	case map[string]any:
+		return p.resolve(t)
 	case []map[string]any:
 		out := make([]map[string]any, 0, len(t))
 		for _, entry := range t {

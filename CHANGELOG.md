@@ -29,7 +29,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ### Fixed
 - `make live` starts the server with `--dry-run`, and the `live-cover` gate fails on a step that writes without `dry_run: true`. The steps run against the first objects the organization lists, and each step's own `dry_run` was all that kept a delete there a preview.
 - `livefavro -writes` sends a write only to an object it created. However the run ends, SIGINT, SIGTERM and SIGHUP included, it deletes its probes by name and reads them back; it used to ignore a failed cleanup, and a signal skipped cleanup entirely.
-- `make live` shares in its dry runs with the signed-in account, found in `favro_list_users` by the email it signs in with, and expects `[blocked]` for a userId outside the organization. It shared with the first userId any result carried, which the server refused as outside the organization.
+- `make live` shares in its dry runs with the signed-in account, found in `favro_list_users` by the email it signs in with, and expects `[blocked]` for a userId outside the organization. It sent a share entry's userId as its unresolved placeholder, which the server refused as outside the organization; it now resolves a placeholder at any depth.
 - `livefavro -writes` counts a read-back refused as `[not_found]` or `[forbidden]` as gone once its delete succeeded: Favro answers 403 for a collection the run has just deleted.
 
 ## [3.2.0] - 2026-10-10
