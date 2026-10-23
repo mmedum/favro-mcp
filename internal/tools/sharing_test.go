@@ -318,9 +318,11 @@ func TestCollectionWritesRefuseWideSharing(t *testing.T) {
 		{createCollectionToolName, "Public ", true},
 		{createCollectionToolName, "anyone", true},
 		{createCollectionToolName, "users", false},
+		{createCollectionToolName, " Users", false},
 		{updateCollectionToolName, "public", true},
 		{updateCollectionToolName, "ORGANIZATION", true},
 		{updateCollectionToolName, "users", false},
+		{updateCollectionToolName, "USERS ", false},
 	} {
 		f := newSharingFavro(t)
 		args := map[string]any{"public_sharing": tc.mode}
@@ -331,7 +333,7 @@ func TestCollectionWritesRefuseWideSharing(t *testing.T) {
 		}
 		res := f.call(t, tc.tool, args)
 		text := resultText(res)
-		writes, _, _ := f.made()
+		writes, _, body := f.made()
 		// A mode that opens the collection is refused with the tool
 		// that does it named; one this server does not know, without.
 		wide := tc.refused && tc.mode != "anyone"
@@ -341,8 +343,9 @@ func TestCollectionWritesRefuseWideSharing(t *testing.T) {
 		switch {
 		case tc.refused && (!strings.HasPrefix(text, "[blocked] ") || len(writes) != 0):
 			t.Errorf("%s public_sharing %q: got %q and writes %v, want [blocked] and none", tc.tool, tc.mode, text, writes)
-		case !tc.refused && (res.IsError || len(writes) != 1):
-			t.Errorf("%s public_sharing %q: got %q and writes %v, want one write", tc.tool, tc.mode, text, writes)
+		case !tc.refused && (res.IsError || len(writes) != 1 || !strings.Contains(body, `"publicSharing":"users"`)):
+			t.Errorf("%s public_sharing %q: got %q, writes %v and body %s, want one write of 'users'",
+				tc.tool, tc.mode, text, writes, body)
 		}
 	}
 }
@@ -436,6 +439,7 @@ func TestDeleteWidgetNamesItsScope(t *testing.T) {
 		{map[string]any{}, true, ""},
 		{map[string]any{"collection_id": "c-1", "everywhere": true}, true, ""},
 		{map[string]any{"everywhere": false}, true, ""},
+		{map[string]any{"collection_id": " "}, true, ""},
 		{map[string]any{"collection_id": "c-1"}, false, "collectionId=c-1"},
 		{map[string]any{"everywhere": true}, false, ""},
 	} {

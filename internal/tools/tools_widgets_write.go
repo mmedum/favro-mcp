@@ -161,7 +161,10 @@ func registerDeleteWidget(reg *registry, r *service.Resolver) {
 		Annotations: mutating("Delete Favro widget", true),
 		Meta:        promptEveryCall(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteWidgetInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
-		if (in.CollectionID == "") == !in.Everywhere {
+		// A blank collection_id names no collection, and Favro reads an
+		// absent one as every collection.
+		collectionID := strings.TrimSpace(in.CollectionID)
+		if (collectionID == "") == !in.Everywhere {
 			return nil, writeOutput[struct{}]{}, errDeleteWidgetScope
 		}
 		writeCtx := ctx
@@ -170,11 +173,11 @@ func registerDeleteWidget(reg *registry, r *service.Resolver) {
 		}
 		out, err := runWrite(
 			func() (struct{}, error) {
-				return struct{}{}, r.Client().DeleteWidget(writeCtx, in.WidgetCommonID, in.CollectionID)
+				return struct{}{}, r.Client().DeleteWidget(writeCtx, in.WidgetCommonID, collectionID)
 			},
 			func() string {
-				if in.CollectionID != "" {
-					return fmt.Sprintf("would delete widget %q from collection %q (cards on the widget are removed; columns become inaccessible)", in.WidgetCommonID, in.CollectionID)
+				if collectionID != "" {
+					return fmt.Sprintf("would delete widget %q from collection %q (cards on the widget are removed; columns become inaccessible)", in.WidgetCommonID, collectionID)
 				}
 				return fmt.Sprintf("would delete widget %q from EVERY collection it belongs to (cards on the widget are removed; columns become inaccessible)", in.WidgetCommonID)
 			},

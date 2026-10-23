@@ -96,7 +96,7 @@ func registerCreateCollection(reg *registry, r *service.Resolver) {
 					Name:                     in.Name,
 					ShareToUsers:             in.ShareToUsers,
 					StarPage:                 in.StarPage,
-					PublicSharing:            in.PublicSharing,
+					PublicSharing:            sharingMode(in.PublicSharing),
 					Background:               in.Background,
 					Color:                    in.Color,
 					IconName:                 in.IconName,
@@ -151,7 +151,7 @@ func registerUpdateCollection(reg *registry, r *service.Resolver) {
 			func() (favro.Collection, error) {
 				return r.Client().UpdateCollection(writeCtx, in.CollectionID, favro.UpdateCollectionRequest{
 					Name:                     in.Name,
-					PublicSharing:            in.PublicSharing,
+					PublicSharing:            sharingMode(in.PublicSharing),
 					Background:               in.Background,
 					Color:                    in.Color,
 					IconName:                 in.IconName,
