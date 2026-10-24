@@ -100,9 +100,16 @@ type Config struct {
 // what the process does rather than configure how it does it, and
 // cmd/favro-mcp parses them where it dispatches on them.
 func Load() Config {
+	return LoadFrom(os.Getenv)
+}
+
+// LoadFrom is Load over the environment getenv describes. The bundle
+// gate loads the environment Claude Desktop builds from the manifest's
+// defaults through it, and holds the result to an empty environment's.
+func LoadFrom(getenv func(string) string) Config {
 	cfg := Config{}
 
-	raw := strings.ToLower(strings.TrimSpace(os.Getenv(EnvLogLevel)))
+	raw := strings.ToLower(strings.TrimSpace(getenv(EnvLogLevel)))
 	level, recognized := ParseLogLevel(raw)
 	cfg.LogLevel = level
 	if !recognized {
@@ -110,12 +117,12 @@ func Load() Config {
 			fmt.Sprintf("unrecognized %s %q — falling back to info", EnvLogLevel, raw))
 	}
 
-	cfg.SkipValidate = os.Getenv(EnvSkipValidate) != ""
+	cfg.SkipValidate = getenv(EnvSkipValidate) != ""
 
 	// Anything Go cannot read as a bool, and anything absent, means
 	// off: a typo in the variable that enables deletes must not enable
 	// deletes.
-	if raw := os.Getenv(EnvEnableDestructive); raw != "" {
+	if raw := getenv(EnvEnableDestructive); raw != "" {
 		on, err := strconv.ParseBool(raw)
 		switch {
 		case err != nil:
@@ -127,9 +134,9 @@ func Load() Config {
 		}
 	}
 
-	cfg.readRemoved()
+	cfg.readRemoved(getenv)
 
-	if raw := strings.TrimSpace(os.Getenv(EnvUploadDir)); raw != "" {
+	if raw := strings.TrimSpace(getenv(EnvUploadDir)); raw != "" {
 		dir, err := UploadDir(raw)
 		switch {
 		case err != nil:
@@ -147,10 +154,10 @@ func Load() Config {
 // environment still sets: in Refusals one that turned a guard on, so the
 // server does not start, and in Warnings one whose loss only makes the
 // server stricter.
-func (cfg *Config) readRemoved() {
+func (cfg *Config) readRemoved(getenv func(string) string) {
 	// A removed setting set to anything but false is refused: a value
 	// that is not a boolean may mean on.
-	if raw := strings.TrimSpace(os.Getenv(EnvRequirePrompt)); raw != "" {
+	if raw := strings.TrimSpace(getenv(EnvRequirePrompt)); raw != "" {
 		if on, err := strconv.ParseBool(raw); err != nil || on {
 			cfg.Refusals = append(cfg.Refusals, EnvRequirePrompt+" was removed: the server no longer asks the "+
 				"person, and the client's own approval decides each call. Unset it to start the server. Leave "+
@@ -163,7 +170,7 @@ func (cfg *Config) readRemoved() {
 	// makes the server stricter, so the server starts, but a deployment
 	// that relied on it is told why Claude Code now refuses those calls
 	// where it cannot prompt. true was the default, and changes nothing.
-	if raw := strings.TrimSpace(os.Getenv(EnvInteractionHint)); raw != "" {
+	if raw := strings.TrimSpace(getenv(EnvInteractionHint)); raw != "" {
 		if on, err := strconv.ParseBool(raw); err != nil || !on {
 			cfg.Warnings = append(cfg.Warnings, EnvInteractionHint+" was removed and is ignored: the widest "+
 				"destructive tools always carry Claude Code's requiresUserInteraction mark, so Claude Code prompts "+
