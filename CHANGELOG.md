@@ -8,6 +8,17 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-10-24
+
+### Added
+- The Claude Desktop bundle asks for `enable_destructive`, off unless you turn it on, names Favro's privacy policy, and needs Claude Desktop 0.10.0 or later.
+
+### Changed
+- The bundle stages its files under the sibling servers' names: `server/favro-mcp-darwin`, `server/favro-mcp-linux-amd64`, `server/favro-mcp-linux-arm64` and `server/launch-linux.sh`.
+
+### Fixed
+- The bundle's upload folder defaults to empty. Without a default, the reference host passes `${user_config.upload_dir}` through as written when you leave the field blank, and the server logs that as not an absolute path.
+
 ## [4.0.0] - 2026-10-23
 
 ### Added
@@ -393,7 +404,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/mmedum/favro-mcp/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/mmedum/favro-mcp/compare/v3.2.0...v4.0.0
 [3.2.0]: https://github.com/mmedum/favro-mcp/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/mmedum/favro-mcp/compare/v3.1.0...v3.1.1
