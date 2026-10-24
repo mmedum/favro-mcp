@@ -1,9 +1,10 @@
 // Package config is every FAVRO_* setting the process reads, resolved
 // once at startup and validated before anything uses it.
 //
-// Credentials are not here: those resolve through internal/auth, which
-// checks the environment and then the OS keyring and reports which one
-// won. What is here is the settings that change how the server behaves
+// Credentials are not resolved here: those resolve through internal/auth,
+// which checks the environment and then the OS keyring and reports which
+// one won. Their names are here, and auth reads them through Lookup. What
+// Load resolves is the settings that change how the server behaves
 // rather than who it runs as — and every one of them is read in exactly
 // one place, so "what does this variable do" has a single answer.
 package config
@@ -13,9 +14,25 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
+
+// EnvPrefix starts the name of every variable the server reads.
+const EnvPrefix = "FAVRO_"
+
+// The credentials. internal/auth reads them, through Lookup, rather than
+// Load; they are named here so that Vars lists every variable the server
+// reads and the bundle gate imports no keyring.
+const (
+	EnvUserEmail      = "FAVRO_USER_EMAIL"
+	EnvAPIToken       = "FAVRO_API_TOKEN" //nolint:gosec // env var name, not a credential value
+	EnvOrganizationID = "FAVRO_ORGANIZATION_ID"
+)
+
+// envOnly is every variable read outside Load, for Vars.
+var envOnly = []string{EnvUserEmail, EnvAPIToken, EnvOrganizationID}
 
 // Environment variable names. Exported so that --help, the README
 // staleness gate and the tests all name the same strings rather than
@@ -25,7 +42,7 @@ const (
 	// error. Case-insensitive.
 	EnvLogLevel = "FAVRO_LOG_LEVEL"
 
-	// EnvSkipValidate, set to anything non-empty, suppresses the
+	// EnvSkipValidate, set to anything but spaces, suppresses the
 	// startup live-validation call. Lets protocol-only integration
 	// tests exercise the MCP surface without contacting Favro.
 	EnvSkipValidate = "FAVRO_MCP_SKIP_VALIDATE"
@@ -107,9 +124,72 @@ func Load() Config {
 // gate loads the environment Claude Desktop builds from the manifest's
 // defaults through it, and holds the result to an empty environment's.
 func LoadFrom(getenv func(string) string) Config {
-	cfg := Config{}
+	cfg, _ := load(getenv)
+	return cfg
+}
 
-	raw := strings.ToLower(strings.TrimSpace(getenv(EnvLogLevel)))
+// Var is one variable the server reads.
+type Var struct {
+	// Name is the environment variable.
+	Name string
+	// Switch marks a setting that is on or off.
+	Switch bool
+	// Removed marks a setting a release took out, read only to refuse
+	// or warn a configuration that still sets it.
+	Removed bool
+}
+
+// Lookup is the value env gives the variable name, without the spaces
+// around it. Spaces alone are "", unset as an empty variable is, so a
+// form field cleared to a space means the default rather than a value
+// the server cannot read. Load reads every setting through it, and so
+// does each reader of a variable outside Load.
+func Lookup(env func(string) string, name string) string {
+	return strings.TrimSpace(env(name))
+}
+
+// Vars is every variable the server reads, sorted by name: Load's, the
+// removed ones included, and the ones read outside it. Load's are
+// recorded as it reads them rather than listed, so they cannot fall
+// behind. The bundle and staleness gates derive what they hold from
+// these.
+func Vars() []Var {
+	vars := defined()
+	for _, name := range envOnly {
+		vars = append(vars, Var{Name: name})
+	}
+	slices.SortFunc(vars, func(a, b Var) int { return strings.Compare(a.Name, b.Name) })
+	return vars
+}
+
+// EnvVars is the names of Vars, sorted. A name listed twice is a
+// variable read under two rules, which a test refuses, so it is not
+// compacted.
+func EnvVars() []string {
+	vars := Vars()
+	names := make([]string, 0, len(vars))
+	for _, v := range vars {
+		names = append(names, v.Name)
+	}
+	return names
+}
+
+// defined is every variable Load reads, in the order it reads them.
+func defined() []Var {
+	_, vars := load(func(string) string { return "" })
+	return vars
+}
+
+// load is LoadFrom, and every variable it read, in order.
+func load(getenv func(string) string) (Config, []Var) {
+	cfg := Config{}
+	var vars []Var
+	read := func(v Var) string {
+		vars = append(vars, v)
+		return Lookup(getenv, v.Name)
+	}
+
+	raw := strings.ToLower(read(Var{Name: EnvLogLevel}))
 	level, recognized := ParseLogLevel(raw)
 	cfg.LogLevel = level
 	if !recognized {
@@ -117,12 +197,12 @@ func LoadFrom(getenv func(string) string) Config {
 			fmt.Sprintf("unrecognized %s %q — falling back to info", EnvLogLevel, raw))
 	}
 
-	cfg.SkipValidate = getenv(EnvSkipValidate) != ""
+	cfg.SkipValidate = read(Var{Name: EnvSkipValidate}) != ""
 
 	// Anything Go cannot read as a bool, and anything absent, means
 	// off: a typo in the variable that enables deletes must not enable
 	// deletes.
-	if raw := getenv(EnvEnableDestructive); raw != "" {
+	if raw := read(Var{Name: EnvEnableDestructive, Switch: true}); raw != "" {
 		on, err := strconv.ParseBool(raw)
 		switch {
 		case err != nil:
@@ -134,9 +214,9 @@ func LoadFrom(getenv func(string) string) Config {
 		}
 	}
 
-	cfg.readRemoved(getenv)
+	cfg.readRemoved(func(name string) string { return read(Var{Name: name, Removed: true}) })
 
-	if raw := strings.TrimSpace(getenv(EnvUploadDir)); raw != "" {
+	if raw := read(Var{Name: EnvUploadDir}); raw != "" {
 		dir, err := UploadDir(raw)
 		switch {
 		case err != nil:
@@ -147,17 +227,17 @@ func LoadFrom(getenv func(string) string) Config {
 		}
 	}
 
-	return cfg
+	return cfg, vars
 }
 
 // readRemoved describes the settings a release took out that the
 // environment still sets: in Refusals one that turned a guard on, so the
 // server does not start, and in Warnings one whose loss only makes the
-// server stricter.
-func (cfg *Config) readRemoved(getenv func(string) string) {
+// server stricter. read is Lookup, recording each as removed.
+func (cfg *Config) readRemoved(read func(string) string) {
 	// A removed setting set to anything but false is refused: a value
 	// that is not a boolean may mean on.
-	if raw := strings.TrimSpace(getenv(EnvRequirePrompt)); raw != "" {
+	if raw := read(EnvRequirePrompt); raw != "" {
 		if on, err := strconv.ParseBool(raw); err != nil || on {
 			cfg.Refusals = append(cfg.Refusals, EnvRequirePrompt+" was removed: the server no longer asks the "+
 				"person, and the client's own approval decides each call. Unset it to start the server. Leave "+
@@ -170,7 +250,7 @@ func (cfg *Config) readRemoved(getenv func(string) string) {
 	// makes the server stricter, so the server starts, but a deployment
 	// that relied on it is told why Claude Code now refuses those calls
 	// where it cannot prompt. true was the default, and changes nothing.
-	if raw := strings.TrimSpace(getenv(EnvInteractionHint)); raw != "" {
+	if raw := read(EnvInteractionHint); raw != "" {
 		if on, err := strconv.ParseBool(raw); err != nil || !on {
 			cfg.Warnings = append(cfg.Warnings, EnvInteractionHint+" was removed and is ignored: the widest "+
 				"destructive tools always carry Claude Code's requiresUserInteraction mark, so Claude Code prompts "+

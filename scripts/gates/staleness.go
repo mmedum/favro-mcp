@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 var (
@@ -22,8 +24,10 @@ var (
 	// "83 tools", "83 typed tools" — a number in prose is a claim about
 	// the list beside it, and this is how that claim gets held.
 	toolCount = regexp.MustCompile(`\b(\d+)\s+(?:typed\s+)?tools\b`)
-	// Every environment variable the code reads, as a string literal.
-	envName = regexp.MustCompile(`"(FAVRO_[A-Z_]+)"`)
+	// A setting's name standing as a word of its own, all of it: a
+	// longer name that contains one, such as FAVRO_UPLOAD_DIRS, is that
+	// longer name and not FAVRO_UPLOAD_DIR.
+	settingWord = regexp.MustCompile(`(^|[^A-Z0-9_])(` + config.EnvPrefix + `[A-Z0-9_]+)`)
 	// A version heading, as Keep a Changelog writes it.
 	versionHeading = regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\]`)
 	// The status line at the top of the design document, which is the
@@ -83,7 +87,7 @@ func staleness(w io.Writer, bin string) error {
 	problems = append(problems, toolsDocumented(tools, readme, registered)...)
 	problems = append(problems, permissionRulesRegistered(readme, dump)...)
 	problems = append(problems, countsMatch(readme, len(registered))...)
-	problems = append(problems, envDocumented(root, readme, docs["docs/configuration.md"])...)
+	problems = append(problems, envDocumented(config.Vars(), readme, docs["docs/configuration.md"])...)
 	problems = append(problems, gatesDocumented(docs["docs/development.md"])...)
 	problems = append(problems, destructiveCountMatches(docs, dump)...)
 	problems = append(problems, statusCurrent(arch, changelog)...)
@@ -257,25 +261,40 @@ func proseCount(sources map[string]string, re *regexp.Regexp, want int, verb, mi
 	return problems
 }
 
-// envDocumented requires every FAVRO_* variable the code reads to be
-// named in the README. The list comes from the source, so a variable
-// added next week is documented or the gate fails on the commit that
-// added it.
-func envDocumented(root, readme, configuration string) []string {
-	seen, err := sourceEnvNames(root)
-	if err != nil {
-		return []string{err.Error()}
+// envDocumented requires every variable the server reads, vars, to be
+// named in the README and in docs/configuration.md, each as a whole
+// word, and the configuration page to name no other. The list is
+// config's registry, so a variable added next week is documented or the
+// gate fails on the commit that added it.
+func envDocumented(vars []config.Var, readme, configuration string) []string {
+	if len(vars) == 0 {
+		return []string{"config.Vars lists no variable; this check is reading nothing"}
 	}
+	words := func(text string) map[string]bool {
+		out := map[string]bool{}
+		for _, m := range settingWord.FindAllStringSubmatch(text, -1) {
+			out[m[2]] = true
+		}
+		return out
+	}
+	inReadme, inConfiguration := words(readme), words(configuration)
 	var problems []string
-	for _, name := range slices.Sorted(maps.Keys(seen)) {
-		if !strings.Contains(readme, name) {
-			problems = append(problems, "README.md does not document "+name)
+	known := map[string]bool{}
+	for _, v := range vars {
+		known[v.Name] = true
+		if !inReadme[v.Name] {
+			problems = append(problems, "README.md does not document "+v.Name)
 		}
 		// docs/configuration.md is the reference, so a setting missing
 		// there is missing from the place someone goes to look it up —
 		// the README's table is a summary that may reasonably lag.
-		if !strings.Contains(configuration, name) {
-			problems = append(problems, "docs/configuration.md does not document "+name)
+		if !inConfiguration[v.Name] {
+			problems = append(problems, "docs/configuration.md does not document "+v.Name)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(inConfiguration)) {
+		if !known[name] {
+			problems = append(problems, "docs/configuration.md documents "+name+", which the server does not read")
 		}
 	}
 	return problems

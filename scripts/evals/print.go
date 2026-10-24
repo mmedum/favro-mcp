@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"os"
 
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 	"github.com/mmedum/favro-mcp/v4/internal/redact"
 )
 
@@ -21,11 +22,12 @@ import (
 //
 // It does not close all of it. The redactor removes ids, addresses and
 // the credentials this process holds; a card NAME is ordinary words and
-// survives. Do not commit a transcript.
+// survives. Do not commit a transcript. Each credential is read as the
+// server reads it, without the spaces around it.
 var out = newPrinter(redact.New(
-	os.Getenv("FAVRO_USER_EMAIL"),
-	os.Getenv("FAVRO_API_TOKEN"),
-	os.Getenv("FAVRO_ORGANIZATION_ID"),
+	config.Lookup(os.Getenv, config.EnvUserEmail),
+	config.Lookup(os.Getenv, config.EnvAPIToken),
+	config.Lookup(os.Getenv, config.EnvOrganizationID),
 ))
 
 type printer struct {

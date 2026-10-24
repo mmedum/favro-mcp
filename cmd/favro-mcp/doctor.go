@@ -360,7 +360,7 @@ func oneOf(n int) string {
 // default, which is the distinction a report needs: "info" alone does
 // not say whether the user set it.
 func describeEnv(name, value string) string {
-	if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
+	if config.Lookup(os.Getenv, name) != "" {
 		return value + " (from " + name + ")"
 	}
 	return value + " (default)"

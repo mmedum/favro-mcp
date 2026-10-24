@@ -51,15 +51,58 @@ func TestGoreleaserMatrixIsTheOneTheBundleClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(built) < 4 {
-		t.Fatalf("the matrix parsed as %v; that is not this repository's build list", built)
-	}
-	if slices.Contains(built, "windows-arm64") {
-		t.Error("windows-arm64 is `ignore`d in .goreleaser.yaml and should not be in the matrix")
+	// The family's six archives, windows-arm64 among them: the plugin
+	// still stages windows-amd64 alone, which arm64 runs under emulation.
+	want := []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"}
+	if !slices.Equal(built, want) {
+		t.Fatalf("the matrix parsed as %v, want %v", built, want)
 	}
 	for _, p := range platforms {
 		if !slices.Contains(built, p.dir()) {
 			t.Errorf("the bundle stages %s and goreleaser does not build it", p.dir())
+		}
+	}
+}
+
+// Every platform the release builds is one the plugin stages, or one
+// that runs a staged binary under emulation; and the exemption holds only
+// while its reason does.
+func TestPluginMatrixProblems(t *testing.T) {
+	six := []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"}
+	if got := pluginMatrixProblems(six, emulated); len(got) != 0 {
+		t.Errorf("the family's six with windows-arm64 emulated: %q", got)
+	}
+	for _, tc := range []struct {
+		name      string
+		built     []string
+		emulation map[string]string
+		want      []string
+	}{
+		{
+			"a built platform nothing reaches", six, nil,
+			[]string{"GoReleaser builds windows-arm64 and no launcher arm reaches it; that binary ships unusable"},
+		},
+		{
+			"emulated by a platform not staged", six,
+			map[string]string{"windows-arm64": "windows-386"},
+			[]string{"GoReleaser builds windows-arm64 and no launcher arm reaches it; that binary ships unusable"},
+		},
+		{
+			"a staged platform not built", six[1:], emulated,
+			[]string{"the bundle stages bin/darwin-amd64, which .goreleaser.yaml does not build"},
+		},
+		{
+			"emulation for a platform not built", six[:5], emulated,
+			[]string{"emulated names windows-arm64, which .goreleaser.yaml does not build"},
+		},
+		{
+			"emulation for a staged platform", six,
+			map[string]string{"windows-arm64": "windows-amd64", "linux-arm64": "linux-amd64"},
+			[]string{"emulated names linux-arm64, which the bundle stages"},
+		},
+	} {
+		if got := pluginMatrixProblems(tc.built, tc.emulation); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }

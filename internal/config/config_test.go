@@ -51,7 +51,9 @@ func TestLoadDestructive(t *testing.T) {
 		{"one", "1", true, false},
 		{"false", "false", false, false},
 		{"yes", "yes", false, true},
-		{"padded", "  true ", false, true}, // ParseBool does not trim, and neither do we
+		// Lookup drops the spaces around a value, as for every variable.
+		{"padded", "  true ", true, false},
+		{"spaces", "   ", false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

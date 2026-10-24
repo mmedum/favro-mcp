@@ -98,9 +98,11 @@ Four more variables change how the server runs rather than who it runs as:
 | Variable | Effect |
 | --- | --- |
 | `FAVRO_LOG_LEVEL` | `debug` / `info` (default) / `warn` / `error`. Logs go to stderr; stdout carries only the MCP protocol stream. |
-| `FAVRO_MCP_SKIP_VALIDATE` | When set to anything non-empty, skips the startup call that checks the credentials against Favro. For offline testing; the server then fails on the first real tool call instead of at startup. |
+| `FAVRO_MCP_SKIP_VALIDATE` | When set to anything but spaces, skips the startup call that checks the credentials against Favro. For offline testing; the server then fails on the first real tool call instead of at startup. |
 | `FAVRO_ENABLE_DESTRUCTIVE` | Set to `true` to register the destructive tools: the deletes, and `favro_widen_collection_sharing`. Off by default, and "off" means they are absent from `tools/list` rather than guarded — a host in an auto-approve mode runs a tool without prompting, so not registering it is the only guarantee. Anything the value cannot be read as `true` leaves them off. Each call must also pass `confirm: true`. |
 | `FAVRO_UPLOAD_DIR` | The one directory the upload tools read files from, as an absolute path. Unset, and they are not registered. Nothing outside it is read, and a link out of it is refused. |
+
+Every variable, the credentials included, is read without the spaces around its value, and spaces alone count as unset.
 
 `FAVRO_REQUIRE_PROMPT` is removed. Set to anything but `false`, the
 server refuses to start; unset it. `FAVRO_INTERACTION_HINT` is removed

@@ -8,6 +8,12 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- Releases carry a `windows_arm64` archive, so there are six: darwin, linux and windows, each on amd64 and arm64. The Desktop bundle and the plugin keep the Windows amd64 binary, which Windows on arm64 runs under emulation.
+
+### Changed
+- `FAVRO_ENABLE_DESTRUCTIVE` and `FAVRO_MCP_SKIP_VALIDATE` are read without the spaces around their value, as every other variable is, and spaces alone count as unset. `true` with a space beside it turns the destructive tools on rather than being ignored with a warning, and `FAVRO_MCP_SKIP_VALIDATE` set to spaces no longer skips the credential check.
+
 ## [4.1.0] - 2026-10-24
 
 ### Added

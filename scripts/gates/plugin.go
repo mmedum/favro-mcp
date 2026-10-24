@@ -63,6 +63,12 @@ var platforms = []platform{
 	{goos: "windows", goarch: "amd64"},
 }
 
+// emulated is each platform the release builds and the plugin does not
+// stage, with the staged one it runs under emulation. Windows on arm64
+// runs the amd64 binary, as it does from the Desktop bundle; its archive
+// is for someone installing from the release page.
+var emulated = map[string]string{"windows-arm64": "windows-amd64"}
+
 type platform struct {
 	goos, goarch string
 	uname        []string
@@ -140,18 +146,7 @@ func pluginGate(w io.Writer, _ []string) error {
 	if err != nil {
 		return err
 	}
-	for _, p := range platforms {
-		if !slices.Contains(built, p.dir()) {
-			problems = append(problems, fmt.Sprintf(
-				"the bundle stages bin/%s, which .goreleaser.yaml does not build", p.dir()))
-		}
-	}
-	for _, b := range built {
-		if !slices.ContainsFunc(platforms, func(p platform) bool { return p.dir() == b }) {
-			problems = append(problems, fmt.Sprintf(
-				"GoReleaser builds %s and no launcher arm reaches it; that binary ships unusable", b))
-		}
-	}
+	problems = append(problems, pluginMatrixProblems(built, emulated)...)
 
 	// The launcher the packer will write must name every directory it
 	// stages, and nothing else. This is the check that reads the
@@ -182,6 +177,40 @@ func pluginGate(w io.Writer, _ []string) error {
 	_, err = fmt.Fprintf(w, "plugin manifest ok: %d files staged across %d platforms\n",
 		len(staged()), len(platforms))
 	return err
+}
+
+// pluginMatrixProblems holds the staged platforms to the ones GoReleaser
+// builds, both ways: each staged one is built, and each built one is
+// staged or runs, under emulation, the staged one emulation names. An
+// entry in emulation for a platform the release does not build, or for
+// one the plugin stages, is refused, so the exemption cannot outlive its
+// reason.
+func pluginMatrixProblems(built []string, emulation map[string]string) []string {
+	staged := func(dir string) bool {
+		return slices.ContainsFunc(platforms, func(p platform) bool { return p.dir() == dir })
+	}
+	var problems []string
+	for _, p := range platforms {
+		if !slices.Contains(built, p.dir()) {
+			problems = append(problems, fmt.Sprintf(
+				"the bundle stages bin/%s, which .goreleaser.yaml does not build", p.dir()))
+		}
+	}
+	for _, b := range built {
+		if via, ok := emulation[b]; !staged(b) && (!ok || !staged(via)) {
+			problems = append(problems, fmt.Sprintf(
+				"GoReleaser builds %s and no launcher arm reaches it; that binary ships unusable", b))
+		}
+	}
+	for _, b := range slices.Sorted(maps.Keys(emulation)) {
+		switch {
+		case !slices.Contains(built, b):
+			problems = append(problems, fmt.Sprintf("emulated names %s, which .goreleaser.yaml does not build", b))
+		case staged(b):
+			problems = append(problems, fmt.Sprintf("emulated names %s, which the bundle stages", b))
+		}
+	}
+	return problems
 }
 
 // onlyTheServerShips holds the premise everything else in this

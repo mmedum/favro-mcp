@@ -3,8 +3,11 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 // A number in prose is a claim about the list beside it. The fix for a
@@ -191,27 +194,59 @@ func TestGatesDocumentedAgainstTheRegistry(t *testing.T) {
 // docs/configuration.md is the reference a person goes to when they want
 // to know what a setting does, so a setting missing from it is missing
 // from the place it is looked up — separately from the README's summary.
+// Each name counts as a whole word, and the page names no variable the
+// server does not read.
 func TestEveryEnvNameReachesBothDocuments(t *testing.T) {
 	root, err := moduleRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	names, err := sourceEnvNames(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(names) < 4 {
-		t.Fatalf("found %d FAVRO_* names; this test is reading nothing", len(names))
-	}
-	for _, doc := range []string{"README.md", filepath.Join("docs", "configuration.md")} {
+	read := func(doc string) string {
 		data, err := os.ReadFile(filepath.Join(root, doc))
 		if err != nil {
 			t.Fatal(err)
 		}
-		for name := range names {
-			if !strings.Contains(string(data), name) {
-				t.Errorf("%s does not document %s", doc, name)
-			}
+		return string(data)
+	}
+	readme, configuration := read("README.md"), read(filepath.Join("docs", "configuration.md"))
+	vars := config.Vars()
+	if got := envDocumented(vars, readme, configuration); len(got) != 0 {
+		t.Fatalf("the committed documents: %q", got)
+	}
+	if got := envDocumented(nil, readme, configuration); len(got) != 1 {
+		t.Errorf("an empty registry gives %q, want the one floor problem", got)
+	}
+	for _, tc := range []struct {
+		name, old, new string
+		want           []string
+	}{
+		{
+			"a variable left out", "`FAVRO_LOG_LEVEL`", "`the log level`",
+			[]string{"docs/configuration.md does not document FAVRO_LOG_LEVEL"},
+		},
+		{
+			"a removed variable left out", "`FAVRO_INTERACTION_HINT`", "`the hint setting`",
+			[]string{"docs/configuration.md does not document FAVRO_INTERACTION_HINT"},
+		},
+		{"a name kept only inside a longer one", "`FAVRO_MCP_SKIP_VALIDATE`", "`FAVRO_MCP_SKIP_VALIDATE_X`", []string{
+			"docs/configuration.md does not document FAVRO_MCP_SKIP_VALIDATE",
+			"docs/configuration.md documents FAVRO_MCP_SKIP_VALIDATE_X, which the server does not read",
+		}},
+		{
+			"a variable the server does not read", "`FAVRO_UPLOAD_DIR` |", "`FAVRO_UPLOAD_DIR` and `FAVRO_UPLOAD_DIRS` |",
+			[]string{"docs/configuration.md documents FAVRO_UPLOAD_DIRS, which the server does not read"},
+		},
+	} {
+		if strings.Count(configuration, tc.old) == 0 {
+			t.Fatalf("%s: the page does not say %q", tc.name, tc.old)
 		}
+		if got := envDocumented(vars, readme, strings.ReplaceAll(configuration, tc.old, tc.new)); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	// The README too, as a whole word.
+	if got := envDocumented(vars, strings.ReplaceAll(readme, "FAVRO_UPLOAD_DIR", "FAVRO_UPLOAD_DIRECTORY"),
+		configuration); !slices.Equal(got, []string{"README.md does not document FAVRO_UPLOAD_DIR"}) {
+		t.Errorf("a README naming only a longer name gives %q", got)
 	}
 }

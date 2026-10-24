@@ -3,15 +3,17 @@ package auth
 import (
 	"context"
 	"os"
-	"strings"
+
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 // Favro env-var names. Exported so cmd/favro-mcp can interpolate them
 // into error messages and usage text without restating the strings.
+// internal/config owns them, so its registry of variables lists them.
 const (
-	EnvUserEmail      = "FAVRO_USER_EMAIL"
-	EnvAPIToken       = "FAVRO_API_TOKEN" //nolint:gosec // env var name, not a credential value
-	EnvOrganizationID = "FAVRO_ORGANIZATION_ID"
+	EnvUserEmail      = config.EnvUserEmail
+	EnvAPIToken       = config.EnvAPIToken
+	EnvOrganizationID = config.EnvOrganizationID
 )
 
 // EnvSource reads credentials from environment variables. Read-only.
@@ -36,9 +38,9 @@ func (s EnvSource) Load(_ context.Context) (Token, error) {
 	if get == nil {
 		get = os.Getenv
 	}
-	email := strings.TrimSpace(get(EnvUserEmail))
-	token := strings.TrimSpace(get(EnvAPIToken))
-	orgID := strings.TrimSpace(get(EnvOrganizationID))
+	email := config.Lookup(get, EnvUserEmail)
+	token := config.Lookup(get, EnvAPIToken)
+	orgID := config.Lookup(get, EnvOrganizationID)
 
 	if email == "" && token == "" && orgID == "" {
 		return Token{}, errNotConfigured
