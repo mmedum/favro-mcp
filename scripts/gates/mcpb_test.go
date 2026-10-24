@@ -3,13 +3,17 @@ package main
 import (
 	"archive/zip"
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 // committedManifest is the manifest as the repository carries it,
@@ -623,5 +627,174 @@ func TestTheFloorComparesVersionsNumerically(t *testing.T) {
 func TestTheCommittedManifestMeetsTheFloor(t *testing.T) {
 	if got := committedManifest(t).ManifestVersion; got != "0.3" {
 		t.Fatalf("the committed manifest declares %q; this repository has checked 0.3", got)
+	}
+}
+
+// option is a copy of one user_config entry to change; set writes it
+// back, since a map holds its entries by value.
+func option(m bundleManifest, key string) bundleOption { return m.UserConfig[key] }
+
+func set(m bundleManifest, key string, opt bundleOption) { m.UserConfig[key] = opt }
+
+// What the bundle asks for, held to the server's own settings. Each case
+// is one way a bundle install would differ from another client's
+// configuration, starting from the committed manifest.
+func TestTheBundleSettingsAreHeld(t *testing.T) {
+	cases := []struct {
+		name   string
+		breaks func(m bundleManifest) bundleManifest
+		want   string
+	}{
+		{"no privacy policy", func(m bundleManifest) bundleManifest {
+			m.PrivacyPolicies = nil
+			return m
+		}, "privacy_policies is empty"},
+		{"no Claude Desktop version", func(m bundleManifest) bundleManifest {
+			m.Compatibility.ClaudeDesktop = ""
+			return m
+		}, "compatibility.claude_desktop is empty"},
+		{"a switch the bundle turns on", func(m bundleManifest) bundleManifest {
+			opt := option(m, "enable_destructive")
+			opt.Default = json.RawMessage(`true`)
+			set(m, "enable_destructive", opt)
+			return m
+		}, "user_config.enable_destructive is a boolean defaulting to true; FAVRO_ENABLE_DESTRUCTIVE is a " +
+			"switch the server defaults to false"},
+		{"a switch asked as text", func(m bundleManifest) bundleManifest {
+			opt := option(m, "enable_destructive")
+			opt.Type, opt.Default = "string", json.RawMessage(`"false"`)
+			set(m, "enable_destructive", opt)
+			return m
+		}, `user_config.enable_destructive is a string defaulting to "false"`},
+		{"a switch with no default", func(m bundleManifest) bundleManifest {
+			opt := option(m, "enable_destructive")
+			opt.Default = nil
+			set(m, "enable_destructive", opt)
+			return m
+		}, "user_config.enable_destructive is a boolean defaulting to nothing"},
+		// The 4.0.0 bundle: a blank upload folder reached the server as
+		// the text ${user_config.upload_dir}.
+		{"an optional key with no default", func(m bundleManifest) bundleManifest {
+			opt := option(m, "upload_dir")
+			opt.Default = nil
+			set(m, "upload_dir", opt)
+			return m
+		}, "mcp_config.env.FAVRO_UPLOAD_DIR spends ${user_config.upload_dir}, which is optional with no default"},
+		{"an optional key with a null default", func(m bundleManifest) bundleManifest {
+			opt := option(m, "upload_dir")
+			opt.Default = json.RawMessage(`null`)
+			set(m, "upload_dir", opt)
+			return m
+		}, "which is optional with no default"},
+		{"a key taking multiple values", func(m bundleManifest) bundleManifest {
+			opt := option(m, "upload_dir")
+			opt.Multiple = true
+			set(m, "upload_dir", opt)
+			return m
+		}, "spends ${user_config.upload_dir}, which takes multiple values"},
+		{"defaults that configure the server", func(m bundleManifest) bundleManifest {
+			opt := option(m, "upload_dir")
+			opt.Default = json.RawMessage(`"relative/dir"`)
+			set(m, "upload_dir", opt)
+			return m
+		}, `configure the server otherwise than no environment does: FAVRO_ENABLE_DESTRUCTIVE="false" ` +
+			`FAVRO_UPLOAD_DIR="relative/dir"`},
+		{"a setting the bundle no longer asks for", func(m bundleManifest) bundleManifest {
+			delete(m.UserConfig, "enable_destructive")
+			delete(m.Server.MCPConfig.Env, "FAVRO_ENABLE_DESTRUCTIVE")
+			return m
+		}, "user_config does not ask for enable_destructive, which sets FAVRO_ENABLE_DESTRUCTIVE"},
+		{"a key reaching another variable", func(m bundleManifest) bundleManifest {
+			m.Server.MCPConfig.Env["FAVRO_UPLOAD_DIR"] = "${user_config.user_email}"
+			return m
+		}, `mcp_config.env.FAVRO_UPLOAD_DIR is "${user_config.user_email}", want "${user_config.upload_dir}"`},
+		{"a key no setting has", func(m bundleManifest) bundleManifest {
+			set(m, "log_level", bundleOption{Type: "string", Default: json.RawMessage(`""`)})
+			return m
+		}, "user_config asks for log_level, which is no setting in mcpbAsked"},
+		{"a variable the bundle does not ask for", func(m bundleManifest) bundleManifest {
+			m.Server.MCPConfig.Env["FAVRO_LOG_LEVEL"] = "debug"
+			return m
+		}, "mcp_config sets FAVRO_LOG_LEVEL, which the bundle does not ask for"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			problems := checkBundleManifest(tc.breaks(committedManifest(t)), mcpbStaged())
+			if !slices.ContainsFunc(problems, func(p string) bool { return strings.Contains(p, tc.want) }) {
+				t.Errorf("wanted %q, got:\n%s", tc.want, strings.Join(problems, "\n"))
+			}
+		})
+	}
+}
+
+// Every setting the server reads has a verdict, and neither list names
+// a setting the server stopped reading.
+func TestEverySettingHasAVerdict(t *testing.T) {
+	known, err := sourceEnvNames(repoRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problems := mcpbVerdictProblems(known); len(problems) > 0 {
+		t.Fatalf("the committed lists do not match the source:\n%s", strings.Join(problems, "\n"))
+	}
+
+	added := maps.Clone(known)
+	added["FAVRO_NEW_SETTING"] = true
+	if got := strings.Join(mcpbVerdictProblems(added), "\n"); !strings.Contains(got,
+		"the server reads FAVRO_NEW_SETTING and the bundle neither asks for it nor says why not") {
+		t.Errorf("a setting with no verdict passed: %q", got)
+	}
+
+	gone := maps.Clone(known)
+	delete(gone, "FAVRO_LOG_LEVEL")
+	if got := strings.Join(mcpbVerdictProblems(gone), "\n"); !strings.Contains(got,
+		"the bundle's settings list FAVRO_LOG_LEVEL, which no non-test source file reads") {
+		t.Errorf("a verdict for a setting nothing reads passed: %q", got)
+	}
+}
+
+// Each switch's field is the one the switch sets, or the default the
+// gate reads through it is some other setting's. Each is also asked.
+func TestEachSwitchSetsTheFieldItNames(t *testing.T) {
+	if len(mcpbSwitches) == 0 {
+		t.Fatal("no switch is listed; the switch rule reads nothing")
+	}
+	for name, field := range mcpbSwitches {
+		on := config.LoadFrom(func(n string) string { return map[string]string{name: "true"}[n] })
+		off := config.LoadFrom(func(n string) string { return map[string]string{name: "false"}[n] })
+		if !field(on) || field(off) {
+			t.Errorf("%s=true reads %v and =false reads %v through its field", name, field(on), field(off))
+		}
+		if !slices.Contains(mcpbAsked, name) {
+			t.Errorf("%s is a switch the bundle does not ask for", name)
+		}
+	}
+}
+
+// goModule is the module path go.mod declares. Git checks go.mod out
+// with CRLF on Windows, so the line may end in a carriage return.
+func goModule(text string) string {
+	if m := regexp.MustCompile(`(?m)^module\s+(\S+)\s*$`).FindStringSubmatch(text); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// The launcher's install hint, for a machine the bundle has no binary
+// for, names the module go.mod declares, major version included.
+func TestTheLauncherHintNamesTheModule(t *testing.T) {
+	if got := goModule("module example.test/m/v9\r\n\r\ngo 1.27\r\n"); got != "example.test/m/v9" {
+		t.Fatalf("a CRLF go.mod reads as module %q", got)
+	}
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := goModule(string(raw))
+	if module == "" {
+		t.Fatal("go.mod names no module")
+	}
+	if want := "go install " + module + "/cmd/favro-mcp@latest"; !strings.Contains(mcpbLauncherScript(), want) {
+		t.Errorf("the launcher does not say %q:\n%s", want, mcpbLauncherScript())
 	}
 }

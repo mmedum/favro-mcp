@@ -40,7 +40,7 @@ places, and the registry's `gate: true` flag is what says it belongs.
 | `live-cover` | The live driver exercises every tool and every option, or waives it with a reason. |
 | `parity` | `make check` and `ci.yml` run the same set — every prerequisite, matched by what each recipe runs rather than by target name. |
 | `plugin` | The committed `.plugin` manifest against the files the packer will stage. |
-| `mcpb` | The committed `.mcpb` manifest against the files the packer will stage, plus the release configuration that gets the bundle hashed, signed and published. |
+| `mcpb` | The committed `.mcpb` manifest against the files the packer will stage, plus the release configuration that gets the bundle hashed, signed and published. It also holds what the bundle asks for to the server's own settings: every setting the source reads is asked for or left out with a reason, a switch defaults to the server's own default, an optional key has a default, the defaults configure the server as no environment does, and `privacy_policies` is not empty. |
 | `rule8` | No tool input declares an `organization_id`. The server binds one organization at startup and Favro routes by a header, so such an input cannot select anything — `favro_get_organization` carried one, required, for the life of this server. |
 | `schema-diff` | The tool schemas against the last tag, so a breaking wire change is visible in the pull request. |
 | `smoke` | The binary driven over stdio, twice: a conversation, and an abrupt disconnect. |

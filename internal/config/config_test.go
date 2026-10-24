@@ -216,3 +216,27 @@ func TestLoadUploadDir(t *testing.T) {
 		}
 	}
 }
+
+// LoadFrom reads only the environment it is given. The bundle gate
+// loads Claude Desktop's environment through it and holds the result to
+// an empty one's, and a read that reached the process environment would
+// make that comparison depend on the shell the gate ran in.
+func TestLoadFromReadsOnlyTheEnvironmentItIsGiven(t *testing.T) {
+	t.Setenv(EnvEnableDestructive, "true")
+	t.Setenv(EnvLogLevel, "debug")
+	t.Setenv(EnvSkipValidate, "1")
+	t.Setenv(EnvUploadDir, t.TempDir())
+	t.Setenv(EnvRequirePrompt, "true")
+	t.Setenv(EnvInteractionHint, "false")
+
+	cfg := LoadFrom(func(string) string { return "" })
+	if cfg.Destructive || cfg.LogLevel != slog.LevelInfo || cfg.SkipValidate || cfg.UploadDir != "" ||
+		len(cfg.Refusals) != 0 || len(cfg.Warnings) != 0 {
+		t.Errorf("an empty environment loaded %+v", cfg)
+	}
+
+	given := map[string]string{EnvEnableDestructive: "true"}
+	if !LoadFrom(func(name string) string { return given[name] }).Destructive {
+		t.Error("LoadFrom did not read the environment it was given")
+	}
+}

@@ -8,6 +8,15 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- The Claude Desktop bundle asks for `enable_destructive`, off unless you turn it on, names Favro's privacy policy, and needs Claude Desktop 0.10.0 or later.
+
+### Changed
+- The bundle stages its files under the sibling servers' names: `server/favro-mcp-darwin`, `server/favro-mcp-linux-amd64`, `server/favro-mcp-linux-arm64` and `server/launch-linux.sh`.
+
+### Fixed
+- The bundle's upload folder defaults to empty. Without a default, the reference host passes `${user_config.upload_dir}` through as written when you leave the field blank, and the server logs that as not an absolute path.
+
 ## [4.0.0] - 2026-10-23
 
 ### Added

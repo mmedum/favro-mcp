@@ -24,6 +24,8 @@ token. See [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 Each tagged release publishes a `favro-mcp_<version>.mcpb` on the [GitHub Releases page](https://github.com/mmedum/favro-mcp/releases). Opening it installs the server into Claude Desktop and prompts for the three values it needs — your Favro email, an API token, and the organization id — so there is no config file to hand-edit.
 
+It also asks for the two settings a config file would carry. The destructive tools (`enable_destructive`) stay off unless you turn them on, and so do uploads until you pick an upload folder (`upload_dir`). This server asks nobody before a call. Claude Desktop approves each tool, and a tool you always allow then runs unasked, so leave `enable_destructive` off unless you need its tools.
+
 The bundle carries a macOS universal binary, a Windows amd64 binary, and both Linux architectures behind a launcher that picks at startup. It is listed in `checksums.txt` and covered by the release signature; see [Verifying a download](#verifying-a-download).
 
 ### Cowork plugin (recommended)
