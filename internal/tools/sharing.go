@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 	"github.com/mmedum/favro-mcp/v4/internal/favro"
 	"github.com/mmedum/favro-mcp/v4/internal/render"
 	"github.com/mmedum/favro-mcp/v4/internal/service"
@@ -261,7 +262,7 @@ func checkGroups(ctx context.Context, r *service.Resolver, tool string, groups [
 
 // widerGroup is what a refusal of a group says to do instead.
 const widerGroup = "This server shares only with groups of members. favro_widen_collection_sharing opens a " +
-	"collection past the people it is shared with, and is registered only with FAVRO_ENABLE_DESTRUCTIVE=true; " +
+	"collection past the people it is shared with, and is registered only with " + config.EnvEnableDestructive + "=true; " +
 	"the person can share with this group in Favro"
 
 // checkShape refuses an entry by its shape alone: whom it names and how,
@@ -271,7 +272,7 @@ func checkShape(tool string, g grant) error {
 	case strings.EqualFold(g.typ, "organization"):
 		return render.Errorf(render.ClassBlocked, "%s: %s shares with the whole organization; nothing was changed. "+
 			"favro_widen_collection_sharing with public_sharing: 'organization' does that, and is registered only "+
-			"with FAVRO_ENABLE_DESTRUCTIVE=true", tool, g.at)
+			"with "+config.EnvEnableDestructive+"=true", tool, g.at)
 	case g.typ != "" && !strings.EqualFold(g.typ, "user") && !g.isGroup():
 		return render.Errorf(render.ClassBlocked, "%s: %s has type %q; this server shares only with a user or a "+
 			"group. Nothing was changed", tool, g.at, g.typ)
@@ -333,7 +334,7 @@ func checkPublicSharing(tool, mode string) error {
 	case sharingOrganization, sharingPublic:
 		return render.Errorf(render.ClassBlocked, "%s: public_sharing %q opens the collection past the people "+
 			"it is shared with; nothing was changed. favro_widen_collection_sharing does that, and is registered "+
-			"only with FAVRO_ENABLE_DESTRUCTIVE=true", tool, mode)
+			"only with "+config.EnvEnableDestructive+"=true", tool, mode)
 	}
 	return render.Errorf(render.ClassBlocked, "%s: public_sharing %q is not a mode this tool sets; it sets only "+
 		"'users'. Nothing was changed", tool, mode)

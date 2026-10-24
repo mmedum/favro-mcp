@@ -20,7 +20,7 @@ space means the default.
 | `FAVRO_UPLOAD_DIR` | unset | The one directory the upload tools read files from. Unset, and they are not registered. It must be an absolute path to a directory that exists; anything else is logged at startup and leaves uploads off. See below. |
 | `FAVRO_REQUIRE_PROMPT` | removed | It refused the writes that asked the person when the client could not ask. The server asks nobody now, so the setting is gone: set to anything but `false`, the server refuses to start rather than quietly allow what it was set to stop, and `doctor` reports it. Unset it, and leave `FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody watching. |
 | `FAVRO_INTERACTION_HINT` | removed | Set to `false`, it took Claude Code's `requiresUserInteraction` mark off the writes the server asked about. The five marked tools now always carry the mark, so Claude Code prompts on every call of them and refuses them where it cannot prompt. Set to anything but `true`, it is ignored with a warning; unset it. |
-| `FAVRO_MCP_SKIP_VALIDATE` | unset | Any value but spaces skips the startup credential check. For protocol-only tests that never reach Favro. |
+| `FAVRO_MCP_SKIP_VALIDATE` | `false` | Set to `true` to skip the startup credential check, for protocol-only tests that never reach Favro. `false` and `0` keep the check; anything else is logged at startup and keeps it too. |
 
 ## Credential resolution
 

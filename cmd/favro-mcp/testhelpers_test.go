@@ -57,9 +57,9 @@ func keyringOnlyCredentials() auth.Token {
 // before resuming parallel bodies.
 func isolateCredentials(t *testing.T) {
 	t.Helper()
-	t.Setenv(auth.EnvUserEmail, "")
-	t.Setenv(auth.EnvAPIToken, "")
-	t.Setenv(auth.EnvOrganizationID, "")
+	t.Setenv(config.EnvUserEmail, "")
+	t.Setenv(config.EnvAPIToken, "")
+	t.Setenv(config.EnvOrganizationID, "")
 	keyring.MockInit()
 }
 

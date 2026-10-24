@@ -104,7 +104,7 @@ func has(problems []string, want string) bool {
 // real one passes every check the gate and the packer run, read from the
 // repository root.
 func TestCommittedManifestPasses(t *testing.T) {
-	_, _, problems, err := committedManifest(repoRoot(t))
+	_, problems, err := committedManifest(repoRoot(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,14 +163,25 @@ func TestManifestProblemsRunsEveryCheck(t *testing.T) {
 			new:  `"FAVRO_UPLOAD_DIR": "${user_config.upload_dir}", "FAVRO_UPLOAD_DIR": "${user_config.upload_dir}"`,
 			want: "has server.mcp_config.env.FAVRO_UPLOAD_DIR more than once",
 		},
+		// Go's decode matches a struct field's key in any case, so the
+		// gate reads the second command and the host the first.
 		{
-			name: "a go.mod at another major version", file: "go.mod", old: "/v4", new: "/v5",
-			want: `the launcher says "go install github.com/mmedum/favro-mcp/v4/cmd/favro-mcp@latest", ` +
-				`and go.mod's module gives "go install github.com/mmedum/favro-mcp/v5/cmd/favro-mcp@latest"`,
+			name: "a key spelled in another case", file: mcpbManifestPath,
+			old:  `"command": "${__dirname}/server/favro-mcp-darwin",`,
+			new:  `"command": "${__dirname}/server/favro-mcp-darwin", "Command": "${__dirname}/server/launch-linux.sh",`,
+			want: "has server.mcp_config.Command more than once, counting keys that differ only in case",
+		},
+		{
+			name: "a go.mod naming no module", file: "go.mod", old: "module github.com/mmedum/favro-mcp/v4",
+			new: "// no module", want: "go.mod names no module, so the launcher can say nothing of how to install",
 		},
 		{
 			name: "another license", file: "LICENSE", old: "Apache License", new: "MIT License",
 			want: `the manifest says the license is "Apache-2.0" and LICENSE is MIT`,
+		},
+		{
+			name: "a license it cannot name", file: "LICENSE", old: "Apache License", new: "Some License",
+			want: "LICENSE is neither the Apache License nor the MIT License",
 		},
 		// The archive a downstream user found missing.
 		{
@@ -196,7 +207,7 @@ func TestManifestProblemsRunsEveryCheck(t *testing.T) {
 				}
 				put(t, root, tc.file, strings.ReplaceAll(body, tc.old, tc.new))
 			}
-			_, _, problems, err := committedManifest(root)
+			_, problems, err := committedManifest(root)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -207,9 +218,11 @@ func TestManifestProblemsRunsEveryCheck(t *testing.T) {
 	}
 }
 
-// A key is repeated only within one object, and each repeated key is
-// named once, by its path, a list's elements and a repeated object's
-// own keys included.
+// A key is repeated only within one object, two that differ only in
+// case are one, and each repeated key is named once, by its path, a
+// list's elements and a repeated object's own keys included. A key a
+// path would misread is quoted, and a document the walk cannot read is
+// refused rather than passed.
 func TestRepeatedKeysNameEachPathOnce(t *testing.T) {
 	for _, tc := range []struct {
 		doc  string
@@ -218,11 +231,19 @@ func TestRepeatedKeysNameEachPathOnce(t *testing.T) {
 		{`{"a": [{"b": 1, "b": 2, "b": 3}], "c": {"d": 1}, "d": 1}`, []string{"a[0].b"}},
 		{`{"x": {"y": 1}, "x": {"y": 1, "y": 2}}`, []string{"x", "x.y"}},
 		{`{"server": {"type": "binary"}, "user_config": {"type": {"type": "boolean"}}}`, nil},
-		{`{"a": 1,`, nil},
+		{`{"server": {"command": "a", "Command": "b", "COMMAND": "c"}}`, []string{"server.Command"}},
+		// The Kelvin sign folds to k, as Go's decode folds it.
+		{`{"kind": 1, "\u212aind": 2}`, []string{"\u212aind"}},
+		{`{"env": {"a.b": 1, "a.b": 2}, "c[0]": 1, "c[0]": 2}`, []string{`env["a.b"]`, `["c[0]"]`}},
+		{`{"env": {"a": {"b": 1}, "a.b": 1}}`, nil},
 	} {
-		if got := repeatedKeys([]byte(tc.doc)); !slices.Equal(got, tc.want) {
-			t.Errorf("repeatedKeys(%s) = %q, want %q", tc.doc, got, tc.want)
+		got, err := repeatedKeys([]byte(tc.doc))
+		if err != nil || !slices.Equal(got, tc.want) {
+			t.Errorf("repeatedKeys(%s) = %q, %v; want %q", tc.doc, got, err, tc.want)
 		}
+	}
+	if got, err := repeatedKeys([]byte(`{"a": 1,`)); err == nil {
+		t.Errorf("a document cut short gives %q and no error", got)
 	}
 }
 
@@ -347,11 +368,11 @@ func TestUndeclaredUserConfigReferenceIsCaught(t *testing.T) {
 // no manifest mentions, so every other check here passes while it
 // dispatches to a name nothing stages.
 func TestLauncherNamesWhatThePackerStages(t *testing.T) {
-	if problems := mcpbLauncherAgrees(); len(problems) > 0 {
+	script := mcpbLauncherScript("example.test/m")
+	if problems := mcpbLauncherAgrees(script); len(problems) > 0 {
 		t.Errorf("the generated launcher disagrees with the packer:\n%s", strings.Join(problems, "\n"))
 	}
 
-	script := mcpbLauncherScript()
 	staged := mcpbStaged()
 	for _, b := range mcpbBinaries {
 		if len(b.uname) == 0 {
@@ -744,7 +765,11 @@ func TestTheIdentityRefusesEachBreak(t *testing.T) {
 // succeeds, make check passes, and the bundle ships outside the
 // signature while README says it is covered.
 func TestReleaseWiringIsHeld(t *testing.T) {
-	whole, err := goreleaserBlocks(repoRoot(t))
+	release, err := goreleaserText(repoRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	whole, err := goreleaserBlocks(release)
 	if err != nil {
 		t.Fatalf("goreleaserBlocks: %v", err)
 	}
@@ -773,11 +798,15 @@ func TestReleaseWiringIsHeld(t *testing.T) {
 	}
 }
 
-// The release carries the family's six archives: darwin, linux and
-// windows, each on amd64 and arm64. A downstream user found the
-// windows_arm64 one missing, because .goreleaser.yaml ignored the pair.
-func TestReleaseArchivesAreTheFamilysSix(t *testing.T) {
-	built, err := goreleaserMatrix(repoRoot(t))
+// The release carries the family's archives, releaseMatrix, both ways.
+// A downstream user found the windows_arm64 one missing, because
+// .goreleaser.yaml ignored the pair.
+func TestReleaseArchivesAreTheFamilys(t *testing.T) {
+	release, err := goreleaserText(repoRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	built, err := goreleaserMatrix(release)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -786,12 +815,58 @@ func TestReleaseArchivesAreTheFamilysSix(t *testing.T) {
 	}
 	short := slices.DeleteFunc(slices.Clone(built), func(p string) bool { return p == "windows-arm64" })
 	want := []string{".goreleaser.yaml does not build windows-arm64, so the release carries no windows_arm64 " +
-		"archive; the family's releases carry six, darwin, linux and windows on amd64 and arm64 each"}
+		"archive; the family's releases carry darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, " +
+		"windows-amd64, windows-arm64"}
 	if got := releaseArchiveProblems(short); !slices.Equal(got, want) {
 		t.Errorf("a matrix without windows-arm64 gives %q, want %q", got, want)
 	}
-	if got := releaseArchiveProblems(nil); len(got) != 6 {
-		t.Errorf("an empty matrix gives %d problems, want 6: %q", len(got), got)
+	if got := releaseArchiveProblems(nil); len(got) != len(releaseMatrix) {
+		t.Errorf("an empty matrix gives %d problems, want one per pair: %q", len(got), got)
+	}
+	beyond := append(slices.Clone(built), "freebsd-amd64")
+	want = []string{".goreleaser.yaml builds freebsd-amd64, which is not one of the family's archives, " +
+		"darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, windows-amd64, windows-arm64"}
+	if got := releaseArchiveProblems(beyond); !slices.Equal(got, want) {
+		t.Errorf("a matrix with freebsd-amd64 gives %q, want %q", got, want)
+	}
+}
+
+// Every pair the release builds runs a binary the Desktop bundle stages:
+// its own, the universal one on macOS, or the one releaseMatrix says it
+// runs under emulation, which is the plugin gate's table too.
+func TestTheDesktopBundleRunsOnEveryPair(t *testing.T) {
+	if got := mcpbMatrixProblems(mcpbBinaries); len(got) > 0 {
+		t.Fatalf("the committed table: %q", got)
+	}
+	without := func(drop func(mcpbBinary) bool) []mcpbBinary {
+		return slices.DeleteFunc(slices.Clone(mcpbBinaries), drop)
+	}
+	for _, tc := range []struct {
+		name     string
+		binaries []mcpbBinary
+		want     []string
+	}{
+		{"no universal binary", without(func(b mcpbBinary) bool { return b.universal }), []string{
+			"the release builds darwin-amd64 and the Desktop bundle stages no binary that runs there",
+			"the release builds darwin-arm64 and the Desktop bundle stages no binary that runs there",
+		}},
+		// windows-arm64 runs it, so it goes too.
+		{"no windows binary", without(func(b mcpbBinary) bool { return b.goarch == "windows-amd64" }), []string{
+			"the release builds windows-amd64 and the Desktop bundle stages no binary that runs there",
+			"the release builds windows-arm64 and the Desktop bundle stages no binary that runs there",
+		}},
+	} {
+		if got := mcpbMatrixProblems(tc.binaries); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	// And the gate runs it: a table without the universal binary fails
+	// releaseProblems, which committedManifest runs.
+	saved := mcpbBinaries
+	t.Cleanup(func() { mcpbBinaries = saved })
+	mcpbBinaries = without(func(b mcpbBinary) bool { return b.universal })
+	if got := releaseProblems(repoRoot(t)); !has(got, "the release builds darwin-amd64 and the Desktop bundle stages no binary") {
+		t.Errorf("releaseProblems without the universal binary: %q", got)
 	}
 }
 
@@ -1015,6 +1090,26 @@ func TestTheBundleSettingsAreHeld(t *testing.T) {
 			"an empty override args", func(d map[string]any) { override(d, "linux")["args"] = []any{} },
 			"platform_overrides.linux.args is set; a host replaces mcp_config.args with it, an empty one too",
 		},
+		{
+			"a credential shown as plain text", func(d map[string]any) { delete(userConfig(d, "api_token"), "sensitive") },
+			"user_config.api_token is not sensitive; FAVRO_API_TOKEN is a credential",
+		},
+		{
+			"a required switch", func(d map[string]any) { userConfig(d, "enable_destructive")["required"] = true },
+			"user_config.enable_destructive is required; FAVRO_ENABLE_DESTRUCTIVE is a switch",
+		},
+		// The defaults check leaves out a required key with no default,
+		// so this one is held by the rule alone.
+		{"a required switch with no default", func(d map[string]any) {
+			userConfig(d, "enable_destructive")["required"] = true
+			delete(userConfig(d, "enable_destructive"), "default")
+		}, "user_config.enable_destructive is required; FAVRO_ENABLE_DESTRUCTIVE is a switch"},
+		// The server does not load the credentials, so the defaults check
+		// starts it the same either way.
+		{
+			"a default holding a host variable", func(d map[string]any) { userConfig(d, "user_email")["default"] = "${HOME}" },
+			`user_config.user_email defaults to "${HOME}", which holds a ${...} reference`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := settingProblems(edited(t, tc.edit), bundleLeftOut); !has(got, tc.want) {
@@ -1062,6 +1157,13 @@ func TestBundleVarsAreDerivedFromTheSettings(t *testing.T) {
 		"bundleLeftOut names FAVRO_GONE") {
 		t.Errorf("settingProblems does not report a stale exclusion: %q", got)
 	}
+	// A bundle asking for no secret holds no field to sensitive, which is
+	// reported rather than passed.
+	noToken := map[string]string{config.EnvAPIToken: "a reason"}
+	if got := settingProblems(committed(t), noToken); !has(got,
+		"the bundle asks for no variable config.Vars marks secret") {
+		t.Errorf("a bundle asking for no secret gives %q", got)
+	}
 }
 
 // fieldDiff names the fields two values disagree on, an unexported one
@@ -1082,10 +1184,21 @@ func TestTheConfigDiffNamesTheFieldsThatDiffer(t *testing.T) {
 		{cfg{1, 2, nil, nil}, []string{"hidden"}},
 		{cfg{1, 1, []string{"x"}, nil}, []string{"an unexported field"}},
 		{cfg{1, 1, nil, nil}, nil},
+		// Reported whatever else differs, not only alone.
+		{cfg{2, 2, []string{"x"}, nil}, []string{"Shown", "hidden", "an unexported field"}},
 	} {
 		if got := fieldDiff(cfg{1, 1, nil, nil}, tc.b); !slices.Equal(got, tc.want) {
 			t.Errorf("fieldDiff against %+v = %q, want %q", tc.b, got, tc.want)
 		}
+	}
+	// A pointer compares by what it points at, not by its address.
+	type pointing struct{ at *int }
+	one, alsoOne, two := 1, 1, 2
+	if got := fieldDiff(pointing{&one}, pointing{&alsoOne}); len(got) != 0 {
+		t.Errorf("two pointers to equal values give %q, want nothing", got)
+	}
+	if got := fieldDiff(pointing{&one}, pointing{&two}); !slices.Equal(got, []string{"an unexported field"}) {
+		t.Errorf("two pointers to different values give %q, want [an unexported field]", got)
 	}
 	// An interface holding a slice on both sides compares as a type and
 	// panics in Value.Equal; it is reported unnamed instead.
@@ -1237,37 +1350,65 @@ func TestSettingProblemsHoldTheRefusals(t *testing.T) {
 }
 
 // The launcher's install hint, for a machine the bundle has no binary
-// for, names the module go.mod declares, major version included, and
-// goModule reads go.mod under Windows line endings too.
-func TestTheLauncherHintNamesTheModule(t *testing.T) {
-	if got := goModule("module example.test/m/v9\r\n\r\ngo 1.27\r\n"); got != "example.test/m/v9" {
-		t.Fatalf("a CRLF go.mod reads as module %q", got)
+// for, names the module go.mod declares, major version included, so a
+// new major version cannot leave it behind.
+func TestTheLauncherHintIsGoModsModule(t *testing.T) {
+	const hint = `"Install with: go install example.test/m/v9/cmd/favro-mcp@latest" >&2`
+	if script := mcpbLauncherScript("example.test/m/v9"); !strings.Contains(script, hint) {
+		t.Errorf("the launcher for example.test/m/v9 does not say %s:\n%s", hint, script)
 	}
-	module := goModule(string(repoFile(t, "go.mod")))
-	if problems := installHintProblems(mcpbLauncherScript(), module); len(problems) > 0 {
-		t.Errorf("the committed launcher: %q", problems)
+	root := copiedRoot(t)
+	put(t, root, "go.mod", strings.ReplaceAll(string(repoFile(t, "go.mod")), "/v4", "/v5"))
+	b, problems, err := committedManifest(root)
+	if err != nil || len(problems) > 0 {
+		t.Fatalf("a go.mod at the next major version: %q, %v", problems, err)
 	}
-	if got := installHintProblems("echo no hint", module); !slices.Equal(got,
-		[]string{"the launcher gives no install hint for an architecture the bundle does not carry"}) {
-		t.Errorf("a launcher with no hint gives %q", got)
-	}
-	if got := installHintProblems(mcpbLauncherScript(), ""); len(got) != 1 {
-		t.Errorf("a go.mod naming no module gives %q", got)
+	if want := "go install github.com/mmedum/favro-mcp/v5/cmd/favro-mcp@latest"; !strings.Contains(b.launcher, want) {
+		t.Errorf("the launcher committedManifest generates does not say %s", want)
 	}
 }
 
-// The license the manifest names is the one LICENSE carries.
+// modulePath reads the path after module and a space or a tab, without a
+// trailing comment or quotes, under Windows line endings too, and refuses
+// a go.mod that names none.
+func TestModulePathReadsGoMod(t *testing.T) {
+	for _, tc := range []struct{ goMod, module, err string }{
+		{"module example.test/m/v9\n\ngo 1.27\n", "example.test/m/v9", ""},
+		{"module example.test/m/v9\r\n\r\ngo 1.27\r\n", "example.test/m/v9", ""},
+		{"module\texample.test/m // the server\r\n", "example.test/m", ""},
+		{"// module example.test/old\nmodule \"example.test/q\"\n", "example.test/q", ""},
+		{"modules example.test/m\ngo 1.27\n", "", "go.mod names no module"},
+	} {
+		root := t.TempDir()
+		put(t, root, "go.mod", tc.goMod)
+		module, err := modulePath(root)
+		refused := ""
+		if err != nil {
+			refused = err.Error()
+		}
+		if module != tc.module || refused != tc.err {
+			t.Errorf("go.mod %q: modulePath = %q, %q; want %q, %q", tc.goMod, module, refused, tc.module, tc.err)
+		}
+	}
+}
+
+// The license the manifest names is the one LICENSE carries, and one it
+// cannot name is refused rather than holding the manifest to nothing.
 func TestLicenseOfReadsTheLicense(t *testing.T) {
 	for _, tc := range []struct{ text, want string }{
 		{"                                 Apache License\n", "Apache-2.0"},
 		{"MIT License\r\n", "MIT"},
-		{"Some other terms\n", ""},
 	} {
 		root := t.TempDir()
 		put(t, root, "LICENSE", tc.text)
 		if got, err := licenseOf(root); err != nil || got != tc.want {
 			t.Errorf("licenseOf(%q) = %q, %v; want %q", tc.text, got, err, tc.want)
 		}
+	}
+	root := t.TempDir()
+	put(t, root, "LICENSE", "Some other terms\n")
+	if got, err := licenseOf(root); err == nil {
+		t.Errorf("a license it cannot name reads as %q", got)
 	}
 	if _, err := licenseOf(t.TempDir()); err == nil {
 		t.Error("a root with no LICENSE gave no error")

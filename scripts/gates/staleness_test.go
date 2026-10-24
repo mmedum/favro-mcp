@@ -236,6 +236,23 @@ func TestEveryEnvNameReachesBothDocuments(t *testing.T) {
 			"a variable the server does not read", "`FAVRO_UPLOAD_DIR` |", "`FAVRO_UPLOAD_DIR` and `FAVRO_UPLOAD_DIRS` |",
 			[]string{"docs/configuration.md documents FAVRO_UPLOAD_DIRS, which the server does not read"},
 		},
+		// Whole on both sides, case included: a letter of either case
+		// before or after a name makes it another word.
+		{
+			"a name with a lowercase letter after it", "`FAVRO_LOG_LEVEL`", "`FAVRO_LOG_LEVELs`",
+			[]string{"docs/configuration.md does not document FAVRO_LOG_LEVEL"},
+		},
+		{
+			"a name with a lowercase letter before it", "`FAVRO_LOG_LEVEL`", "`xFAVRO_LOG_LEVEL`",
+			[]string{"docs/configuration.md does not document FAVRO_LOG_LEVEL"},
+		},
+		// A name followed by * is a pattern, which documents no variable
+		// and names none the server does not read.
+		{"a pattern", "`FAVRO_UPLOAD_DIR` |", "`FAVRO_UPLOAD_DIR` and `FAVRO_UPLOAD_*` |", nil},
+		{
+			"a name given only as a pattern", "`FAVRO_LOG_LEVEL`", "`FAVRO_LOG_LEVEL*`",
+			[]string{"docs/configuration.md does not document FAVRO_LOG_LEVEL"},
+		},
 	} {
 		if strings.Count(configuration, tc.old) == 0 {
 			t.Fatalf("%s: the page does not say %q", tc.name, tc.old)
@@ -248,5 +265,48 @@ func TestEveryEnvNameReachesBothDocuments(t *testing.T) {
 	if got := envDocumented(vars, strings.ReplaceAll(readme, "FAVRO_UPLOAD_DIR", "FAVRO_UPLOAD_DIRECTORY"),
 		configuration); !slices.Equal(got, []string{"README.md does not document FAVRO_UPLOAD_DIR"}) {
 		t.Errorf("a README naming only a longer name gives %q", got)
+	}
+}
+
+// The README's plugin section names every directory the plugin stages a
+// binary under, and says which pair runs another's under emulation, from
+// the tables the plugin gate reads. A README without the section is
+// reported, not passed.
+func TestThePluginSectionNamesWhatThePluginStages(t *testing.T) {
+	root, err := moduleRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if got := pluginPlatformsDocumented(readme); len(got) != 0 {
+		t.Fatalf("the committed README: %q", got)
+	}
+	for _, tc := range []struct {
+		name, old, new string
+		want           []string
+	}{
+		{
+			"a staged directory left out", "linux-arm64 and ", "and ",
+			[]string{"README.md's plugin section does not name linux-arm64, which the plugin stages"},
+		},
+		{
+			"no word of emulation", "under emulation", "natively",
+			[]string{"README.md's plugin section does not say that windows-arm64 runs the windows-amd64 binary under emulation"},
+		},
+		{
+			"no section", "### Cowork plugin", "### Plugin",
+			[]string{"README.md has no ### Cowork plugin section, so nothing says what the plugin carries"},
+		},
+	} {
+		if !strings.Contains(readme, tc.old) {
+			t.Fatalf("%s: the README does not say %q", tc.name, tc.old)
+		}
+		if got := pluginPlatformsDocumented(strings.Replace(readme, tc.old, tc.new, 1)); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

@@ -1,11 +1,11 @@
 // Package config is every FAVRO_* setting the process reads, resolved
 // once at startup and validated before anything uses it.
 //
-// Credentials are not resolved here: those resolve through internal/auth,
-// which checks the environment and then the OS keyring and reports which
-// one won. Their names are here, and auth reads them through Lookup. What
-// Load resolves is the settings that change how the server behaves
-// rather than who it runs as — and every one of them is read in exactly
+// Credentials are read here and resolved elsewhere: CredentialsFrom reads
+// them from the environment, and internal/auth, which imports nothing of
+// the server's, is handed them and puts the OS keyring behind them. What
+// LoadFrom resolves is the settings that change how the server behaves
+// rather than who it runs as — and every variable is read in exactly
 // one place, so "what does this variable do" has a single answer.
 package config
 
@@ -22,17 +22,14 @@ import (
 // EnvPrefix starts the name of every variable the server reads.
 const EnvPrefix = "FAVRO_"
 
-// The credentials. internal/auth reads them, through Lookup, rather than
-// Load; they are named here so that Vars lists every variable the server
-// reads and the bundle gate imports no keyring.
+// The credentials, which CredentialsFrom reads rather than LoadFrom, so
+// that Vars lists every variable the server reads and the bundle gate
+// imports no keyring.
 const (
 	EnvUserEmail      = "FAVRO_USER_EMAIL"
 	EnvAPIToken       = "FAVRO_API_TOKEN" //nolint:gosec // env var name, not a credential value
 	EnvOrganizationID = "FAVRO_ORGANIZATION_ID"
 )
-
-// envOnly is every variable read outside Load, for Vars.
-var envOnly = []string{EnvUserEmail, EnvAPIToken, EnvOrganizationID}
 
 // Environment variable names. Exported so that --help, the README
 // staleness gate and the tests all name the same strings rather than
@@ -42,9 +39,9 @@ const (
 	// error. Case-insensitive.
 	EnvLogLevel = "FAVRO_LOG_LEVEL"
 
-	// EnvSkipValidate, set to anything but spaces, suppresses the
-	// startup live-validation call. Lets protocol-only integration
-	// tests exercise the MCP surface without contacting Favro.
+	// EnvSkipValidate, set to true, suppresses the startup
+	// live-validation call. Lets protocol-only integration tests
+	// exercise the MCP surface without contacting Favro.
 	EnvSkipValidate = "FAVRO_MCP_SKIP_VALIDATE"
 
 	// EnvEnableDestructive registers the delete-style tools. Unset —
@@ -106,26 +103,49 @@ type Config struct {
 	Warnings []string
 }
 
-// Load reads the environment. It never fails: a value this package
-// cannot read falls back to the safe default and is described in
-// Warnings, so the caller can say so once a logger exists. A removed
-// setting still turned on is described in Refusals, and the server
-// refuses to start on it; the other commands still run.
+// LoadFrom reads the environment getenv describes: os.Getenv for the
+// server, and for the bundle gate the environment Claude Desktop builds
+// from the manifest's defaults, which it holds to an empty one's. It
+// never fails: a value this package cannot read falls back to the safe
+// default and is described in Warnings, so the caller can say so once a
+// logger exists. A removed setting still turned on is described in
+// Refusals, and the server refuses to start on it; the other commands
+// still run.
 //
 // Nothing here reads a flag, because the flags that exist (--dry-run,
 // --version, --dump-schemas) are a different kind of thing: they select
 // what the process does rather than configure how it does it, and
 // cmd/favro-mcp parses them where it dispatches on them.
-func Load() Config {
-	return LoadFrom(os.Getenv)
-}
-
-// LoadFrom is Load over the environment getenv describes. The bundle
-// gate loads the environment Claude Desktop builds from the manifest's
-// defaults through it, and holds the result to an empty environment's.
 func LoadFrom(getenv func(string) string) Config {
 	cfg, _ := load(getenv)
 	return cfg
+}
+
+// Credentials is the three credentials as an environment sets them.
+type Credentials struct {
+	Email, APIToken, OrganizationID string
+}
+
+// CredentialsFrom reads the credentials from the environment getenv
+// describes, each through Lookup. internal/auth resolves them, with the
+// keyring behind them, and imports nothing of the server's, so its
+// callers read them here and hand them over.
+func CredentialsFrom(getenv func(string) string) Credentials {
+	c, _ := credentials(getenv)
+	return c
+}
+
+// credentials is CredentialsFrom, and every variable it read, in order.
+func credentials(getenv func(string) string) (Credentials, []Var) {
+	var vars []Var
+	read := func(v Var) string {
+		vars = append(vars, v)
+		return Lookup(getenv, v.Name)
+	}
+	email := read(Var{Name: EnvUserEmail})
+	token := read(Var{Name: EnvAPIToken, Secret: true})
+	org := read(Var{Name: EnvOrganizationID})
+	return Credentials{Email: email, APIToken: token, OrganizationID: org}, vars
 }
 
 // Var is one variable the server reads.
@@ -137,27 +157,32 @@ type Var struct {
 	// Removed marks a setting a release took out, read only to refuse
 	// or warn a configuration that still sets it.
 	Removed bool
+	// Secret marks a credential, which a form asking for it must not
+	// show: the bundle gate holds its field to sensitive.
+	Secret bool
 }
 
 // Lookup is the value env gives the variable name, without the spaces
 // around it. Spaces alone are "", unset as an empty variable is, so a
 // form field cleared to a space means the default rather than a value
-// the server cannot read. Load reads every setting through it, and so
-// does each reader of a variable outside Load.
+// the server cannot read. LoadFrom and CredentialsFrom read every
+// variable through it, and so does doctor's report of where a value
+// came from.
 func Lookup(env func(string) string, name string) string {
 	return strings.TrimSpace(env(name))
 }
 
-// Vars is every variable the server reads, sorted by name: Load's, the
-// removed ones included, and the ones read outside it. Load's are
-// recorded as it reads them rather than listed, so they cannot fall
-// behind. The bundle and staleness gates derive what they hold from
-// these.
+// Vars is every variable the server reads, sorted by name: LoadFrom's,
+// the removed ones included, and the credentials. Each is recorded as
+// its reader reads it rather than listed, so none can fall behind. The
+// bundle and staleness gates derive what they hold from these.
+//
+// The record is of what each reader reads from an empty environment. A
+// variable read only when another is set would escape it; none is, and
+// the scan of the code for FAVRO_ names is the backstop.
 func Vars() []Var {
-	vars := defined()
-	for _, name := range envOnly {
-		vars = append(vars, Var{Name: name})
-	}
+	_, creds := credentials(func(string) string { return "" })
+	vars := append(defined(), creds...)
 	slices.SortFunc(vars, func(a, b Var) int { return strings.Compare(a.Name, b.Name) })
 	return vars
 }
@@ -174,7 +199,7 @@ func EnvVars() []string {
 	return names
 }
 
-// defined is every variable Load reads, in the order it reads them.
+// defined is every variable LoadFrom reads, in the order it reads them.
 func defined() []Var {
 	_, vars := load(func(string) string { return "" })
 	return vars
@@ -197,22 +222,10 @@ func load(getenv func(string) string) (Config, []Var) {
 			fmt.Sprintf("unrecognized %s %q — falling back to info", EnvLogLevel, raw))
 	}
 
-	cfg.SkipValidate = read(Var{Name: EnvSkipValidate}) != ""
-
-	// Anything Go cannot read as a bool, and anything absent, means
-	// off: a typo in the variable that enables deletes must not enable
-	// deletes.
-	if raw := read(Var{Name: EnvEnableDestructive, Switch: true}); raw != "" {
-		on, err := strconv.ParseBool(raw)
-		switch {
-		case err != nil:
-			cfg.Warnings = append(cfg.Warnings,
-				fmt.Sprintf("ignoring unreadable %s %q — delete-style tools stay unregistered; set it to true or false",
-					EnvEnableDestructive, raw))
-		default:
-			cfg.Destructive = on
-		}
-	}
+	cfg.SkipValidate = cfg.readSwitch(EnvSkipValidate, read(Var{Name: EnvSkipValidate, Switch: true}),
+		"the credentials are checked at startup")
+	cfg.Destructive = cfg.readSwitch(EnvEnableDestructive, read(Var{Name: EnvEnableDestructive, Switch: true}),
+		"delete-style tools stay unregistered")
 
 	cfg.readRemoved(func(name string) string { return read(Var{Name: name, Removed: true}) })
 
@@ -228,6 +241,24 @@ func load(getenv func(string) string) (Config, []Var) {
 	}
 
 	return cfg, vars
+}
+
+// readSwitch is a switch's value, raw as Lookup read it: what
+// strconv.ParseBool reads it as, and off when it is unset. Anything else
+// is off too, and described in Warnings with what off means: a typo in
+// the variable that enables deletes must not enable deletes, and one in
+// the variable that skips the credential check must not skip it.
+func (cfg *Config) readSwitch(name, raw, off string) bool {
+	if raw == "" {
+		return false
+	}
+	on, err := strconv.ParseBool(raw)
+	if err != nil {
+		cfg.Warnings = append(cfg.Warnings,
+			fmt.Sprintf("ignoring unreadable %s %q — %s; set it to true or false", name, raw, off))
+		return false
+	}
+	return on
 }
 
 // readRemoved describes the settings a release took out that the

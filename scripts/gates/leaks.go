@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 // leaks is the confidentiality gate: nothing that identifies a Favro
@@ -69,11 +71,12 @@ var (
 	// is code, not data, and reporting it is how a gate teaches people
 	// to skim past its output.
 	keyedID = regexp.MustCompile(`(?i)\b(organization[_-]?id|organizationId)\b["']?\s*[:=]\s*"([A-Za-z0-9_\-]{8,})"`)
-	envID   = regexp.MustCompile(`\bFAVRO_ORGANIZATION_ID\s*=\s*["']?([A-Za-z0-9_\-]{8,})`)
+	envID   = regexp.MustCompile(`\b` + regexp.QuoteMeta(config.EnvOrganizationID) + `\s*=\s*["']?([A-Za-z0-9_\-]{8,})`)
 
 	// A credential, by the same construction.
-	keyedToken = regexp.MustCompile(`(?i)\b(FAVRO_API_TOKEN|api[_-]?token|favro[_-]?token)\b["']?\s*[:=]\s*"([A-Za-z0-9._\-]{16,})"`)
-	envToken   = regexp.MustCompile(`\bFAVRO_API_TOKEN\s*=\s*["']?([A-Za-z0-9._\-]{16,})`)
+	keyedToken = regexp.MustCompile(`(?i)\b(` + regexp.QuoteMeta(config.EnvAPIToken) +
+		`|api[_-]?token|favro[_-]?token)\b["']?\s*[:=]\s*"([A-Za-z0-9._\-]{16,})"`)
+	envToken = regexp.MustCompile(`\b` + regexp.QuoteMeta(config.EnvAPIToken) + `\s*=\s*["']?([A-Za-z0-9._\-]{16,})`)
 
 	// A link out of the Favro app, which carries ids in its path. The
 	// bare host is allowed and has to be: the client's base URL names
@@ -271,7 +274,7 @@ func findLeaks(text string) []string {
 	}
 	for _, m := range envID.FindAllStringSubmatch(text, -1) {
 		if !inventedID(m[1]) {
-			out = append(out, "an organization id: FAVRO_ORGANIZATION_ID = "+clipValue(m[1]))
+			out = append(out, "an organization id: "+config.EnvOrganizationID+" = "+clipValue(m[1]))
 		}
 	}
 	for _, m := range keyedToken.FindAllStringSubmatch(text, -1) {
@@ -281,7 +284,7 @@ func findLeaks(text string) []string {
 	}
 	for _, m := range envToken.FindAllStringSubmatch(text, -1) {
 		if !invented(m[1]) {
-			out = append(out, "an API token: FAVRO_API_TOKEN = "+clipValue(m[1]))
+			out = append(out, "an API token: "+config.EnvAPIToken+" = "+clipValue(m[1]))
 		}
 	}
 	if m := appURL.FindString(text); m != "" {

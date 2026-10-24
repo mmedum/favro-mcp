@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/mmedum/favro-mcp/v4/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 	"github.com/mmedum/favro-mcp/v4/internal/livecover"
 	"github.com/mmedum/favro-mcp/v4/internal/redact"
 )
@@ -65,7 +66,9 @@ func main() {
 	// The account the server signs in as, read where the server reads
 	// it: the environment, then the keyring. The share steps name its
 	// userId, and its credentials are redacted literally.
-	signedIn, err := auth.ResolveDefault(context.Background())
+	c := config.CredentialsFrom(os.Getenv)
+	signedIn, err := auth.ResolveDefault(context.Background(),
+		auth.Token{Email: c.Email, APIToken: c.APIToken, OrganizationID: c.OrganizationID})
 	if err != nil {
 		fatal(fmt.Errorf("reading the credentials the server signs in with: %w", err))
 	}
@@ -115,7 +118,7 @@ func run(bin, only string, verbose, writes bool, signedIn auth.Token) (err error
 	// Destructive tools are registered so their dry-run paths can be
 	// exercised. -writes is the one mode that writes, and runWrites says
 	// what.
-	env := []string{"FAVRO_ENABLE_DESTRUCTIVE=true", "FAVRO_UPLOAD_DIR=" + uploadDir}
+	env := []string{config.EnvEnableDestructive + "=true", config.EnvUploadDir + "=" + uploadDir}
 	if writes {
 		return runWrites(lc, bin, env, out, red)
 	}

@@ -90,10 +90,10 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) err
 //
 // The order is the whole reason this returns a Config rather than
 // logging what it found: the log level is one of the settings, so
-// anything config.Load could not read has to be warned about after the
+// anything config.LoadFrom could not read has to be warned about after the
 // handler exists, not while it is being chosen.
 func configureLogging(stderr io.Writer) config.Config {
-	cfg := config.Load()
+	cfg := config.LoadFrom(os.Getenv)
 	slog.SetDefault(slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel})))
 	for _, w := range cfg.Warnings {
 		// gosec G706 flags env values flowing into log output, but env
@@ -147,7 +147,7 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	rt, err := auth.ResolveDefault(ctx)
+	rt, err := auth.ResolveDefault(ctx, envCredentials())
 	if err != nil {
 		slog.Error("could not resolve Favro credentials",
 			"hint", missingCredsHint(),
@@ -168,12 +168,12 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 	if !cfg.SkipValidate {
 		v := auth.DefaultValidator()
 		if err := v.Validate(ctx, rt.Token); err != nil {
-			slog.Error("Favro credentials rejected at startup", "error", err)
+			slog.Error("Favro credentials rejected at startup", rejectedAttrs(err)...)
 			return err
 		}
 		slog.Debug("startup credentials validated against Favro")
 	} else {
-		slog.Warn(config.EnvSkipValidate + " is set — startup live validation disabled")
+		slog.Warn(config.EnvSkipValidate + " is on — startup live validation disabled")
 	}
 
 	client := favroapi.NewClient(rt.Token)
@@ -292,15 +292,35 @@ Environment:
   %s           Favro API token (Basic Auth password).
   %s     Favro organization id; the server is single-org.
   %s           debug | info | warn | error  (default: info)
-  %s   When set, skip the startup /organizations ping.
+  %s   Set to true to skip the startup /organizations ping.
   %s  Set to true to register the destructive tools (default: off).
-`, auth.EnvUserEmail, auth.EnvAPIToken, auth.EnvOrganizationID,
+`, config.EnvUserEmail, config.EnvAPIToken, config.EnvOrganizationID,
 		config.EnvLogLevel, config.EnvSkipValidate, config.EnvEnableDestructive)
+}
+
+// rejectedAttrs is what the startup log says of a failed validation:
+// the error, and when Favro refused the credentials, what to check.
+// auth names no variable, since it imports nothing of the server's.
+func rejectedAttrs(err error) []any {
+	attrs := []any{"error", err}
+	if errors.Is(err, auth.ErrAuthFailed) {
+		attrs = append(attrs, "hint", "check "+config.EnvUserEmail+" and "+config.EnvAPIToken+
+			", or run `favro-mcp auth login` again")
+	}
+	return attrs
+}
+
+// envCredentials is the credentials this process's environment sets,
+// read as every variable is, for auth to resolve with the keyring behind
+// them.
+func envCredentials() auth.Token {
+	c := config.CredentialsFrom(os.Getenv)
+	return auth.Token{Email: c.Email, APIToken: c.APIToken, OrganizationID: c.OrganizationID}
 }
 
 // missingCredsHint is the canonical "tell the user what to do next"
 // string when no Favro credentials resolve. Centralized so cmd/auth.go
 // and the runServer error path don't drift apart.
 func missingCredsHint() string {
-	return "set " + auth.EnvUserEmail + " / " + auth.EnvAPIToken + " / " + auth.EnvOrganizationID + ", or run `favro-mcp auth login`"
+	return "set " + config.EnvUserEmail + " / " + config.EnvAPIToken + " / " + config.EnvOrganizationID + ", or run `favro-mcp auth login`"
 }

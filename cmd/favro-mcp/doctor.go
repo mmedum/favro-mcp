@@ -102,7 +102,7 @@ func doctorReport(ctx context.Context, cfg config.Config, w io.Writer, showIDs b
 	// which destroys the property this report is built on, that the
 	// same value reads as the same placeholder throughout. A binding
 	// failure has to be able to say {id 1} is not {id 2}.
-	rt, resolveErr := auth.ResolveDefault(ctx)
+	rt, resolveErr := auth.ResolveDefault(ctx, envCredentials())
 	tok := rt.Token
 
 	// The token goes in as a secret and the identifiers are registered,
@@ -299,7 +299,7 @@ func apiChecks(ctx context.Context, rt auth.ResolvedToken, resolveErr error, bas
 			statusFail, "organization binding",
 			fmt.Sprintf("%s is not among the %d this token can see (%s) — %s names the wrong organization; "+
 				"re-run with --show-ids to see which id to use",
-				rt.Token.OrganizationID, len(ids), strings.Join(ids, ", "), auth.EnvOrganizationID),
+				rt.Token.OrganizationID, len(ids), strings.Join(ids, ", "), config.EnvOrganizationID),
 		})
 	}
 	if page.HasNextPage() {
@@ -329,9 +329,9 @@ func settingChecks(cfg config.Config) []check {
 	}
 	out = append(out, destructive)
 
-	skip := check{statusOK, config.EnvSkipValidate, "unset — credentials are checked at startup"}
+	skip := check{statusOK, config.EnvSkipValidate, "off — credentials are checked at startup"}
 	if cfg.SkipValidate {
-		skip = check{statusWarn, config.EnvSkipValidate, "set — startup credential validation is disabled"}
+		skip = check{statusWarn, config.EnvSkipValidate, "on — startup credential validation is disabled"}
 	}
 	out = append(out, skip)
 
@@ -339,7 +339,7 @@ func settingChecks(cfg config.Config) []check {
 	for _, refusal := range cfg.Refusals {
 		out = append(out, check{statusFail, "configuration", refusal})
 	}
-	// Anything config.Load could not read. These are already warned at
+	// Anything config.LoadFrom could not read. These are already warned at
 	// startup, where nobody filing an issue was looking.
 	for _, warning := range cfg.Warnings {
 		out = append(out, check{statusWarn, "configuration", warning})

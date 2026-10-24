@@ -24,11 +24,12 @@ import (
 // the credentials this process holds; a card NAME is ordinary words and
 // survives. Do not commit a transcript. Each credential is read as the
 // server reads it, without the spaces around it.
-var out = newPrinter(redact.New(
-	config.Lookup(os.Getenv, config.EnvUserEmail),
-	config.Lookup(os.Getenv, config.EnvAPIToken),
-	config.Lookup(os.Getenv, config.EnvOrganizationID),
-))
+var out = newPrinter(redactCredentials(config.CredentialsFrom(os.Getenv)))
+
+// redactCredentials is a Redactor holding the credentials c.
+func redactCredentials(c config.Credentials) *redact.Redactor {
+	return redact.New(c.Email, c.APIToken, c.OrganizationID)
+}
 
 type printer struct {
 	red *redact.Redactor

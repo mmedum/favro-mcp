@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 // The sandbox's names. Everything a run touches is something it made,
@@ -63,7 +65,7 @@ func run() error {
 
 	// The harness's own session, with the delete tools, for building
 	// and tearing down the sandbox and for reading end states back.
-	admin, err := start(*bin, "FAVRO_ENABLE_DESTRUCTIVE=true")
+	admin, err := start(*bin, config.EnvEnableDestructive+"=true")
 	if err != nil {
 		return fmt.Errorf("starting the harness session: %w", err)
 	}

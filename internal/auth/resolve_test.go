@@ -92,12 +92,16 @@ func TestResolveToken_AllNotConfigured_ReturnsNoCredentials(t *testing.T) {
 func TestDefaultSources_OrderIsEnvThenKeyring(t *testing.T) {
 	t.Parallel()
 
-	srcs := defaultSources()
+	env := Token{Email: "u@example.test", APIToken: "tok", OrganizationID: "org-1"}
+	srcs := defaultSources(env)
 	if len(srcs) != 2 {
 		t.Fatalf("len(srcs) = %d, want 2", len(srcs))
 	}
 	if got := srcs[0].Name(); got != "env" {
 		t.Errorf("env must win so a quick override works without `auth login`: got %v, want %v", got, "env")
+	}
+	if got, ok := srcs[0].(EnvSource); !ok || got.Token != env {
+		t.Errorf("srcs[0] = %+v, want the EnvSource holding the credentials it was handed", srcs[0])
 	}
 	if got := srcs[1].Name(); got != "keyring" {
 		t.Errorf("srcs[1].Name() = %v, want %v", got, "keyring")

@@ -1,5 +1,7 @@
 package livecover
 
+import "github.com/mmedum/favro-mcp/v4/internal/config"
+
 // extraSteps exercise what one call per tool leaves untouched.
 //
 // A tool called once with its required arguments covers a fraction of
@@ -280,7 +282,7 @@ func extraSteps() []Step {
 				"mime_type": "text/plain",
 				"dry_run":   true,
 			},
-			Why: "dry-run: a file inside FAVRO_UPLOAD_DIR is read, with the name and type overrides set",
+			Why: "dry-run: a file inside " + config.EnvUploadDir + " is read, with the name and type overrides set",
 		},
 		{
 			Tool: "favro_upload_comment_attachment",

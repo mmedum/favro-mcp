@@ -14,6 +14,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ### Changed
 - `FAVRO_ENABLE_DESTRUCTIVE` and `FAVRO_MCP_SKIP_VALIDATE` are read without the spaces around their value, as every other variable is, and spaces alone count as unset. `true` with a space beside it turns the destructive tools on rather than being ignored with a warning, and `FAVRO_MCP_SKIP_VALIDATE` set to spaces no longer skips the credential check.
 
+### Fixed
+- `FAVRO_MCP_SKIP_VALIDATE=false` or `=0` no longer skips the startup credential check. The variable is read as true or false, as `FAVRO_ENABLE_DESTRUCTIVE` is, and a value it cannot read keeps the check and is logged.
+
 ## [4.1.0] - 2026-10-24
 
 ### Added

@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/v4/internal/auth"
 	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
@@ -51,15 +51,15 @@ func doctorEnv(t *testing.T, orgID string) {
 	t.Helper()
 	isolateCredentials(t)
 	restoreDefaultLogger(t)
-	t.Setenv(auth.EnvUserEmail, testEmail)
-	t.Setenv(auth.EnvAPIToken, testAPIToken)
-	t.Setenv(auth.EnvOrganizationID, orgID)
+	t.Setenv(config.EnvUserEmail, testEmail)
+	t.Setenv(config.EnvAPIToken, testAPIToken)
+	t.Setenv(config.EnvOrganizationID, orgID)
 }
 
 func runReport(t *testing.T, showIDs bool, baseURL string) (string, error) {
 	t.Helper()
 	var buf bytes.Buffer
-	err := doctorReport(context.Background(), config.Load(), &buf, showIDs, baseURL)
+	err := doctorReport(context.Background(), config.LoadFrom(os.Getenv), &buf, showIDs, baseURL)
 	return buf.String(), err
 }
 
@@ -120,8 +120,8 @@ func TestDoctorFailsOnWrongOrganizationBinding(t *testing.T) {
 	if !strings.Contains(out, "FAIL") {
 		t.Error("the report marked no check as failed")
 	}
-	if !strings.Contains(out, auth.EnvOrganizationID) {
-		t.Errorf("the failure does not name %s, so it does not say what to change", auth.EnvOrganizationID)
+	if !strings.Contains(out, config.EnvOrganizationID) {
+		t.Errorf("the failure does not name %s, so it does not say what to change", config.EnvOrganizationID)
 	}
 	if !strings.Contains(out, "--show-ids") {
 		t.Error("the failure does not tell the user how to see which id to use")
@@ -201,7 +201,7 @@ func TestDoctorRejectsUnknownFlag(t *testing.T) {
 	isolateCredentials(t)
 	restoreDefaultLogger(t)
 	var buf bytes.Buffer
-	if err := runDoctor(context.Background(), config.Load(), &buf, []string{"--show-id"}); err == nil {
+	if err := runDoctor(context.Background(), config.LoadFrom(os.Getenv), &buf, []string{"--show-id"}); err == nil {
 		t.Fatal("runDoctor accepted an unknown flag")
 	}
 }

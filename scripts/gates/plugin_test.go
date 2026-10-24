@@ -42,19 +42,33 @@ func TestLauncherDispatchesToEveryStagedBinary(t *testing.T) {
 	}
 }
 
+// releaseMatrix is the family's six archives, windows-arm64 among them,
+// and the one pair a bundle runs another's binary on: Windows on arm64
+// runs windows-amd64 under emulation. Every other test reads the table.
+func TestTheReleaseMatrixIsTheFamilysSix(t *testing.T) {
+	want := []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"}
+	if got := releasePairs(); !slices.Equal(got, want) {
+		t.Errorf("releasePairs = %q, want %q", got, want)
+	}
+	if got := emulated(); len(got) != 1 || got["windows-arm64"] != "windows-amd64" {
+		t.Errorf("emulated = %v, want windows-arm64 running windows-amd64", got)
+	}
+}
+
 func TestGoreleaserMatrixIsTheOneTheBundleClaims(t *testing.T) {
 	root, err := moduleRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	built, err := goreleaserMatrix(root)
+	release, err := goreleaserText(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The family's six archives, windows-arm64 among them: the plugin
-	// still stages windows-amd64 alone, which arm64 runs under emulation.
-	want := []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"}
-	if !slices.Equal(built, want) {
+	built, err := goreleaserMatrix(release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := releasePairs(); !slices.Equal(built, want) {
 		t.Fatalf("the matrix parsed as %v, want %v", built, want)
 	}
 	for _, p := range platforms {
@@ -68,8 +82,8 @@ func TestGoreleaserMatrixIsTheOneTheBundleClaims(t *testing.T) {
 // that runs a staged binary under emulation; and the exemption holds only
 // while its reason does.
 func TestPluginMatrixProblems(t *testing.T) {
-	six := []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"}
-	if got := pluginMatrixProblems(six, emulated); len(got) != 0 {
+	six := releasePairs()
+	if got := pluginMatrixProblems(six, emulated()); len(got) != 0 {
 		t.Errorf("the family's six with windows-arm64 emulated: %q", got)
 	}
 	for _, tc := range []struct {
@@ -88,11 +102,11 @@ func TestPluginMatrixProblems(t *testing.T) {
 			[]string{"GoReleaser builds windows-arm64 and no launcher arm reaches it; that binary ships unusable"},
 		},
 		{
-			"a staged platform not built", six[1:], emulated,
+			"a staged platform not built", six[1:], emulated(),
 			[]string{"the bundle stages bin/darwin-amd64, which .goreleaser.yaml does not build"},
 		},
 		{
-			"emulation for a platform not built", six[:5], emulated,
+			"emulation for a platform not built", six[:5], emulated(),
 			[]string{"emulated names windows-arm64, which .goreleaser.yaml does not build"},
 		},
 		{
@@ -111,11 +125,7 @@ func TestPluginMatrixProblems(t *testing.T) {
 // unbuilt, which is a gate that fails for the wrong reason — or, with
 // the comparison the other way round, one that passes for it.
 func TestGoreleaserMatrixRefusesAFileItCannotRead(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ".goreleaser.yaml"), []byte("version: 2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := goreleaserMatrix(dir); err == nil {
+	if _, err := goreleaserMatrix("version: 2\n"); err == nil {
 		t.Error("a config with no build matrix should fail loudly rather than report no platforms")
 	}
 }
@@ -388,12 +398,16 @@ func TestOnlyTheServerShips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if problems := onlyTheServerShips(root); len(problems) > 0 {
+	release, err := goreleaserText(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problems := onlyTheServerShips(release); len(problems) > 0 {
 		t.Errorf("the release should build only ./cmd/favro-mcp: %v", problems)
 	}
 	// A config with no build at all must not read as "nothing extra
 	// ships": it reads as a check that has lost its subject.
-	if problems := onlyTheServerShips(t.TempDir()); len(problems) == 0 {
+	if problems := onlyTheServerShips("version: 2\n"); len(problems) == 0 {
 		t.Error("an unreadable build config should be reported, not passed")
 	}
 }

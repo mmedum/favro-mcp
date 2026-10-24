@@ -24,10 +24,12 @@ var (
 	// "83 tools", "83 typed tools" — a number in prose is a claim about
 	// the list beside it, and this is how that claim gets held.
 	toolCount = regexp.MustCompile(`\b(\d+)\s+(?:typed\s+)?tools\b`)
-	// A setting's name standing as a word of its own, all of it: a
-	// longer name that contains one, such as FAVRO_UPLOAD_DIRS, is that
-	// longer name and not FAVRO_UPLOAD_DIR.
-	settingWord = regexp.MustCompile(`(^|[^A-Z0-9_])(` + config.EnvPrefix + `[A-Z0-9_]+)`)
+	// A word: a run of letters of either case, digits and _, with the *
+	// after it when there is one. A setting's name is a whole word, so a
+	// longer one that contains it, such as FAVRO_UPLOAD_DIRS,
+	// FAVRO_UPLOAD_DIRs or xFAVRO_UPLOAD_DIR, is another word, and
+	// FAVRO_UPLOAD_* is a pattern rather than a name.
+	settingWord = regexp.MustCompile(`[A-Za-z0-9_]+\*?`)
 	// A version heading, as Keep a Changelog writes it.
 	versionHeading = regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\]`)
 	// The status line at the top of the design document, which is the
@@ -88,6 +90,7 @@ func staleness(w io.Writer, bin string) error {
 	problems = append(problems, permissionRulesRegistered(readme, dump)...)
 	problems = append(problems, countsMatch(readme, len(registered))...)
 	problems = append(problems, envDocumented(config.Vars(), readme, docs["docs/configuration.md"])...)
+	problems = append(problems, pluginPlatformsDocumented(readme)...)
 	problems = append(problems, gatesDocumented(docs["docs/development.md"])...)
 	problems = append(problems, destructiveCountMatches(docs, dump)...)
 	problems = append(problems, statusCurrent(arch, changelog)...)
@@ -272,8 +275,11 @@ func envDocumented(vars []config.Var, readme, configuration string) []string {
 	}
 	words := func(text string) map[string]bool {
 		out := map[string]bool{}
-		for _, m := range settingWord.FindAllStringSubmatch(text, -1) {
-			out[m[2]] = true
+		for _, word := range settingWord.FindAllString(text, -1) {
+			if rest, ok := strings.CutPrefix(word, config.EnvPrefix); ok && rest != "" &&
+				strings.Trim(rest, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == "" {
+				out[word] = true
+			}
 		}
 		return out
 	}
@@ -295,6 +301,35 @@ func envDocumented(vars []config.Var, readme, configuration string) []string {
 	for _, name := range slices.Sorted(maps.Keys(inConfiguration)) {
 		if !known[name] {
 			problems = append(problems, "docs/configuration.md documents "+name+", which the server does not read")
+		}
+	}
+	return problems
+}
+
+// pluginPlatformsDocumented holds the README's plugin section to the
+// plugin's staging table: it names every directory the plugin stages a
+// binary under, and every pair releaseMatrix runs under emulation, with
+// the word. The section is the one under "### Cowork plugin", up to the
+// next heading.
+func pluginPlatformsDocumented(readme string) []string {
+	const heading = "### Cowork plugin"
+	_, section, found := strings.Cut(readme, heading)
+	if !found {
+		return []string{"README.md has no " + heading + " section, so nothing says what the plugin carries"}
+	}
+	if end := strings.Index(section, "\n#"); end >= 0 {
+		section = section[:end]
+	}
+	var problems []string
+	for _, p := range platforms {
+		if !strings.Contains(section, p.dir()) {
+			problems = append(problems, "README.md's plugin section does not name "+p.dir()+", which the plugin stages")
+		}
+	}
+	for _, pair := range slices.Sorted(maps.Keys(emulated())) {
+		if !strings.Contains(section, pair) || !strings.Contains(section, "emulation") {
+			problems = append(problems, fmt.Sprintf("README.md's plugin section does not say that %s runs the %s "+
+				"binary under emulation", pair, emulated()[pair]))
 		}
 	}
 	return problems
@@ -418,7 +453,7 @@ func statusCurrent(arch, changelog string) []string {
 // failing on those would make the document unable to describe its own
 // plan.
 func packageMapCurrent(root, arch string) []string {
-	module, err := moduleName()
+	module, err := modulePath(root)
 	if err != nil {
 		return []string{err.Error()}
 	}

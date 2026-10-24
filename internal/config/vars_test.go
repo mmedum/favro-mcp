@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"context"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -15,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/v4/internal/auth"
 	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
@@ -40,7 +38,7 @@ func registry(t *testing.T) []config.Var {
 }
 
 // EnvVars is every variable the server reads, the removed ones and the
-// three credentials auth reads included.
+// three credentials CredentialsFrom reads included.
 func TestEnvVars(t *testing.T) {
 	want := []string{
 		"FAVRO_API_TOKEN", "FAVRO_ENABLE_DESTRUCTIVE", "FAVRO_INTERACTION_HINT", "FAVRO_LOG_LEVEL",
@@ -100,11 +98,26 @@ func TestVarsDescribeWhatLoadDoes(t *testing.T) {
 			removed = append(removed, v.Name)
 		}
 	}
-	if want := []string{"FAVRO_ENABLE_DESTRUCTIVE"}; !slices.Equal(switches, want) {
+	if want := []string{"FAVRO_ENABLE_DESTRUCTIVE", "FAVRO_MCP_SKIP_VALIDATE"}; !slices.Equal(switches, want) {
 		t.Errorf("switches %v, want %v", switches, want)
 	}
 	if want := []string{"FAVRO_INTERACTION_HINT", "FAVRO_REQUIRE_PROMPT"}; !slices.Equal(removed, want) {
 		t.Errorf("Vars marks %v removed, want %v", removed, want)
+	}
+}
+
+// Secret marks the one credential a form must not show, the API token:
+// the email and the organization id say which account, and the token
+// signs in as it. The bundle gate holds a secret's field to sensitive.
+func TestOnlyTheAPITokenIsSecret(t *testing.T) {
+	var secrets []string
+	for _, v := range registry(t) {
+		if v.Secret {
+			secrets = append(secrets, v.Name)
+		}
+	}
+	if want := []string{"FAVRO_API_TOKEN"}; !slices.Equal(secrets, want) {
+		t.Errorf("Vars marks %v secret, want %v", secrets, want)
 	}
 }
 
@@ -127,8 +140,8 @@ func TestLoadReadsEachVariableOnce(t *testing.T) {
 			t.Errorf("Load reads %s %d times", name, n)
 		}
 	}
-	// A variable Load reads and auth reads too would be read under two
-	// rules; EnvVars lists it twice, so this sees it.
+	// A variable LoadFrom reads and CredentialsFrom reads too would be
+	// read under two rules; EnvVars lists it twice, so this sees it.
 	if names := config.EnvVars(); !slices.Equal(names, slices.Compact(slices.Clone(names))) {
 		t.Errorf("EnvVars names a variable twice: %v", names)
 	}
@@ -141,16 +154,10 @@ func TestLoadReadsEachVariableOnce(t *testing.T) {
 // read outside Load with no reader here fails, so a variable added there
 // cannot miss the rule.
 func TestASettingOfSpacesIsUnset(t *testing.T) {
-	// A credential is read with the other two set, so the value read is
-	// the one in the token rather than lost to a missing field.
 	credential := func(name string) func(string) string {
 		return func(value string) string {
-			env := map[string]string{
-				config.EnvUserEmail: "someone@example.test", config.EnvAPIToken: "synthetic-token",
-				config.EnvOrganizationID: "synthetic-organization", name: value,
-			}
-			tok, err := auth.EnvSource{Lookup: func(n string) string { return env[n] }}.Load(context.Background())
-			return fmt.Sprintf("%+v %v", tok, err)
+			env := map[string]string{name: value}
+			return fmt.Sprintf("%+v", config.CredentialsFrom(func(n string) string { return env[n] }))
 		}
 	}
 	outside := map[string]func(string) string{
@@ -195,25 +202,93 @@ func TestLookup(t *testing.T) {
 }
 
 // Every FAVRO_ variable the server's code spells is one EnvVars lists, so
-// a variable read outside Load cannot escape the bundle and staleness
+// a variable read outside LoadFrom cannot escape the bundle and staleness
 // gates. So is every one scripts/ spells: the live driver, the evals
 // harness and the smoke gate set them for the server, and a misspelling
-// there tests a configuration nobody asked for. A name is seen as a
-// string literal, or as a chain of literals and EnvPrefix joined by +; one
-// built from any other constant, or through a format verb, is not seen.
-// The scan must read every root and find a name outside the config
-// package, or it read too little.
+// there tests a configuration nobody asked for. The scan must read every
+// root and find a name, or a use of config's constants, outside the
+// config package, or it read too little.
 func TestEveryVariableTheCodeNamesIsInEnvVars(t *testing.T) {
 	known := map[string]bool{}
 	for _, name := range config.EnvVars() {
 		known[name] = true
 	}
-	found := map[string]string{}
-	elsewhere := 0
+	scan := scanCode(t)
+	if scan.elsewhere+scan.constants == 0 {
+		t.Error("the scan found no FAVRO_ name and no config constant outside internal/config; it read too little")
+	}
+	for _, v := range slices.Sorted(maps.Keys(scan.found)) {
+		if !known[v] {
+			t.Errorf("%s names %s, which EnvVars does not list", scan.found[v], v)
+		}
+	}
+}
+
+// A server variable is spelled once, in internal/config: everything else
+// names it by config's constant, or as EnvPrefix and its key, so a rename
+// is one edit and a misspelling does not compile. A struct tag is the one
+// exception, since a tag cannot name a constant. The scan must find a
+// use of the constants, or it read too little.
+func TestServerVariablesAreSpelledOnce(t *testing.T) {
+	scan := scanCode(t)
+	if scan.constants == 0 {
+		t.Error("the scan found no use of config's Env constants outside internal/config; it read too little")
+	}
+	for _, at := range scan.typed {
+		t.Errorf("%s types a server variable by hand; name it by config's constant", at)
+	}
+}
+
+// The scan reads a + chain in order, so a name built after another
+// operand is seen; and a run another operand completes is a prefix, not
+// a name, while the words before it in the run still are. A struct tag
+// types a name by hand and is not refused for it; anything else is.
+func TestTheScanReadsChainsAndTags(t *testing.T) {
+	const src = "package p\n\n" +
+		"type T struct {\n\tPath string `jsonschema:\"inside FAVRO_TAGGED\"`\n}\n\n" +
+		"var (\n" +
+		"\ta = EnvPrefix + \"ENABLE_\" + kind\n" +
+		"\tb = \"set \" + x + EnvPrefix + \"NEW\"\n" +
+		"\tc = \"FAVRO_OLD or \" + config.EnvPrefix + \"READ_\" + kind + \"_ONLY\"\n" +
+		"\td = config.EnvUploadDir + \"=\" + dir\n" +
+		")\n"
 	fset := token.NewFileSet()
-	roots := []string{"../../cmd", "../../internal", "../../scripts"}
-	files := map[string]int{}
-	for _, root := range roots {
+	f, err := parser.ParseFile(fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := slices.Sorted(maps.Keys(spellings(fset, f)))
+	if want := []string{"FAVRO_NEW", "FAVRO_OLD", "FAVRO_TAGGED"}; !slices.Equal(got, want) {
+		t.Errorf("the names spelled are %q, want %q", got, want)
+	}
+	typed, constants := handTyped(fset, f)
+	if want := []string{`p.go:10:6: "FAVRO_OLD"`}; !slices.Equal(typed, want) {
+		t.Errorf("typed by hand: %q, want %q", typed, want)
+	}
+	if constants != 2 {
+		t.Errorf("the scan counts %d uses of config's constants, want 2", constants)
+	}
+}
+
+// codeScan is what a scan of the server's Go code, tests aside, found.
+type codeScan struct {
+	// found is every FAVRO_ name the code spells, with where.
+	found map[string]string
+	// elsewhere counts the names spelled outside internal/config, and
+	// constants the uses of config's Env constants there.
+	elsewhere, constants int
+	// typed is every literal outside internal/config typing the prefix.
+	typed []string
+}
+
+// scanCode scans every Go file under cmd/, internal/ and scripts/,
+// tests aside, and fails when a root yields none.
+func scanCode(t *testing.T) codeScan {
+	t.Helper()
+	scan := codeScan{found: map[string]string{}}
+	fset := token.NewFileSet()
+	for _, root := range []string{"../../cmd", "../../internal", "../../scripts"} {
+		files := 0
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return err
@@ -222,72 +297,117 @@ func TestEveryVariableTheCodeNamesIsInEnvVars(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			files[root]++
+			files++
 			outside := filepath.Dir(path) != filepath.Join("..", "..", "internal", "config")
-			spell := func(s string, at token.Pos) {
-				for _, word := range strings.FieldsFunc(s, func(r rune) bool {
-					return r != '_' && (r < 'A' || r > 'Z') && (r < '0' || r > '9')
-				}) {
-					if isName(word) {
-						found[word] = fset.Position(at).String()
-						if outside {
-							elsewhere++
-						}
-					}
+			for name, at := range spellings(fset, f) {
+				scan.found[name] = at
+				if outside {
+					scan.elsewhere++
 				}
 			}
-			var visit func(n ast.Node) bool
-			visit = func(n ast.Node) bool {
-				switch n := n.(type) {
-				case *ast.BinaryExpr:
-					if n.Op != token.ADD {
-						return true
-					}
-					// A + chain is read in order: each run of literals and
-					// EnvPrefix is one string, and any other operand ends
-					// the run and is read on its own.
-					run, at := "", n.Pos()
-					for _, op := range operands(n) {
-						if s, ok := joined(op); ok {
-							if run == "" {
-								at = op.Pos()
-							}
-							run += s
-							continue
-						}
-						spell(run, at)
-						run = ""
-						ast.Inspect(op, visit)
-					}
-					spell(run, at)
-					return false
-				case *ast.BasicLit:
-					if s, err := strconv.Unquote(n.Value); n.Kind == token.STRING && err == nil {
-						spell(s, n.Pos())
-					}
-				}
-				return true
+			if outside {
+				typed, constants := handTyped(fset, f)
+				scan.typed = append(scan.typed, typed...)
+				scan.constants += constants
 			}
-			ast.Inspect(f, visit)
 			return nil
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	for _, root := range roots {
-		if files[root] == 0 {
+		if files == 0 {
 			t.Errorf("the scan parsed no Go file under %s; it read too little", root)
 		}
 	}
-	if elsewhere == 0 {
-		t.Error("the scan found no FAVRO_ name outside internal/config; it read too little")
-	}
-	for _, v := range slices.Sorted(maps.Keys(found)) {
-		if !known[v] {
-			t.Errorf("%s names %s, which EnvVars does not list", found[v], v)
+	return scan
+}
+
+// spellings is every FAVRO_ name f spells, with where: in a string
+// literal, or in a + chain of literals and EnvPrefix read in order, each
+// run of them one string. A run another operand follows is a prefix that
+// operand completes, as in EnvPrefix + "ENABLE_" + kind, so the word it
+// ends with is no name; the words before it are. A name built from any
+// other constant, or through a format verb, is not seen.
+func spellings(fset *token.FileSet, f *ast.File) map[string]string {
+	found := map[string]string{}
+	spell := func(s string, at token.Pos, open bool) {
+		words := strings.FieldsFunc(s, notNameRune)
+		if open && len(words) > 0 && strings.HasSuffix(s, words[len(words)-1]) {
+			words = words[:len(words)-1]
+		}
+		for _, word := range words {
+			if isName(word) {
+				found[word] = fset.Position(at).String()
+			}
 		}
 	}
+	var visit func(n ast.Node) bool
+	visit = func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.BinaryExpr:
+			if n.Op != token.ADD {
+				return true
+			}
+			run, at := "", n.Pos()
+			for _, op := range operands(n) {
+				if s, ok := joined(op); ok {
+					if run == "" {
+						at = op.Pos()
+					}
+					run += s
+					continue
+				}
+				spell(run, at, true)
+				run = ""
+				ast.Inspect(op, visit)
+			}
+			spell(run, at, false)
+			return false
+		case *ast.BasicLit:
+			if s, err := strconv.Unquote(n.Value); n.Kind == token.STRING && err == nil {
+				spell(s, n.Pos(), false)
+			}
+		}
+		return true
+	}
+	ast.Inspect(f, visit)
+	return found
+}
+
+// handTyped is every string literal in f, a struct tag aside, holding a
+// word that starts with the prefix, with where; and how many times f
+// names one of config's Env constants or EnvPrefix.
+func handTyped(fset *token.FileSet, f *ast.File) (typed []string, constants int) {
+	tags := map[*ast.BasicLit]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.Field:
+			if n.Tag != nil {
+				tags[n.Tag] = true
+			}
+		case *ast.SelectorExpr:
+			if x, ok := n.X.(*ast.Ident); ok && x.Name == "config" && strings.HasPrefix(n.Sel.Name, "Env") {
+				constants++
+			}
+		case *ast.BasicLit:
+			s, err := strconv.Unquote(n.Value)
+			if n.Kind != token.STRING || err != nil || tags[n] {
+				return true
+			}
+			for _, word := range strings.FieldsFunc(s, notNameRune) {
+				if strings.HasPrefix(word, config.EnvPrefix) {
+					typed = append(typed, fmt.Sprintf("%s: %q", fset.Position(n.Pos()), word))
+				}
+			}
+		}
+		return true
+	})
+	return typed, constants
+}
+
+// notNameRune reports whether r cannot be part of a variable's name.
+func notNameRune(r rune) bool {
+	return r != '_' && (r < 'A' || r > 'Z') && (r < '0' || r > '9')
 }
 
 // isName reports whether a word is a FAVRO_ name: the prefix and a
