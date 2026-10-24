@@ -1,22 +1,25 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
-	"github.com/mmedum/favro-mcp/v3/internal/render"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/render"
 )
 
 // listToolsWith builds a server with the given options and returns
@@ -49,36 +52,36 @@ func TestDestructiveToolsAreOptIn(t *testing.T) {
 	all := listToolsWith(t, Options{Destructive: true})
 	def := listToolsWith(t, Options{})
 
-	var destructive []string
+	var gated []string
 	for name, tool := range all {
-		if tool.Annotations != nil && tool.Annotations.DestructiveHint != nil && *tool.Annotations.DestructiveHint {
-			destructive = append(destructive, name)
+		if destructive(tool) {
+			gated = append(gated, name)
 		}
 	}
 
 	// The floor. "No destructive tools leaked" and "no tools were read"
 	// print the same sentence otherwise, and this repository has
-	// thirteen — a number that is allowed to change, but not to become
+	// fifteen — a number that is allowed to change, but not to become
 	// zero without somebody noticing.
-	if len(destructive) < 13 {
-		t.Errorf("read %d destructive tools out of a surface of %d; the annotation-derived set cannot have shrunk that far: got %v, want at least %v", len(destructive), len(all), len(destructive), 13)
+	if len(gated) < 15 {
+		t.Errorf("read %d destructive tools out of a surface of %d; the annotation-derived set cannot have shrunk that far: got %v, want at least %v", len(gated), len(all), len(gated), 15)
 	}
-	if len(all) <= len(destructive) {
-		t.Errorf("the surface is not all deletes: got %v, want greater than %v", len(all), len(destructive))
+	if len(all) <= len(gated) {
+		t.Errorf("the surface is not all deletes: got %v, want greater than %v", len(all), len(gated))
 	}
 
-	for _, name := range destructive {
+	for _, name := range gated {
 		if _, present := def[name]; present {
 			t.Errorf("%s is annotated destructive but is registered without FAVRO_ENABLE_DESTRUCTIVE: %q present", name, name)
 		}
 	}
-	if len(def) != len(all)-len(destructive) {
+	if len(def) != len(all)-len(gated) {
 		t.Fatalf("the default surface must differ from the full one by exactly the destructive tools: got %d", len(def))
 	}
 
 	for name := range all {
-		if _, gated := def[name]; !gated {
-			if !slices.Contains(destructive, name) {
+		if _, kept := def[name]; !kept {
+			if !slices.Contains(gated, name) {
 				t.Errorf("%s disappeared from the default surface without being annotated destructive: %q missing", name, name)
 			}
 		}
@@ -487,4 +490,182 @@ func inputProperties(t *testing.T, tool *mcp.Tool) map[string]schemaProperty {
 		t.Fatalf("err: %v", err)
 	}
 	return schema.Properties
+}
+
+// TestEveryDestructiveCallNeedsConfirm: a destructive call without
+// confirm: true is refused [blocked] before Favro hears of it, and the
+// same call as a dry run is not. The tools come from the annotations, so
+// a delete added later is covered by having been annotated.
+func TestEveryDestructiveCallNeedsConfirm(t *testing.T) {
+	t.Parallel()
+
+	var requests, writes atomic.Int32
+	count := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Method != http.MethodGet {
+			writes.Add(1)
+		}
+		smokeFixtureHandler(t).ServeHTTP(w, r)
+	})
+	cs := connectInMemoryWith(t, favroFixture(t, count))
+	flagged := favroFixture(t, count)
+	flagged.ForceDryRun = true
+	forced := connectInMemoryWith(t, flagged)
+	res, err := cs.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, tool := range res.Tools {
+		if !destructive(tool) {
+			continue
+		}
+		checked++
+		args := maps.Clone(smokeToolInputs[tool.Name])
+		args["dry_run"] = false
+		before := requests.Load()
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tool.Name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "[blocked] " + tool.Name + " is refused without confirm: true"
+		if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !strings.HasPrefix(text, want) {
+			t.Errorf("%s without confirm: got %q, want %q", tool.Name, text, want)
+		}
+		if n := requests.Load() - before; n != 0 {
+			t.Errorf("%s without confirm reached Favro %d times before it was refused", tool.Name, n)
+		}
+
+		args["dry_run"] = true
+		res, err = cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tool.Name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.IsError {
+			t.Errorf("%s as a dry run without confirm was refused: %s", tool.Name, serializedResponseString(t, res))
+		}
+
+		// --dry-run makes every call a dry run, whatever the arguments.
+		args["dry_run"] = false
+		before = writes.Load()
+		res, err = forced.CallTool(t.Context(), &mcp.CallToolParams{Name: tool.Name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.IsError {
+			t.Errorf("%s under --dry-run without confirm was refused: %s", tool.Name, serializedResponseString(t, res))
+		}
+		if n := writes.Load() - before; n != 0 {
+			t.Errorf("%s under --dry-run wrote to Favro %d times", tool.Name, n)
+		}
+	}
+	if checked < 15 {
+		t.Errorf("checked %d destructive tools, want at least 15", checked)
+	}
+}
+
+// A dry run needs no confirm, so it must not rest on each handler
+// putting the dry run on the context its writes use: addTool does that
+// for every input that asks for one.
+func TestADryRunWritesNothingWhateverTheHandlerDoes(t *testing.T) {
+	t.Parallel()
+
+	var writes atomic.Int32
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writes.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	type input struct {
+		dryRunInput
+		confirmInput
+	}
+	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
+	addTool(&registry{srv: srv, destructive: true, client: c},
+		&mcp.Tool{Name: "favro_delete_forgetfully", Annotations: mutating("x", true)},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ input) (*mcp.CallToolResult, struct{}, error) {
+			_ = c.DeleteTag(ctx, "t-1") // the handler's own dry-run handling, forgotten
+			return nil, struct{}{}, nil
+		})
+	res, err := connectServer(t, srv).CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "favro_delete_forgetfully", Arguments: map[string]any{"dry_run": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError || writes.Load() != 0 {
+		t.Errorf("a dry run without confirm: error %v, writes %d; want a result and no write", res.IsError, writes.Load())
+	}
+}
+
+// TestOnlyTheWidestWritesPrompt holds the marked set (§9.2). A tag,
+// group, widget or collection deleted takes with it something that
+// every card, share or board depends on, and a collection opened to the
+// organization or to anyone stays seen; Claude Code prompts on every
+// such call. Nothing else is marked: a delete made many times in a row
+// would bring back a prompt nobody reads.
+func TestOnlyTheWidestWritesPrompt(t *testing.T) {
+	t.Parallel()
+
+	var got []string
+	for name, tool := range listToolsWith(t, Options{Destructive: true, UploadDir: t.TempDir()}) {
+		if v, marked := tool.Meta[promptMeta]; marked {
+			if v != true {
+				t.Errorf("%s carries %s = %v, want true", name, promptMeta, v)
+			}
+			got = append(got, name)
+		}
+	}
+	slices.Sort(got)
+	want := []string{
+		"favro_delete_collection", "favro_delete_group", "favro_delete_tag",
+		"favro_delete_widget", "favro_widen_collection_sharing",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("tools carrying %s = %v, want %v", promptMeta, got, want)
+	}
+}
+
+// A destructive tool that forgets confirm, or an ordinary one that
+// carries the mark, fails when the server starts rather than when a
+// person first calls it.
+func TestRegistrationRefusesAMissingRule(t *testing.T) {
+	t.Parallel()
+
+	type noConfirm struct{ dryRunInput }
+	type withConfirm struct {
+		dryRunInput
+		confirmInput
+	}
+	hn := func(context.Context, *mcp.CallToolRequest, noConfirm) (*mcp.CallToolResult, struct{}, error) {
+		return nil, struct{}{}, nil
+	}
+	hc := func(context.Context, *mcp.CallToolRequest, withConfirm) (*mcp.CallToolResult, struct{}, error) {
+		return nil, struct{}{}, nil
+	}
+	for name, add := range map[string]func(*registry){
+		"a delete without confirm": func(reg *registry) {
+			addTool(reg, &mcp.Tool{Name: "x", Annotations: mutating("x", true)}, hn)
+		},
+		"a marked ordinary write": func(reg *registry) {
+			addTool(reg, &mcp.Tool{Name: "x", Annotations: mutating("x", false), Meta: promptEveryCall()}, hc)
+		},
+		"a marked read": func(reg *registry) {
+			addTool(reg, &mcp.Tool{Name: "x", Annotations: readOnly("x"), Meta: promptEveryCall()}, hc)
+		},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s: registered without a panic", name)
+				}
+			}()
+			add(&registry{srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), destructive: true})
+		}()
+	}
+	// And the rules' own shape registers.
+	addTool(&registry{srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), destructive: true},
+		&mcp.Tool{Name: "x", Annotations: mutating("x", true), Meta: promptEveryCall()}, hc)
 }

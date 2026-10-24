@@ -46,16 +46,16 @@ const (
 	// a card's text can suggest to a model.
 	EnvUploadDir = "FAVRO_UPLOAD_DIR"
 
-	// EnvRequirePrompt refuses the writes that ask the person when the
-	// client cannot ask them, rather than making them on the arguments
-	// alone.
+	// EnvRequirePrompt was removed with the question it governed: the
+	// server no longer asks the person, and the client's own approval
+	// decides each call. It is read only to refuse a configuration that
+	// still turns it on (readRemoved).
 	EnvRequirePrompt = "FAVRO_REQUIRE_PROMPT"
 
-	// EnvInteractionHint, set to false, takes Claude Code's
-	// requiresUserInteraction mark off the writes that ask the person.
-	// On by default. Claude Code prompts for a marked tool on every
-	// call, and headless it refuses one, so a deployment with nobody at
-	// the keyboard turns it off.
+	// EnvInteractionHint, set to false, took Claude Code's
+	// requiresUserInteraction mark off the writes the server asked
+	// about. It was removed in the same release, and is read only to
+	// warn a configuration that still turns the mark off.
 	EnvInteractionHint = "FAVRO_INTERACTION_HINT"
 )
 
@@ -75,12 +75,11 @@ type Config struct {
 	// from, or empty when uploads are off.
 	UploadDir string
 
-	// RequirePrompt refuses an asking write when the client cannot ask.
-	RequirePrompt bool
-
-	// SuppressInteractionHint takes the requiresUserInteraction mark off
-	// the asking writes. Negative so that the zero value is the default.
-	SuppressInteractionHint bool
+	// Refusals are the removed settings this environment still turns on,
+	// as sentences ready to log. The server does not start while there
+	// is one: ignored, a setting would quietly allow what its owner set
+	// it to stop.
+	Refusals []string
 
 	// Warnings is what Load could not read, as sentences ready to log.
 	//
@@ -92,16 +91,25 @@ type Config struct {
 
 // Load reads the environment. It never fails: a value this package
 // cannot read falls back to the safe default and is described in
-// Warnings, so the caller can say so once a logger exists.
+// Warnings, so the caller can say so once a logger exists. A removed
+// setting still turned on is described in Refusals, and the server
+// refuses to start on it; the other commands still run.
 //
 // Nothing here reads a flag, because the flags that exist (--dry-run,
 // --version, --dump-schemas) are a different kind of thing: they select
 // what the process does rather than configure how it does it, and
 // cmd/favro-mcp parses them where it dispatches on them.
 func Load() Config {
+	return LoadFrom(os.Getenv)
+}
+
+// LoadFrom is Load over the environment getenv describes. The bundle
+// gate loads the environment Claude Desktop builds from the manifest's
+// defaults through it, and holds the result to an empty environment's.
+func LoadFrom(getenv func(string) string) Config {
 	cfg := Config{}
 
-	raw := strings.ToLower(strings.TrimSpace(os.Getenv(EnvLogLevel)))
+	raw := strings.ToLower(strings.TrimSpace(getenv(EnvLogLevel)))
 	level, recognized := ParseLogLevel(raw)
 	cfg.LogLevel = level
 	if !recognized {
@@ -109,12 +117,12 @@ func Load() Config {
 			fmt.Sprintf("unrecognized %s %q — falling back to info", EnvLogLevel, raw))
 	}
 
-	cfg.SkipValidate = os.Getenv(EnvSkipValidate) != ""
+	cfg.SkipValidate = getenv(EnvSkipValidate) != ""
 
 	// Anything Go cannot read as a bool, and anything absent, means
 	// off: a typo in the variable that enables deletes must not enable
 	// deletes.
-	if raw := os.Getenv(EnvEnableDestructive); raw != "" {
+	if raw := getenv(EnvEnableDestructive); raw != "" {
 		on, err := strconv.ParseBool(raw)
 		switch {
 		case err != nil:
@@ -126,34 +134,9 @@ func Load() Config {
 		}
 	}
 
-	// Unreadable here means on: the variable exists to refuse, and a
-	// typo in it must not quietly stop refusing.
-	if raw := os.Getenv(EnvRequirePrompt); raw != "" {
-		on, err := strconv.ParseBool(raw)
-		switch {
-		case err != nil:
-			cfg.RequirePrompt = true
-			cfg.Warnings = append(cfg.Warnings,
-				fmt.Sprintf("unreadable %s %q — treated as true; set it to true or false", EnvRequirePrompt, raw))
-		default:
-			cfg.RequirePrompt = on
-		}
-	}
+	cfg.readRemoved(getenv)
 
-	// Unreadable here means on, too: only a deliberate false takes the
-	// mark off.
-	if raw := os.Getenv(EnvInteractionHint); raw != "" {
-		on, err := strconv.ParseBool(raw)
-		switch {
-		case err != nil:
-			cfg.Warnings = append(cfg.Warnings,
-				fmt.Sprintf("unreadable %s %q — treated as true; set it to true or false", EnvInteractionHint, raw))
-		default:
-			cfg.SuppressInteractionHint = !on
-		}
-	}
-
-	if raw := strings.TrimSpace(os.Getenv(EnvUploadDir)); raw != "" {
+	if raw := strings.TrimSpace(getenv(EnvUploadDir)); raw != "" {
 		dir, err := UploadDir(raw)
 		switch {
 		case err != nil:
@@ -165,6 +148,35 @@ func Load() Config {
 	}
 
 	return cfg
+}
+
+// readRemoved describes the settings a release took out that the
+// environment still sets: in Refusals one that turned a guard on, so the
+// server does not start, and in Warnings one whose loss only makes the
+// server stricter.
+func (cfg *Config) readRemoved(getenv func(string) string) {
+	// A removed setting set to anything but false is refused: a value
+	// that is not a boolean may mean on.
+	if raw := strings.TrimSpace(getenv(EnvRequirePrompt)); raw != "" {
+		if on, err := strconv.ParseBool(raw); err != nil || on {
+			cfg.Refusals = append(cfg.Refusals, EnvRequirePrompt+" was removed: the server no longer asks the "+
+				"person, and the client's own approval decides each call. Unset it to start the server. Leave "+
+				EnvEnableDestructive+" off for a client that runs with nobody watching, and list the writes you "+
+				"want to approve under your client's ask rules, as the README shows")
+		}
+	}
+
+	// FAVRO_INTERACTION_HINT=false took the mark off. Ignoring it only
+	// makes the server stricter, so the server starts, but a deployment
+	// that relied on it is told why Claude Code now refuses those calls
+	// where it cannot prompt. true was the default, and changes nothing.
+	if raw := strings.TrimSpace(getenv(EnvInteractionHint)); raw != "" {
+		if on, err := strconv.ParseBool(raw); err != nil || !on {
+			cfg.Warnings = append(cfg.Warnings, EnvInteractionHint+" was removed and is ignored: the widest "+
+				"destructive tools always carry Claude Code's requiresUserInteraction mark, so Claude Code prompts "+
+				"on every call of them and refuses them where it cannot prompt, as in `claude -p`. Unset it")
+		}
+	}
 }
 
 // UploadDir checks a FAVRO_UPLOAD_DIR value: an absolute path to a

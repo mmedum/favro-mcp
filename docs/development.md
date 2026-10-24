@@ -1,6 +1,6 @@
 # Development
 
-Go 1.27. `go.mod` is the single source of truth — every CI job resolves
+Go 1.27.3. `go.mod` is the single source of truth — every CI job resolves
 the toolchain with `go-version-file: go.mod`, and there is deliberately
 no N-1 matrix entry.
 
@@ -40,7 +40,7 @@ places, and the registry's `gate: true` flag is what says it belongs.
 | `live-cover` | The live driver exercises every tool and every option, or waives it with a reason. |
 | `parity` | `make check` and `ci.yml` run the same set — every prerequisite, matched by what each recipe runs rather than by target name. |
 | `plugin` | The committed `.plugin` manifest against the files the packer will stage. |
-| `mcpb` | The committed `.mcpb` manifest against the files the packer will stage, plus the release configuration that gets the bundle hashed, signed and published. |
+| `mcpb` | The committed `.mcpb` manifest against the files the packer will stage, plus the release configuration that gets the bundle hashed, signed and published. It also holds what the bundle asks for to the server's own settings: every setting the source reads is asked for or left out with a reason, a switch defaults to the server's own default, an optional key has a default, the defaults configure the server as no environment does, and `privacy_policies` is not empty. |
 | `rule8` | No tool input declares an `organization_id`. The server binds one organization at startup and Favro routes by a header, so such an input cannot select anything — `favro_get_organization` carried one, required, for the life of this server. |
 | `schema-diff` | The tool schemas against the last tag, so a breaking wire change is visible in the pull request. |
 | `smoke` | The binary driven over stdio, twice: a conversation, and an abrupt disconnect. |
@@ -92,16 +92,27 @@ The standard library, not testify: `if got != want { t.Errorf(…) }`.
 make live      # drives the built binary against a real organization
 ```
 
-Every mutating step carries `dry_run`, so it builds and validates
-requests and sends none. The run makes its own `FAVRO_UPLOAD_DIR`, so the
-upload steps read a file it wrote and nothing else.
+The steps run against the first objects the organization lists, which
+the run did not create. Every step that writes carries `dry_run: true`,
+which the `live-cover` gate holds, and the server runs with `--dry-run`,
+so it builds and validates requests and sends none. The run makes its
+own `FAVRO_UPLOAD_DIR`, so the upload steps read a file it wrote and
+nothing else. The share steps name the signed-in account, which the
+users listing finds by the email the server signs in with, and expect a
+userId outside the organization to be refused.
 
-`go run ./scripts/livefavro -asks` checks asking the person instead. It
-is the one mode that writes: it creates a probe tag, asks to delete it
-and declines, then accepts and checks it is gone. The uploads and making
-a collection public are asked about with real names and declined, and
-the collection is read back to show nothing was created. It deletes
-nothing it did not create.
+`go run ./scripts/livefavro -writes` checks the writes the steps can only
+preview. It is the one mode that writes: it creates a probe tag and
+deletes it, first without `confirm: true`, which must leave it, then
+with. It creates a probe collection, checks a public create is refused
+and nothing was created, opens the collection to the organization with
+`favro_widen_collection_sharing` (refused first with a name that is not
+its own), reads it back, narrows it again and deletes it. Its client can
+be asked, and the run fails if the server asks anything. It sends a
+write only to an object it created, and refuses any other before it is
+sent. However the run ends, including on SIGINT, SIGTERM or SIGHUP, it
+looks for each probe by name, deletes it and reads that it is gone,
+and names any probe that is still there.
 
 It prints only through `internal/redact`, and
 **a transcript is never committed** — the redactor removes ids and

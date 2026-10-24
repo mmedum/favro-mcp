@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
 )
 
 // ListTasks returns one page of tasks. filter.CardCommonID is

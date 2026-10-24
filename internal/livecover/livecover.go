@@ -63,6 +63,13 @@ const (
 	// UI. The driver keeps a placeholder's value at its original type,
 	// so this arrives as an integer and not as "42".
 	AnySequentialID Placeholder = "{sequential_id}"
+	// OwnUserID is the signed-in account's own userId: the entry in the
+	// users listing whose email is the one the server signs in with. A
+	// share expected to go through names it, because the server refuses
+	// anyone it cannot find among the organization's members, and the
+	// account is the one person certain to be there. AnyUserID is the
+	// first userId any result carried, which need not be a member.
+	OwnUserID Placeholder = "{own_user_id}"
 )
 
 // The file and folder the driver puts in the FAVRO_UPLOAD_DIR it starts
@@ -72,11 +79,15 @@ const (
 	UploadFolder = "livefavro-folder"
 )
 
+// OutsideUserID is a userId no organization lists, for the steps that
+// expect a share with someone outside the organization to be refused.
+const OutsideUserID = "livefavro-no-such-user"
+
 // Placeholders is every value the driver resolves, for the test that
 // requires each one to be both resolvable and used.
 var Placeholders = []Placeholder{
 	AnyCollectionID, AnyWidgetCommonID, AnyColumnID, AnyCardID,
-	AnyCardCommonID, AnyUserID, AnyTagID, AnyCustomFieldID,
+	AnyCardCommonID, AnyUserID, OwnUserID, AnyTagID, AnyCustomFieldID,
 	AnyGroupID, AnyCommentID,
 	AnyTaskID, AnyTaskListID, AnySequentialID,
 }

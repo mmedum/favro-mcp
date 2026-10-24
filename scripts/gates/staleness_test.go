@@ -59,6 +59,30 @@ func TestToolsDocumentedReadsBothDirections(t *testing.T) {
 	}
 }
 
+// A permission rule for a tool the binary does not register asks
+// nobody, and a destructive tool without one is allowed by whoever
+// copied the example, so the rules are held to the dump both ways. A
+// README with none is a check reading nothing.
+func TestPermissionRulesNameRegisteredTools(t *testing.T) {
+	dump := &schemaDump{Tools: []schemaTool{{Name: "favro_ping"}, {Name: "favro_delete_tag"}}}
+	dump.Tools[1].Annotations.DestructiveHint = true
+	for _, tc := range []struct {
+		readme string
+		want   string
+	}{
+		{`"ask": ["mcp__favro__favro_delete_tag", "mcp__favro__favro_ping"]`, ""},
+		{`"ask": ["mcp__favro__favro_delete_tag"]`, ""},
+		{`"ask": ["mcp__favro__favro_delete_tag", "mcp__favro__favro_delete_teg"]`, "permission rule for favro_delete_teg"},
+		{`"ask": ["mcp__favro__favro_ping"]`, "no permission rule for favro_delete_tag, which is destructive"},
+		{"no rules here", "gives no `permissions.ask` rule"},
+	} {
+		got := strings.Join(permissionRulesRegistered(tc.readme, dump), "\n")
+		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+			t.Errorf("%s: got %q, want %q", tc.readme, got, tc.want)
+		}
+	}
+}
+
 // A design document's status line claims something no tag can derive, so
 // nothing but this will catch it. A sibling's said v0.5.0 five releases
 // after v0.5.0.

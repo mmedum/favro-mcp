@@ -7,8 +7,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
 )
 
 const (
@@ -47,6 +47,7 @@ type updateTasklistInput struct {
 
 type deleteTasklistInput struct {
 	dryRunInput
+	confirmInput
 	TaskListID string `json:"task_list_id" jsonschema:"the Favro taskListId to delete"`
 }
 

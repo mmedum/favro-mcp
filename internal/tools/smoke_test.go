@@ -153,12 +153,16 @@ var smokeToolInputs = map[string]map[string]any{
 	createCollectionToolName: {"name": "smoke collection", "dry_run": true},
 	updateCollectionToolName: {"collection_id": smokeCollectionID, "name": "renamed", "dry_run": true},
 	deleteCollectionToolName: {"collection_id": smokeCollectionID, "dry_run": true},
-	createWidgetToolName:     {"collection_id": smokeCollectionID, "name": "smoke widget", "dry_run": true},
-	updateWidgetToolName:     {"widget_common_id": smokeWidgetID, "name": "renamed", "dry_run": true},
-	deleteWidgetToolName:     {"widget_common_id": smokeWidgetID, "dry_run": true},
-	createColumnToolName:     {"widget_common_id": smokeWidgetID, "name": "Doing", "dry_run": true},
-	updateColumnToolName:     {"column_id": smokeColumnID, "name": "renamed", "dry_run": true},
-	deleteColumnToolName:     {"column_id": smokeColumnID, "dry_run": true},
+	widenCollectionSharingToolName: {
+		"collection_id": smokeCollectionID, "collection_name": "Fixture Collection",
+		"public_sharing": "organization", "dry_run": true,
+	},
+	createWidgetToolName: {"collection_id": smokeCollectionID, "name": "smoke widget", "dry_run": true},
+	updateWidgetToolName: {"widget_common_id": smokeWidgetID, "name": "renamed", "dry_run": true},
+	deleteWidgetToolName: {"widget_common_id": smokeWidgetID, "collection_id": smokeCollectionID, "dry_run": true},
+	createColumnToolName: {"widget_common_id": smokeWidgetID, "name": "Doing", "dry_run": true},
+	updateColumnToolName: {"column_id": smokeColumnID, "name": "renamed", "dry_run": true},
+	deleteColumnToolName: {"column_id": smokeColumnID, "dry_run": true},
 
 	// ---- Group writes ----
 	createGroupToolName: {"name": "smoke group", "dry_run": true},

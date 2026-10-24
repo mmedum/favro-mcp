@@ -15,8 +15,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 
-	"github.com/mmedum/favro-mcp/v3/internal/auth"
-	"github.com/mmedum/favro-mcp/v3/internal/config"
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 // TestRun_Version_PrintsToStdout pins the discipline that --version
@@ -212,6 +212,31 @@ func TestRunServer_PartialEnvCredentials_Errors(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), keyringOnlyCredentials().OrganizationID) {
 		t.Errorf("a partial env set must not fall through to the keyring: %q present", keyringOnlyCredentials().OrganizationID)
+	}
+}
+
+// A removed setting still turned on stops the server before it starts:
+// with credentials that would otherwise serve, FAVRO_REQUIRE_PROMPT=true
+// fails the run and says why. (Off is config.Load's test: the server it
+// would start reads this process's stdin, which TestStartupLineNamesNoTenant
+// needs.)
+func TestRunServer_ARemovedSettingRefusesToStart(t *testing.T) {
+	isolateCredentials(t)
+	tok := testCredentials()
+	t.Setenv(auth.EnvUserEmail, tok.Email)
+	t.Setenv(auth.EnvAPIToken, tok.APIToken)
+	t.Setenv(auth.EnvOrganizationID, tok.OrganizationID)
+	t.Setenv(config.EnvSkipValidate, "1")
+	t.Setenv(config.EnvRequirePrompt, "true")
+	var logs bytes.Buffer
+	captureLogs(t, &logs)
+
+	if err := runServer(nil, config.Load(), io.Discard, io.Discard); err == nil {
+		t.Errorf("%s=true: runServer returned nil, want a refusal", config.EnvRequirePrompt)
+	}
+	if !strings.Contains(logs.String(), "FAVRO_REQUIRE_PROMPT was removed") ||
+		strings.Contains(logs.String(), "favro-mcp starting") {
+		t.Errorf("%s=true: want the refusal logged and no start:\n%s", config.EnvRequirePrompt, logs.String())
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
 )
 
 func TestMCP_CreateColumn_HappyPath(t *testing.T) {
@@ -131,7 +131,7 @@ func TestMCP_DeleteColumn_HappyPath(t *testing.T) {
 	cs := connectInMemoryWith(t, c)
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      deleteColumnToolName,
-		Arguments: map[string]any{"column_id": "col-1"},
+		Arguments: map[string]any{"column_id": "col-1", "confirm": true},
 	})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)

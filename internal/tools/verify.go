@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
-	"github.com/mmedum/favro-mcp/v3/internal/service"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/service"
 )
 
 // Hard rule 2: a 200 from Favro is not confirmation, and a write is
@@ -54,13 +54,16 @@ const verifyPlacementDescription = "A write that sets `column_id` or `lane_id` i
 // The notes the read-backs emit, next to each other so their wording
 // can be read as one vocabulary.
 const (
-	noteReadBackFailed    = "the write was sent, but reading the card back to verify it failed (%v). Favro answers 200 for a body it ignored, so treat this write as unconfirmed."
+	noteReadBackFailed    = "the write was sent, but reading the %s back to verify it failed (%v). Favro answers 200 for a body it ignored, so treat this write as unconfirmed."
 	notePlacementVerified = "verified by reading the card back: it is in the requested %s."
 	notePlacementIgnored  = "%s did not change: the card was read back after the write and reports %q, not %q. Favro answered 200 for a move it did not store."
 	notePlacementElsewise = "not verified: the card read back is on board %q, not the %q this write named. A write naming another board adds the card there and leaves this instance where it was, so compare on the target board."
 	noteLaneUnreadable    = "lane_id not verified: the card read back carries no laneId, which is also what a card on a board without lanes carries."
 	noteFieldPresent      = "verified by reading the card back: the %q field is on the card, carrying %s. Favro normalizes some values on the way in, so compare it with what was written."
 	noteFieldAbsent       = "the %q field is not on the card after the write. Favro answers 200 for a custom-field write it discarded, which is what it does when the card's widget has not enabled the field. If this write cleared the field, absence is expected."
+	noteSharingVerified   = "verified by reading the collection back: public_sharing is %q."
+	noteSharingIgnored    = "public_sharing did not change: the collection was read back after the write and reports %q, not %q. Favro answered 200 for a write it did not store."
+	noteSharingWas        = "public_sharing was %q before this call."
 )
 
 // placement is where a write asked Favro to put a card.
@@ -90,7 +93,7 @@ func verifyPlacement(ctx context.Context, r *service.Resolver, cardID string, wr
 	}
 	card, err := r.Client().GetCard(ctx, cardID)
 	if err != nil {
-		return []string{fmt.Sprintf(noteReadBackFailed, err)}
+		return []string{fmt.Sprintf(noteReadBackFailed, "card", err)}
 	}
 	if card.WidgetCommonID != want.WidgetCommonID {
 		return []string{fmt.Sprintf(notePlacementElsewise, card.WidgetCommonID, want.WidgetCommonID)}
@@ -152,7 +155,7 @@ func laneMismatch(got, want string) string {
 func verifyCustomField(ctx context.Context, r *service.Resolver, cardID string, field favro.CustomField) []string {
 	card, err := r.Client().GetCard(ctx, cardID)
 	if err != nil {
-		return []string{fmt.Sprintf(noteReadBackFailed, err)}
+		return []string{fmt.Sprintf(noteReadBackFailed, "card", err)}
 	}
 	for _, value := range card.CustomFields() {
 		if value.CustomFieldID != field.CustomFieldID {

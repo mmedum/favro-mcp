@@ -5,8 +5,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/render"
-	"github.com/mmedum/favro-mcp/v3/internal/service"
+	"github.com/mmedum/favro-mcp/v4/internal/render"
+	"github.com/mmedum/favro-mcp/v4/internal/service"
 )
 
 const searchCardsToolName = "favro_search_cards"

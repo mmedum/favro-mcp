@@ -59,7 +59,7 @@ body:
     attributes:
       label: Is FAVRO_ENABLE_DESTRUCTIVE set?
       description: |
-        It registers the delete-style tools. The doctor output above says so
+        It registers the destructive tools. The doctor output above says so
         too; this is here because it changes what a report can mean.
       options:
         - "No (default)"

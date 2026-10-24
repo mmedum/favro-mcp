@@ -1,0 +1,340 @@
+package tools
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/render"
+	"github.com/mmedum/favro-mcp/v4/internal/service"
+)
+
+// Sharing inside the organization (§9.2). A client remembers an
+// approval per tool, never per argument, so a wide share carried as an
+// argument rides along unseen once the tool is always allowed. The
+// ordinary writes therefore give access only to people already in the
+// organization, named by userId, and to groups whose members all are,
+// and make nobody a new owner. Opening a collection to the whole organization or to anyone
+// with its link is favro_widen_collection_sharing, behind the
+// destructive flag. Invitations by email, admins, and guests made a
+// widget's owners or editors have no tool here at all; the person does
+// those in Favro.
+
+// insideRoles are the organization roles of the people inside it. Any
+// other role, and a role Favro adds later, is someone this server does
+// not share with: a guest, an external member, a disabled account.
+var insideRoles = map[string]bool{"administrator": true, "fullMember": true}
+
+// grant is one entry of a write that gives access: a person or group
+// and the role it would hold.
+type grant struct {
+	// at is where the entry sits in the call, for the refusal:
+	// "share_to_users[0]".
+	at                         string
+	typ, userID, groupID, mail string
+	role                       string
+	// remove is an entry flagged delete: true. It is sent as given, and
+	// Favro may ignore the flag, so it widens nothing only when it names
+	// someone who already has access.
+	remove bool
+}
+
+// isGroup is a grant that names a group rather than a person.
+func (g grant) isGroup() bool { return strings.EqualFold(g.typ, "group") }
+
+// key is who the grant names, as held keys it.
+func (g grant) key() string {
+	if g.isGroup() {
+		return "group:" + g.groupID
+	}
+	return "user:" + g.userID
+}
+
+// sharedGrants are a collection's share entries as grants.
+func sharedGrants(field string, users []favro.SharedUser) []grant {
+	out := make([]grant, len(users))
+	for i, u := range users {
+		out[i] = grant{
+			at: fmt.Sprintf("%s[%d]", field, i), typ: u.Type, userID: u.UserID, groupID: u.GroupID,
+			mail: u.Email, role: u.Role, remove: u.Delete != nil && *u.Delete,
+		}
+	}
+	return out
+}
+
+// memberGrants are a group's member entries as grants.
+func memberGrants(members []favro.GroupMember) []grant {
+	out := make([]grant, len(members))
+	for i, m := range members {
+		out[i] = grant{
+			at: fmt.Sprintf("members[%d]", i), userID: m.UserID, mail: m.Email, role: m.Role,
+			remove: m.Delete != nil && *m.Delete,
+		}
+	}
+	return out
+}
+
+// heldBy is who already has access, read from Favro as grants, by
+// grant key, with their role.
+func heldBy(grants []grant) map[string]string {
+	held := make(map[string]string, len(grants))
+	for _, g := range grants {
+		held[g.key()] = g.role
+	}
+	return held
+}
+
+// heldFunc reads who already has access, by grant key, with their role.
+type heldFunc func() (map[string]string, error)
+
+// noneHeld is what a create holds: nobody.
+func noneHeld() (map[string]string, error) { return nil, nil }
+
+// checkGrants refuses the grants of an ordinary write that reach past
+// the organization or make a new owner. owner is the role that makes
+// one: "admin" on a collection, "administrator" on a group. held reads
+// who already has access, from Favro for an update: an entry that gives
+// someone no more than they already hold widens nothing, which matters
+// for favro_update_group, whose member list replaces the whole one. The
+// entries' own shape is checked first, removals included, so such a
+// refusal costs no request.
+func checkGrants(ctx context.Context, r *service.Resolver, tool, owner string, held heldFunc, grants []grant) error {
+	for _, g := range grants {
+		if err := checkShape(tool, g); err != nil {
+			return err
+		}
+	}
+	if len(grants) == 0 {
+		return nil
+	}
+	had, err := held()
+	if err != nil {
+		return err
+	}
+	widened, err := checkOwners(tool, owner, had, grants)
+	if err != nil || len(widened) == 0 {
+		return err
+	}
+	return checkWidened(ctx, r, tool, widened)
+}
+
+// checkWidened refuses a grant that would give someone outside the
+// organization more than they hold: a person directly, or anyone in a
+// group.
+func checkWidened(ctx context.Context, r *service.Resolver, tool string, widened []grant) error {
+	var people, groups []grant
+	for _, g := range widened {
+		if g.isGroup() {
+			groups = append(groups, g)
+		} else {
+			people = append(people, g)
+		}
+	}
+	if err := checkGroups(ctx, r, tool, groups); err != nil || len(people) == 0 {
+		return err
+	}
+	return checkMembers(ctx, r, tool, people)
+}
+
+// roleRank orders the roles a grant can give, narrowest first: a
+// collection's guest, view, edit and admin, and a group's member and
+// administrator. A role this server does not know ranks above them all,
+// so giving it counts as a raise.
+func roleRank(role string) int {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "guest", "member":
+		return 0
+	case "view":
+		return 1
+	case "edit":
+		return 2
+	case "admin", "administrator":
+		return 3
+	}
+	return 4
+}
+
+// checkOwners refuses a grant that makes a new owner, and a removal of
+// someone who has no access, which Favro may read as adding them if it
+// ignores the flag. It returns the people the grants would give more
+// than they hold: everyone who holds nothing yet, and anyone raised
+// above the role they have.
+func checkOwners(tool, owner string, had map[string]string, given []grant) ([]grant, error) {
+	var widened []grant
+	for _, g := range given {
+		held, ok := had[g.key()]
+		if g.remove && !ok {
+			return nil, render.Errorf(render.ClassBlocked, "%s: %s removes someone who has no access here, and "+
+				"Favro may read it as adding them; nothing was changed. Remove only someone the %s already holds",
+				tool, g.at, holder(owner))
+		}
+		if strings.EqualFold(strings.TrimSpace(g.role), owner) && !strings.EqualFold(held, owner) {
+			return nil, render.Errorf(render.ClassBlocked, "%s: %s would make a new %s, who can change who else has "+
+				"access; nothing was changed. This server makes nobody a new %s; the person can do that in Favro",
+				tool, g.at, owner, owner)
+		}
+		if widens(g, held, ok) {
+			widened = append(widened, g)
+		}
+	}
+	return widened, nil
+}
+
+// widens reports whether g gives a person or a group more than they
+// hold: held is their role, and ok whether they have one. A removal that
+// names no role raises nobody.
+func widens(g grant, held string, ok bool) bool {
+	switch {
+	case !ok:
+		return true
+	case g.remove && g.role == "":
+		return false
+	}
+	return roleRank(g.role) > roleRank(held)
+}
+
+// holder is what holds the access a write with this owner role
+// changes.
+func holder(owner string) string {
+	if owner == "administrator" {
+		return "group"
+	}
+	return "collection"
+}
+
+// checkMembers refuses a grant to someone the organization does not
+// list as a member.
+func checkMembers(ctx context.Context, r *service.Resolver, tool string, widened []grant) error {
+	ids := make([]string, len(widened))
+	for i, g := range widened {
+		ids[i] = g.userID
+	}
+	roles, err := r.OrganizationRoles(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, g := range widened {
+		role, ok := roles[g.userID]
+		switch {
+		case !ok:
+			return render.Errorf(render.ClassBlocked, "%s: %s names a userId that is not in this organization; "+
+				"nothing was changed. Name people already in it by userId, which favro_resolve_user finds", tool, g.at)
+		case !insideRoles[role]:
+			return render.Errorf(render.ClassBlocked, "%s: %s names someone whose organization role is %q, so they "+
+				"are not a member of the organization; nothing was changed. This server shares only with members; "+
+				"the person can share with anyone else in Favro", tool, g.at, role)
+		}
+	}
+	return nil
+}
+
+// checkGroups refuses a grant to a group that holds anyone the
+// organization does not list as a member, read from the group: sharing
+// with the group shares with them. A group whose members cannot be read
+// is refused too, since who it would share with is not known.
+func checkGroups(ctx context.Context, r *service.Resolver, tool string, groups []grant) error {
+	for _, g := range groups {
+		group, err := r.Client().GetGroup(ctx, g.groupID)
+		if err != nil {
+			return render.Errorf(render.ClassBlocked, "%s: %s names a group whose members could not be read (%v), "+
+				"so who it would share with is not known; nothing was changed. %s", tool, g.at, err, widerGroup)
+		}
+		ids := make([]string, len(group.Members))
+		for i, m := range group.Members {
+			ids[i] = m.UserID
+		}
+		roles, err := r.OrganizationRoles(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if !insideRoles[roles[id]] {
+				return render.Errorf(render.ClassBlocked, "%s: %s names a group that holds someone who is not a "+
+					"member of the organization, who would gain access with it; nothing was changed. %s",
+					tool, g.at, widerGroup)
+			}
+		}
+	}
+	return nil
+}
+
+// widerGroup is what a refusal of a group says to do instead.
+const widerGroup = "This server shares only with groups of members. favro_widen_collection_sharing opens a " +
+	"collection past the people it is shared with, and is registered only with FAVRO_ENABLE_DESTRUCTIVE=true; " +
+	"the person can share with this group in Favro"
+
+// checkShape refuses an entry by its shape alone: whom it names and how,
+// before anything is read.
+func checkShape(tool string, g grant) error {
+	switch {
+	case strings.EqualFold(g.typ, "organization"):
+		return render.Errorf(render.ClassBlocked, "%s: %s shares with the whole organization; nothing was changed. "+
+			"favro_widen_collection_sharing with public_sharing: 'organization' does that, and is registered only "+
+			"with FAVRO_ENABLE_DESTRUCTIVE=true", tool, g.at)
+	case g.typ != "" && !strings.EqualFold(g.typ, "user") && !g.isGroup():
+		return render.Errorf(render.ClassBlocked, "%s: %s has type %q; this server shares only with a user or a "+
+			"group. Nothing was changed", tool, g.at, g.typ)
+	case g.mail != "":
+		return render.Errorf(render.ClassBlocked, "%s: %s names someone by email, which can invite a person from "+
+			"outside the organization; nothing was changed. Name people already in it by userId, which "+
+			"favro_resolve_user finds. This server sends no invitations; the person can invite anyone else in Favro",
+			tool, g.at)
+	case g.isGroup() && g.groupID == "":
+		return fmt.Errorf("%s: %s is a group and names no groupId", tool, g.at)
+	case !g.isGroup() && g.userID == "":
+		return fmt.Errorf("%s: %s names no userId; name people already in the organization by userId, which "+
+			"favro_resolve_user finds", tool, g.at)
+	}
+	return nil
+}
+
+// errOwnerRoleGuests is a widget write that would make every guest on
+// the widget one of its owners.
+var errOwnerRoleGuests = render.Sentinel(render.ClassBlocked,
+	"owner_role 'guests' makes every guest on the widget an owner, people outside the organization among them; "+
+		"nothing was changed. This server makes no guest an owner; the person can do that in Favro. Omit "+
+		"owner_role to keep the current one")
+
+// errEditRoleGuests is a widget write that would let every guest on the
+// widget edit it.
+var errEditRoleGuests = render.Sentinel(render.ClassBlocked,
+	"edit_role 'guests' lets every guest on the widget edit it, people outside the organization among them; "+
+		"nothing was changed. This server gives no guest edit rights; the person can do that in Favro. Omit "+
+		"edit_role to keep the current one")
+
+// checkWidgetRoles refuses owner_role or edit_role 'guests'.
+func checkWidgetRoles(ownerRole, editRole string) error {
+	if strings.EqualFold(strings.TrimSpace(ownerRole), "guests") {
+		return errOwnerRoleGuests
+	}
+	if strings.EqualFold(strings.TrimSpace(editRole), "guests") {
+		return errEditRoleGuests
+	}
+	return nil
+}
+
+// The collection sharing modes, as Favro spells them.
+const (
+	sharingUsers        = "users"
+	sharingOrganization = "organization"
+	sharingPublic       = "public"
+)
+
+// sharingMode is a public_sharing value as Favro spells the modes.
+func sharingMode(mode string) string { return strings.ToLower(strings.TrimSpace(mode)) }
+
+// checkPublicSharing refuses a mode the ordinary collection writes do
+// not set: anything but 'users', which is the default and the narrowest.
+func checkPublicSharing(tool, mode string) error {
+	switch sharingMode(mode) {
+	case "", sharingUsers:
+		return nil
+	case sharingOrganization, sharingPublic:
+		return render.Errorf(render.ClassBlocked, "%s: public_sharing %q opens the collection past the people "+
+			"it is shared with; nothing was changed. favro_widen_collection_sharing does that, and is registered "+
+			"only with FAVRO_ENABLE_DESTRUCTIVE=true", tool, mode)
+	}
+	return render.Errorf(render.ClassBlocked, "%s: public_sharing %q is not a mode this tool sets; it sets only "+
+		"'users'. Nothing was changed", tool, mode)
+}

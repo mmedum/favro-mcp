@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/favro-mcp/v3/internal/auth"
-	"github.com/mmedum/favro-mcp/v3/internal/config"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
-	"github.com/mmedum/favro-mcp/v3/internal/redact"
-	"github.com/mmedum/favro-mcp/v3/internal/version"
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/config"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/redact"
+	"github.com/mmedum/favro-mcp/v4/internal/version"
 )
 
 // `favro-mcp doctor` answers the question every first-run bug report is
@@ -316,7 +316,7 @@ func settingChecks(cfg config.Config) []check {
 
 	destructive := check{
 		statusOK, config.EnvEnableDestructive,
-		"unset — the delete-style tools are not registered",
+		"unset — the destructive tools are not registered",
 	}
 	if cfg.Destructive {
 		// A warning rather than a fact: a host in an auto-approve mode
@@ -324,7 +324,7 @@ func settingChecks(cfg config.Config) []check {
 		// reason the flag exists.
 		destructive = check{
 			statusWarn, config.EnvEnableDestructive,
-			"true — delete-style tools ARE registered and can run unattended",
+			"true — the destructive tools ARE registered and can run unattended",
 		}
 	}
 	out = append(out, destructive)
@@ -335,6 +335,10 @@ func settingChecks(cfg config.Config) []check {
 	}
 	out = append(out, skip)
 
+	// A removed setting still turned on, which stops the server.
+	for _, refusal := range cfg.Refusals {
+		out = append(out, check{statusFail, "configuration", refusal})
+	}
 	// Anything config.Load could not read. These are already warned at
 	// startup, where nobody filing an issue was looking.
 	for _, warning := range cfg.Warnings {

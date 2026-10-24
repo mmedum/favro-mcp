@@ -2,12 +2,12 @@
 
 [![CI](https://github.com/mmedum/favro-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/mmedum/favro-mcp/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/mmedum/favro-mcp)](https://github.com/mmedum/favro-mcp/releases/latest)
-[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/favro-mcp/v3.svg)](https://pkg.go.dev/github.com/mmedum/favro-mcp/v3)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mmedum/favro-mcp/v4.svg)](https://pkg.go.dev/github.com/mmedum/favro-mcp/v4)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for [Favro](https://favro.com), written in Go.
 
-It speaks MCP over stdio and exposes Favro's REST API as 85 typed tools. Beyond
+It speaks MCP over stdio and exposes Favro's REST API as 86 typed tools. Beyond
 plain CRUD, it ships workflow tools built for natural-language use — search,
 name→ID resolution, surgical description edits — so an LLM can act on Favro
 without spending its rate-limit budget on lookup round-trips. Every mutating
@@ -15,7 +15,7 @@ tool supports `dry_run`.
 
 > **Unofficial.** Not affiliated with or endorsed by Favro.
 
-**Requirements:** Go 1.27.2 to build from source; a Favro account with an API
+**Requirements:** Go 1.27.3 to build from source; a Favro account with an API
 token. See [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 ## Installation
@@ -23,6 +23,8 @@ token. See [CHANGELOG.md](./CHANGELOG.md) for release history.
 ### Claude Desktop bundle
 
 Each tagged release publishes a `favro-mcp_<version>.mcpb` on the [GitHub Releases page](https://github.com/mmedum/favro-mcp/releases). Opening it installs the server into Claude Desktop and prompts for the three values it needs — your Favro email, an API token, and the organization id — so there is no config file to hand-edit.
+
+It also asks for the two settings a config file would carry. The destructive tools (`enable_destructive`) stay off unless you turn them on, and so do uploads until you pick an upload folder (`upload_dir`). This server asks nobody before a call. Claude Desktop approves each tool, and a tool you always allow then runs unasked, so leave `enable_destructive` off unless you need its tools.
 
 The bundle carries a macOS universal binary, a Windows amd64 binary, and both Linux architectures behind a launcher that picks at startup. It is listed in `checksums.txt` and covered by the release signature; see [Verifying a download](#verifying-a-download).
 
@@ -54,7 +56,7 @@ cd favro-mcp
 make build       # → bin/favro-mcp
 ```
 
-Requires Go 1.27.2, the version `go.mod` declares. Under the default
+Requires Go 1.27.3, the version `go.mod` declares. Under the default
 `GOTOOLCHAIN=auto` an older toolchain downloads it on demand; under
 `GOTOOLCHAIN=local` the build fails instead of downgrading.
 
@@ -91,25 +93,71 @@ Two sources, checked in order; the first one that produces a complete `(email, t
 1. **Environment variables** — `FAVRO_USER_EMAIL`, `FAVRO_API_TOKEN`, `FAVRO_ORGANIZATION_ID`.
 2. **OS keyring** — populated once via `favro-mcp auth login` (cross-platform: macOS Keychain, Windows Credential Manager, Linux Secret Service).
 
-Six more variables change how the server runs rather than who it runs as:
+Four more variables change how the server runs rather than who it runs as:
 
 | Variable | Effect |
 | --- | --- |
 | `FAVRO_LOG_LEVEL` | `debug` / `info` (default) / `warn` / `error`. Logs go to stderr; stdout carries only the MCP protocol stream. |
 | `FAVRO_MCP_SKIP_VALIDATE` | When set to anything non-empty, skips the startup call that checks the credentials against Favro. For offline testing; the server then fails on the first real tool call instead of at startup. |
-| `FAVRO_ENABLE_DESTRUCTIVE` | Set to `true` to register the delete-style tools. Off by default, and "off" means they are absent from `tools/list` rather than guarded — a host in an auto-approve mode runs a tool without prompting, so not registering it is the only guarantee. Anything the value cannot be read as `true` leaves them off. |
+| `FAVRO_ENABLE_DESTRUCTIVE` | Set to `true` to register the destructive tools: the deletes, and `favro_widen_collection_sharing`. Off by default, and "off" means they are absent from `tools/list` rather than guarded — a host in an auto-approve mode runs a tool without prompting, so not registering it is the only guarantee. Anything the value cannot be read as `true` leaves them off. Each call must also pass `confirm: true`. |
 | `FAVRO_UPLOAD_DIR` | The one directory the upload tools read files from, as an absolute path. Unset, and they are not registered. Nothing outside it is read, and a link out of it is refused. |
-| `FAVRO_REQUIRE_PROMPT` | Set to `true` to refuse the writes that ask the person when the client cannot ask them. |
-| `FAVRO_INTERACTION_HINT` | Set to `false` to take Claude Code's `requiresUserInteraction` mark off the writes that ask the person, for a client that cannot ask. On by default. Headless, Claude Code refuses a marked tool, so turn it off only for a deployment with nobody at the keyboard. |
 
-Before the deletes Favro cannot undo, before an upload, and before
-making a collection public, the server asks the person through the
-client when it can, and names what would go. A call they did not
-confirm comes back `[blocked]`.
+`FAVRO_REQUIRE_PROMPT` is removed. Set to anything but `false`, the
+server refuses to start; unset it. `FAVRO_INTERACTION_HINT` is removed
+too: set to `false`, it is ignored with a warning, and the marked tools
+keep their mark.
 
-For a client that cannot ask, those ten writes carry Claude Code's
-`requiresUserInteraction` mark instead, so it prompts on every call. A
-client that can ask gets no mark, so you answer once.
+### Approving calls
+
+Your MCP client approves each call; the server does not ask you itself.
+claude.ai and Codex prompt for the destructive tools, which are marked
+`destructiveHint`, and VS Code prompts for every tool that writes.
+
+In Claude Code, five tools ask on every call whatever your rules say:
+`favro_delete_tag`, `favro_delete_group`, `favro_delete_widget` and
+`favro_delete_collection`, whose loss reaches past the one thing deleted,
+and `favro_widen_collection_sharing`, which opens a collection to the
+whole organization or to anyone with its link. Where no prompt can be
+shown, as in `claude -p`, Claude Code refuses them. For the rest, list
+the calls you want to approve one by one under `permissions.ask` in your
+settings, with the name you gave the server in place of `favro`. For
+example, the writes that share, publish, send a file or delete:
+
+```json
+{
+  "permissions": {
+    "ask": [
+      "mcp__favro__favro_create_collection", "mcp__favro__favro_update_collection",
+      "mcp__favro__favro_widen_collection_sharing",
+      "mcp__favro__favro_create_group", "mcp__favro__favro_update_group",
+      "mcp__favro__favro_upload_attachment", "mcp__favro__favro_upload_comment_attachment",
+      "mcp__favro__favro_delete_tag", "mcp__favro__favro_delete_group",
+      "mcp__favro__favro_delete_widget", "mcp__favro__favro_delete_collection",
+      "mcp__favro__favro_delete_column", "mcp__favro__favro_delete_card",
+      "mcp__favro__favro_delete_comment", "mcp__favro__favro_delete_task",
+      "mcp__favro__favro_delete_tasklist", "mcp__favro__favro_delete_webhook",
+      "mcp__favro__favro_remove_attachment", "mcp__favro__favro_replace_dependencies",
+      "mcp__favro__favro_delete_dependency", "mcp__favro__favro_delete_all_dependencies"
+    ]
+  }
+}
+```
+
+What holds whatever the client does:
+
+- **Destructive tools only on request.** They exist only with
+  `FAVRO_ENABLE_DESTRUCTIVE=true`, and each call must pass
+  `confirm: true`; `dry_run: true` previews without it.
+- **Sharing stays inside the organization.** The ordinary collection,
+  group and widget writes share only with members of the organization,
+  named by userId, and with groups of members. An invitation by email,
+  a new admin, someone outside the organization, a group that holds
+  someone outside it, guests as a widget's owners or editors, and a
+  public or organization-wide collection are refused.
+  `favro_widen_collection_sharing` opens a collection, and takes the
+  collection's name as well as its id, so the prompt shows which one.
+- **No wider delete by omission.** `favro_delete_widget` takes
+  `collection_id` or `everywhere: true`, and refuses a call with neither.
 
 ### `auth` subcommands
 
@@ -173,7 +221,7 @@ For sandboxed or pre-autonomy testing, `--dry-run` on the binary forces dry-run 
 
 ## Tools
 
-85 tools covering every Favro REST resource, plus workflow tools built for
+86 tools covering every Favro REST resource, plus workflow tools built for
 natural-language use. See **[docs/TOOLS.md](./docs/TOOLS.md)** for the full
 reference.
 

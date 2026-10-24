@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/favro-mcp/v3/internal/auth"
-	"github.com/mmedum/favro-mcp/v3/internal/config"
+	"github.com/mmedum/favro-mcp/v4/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 // The organization ids these tests use are fabricated, and deliberately
@@ -166,7 +166,7 @@ func TestDoctorWithoutCredentialsSkipsTheNetwork(t *testing.T) {
 	}
 }
 
-// TestDoctorReportsDestructiveFlag: whether the delete-style tools are
+// TestDoctorReportsDestructiveFlag: whether the destructive tools are
 // registered changes what this server can do unattended, and a bug
 // report that omits it is missing the first thing to ask about.
 func TestDoctorReportsDestructiveFlag(t *testing.T) {
@@ -178,6 +178,20 @@ func TestDoctorReportsDestructiveFlag(t *testing.T) {
 	}
 	if !strings.Contains(out, "warn") || !strings.Contains(out, config.EnvEnableDestructive) {
 		t.Errorf("the report does not warn that destructive tools are registered:\n%s", out)
+	}
+}
+
+// A removed setting still turned on is a failed check: it is why the
+// server will not start, and the report is where a person looks.
+func TestDoctorFailsOnARemovedSetting(t *testing.T) {
+	doctorEnv(t, boundOrgID)
+	t.Setenv(config.EnvRequirePrompt, "true")
+	out, err := runReport(t, false, favroStub(t, http.StatusOK, boundOrgID))
+	if err == nil {
+		t.Errorf("doctor passed with %s=true:\n%s", config.EnvRequirePrompt, out)
+	}
+	if !strings.Contains(out, "FAVRO_REQUIRE_PROMPT was removed") {
+		t.Errorf("the report does not name the removed setting:\n%s", out)
 	}
 }
 

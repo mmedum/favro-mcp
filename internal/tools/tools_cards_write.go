@@ -7,10 +7,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
-	"github.com/mmedum/favro-mcp/v3/internal/render"
-	"github.com/mmedum/favro-mcp/v3/internal/service"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/render"
+	"github.com/mmedum/favro-mcp/v4/internal/service"
 )
 
 const (
@@ -108,6 +108,7 @@ type moveCardInput struct {
 // and the LLM has to pick correctly.
 type deleteCardInput struct {
 	dryRunInput
+	confirmInput
 	CardID     string `json:"card_id" jsonschema:"the per-widget cardId to delete"`
 	Everywhere bool   `json:"everywhere,omitempty" jsonschema:"if false (default), deletes only this per-widget card instance; other widgets sharing the same cardCommonId keep their copies. If true, deletes the cardCommonId across EVERY widget — irreversible."`
 }
@@ -414,28 +415,19 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 }
 
 func registerDeleteCard(reg *registry, r *service.Resolver) {
-	addAsking(reg, &mcp.Tool{
+	addTool(reg, &mcp.Tool{
 		Name: deleteCardToolName,
 		Description: "Delete a Favro card by its per-widget cardId. With `everywhere: false` " +
 			"(default) only this widget's instance is removed — other widgets sharing the " +
 			"same cardCommonId keep their copies. With `everywhere: true` the card is purged " +
 			"from EVERY widget — irreversible. Returns the list of cardIds Favro deleted. " +
 			"Successful live writes invalidate the search-cards cache. Destructive — MCP hosts " +
-			"may warn before auto-confirming. Pass `dry_run: true` to preview." +
-			asksFirstWhen("With `everywhere: true`"),
+			"may warn before auto-confirming. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Delete Favro card", true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteCardInput) (*mcp.CallToolResult, writeOutput[favro.DeleteCardResponse], error) {
 		writeCtx := ctx
 		if in.DryRun {
 			writeCtx = favroapi.WithDryRun(ctx)
-		}
-		if in.Everywhere {
-			if err := confirmFirst(ctx, r.Client().DryRun(writeCtx), func() (render.Question, error) {
-				c, err := r.Client().GetCard(ctx, in.CardID)
-				return render.AskDeleteCardEverywhere(in.CardID, c.Name), err
-			}); err != nil {
-				return nil, writeOutput[favro.DeleteCardResponse]{}, err
-			}
 		}
 		out, err := runWrite(
 			func() (favro.DeleteCardResponse, error) {

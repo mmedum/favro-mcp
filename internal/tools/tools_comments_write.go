@@ -6,9 +6,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
-	"github.com/mmedum/favro-mcp/v3/internal/favroapi"
-	"github.com/mmedum/favro-mcp/v3/internal/service"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/service"
 )
 
 const (
@@ -35,6 +35,7 @@ type updateCommentInput struct {
 // deleteCommentInput is the input for favro_delete_comment.
 type deleteCommentInput struct {
 	dryRunInput
+	confirmInput
 	CommentID string `json:"comment_id" jsonschema:"the Favro commentId to delete"`
 }
 

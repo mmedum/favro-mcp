@@ -8,6 +8,46 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-10-24
+
+### Added
+- The Claude Desktop bundle asks for `enable_destructive`, off unless you turn it on, names Favro's privacy policy, and needs Claude Desktop 0.10.0 or later.
+
+### Changed
+- The bundle stages its files under the sibling servers' names: `server/favro-mcp-darwin`, `server/favro-mcp-linux-amd64`, `server/favro-mcp-linux-arm64` and `server/launch-linux.sh`.
+
+### Fixed
+- The bundle's upload folder defaults to empty. Without a default, the reference host passes `${user_config.upload_dir}` through as written when you leave the field blank, and the server logs that as not an absolute path.
+
+## [4.0.0] - 2026-10-23
+
+### Added
+- `favro_widen_collection_sharing` opens a collection to the whole organization (`public_sharing: 'organization'`) or to anyone with its link (`'public'`). It is destructive, so registered only with `FAVRO_ENABLE_DESTRUCTIVE`; it takes `confirm: true` and the collection's name as a witness, and reads the collection back.
+- `favro_delete_widget` takes `everywhere: true` for the delete from every collection.
+
+### Changed
+- **Breaking:** the Go module path is `github.com/mmedum/favro-mcp/v4`.
+- **Breaking:** the server no longer asks the person before a write; your MCP client's own approval decides each call. The README gives Claude Code `permissions.ask` rules for the writes that share, publish, send a file or delete.
+- **Breaking:** every destructive tool refuses a call without `confirm: true` as `[blocked]`, unless it is a dry run.
+- **Breaking:** `favro_create_collection` and `favro_update_collection` refuse `public_sharing: 'organization'` and `'public'`; `favro_widen_collection_sharing` sets them.
+- **Breaking:** the collection and group writes share only with members of the organization, by `userId`, and with groups whose members all are; a group that holds anyone else, or whose members cannot be read, is refused and the refusal names `favro_widen_collection_sharing`. An email, `type: 'organization'`, a new collection `admin` or group `administrator`, and a user whose organization role is not `administrator` or `fullMember` are refused as `[blocked]`; an entry that gives someone no more than they already hold goes through, raising someone who is not a member is refused, and an entry flagged `delete: true` is checked the same way unless it removes someone who has access.
+- **Breaking:** `favro_create_widget` and `favro_update_widget` refuse `owner_role: 'guests'` and `edit_role: 'guests'`.
+- **Breaking:** `favro_delete_widget` deletes from every collection only with `everywhere: true`, and refuses a call that names neither that nor `collection_id`.
+- **Breaking:** Claude Code's `requiresUserInteraction` is on `favro_delete_tag`, `favro_delete_group`, `favro_delete_widget`, `favro_delete_collection` and `favro_widen_collection_sharing` for every client, and on no other tool. Claude Code prompts on every call of them and refuses them where it cannot prompt, as in `claude -p`.
+
+### Removed
+- **Breaking:** `FAVRO_REQUIRE_PROMPT`. Set to anything but `false`, the server refuses to start; unset it, and leave `FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody watching.
+- **Breaking:** `FAVRO_INTERACTION_HINT`. Set to `false`, it is ignored with a warning: the five marked tools keep the mark, so `claude -p` refuses them.
+
+### Fixed
+- `make live` starts the server with `--dry-run`, and the `live-cover` gate fails on a step that writes without `dry_run: true`. The steps run against the first objects the organization lists, and each step's own `dry_run` was all that kept a delete there a preview.
+- `livefavro -writes` sends a write only to an object it created. However the run ends, SIGINT, SIGTERM and SIGHUP included, it deletes its probes by name and reads them back; it used to ignore a failed cleanup, and a signal skipped cleanup entirely.
+- `make live` shares in its dry runs with the signed-in account, found in `favro_list_users` by the email it signs in with, and expects `[blocked]` for a userId outside the organization. It sent a share entry's userId as its unresolved placeholder, which the server refused as outside the organization; it now resolves a placeholder at any depth.
+- `livefavro -writes` counts a read-back refused as `[not_found]` or `[forbidden]` as gone once its delete succeeded: Favro answers 403 for a collection the run has just deleted.
+
+### Security
+- Built with Go 1.27.3, which fixes [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) in `crypto/x509`, which `govulncheck` found reachable: intermediate certificates known to be compromised are no longer trusted.
+
 ## [3.2.0] - 2026-10-10
 
 ### Added
@@ -364,7 +404,9 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/mmedum/favro-mcp/compare/v4.0.0...v4.1.0
+[4.0.0]: https://github.com/mmedum/favro-mcp/compare/v3.2.0...v4.0.0
 [3.2.0]: https://github.com/mmedum/favro-mcp/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/mmedum/favro-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/favro-mcp/compare/v3.0.0...v3.1.0

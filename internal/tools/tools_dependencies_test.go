@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
 )
 
 const mcpDependenciesFixture = `{
@@ -68,16 +68,18 @@ func TestMCP_Dependencies_AddVsReplaceMethod(t *testing.T) {
 				_, _ = w.Write([]byte(mcpDependenciesFixture))
 			}))
 
-			cs := connectInMemoryWith(t, c)
-			res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-				Name: tc.tool,
-				Arguments: map[string]any{
-					"card_id": "ci-1",
-					"dependencies": []map[string]any{
-						{"cardId": "ci-2", "isBefore": true},
-					},
+			args := map[string]any{
+				"card_id": "ci-1",
+				"dependencies": []map[string]any{
+					{"cardId": "ci-2", "isBefore": true},
 				},
-			})
+			}
+			if tc.tool == replaceDependenciesToolName {
+				// The replace drops every link it does not name.
+				args["confirm"] = true
+			}
+			cs := connectInMemoryWith(t, c)
+			res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tc.tool, Arguments: args})
 			if err := err; err != nil {
 				t.Fatalf("err: %v", err)
 			}

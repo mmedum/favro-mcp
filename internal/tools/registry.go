@@ -9,7 +9,8 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/favro-mcp/v3/internal/render"
+	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/render"
 )
 
 // schemaOptions fixes what type inference gets wrong about
@@ -50,32 +51,88 @@ type registry struct {
 	// hidden, not guarded, not present. See addTool.
 	destructive bool
 
-	// asking is how the tools registered through addAsking put their
-	// question to the person, and requirePrompt is
-	// FAVRO_REQUIRE_PROMPT: refuse those writes when the client cannot
-	// ask.
-	asking        *asking
-	requirePrompt bool
-
-	// interactionHint puts Claude Code's requiresUserInteraction mark on
-	// the tools registered through addAsking. It is false when
-	// FAVRO_INTERACTION_HINT is, and under FAVRO_REQUIRE_PROMPT.
-	interactionHint bool
-
 	// uploadDir is FAVRO_UPLOAD_DIR, the one directory the upload tools
 	// read from. Empty, and they are not registered.
 	uploadDir string
+
+	// client is the Favro client the tools write through, read here
+	// only for --dry-run, which makes every call a dry run.
+	client *favroapi.Client
 }
 
-// admits reports whether t is registered at all: a tool annotated
-// destructive only when the flag is set.
-func (reg *registry) admits(t *mcp.Tool) bool {
-	return t.Annotations == nil || t.Annotations.DestructiveHint == nil ||
-		!*t.Annotations.DestructiveHint || reg.destructive
+// destructive reports whether t is annotated destructive.
+func destructive(t *mcp.Tool) bool {
+	return t.Annotations != nil && t.Annotations.DestructiveHint != nil && *t.Annotations.DestructiveHint
 }
 
-// addTool registers one tool, and is the single place three things
-// happen that would otherwise have to happen in all 83 handlers.
+// promptMeta is Claude Code's mark for a tool whose permission prompt is
+// itself the point: Claude Code prompts on every call of it, whatever the
+// operator's rules say, and denies the call where no prompt can be drawn.
+const promptMeta = "anthropic/requiresUserInteraction"
+
+// promptEveryCall is the _meta of a write that cannot be undone and
+// reaches past the one thing named: a delete that takes something every
+// card or share depends on, or a collection opened to the whole
+// organization or to anyone with its link (§9.2). Only a destructive
+// tool may carry it; addTool refuses it on any other.
+func promptEveryCall() mcp.Meta { return mcp.Meta{promptMeta: true} }
+
+// confirmInput is embedded in every destructive tool's input. It is a
+// witness that the caller meant this call, never approval: the model
+// sets it, so it stops a call made by mistake and nothing more. The
+// destructive flag is the control (§9.2).
+type confirmInput struct {
+	Confirm bool `json:"confirm,omitempty" jsonschema:"must be true for the call to go ahead: pass it only when the person asked for this call. Not needed with dry_run."`
+}
+
+func (c confirmInput) confirmed() bool { return c.Confirm }
+
+// confirmer is an input that embeds confirmInput.
+type confirmer interface{ confirmed() bool }
+
+// dryRunner is an input that embeds dryRunInput.
+type dryRunner interface{ dryRun() bool }
+
+// refuseUnconfirmed refuses a destructive call that does not carry
+// confirm: true, before its handler reads or writes anything. addTool
+// asks it only of a call that is not a dry run.
+func refuseUnconfirmed(tool string, in any) error {
+	if c, ok := in.(confirmer); ok && c.confirmed() {
+		return nil
+	}
+	return render.Errorf(render.ClassBlocked, "%s is refused without confirm: true; nothing was changed. "+
+		"Pass confirm: true only when the person asked for this call, or dry_run: true to preview it", tool)
+}
+
+// before is what addTool does ahead of every handler. A call that asks
+// for a dry run is one for every write its handler makes, whether or not
+// the handler puts the dry run on its own context, and a dry run needs
+// no confirm on that promise. A destructive call that is not one, by
+// its arguments or by --dry-run, needs confirm: true.
+func (reg *registry) before(ctx context.Context, tool string, gated bool, in any) (context.Context, error) {
+	if d, ok := in.(dryRunner); ok && d.dryRun() {
+		ctx = favroapi.WithDryRun(ctx)
+	}
+	if gated && !reg.client.DryRun(ctx) {
+		return ctx, refuseUnconfirmed(tool, in)
+	}
+	return ctx, nil
+}
+
+// requireRules panics on a tool that breaks a rule of §9.2: a
+// destructive tool whose input does not embed confirmInput, or a tool
+// that carries the mark and is not destructive.
+func requireRules[In any](t *mcp.Tool, gated bool) {
+	if _, ok := any(*new(In)).(confirmer); gated && !ok {
+		panic(fmt.Sprintf("tool %q is destructive and its input does not embed confirmInput", t.Name))
+	}
+	if _, marked := t.Meta[promptMeta]; marked && !gated {
+		panic(fmt.Sprintf("tool %q carries %s and is not destructive", t.Name, promptMeta))
+	}
+}
+
+// addTool registers one tool, and is the single place five things
+// happen that would otherwise have to happen in every handler.
 //
 // **The destructive gate.** A tool annotated destructive is registered
 // only when the flag is set. The check reads the annotation rather than
@@ -87,6 +144,15 @@ func (reg *registry) admits(t *mcp.Tool) bool {
 // prompting, and the spec says clients treat tool annotations as
 // untrusted. Assume every registered tool can run unattended.
 //
+// **confirm: true.** A destructive tool's input embeds confirmInput, or
+// registration panics, and a call without it is refused [blocked]
+// unless it is a dry run. The rule lives here so no delete can forget
+// it.
+//
+// **The mark.** Only a destructive tool may carry promptMeta, or
+// registration panics: the mark goes on the few writes whose prompt is
+// the point, never on an ordinary one.
+//
 // **Both halves of the result.** The SDK marshals the typed output into
 // StructuredContent and, finding Content unset, puts the identical
 // bytes in a TextContent block. Setting Content here to a rendered
@@ -96,9 +162,11 @@ func (reg *registry) admits(t *mcp.Tool) bool {
 // **The error class.** Errors leave as "[class] actionable message",
 // classified from the error's own type rather than from its text.
 func addTool[In, Out any](reg *registry, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
-	if !reg.admits(t) {
+	gated := destructive(t)
+	if gated && !reg.destructive {
 		return
 	}
+	requireRules[In](t, gated)
 
 	// The output schema is generated here rather than left to the SDK,
 	// so schemaOptions applies. Registration panics on a bad schema,
@@ -113,17 +181,19 @@ func addTool[In, Out any](reg *registry, t *mcp.Tool, h mcp.ToolHandlerFor[In, O
 	}
 
 	mcp.AddTool(reg.srv, t, func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		var zero Out
+		ctx, err := reg.before(ctx, t.Name, gated, in)
+		if err != nil {
+			return nil, zero, render.Error(err)
+		}
 		res, out, err := h(ctx, req, in)
 		if err != nil {
-			var zero Out
 			return nil, zero, render.Error(err)
 		}
 		if res == nil {
 			res = &mcp.CallToolResult{}
 		}
-		// A question to the person (addAsking) carries no content: the
-		// SDK sends its input requests in place of a result.
-		if res.Content == nil && res.InputRequests == nil {
+		if res.Content == nil {
 			res.Content = []mcp.Content{&mcp.TextContent{Text: render.Summary(out)}}
 		}
 		return res, out, nil
