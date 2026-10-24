@@ -8,6 +8,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-10-24
+
 ### Added
 - The Claude Desktop bundle asks for `enable_destructive`, off unless you turn it on, names Favro's privacy policy, and needs Claude Desktop 0.10.0 or later.
 
@@ -402,7 +404,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/mmedum/favro-mcp/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/mmedum/favro-mcp/compare/v3.2.0...v4.0.0
 [3.2.0]: https://github.com/mmedum/favro-mcp/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/mmedum/favro-mcp/compare/v3.1.0...v3.1.1
