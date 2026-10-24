@@ -35,18 +35,19 @@ func resolveToken(ctx context.Context, sources []Source) (ResolvedToken, error) 
 	return ResolvedToken{}, errNoCredentials
 }
 
-// ResolveDefault is the production resolver — env first, then keyring.
+// ResolveDefault is the production resolver — env first, the
+// credentials the caller read with config.CredentialsFrom, then keyring.
 // Wraps resolveToken with defaultSources so callers don't restate the
 // pair at every call site.
-func ResolveDefault(ctx context.Context) (ResolvedToken, error) {
-	return resolveToken(ctx, defaultSources())
+func ResolveDefault(ctx context.Context, env Token) (ResolvedToken, error) {
+	return resolveToken(ctx, defaultSources(env))
 }
 
 // defaultSources returns the production Source list. Env wins so a
 // quick override during debugging works without `favro-mcp auth login`.
-func defaultSources() []Source {
+func defaultSources(env Token) []Source {
 	return []Source{
-		EnvSource{},
+		EnvSource{Token: env},
 		KeyringSource{},
 	}
 }

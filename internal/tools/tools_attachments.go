@@ -12,6 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 	"github.com/mmedum/favro-mcp/v4/internal/favro"
 	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
 	"github.com/mmedum/favro-mcp/v4/internal/render"
@@ -34,10 +35,12 @@ var errAttachmentPathNotAFile = render.Sentinel(render.ClassInvalid, "favro: fil
 // errAttachmentOutsideDir is a file_path that leaves FAVRO_UPLOAD_DIR:
 // an absolute path elsewhere, a "..", or a link out of it.
 var errAttachmentOutsideDir = render.Sentinel(render.ClassInvalid,
-	"favro: file_path must name a file inside FAVRO_UPLOAD_DIR, as a path relative to it or an absolute path within it; nothing outside it is read")
+	"favro: file_path must name a file inside "+config.EnvUploadDir+", as a path relative to it or an absolute path "+
+		"within it; nothing outside it is read")
 
 // errAttachmentMissing is a file_path with no file behind it.
-var errAttachmentMissing = render.Sentinel(render.ClassNotFound, "favro: there is no file at file_path inside FAVRO_UPLOAD_DIR")
+var errAttachmentMissing = render.Sentinel(render.ClassNotFound,
+	"favro: there is no file at file_path inside "+config.EnvUploadDir)
 
 // uploadAttachmentInput is the input for favro_upload_attachment.
 // v0.1 supports local file paths only — the tool reads from disk
@@ -77,7 +80,7 @@ func registerUploadAttachment(reg *registry, r *service.Resolver) {
 	addTool(reg, &mcp.Tool{
 		Name: uploadAttachmentToolName,
 		Description: "Upload a local file as an attachment on a Favro card via raw-bytes POST. " +
-			"Reads `file_path` from the directory FAVRO_UPLOAD_DIR names, and from nowhere else; " +
+			"Reads `file_path` from the directory " + config.EnvUploadDir + " names, and from nowhere else; " +
 			"this tool exists only when that is set. Then POSTs to `/cards/{cardId}/attachment` with " +
 			"`Content-Type: application/octet-stream` and the filename in the query string. " +
 			"`filename` defaults to the file's basename if omitted. Cap is 8 MiB per upload — " +
@@ -192,7 +195,7 @@ func statUpload(root *os.Root, rel string) error {
 func readInRoot(dir, rel string) ([]byte, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return nil, render.Errorf(render.ClassUnavailable, "favro: FAVRO_UPLOAD_DIR could not be opened")
+		return nil, render.Errorf(render.ClassUnavailable, "favro: %s could not be opened", config.EnvUploadDir)
 	}
 	defer func() { _ = root.Close() }()
 	if err := statUpload(root, rel); err != nil {
@@ -226,7 +229,7 @@ func registerUploadCommentAttachment(reg *registry, r *service.Resolver) {
 		Description: "Upload a local file as an attachment on a Favro comment via raw-bytes " +
 			"POST to `/comments/{commentId}/attachment`. Same contract as " +
 			"favro_upload_attachment, but the file lands on a comment rather than on the " +
-			"card itself: reads `file_path` from FAVRO_UPLOAD_DIR only, `filename` defaults to the " +
+			"card itself: reads `file_path` from " + config.EnvUploadDir + " only, `filename` defaults to the " +
 			"basename, 8 MiB cap enforced before any HTTP work, returns the created " +
 			"attachment object `{name, fileURL}`. Pass `dry_run: true` to preview.",
 		Annotations: mutating("Upload Favro comment attachment", false),

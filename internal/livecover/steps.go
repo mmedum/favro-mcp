@@ -1,6 +1,10 @@
 package livecover
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/mmedum/favro-mcp/v4/internal/config"
+)
 
 // Steps is every call the live driver makes, and the list the
 // `live-cover` gate measures against the binary's published schema.
@@ -867,7 +871,7 @@ func optionSteps() []Step {
 				"dry_run":   true,
 			},
 			ExpectError: "invalid",
-			Why:         "the upload directory holds: a path outside FAVRO_UPLOAD_DIR is refused before it is opened",
+			Why:         "the upload directory holds: a path outside " + config.EnvUploadDir + " is refused before it is opened",
 		},
 		{
 			Tool: "favro_upload_comment_attachment",

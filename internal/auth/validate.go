@@ -18,10 +18,11 @@ const defaultBaseURL = "https://favro.com/api/v1"
 const defaultValidateTimeout = 5 * time.Second
 
 // ErrAuthFailed is returned by Validator.Validate when Favro rejects
-// the credentials with 401 or 403. The message names env-var names,
-// never values, so it can be logged or shown to an LLM-driven host
-// without leaking the token.
-var ErrAuthFailed = errors.New("authentication failed — check " + EnvUserEmail + " and " + EnvAPIToken)
+// the credentials with 401 or 403. The message names no value, so it can
+// be logged or shown to an LLM-driven host without leaking the token;
+// the caller names the variables to check, which this package does not
+// know.
+var ErrAuthFailed = errors.New("authentication failed — Favro rejected the email and API token")
 
 // Validator runs the live "is this token good?" check against Favro
 // at startup, so a bad token fails fast instead of being discovered

@@ -42,20 +42,34 @@ func TestLauncherDispatchesToEveryStagedBinary(t *testing.T) {
 	}
 }
 
+// releaseMatrix is the family's six archives, windows-arm64 among them,
+// and the one pair a bundle runs another's binary on: Windows on arm64
+// runs windows-amd64 under emulation. Every other test reads the table.
+func TestTheReleaseMatrixIsTheFamilysSix(t *testing.T) {
+	want := []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"}
+	if got := releasePairs(); !slices.Equal(got, want) {
+		t.Errorf("releasePairs = %q, want %q", got, want)
+	}
+	if got := emulated(); len(got) != 1 || got["windows-arm64"] != "windows-amd64" {
+		t.Errorf("emulated = %v, want windows-arm64 running windows-amd64", got)
+	}
+}
+
 func TestGoreleaserMatrixIsTheOneTheBundleClaims(t *testing.T) {
 	root, err := moduleRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	built, err := goreleaserMatrix(root)
+	release, err := goreleaserText(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(built) < 4 {
-		t.Fatalf("the matrix parsed as %v; that is not this repository's build list", built)
+	built, err := goreleaserMatrix(release)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if slices.Contains(built, "windows-arm64") {
-		t.Error("windows-arm64 is `ignore`d in .goreleaser.yaml and should not be in the matrix")
+	if want := releasePairs(); !slices.Equal(built, want) {
+		t.Fatalf("the matrix parsed as %v, want %v", built, want)
 	}
 	for _, p := range platforms {
 		if !slices.Contains(built, p.dir()) {
@@ -64,15 +78,54 @@ func TestGoreleaserMatrixIsTheOneTheBundleClaims(t *testing.T) {
 	}
 }
 
+// Every platform the release builds is one the plugin stages, or one
+// that runs a staged binary under emulation; and the exemption holds only
+// while its reason does.
+func TestPluginMatrixProblems(t *testing.T) {
+	six := releasePairs()
+	if got := pluginMatrixProblems(six, emulated()); len(got) != 0 {
+		t.Errorf("the family's six with windows-arm64 emulated: %q", got)
+	}
+	for _, tc := range []struct {
+		name      string
+		built     []string
+		emulation map[string]string
+		want      []string
+	}{
+		{
+			"a built platform nothing reaches", six, nil,
+			[]string{"GoReleaser builds windows-arm64 and no launcher arm reaches it; that binary ships unusable"},
+		},
+		{
+			"emulated by a platform not staged", six,
+			map[string]string{"windows-arm64": "windows-386"},
+			[]string{"GoReleaser builds windows-arm64 and no launcher arm reaches it; that binary ships unusable"},
+		},
+		{
+			"a staged platform not built", six[1:], emulated(),
+			[]string{"the bundle stages bin/darwin-amd64, which .goreleaser.yaml does not build"},
+		},
+		{
+			"emulation for a platform not built", six[:5], emulated(),
+			[]string{"emulated names windows-arm64, which .goreleaser.yaml does not build"},
+		},
+		{
+			"emulation for a staged platform", six,
+			map[string]string{"windows-arm64": "windows-amd64", "linux-arm64": "linux-amd64"},
+			[]string{"emulated names linux-arm64, which the bundle stages"},
+		},
+	} {
+		if got := pluginMatrixProblems(tc.built, tc.emulation); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 // A parse that silently finds nothing would make every platform read as
 // unbuilt, which is a gate that fails for the wrong reason — or, with
 // the comparison the other way round, one that passes for it.
 func TestGoreleaserMatrixRefusesAFileItCannotRead(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ".goreleaser.yaml"), []byte("version: 2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := goreleaserMatrix(dir); err == nil {
+	if _, err := goreleaserMatrix("version: 2\n"); err == nil {
 		t.Error("a config with no build matrix should fail loudly rather than report no platforms")
 	}
 }
@@ -345,12 +398,16 @@ func TestOnlyTheServerShips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if problems := onlyTheServerShips(root); len(problems) > 0 {
+	release, err := goreleaserText(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problems := onlyTheServerShips(release); len(problems) > 0 {
 		t.Errorf("the release should build only ./cmd/favro-mcp: %v", problems)
 	}
 	// A config with no build at all must not read as "nothing extra
 	// ships": it reads as a check that has lost its subject.
-	if problems := onlyTheServerShips(t.TempDir()); len(problems) == 0 {
+	if problems := onlyTheServerShips("version: 2\n"); len(problems) == 0 {
 		t.Error("an unreadable build config should be reported, not passed")
 	}
 }

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 // smokeEnv is the environment both runs get: credentials shaped like
@@ -18,11 +20,11 @@ import (
 // marker word, which is what keeps the leak gate from reporting this
 // file.
 var smokeEnv = []string{
-	"FAVRO_USER_EMAIL=smoke@example.test",
-	"FAVRO_API_TOKEN=synthetic-token-for-the-smoke-gate",
-	"FAVRO_ORGANIZATION_ID=synthetic-organization",
-	"FAVRO_MCP_SKIP_VALIDATE=1",
-	"FAVRO_LOG_LEVEL=error",
+	config.EnvUserEmail + "=smoke@example.test",
+	config.EnvAPIToken + "=synthetic-token-for-the-smoke-gate",
+	config.EnvOrganizationID + "=synthetic-organization",
+	config.EnvSkipValidate + "=true",
+	config.EnvLogLevel + "=error",
 }
 
 // smoke drives the built binary over stdio, twice.

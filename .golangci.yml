@@ -83,7 +83,7 @@ linters:
         # anyway would be four rules that can never fire, which is the
         # thing this repository's own standard argues against.
         #
-        # What is left is the three that can fire, because none of them
+        # What is left is the four that can fire, because none of them
         # is a cycle: a leaf reaching sideways to another leaf, and the
         # MCP SDK reaching below the tool layer.
         favro-imports-nothing:
@@ -100,6 +100,13 @@ linters:
           deny:
             - pkg: "github.com/mmedum/favro-mcp/v4/internal"
               desc: "internal/render holds the error vocabulary that internal/favroapi imports, so it cannot import anything back — an error names its own class through the Classed interface"
+        auth-is-a-leaf:
+          list-mode: lax
+          files:
+            - "**/internal/auth/*.go"
+          deny:
+            - pkg: "github.com/mmedum/favro-mcp/v4/internal"
+              desc: "internal/auth is a leaf: its callers read the credentials through config.CredentialsFrom and hand them over, so it imports nothing from this module"
         no-mcp-below-the-tool-layer:
           list-mode: lax
           files:

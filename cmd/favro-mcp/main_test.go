@@ -130,17 +130,37 @@ func TestMissingCredsHint_NamesEveryCredentialEnvVar(t *testing.T) {
 	t.Parallel()
 
 	hint := missingCredsHint()
-	if !strings.Contains(hint, auth.EnvUserEmail) {
-		t.Errorf("hint does not contain %q", auth.EnvUserEmail)
+	if !strings.Contains(hint, config.EnvUserEmail) {
+		t.Errorf("hint does not contain %q", config.EnvUserEmail)
 	}
-	if !strings.Contains(hint, auth.EnvAPIToken) {
-		t.Errorf("hint does not contain %q", auth.EnvAPIToken)
+	if !strings.Contains(hint, config.EnvAPIToken) {
+		t.Errorf("hint does not contain %q", config.EnvAPIToken)
 	}
-	if !strings.Contains(hint, auth.EnvOrganizationID) {
-		t.Errorf("hint does not contain %q", auth.EnvOrganizationID)
+	if !strings.Contains(hint, config.EnvOrganizationID) {
+		t.Errorf("hint does not contain %q", config.EnvOrganizationID)
 	}
 	if !strings.Contains(hint, "auth login") {
 		t.Errorf("the hint must offer the keyring path too: %q missing", "auth login")
+	}
+}
+
+// Credentials Favro refused are logged with the variables to check,
+// which auth's error cannot name; any other failure is not, since the
+// credentials may be fine.
+func TestRejectedCredentialsNameTheVariables(t *testing.T) {
+	t.Parallel()
+
+	got := fmt.Sprint(rejectedAttrs(auth.ErrAuthFailed))
+	want := fmt.Sprint([]any{
+		"error", auth.ErrAuthFailed, "hint",
+		"check FAVRO_USER_EMAIL and FAVRO_API_TOKEN, or run `favro-mcp auth login` again",
+	})
+	if got != want {
+		t.Errorf("rejectedAttrs(ErrAuthFailed) = %s, want %s", got, want)
+	}
+	other := errors.New("contact Favro: no route to host")
+	if got := rejectedAttrs(other); len(got) != 2 {
+		t.Errorf("rejectedAttrs(a transport error) = %v, want the error alone", got)
 	}
 }
 
@@ -148,7 +168,7 @@ func TestRunServer_UnknownFlag_ErrorsWithUsage(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	err := runServer([]string{"--no-such-flag"}, config.Load(), io.Discard, &stderr)
+	err := runServer([]string{"--no-such-flag"}, config.LoadFrom(os.Getenv), io.Discard, &stderr)
 
 	if err == nil {
 		t.Fatal("err should have failed")
@@ -165,8 +185,8 @@ func TestRunServer_HelpFlag_PrintsUsageWithoutError(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	if err := runServer([]string{"-h"}, config.Load(), io.Discard, &stderr); err != nil {
-		t.Fatalf("runServer([]string{\"-h\"}, config.Load(), io.Discard, &stderr): %v", err)
+	if err := runServer([]string{"-h"}, config.LoadFrom(os.Getenv), io.Discard, &stderr); err != nil {
+		t.Fatalf("runServer([]string{\"-h\"}, config.LoadFrom(os.Getenv), io.Discard, &stderr): %v", err)
 	}
 	if !strings.Contains(stderr.String(), "Usage:") {
 		t.Errorf("stderr.String() does not contain %q", "Usage:")
@@ -178,7 +198,7 @@ func TestRunServer_NoCredentials_ErrorsBeforeContactingFavro(t *testing.T) {
 	var logs bytes.Buffer
 	captureLogs(t, &logs)
 
-	err := runServer(nil, config.Load(), io.Discard, io.Discard)
+	err := runServer(nil, config.LoadFrom(os.Getenv), io.Discard, io.Discard)
 
 	if err == nil {
 		t.Fatal("err should have failed")
@@ -186,8 +206,8 @@ func TestRunServer_NoCredentials_ErrorsBeforeContactingFavro(t *testing.T) {
 	if !strings.Contains(logs.String(), "could not resolve Favro credentials") {
 		t.Errorf("logs.String() does not contain %q", "could not resolve Favro credentials")
 	}
-	if !strings.Contains(logs.String(), auth.EnvAPIToken) {
-		t.Errorf("the failure must name what to set: %q missing", auth.EnvAPIToken)
+	if !strings.Contains(logs.String(), config.EnvAPIToken) {
+		t.Errorf("the failure must name what to set: %q missing", config.EnvAPIToken)
 	}
 }
 
@@ -197,12 +217,12 @@ func TestRunServer_NoCredentials_ErrorsBeforeContactingFavro(t *testing.T) {
 func TestRunServer_PartialEnvCredentials_Errors(t *testing.T) {
 	isolateCredentials(t)
 	saveKeyringToken(t, keyringOnlyCredentials())
-	t.Setenv(auth.EnvUserEmail, "partial@example.test")
+	t.Setenv(config.EnvUserEmail, "partial@example.test")
 
 	var logs bytes.Buffer
 	captureLogs(t, &logs)
 
-	err := runServer(nil, config.Load(), io.Discard, io.Discard)
+	err := runServer(nil, config.LoadFrom(os.Getenv), io.Discard, io.Discard)
 
 	if err == nil {
 		t.Fatal("err should have failed")
@@ -217,21 +237,21 @@ func TestRunServer_PartialEnvCredentials_Errors(t *testing.T) {
 
 // A removed setting still turned on stops the server before it starts:
 // with credentials that would otherwise serve, FAVRO_REQUIRE_PROMPT=true
-// fails the run and says why. (Off is config.Load's test: the server it
+// fails the run and says why. (Off is config.LoadFrom's test: the server it
 // would start reads this process's stdin, which TestStartupLineNamesNoTenant
 // needs.)
 func TestRunServer_ARemovedSettingRefusesToStart(t *testing.T) {
 	isolateCredentials(t)
 	tok := testCredentials()
-	t.Setenv(auth.EnvUserEmail, tok.Email)
-	t.Setenv(auth.EnvAPIToken, tok.APIToken)
-	t.Setenv(auth.EnvOrganizationID, tok.OrganizationID)
+	t.Setenv(config.EnvUserEmail, tok.Email)
+	t.Setenv(config.EnvAPIToken, tok.APIToken)
+	t.Setenv(config.EnvOrganizationID, tok.OrganizationID)
 	t.Setenv(config.EnvSkipValidate, "1")
 	t.Setenv(config.EnvRequirePrompt, "true")
 	var logs bytes.Buffer
 	captureLogs(t, &logs)
 
-	if err := runServer(nil, config.Load(), io.Discard, io.Discard); err == nil {
+	if err := runServer(nil, config.LoadFrom(os.Getenv), io.Discard, io.Discard); err == nil {
 		t.Errorf("%s=true: runServer returned nil, want a refusal", config.EnvRequirePrompt)
 	}
 	if !strings.Contains(logs.String(), "FAVRO_REQUIRE_PROMPT was removed") ||
@@ -247,8 +267,8 @@ func TestRunServer_DryRunFlag_AnnouncedAtStartup(t *testing.T) {
 
 	// Startup still fails at credential resolution; what matters here is
 	// that --dry-run parsed and was announced before that point.
-	if runServer([]string{"--dry-run"}, config.Load(), io.Discard, io.Discard) == nil {
-		t.Fatal("runServer([]string{\"--dry-run\"}, config.Load(), io.Discard, io.Discard) should have failed")
+	if runServer([]string{"--dry-run"}, config.LoadFrom(os.Getenv), io.Discard, io.Discard) == nil {
+		t.Fatal("runServer([]string{\"--dry-run\"}, config.LoadFrom(os.Getenv), io.Discard, io.Discard) should have failed")
 	}
 	if !strings.Contains(logs.String(), "all mutating Favro requests will short-circuit") {
 		t.Errorf("logs.String() does not contain %q", "all mutating Favro requests will short-circuit")
@@ -312,9 +332,9 @@ func TestMain_ExitsNonZeroOnStartupFailure(t *testing.T) {
 // show the whole surface: a dump that omitted a tool would hide exactly
 // the change — a tool disappearing — that the diff exists to catch.
 func TestDumpSchemasNeedsNoCredentials(t *testing.T) {
-	t.Setenv(auth.EnvUserEmail, "")
-	t.Setenv(auth.EnvAPIToken, "")
-	t.Setenv(auth.EnvOrganizationID, "")
+	t.Setenv(config.EnvUserEmail, "")
+	t.Setenv(config.EnvAPIToken, "")
+	t.Setenv(config.EnvOrganizationID, "")
 
 	var stdout, stderr bytes.Buffer
 	if err := run([]string{"--dump-schemas"}, nil, &stdout, &stderr); err != nil {
@@ -407,16 +427,16 @@ func TestStartupLineNamesNoTenant(t *testing.T) {
 	captureLogs(t, &logs)
 
 	tok := testCredentials()
-	t.Setenv(auth.EnvUserEmail, tok.Email)
-	t.Setenv(auth.EnvAPIToken, tok.APIToken)
-	t.Setenv(auth.EnvOrganizationID, tok.OrganizationID)
+	t.Setenv(config.EnvUserEmail, tok.Email)
+	t.Setenv(config.EnvAPIToken, tok.APIToken)
+	t.Setenv(config.EnvOrganizationID, tok.OrganizationID)
 	t.Setenv(config.EnvSkipValidate, "1")
 
 	// stdin is /dev/null under `go test`, so the stdio transport sees
 	// EOF at once and the server shuts down cleanly. The run is only
 	// here to get past credential resolution and emit the line.
-	if err := runServer(nil, config.Load(), io.Discard, io.Discard); err != nil {
-		t.Fatalf("runServer(nil, config.Load(), io.Discard, io.Discard): %v", err)
+	if err := runServer(nil, config.LoadFrom(os.Getenv), io.Discard, io.Discard); err != nil {
+		t.Fatalf("runServer(nil, config.LoadFrom(os.Getenv), io.Discard, io.Discard): %v", err)
 	}
 
 	out := logs.String()

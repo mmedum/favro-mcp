@@ -63,6 +63,44 @@ var platforms = []platform{
 	{goos: "windows", goarch: "amd64"},
 }
 
+// releaseMatrix is the family's release: every goos-goarch pair
+// .goreleaser.yaml builds, an archive each, and for a pair the bundles
+// stage no binary of its own, the pair whose binary runs there. Windows
+// on arm64 runs the amd64 binary under emulation, from the Desktop
+// bundle and the plugin alike; its archive is for someone installing
+// from the release page. Both bundle gates and their tests read this one
+// table, so they cannot disagree about a platform.
+var releaseMatrix = []struct{ pair, runs string }{
+	{pair: "darwin-amd64"},
+	{pair: "darwin-arm64"},
+	{pair: "linux-amd64"},
+	{pair: "linux-arm64"},
+	{pair: "windows-amd64"},
+	{pair: "windows-arm64", runs: "windows-amd64"},
+}
+
+// releasePairs is every pair releaseMatrix builds, sorted.
+func releasePairs() []string {
+	out := make([]string, 0, len(releaseMatrix))
+	for _, p := range releaseMatrix {
+		out = append(out, p.pair)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// emulated is each pair releaseMatrix runs another pair's binary on,
+// with that pair.
+func emulated() map[string]string {
+	out := map[string]string{}
+	for _, p := range releaseMatrix {
+		if p.runs != "" {
+			out[p.pair] = p.runs
+		}
+	}
+	return out
+}
+
 type platform struct {
 	goos, goarch string
 	uname        []string
@@ -136,22 +174,15 @@ func pluginGate(w io.Writer, _ []string) error {
 	// directions: an unreachable binary is dead weight, and a launcher
 	// arm with no binary is the failure mode with the worst error
 	// message a user can get.
-	built, err := goreleaserMatrix(root)
+	release, err := goreleaserText(root)
 	if err != nil {
 		return err
 	}
-	for _, p := range platforms {
-		if !slices.Contains(built, p.dir()) {
-			problems = append(problems, fmt.Sprintf(
-				"the bundle stages bin/%s, which .goreleaser.yaml does not build", p.dir()))
-		}
+	built, err := goreleaserMatrix(release)
+	if err != nil {
+		return err
 	}
-	for _, b := range built {
-		if !slices.ContainsFunc(platforms, func(p platform) bool { return p.dir() == b }) {
-			problems = append(problems, fmt.Sprintf(
-				"GoReleaser builds %s and no launcher arm reaches it; that binary ships unusable", b))
-		}
-	}
+	problems = append(problems, pluginMatrixProblems(built, emulated())...)
 
 	// The launcher the packer will write must name every directory it
 	// stages, and nothing else. This is the check that reads the
@@ -174,7 +205,7 @@ func pluginGate(w io.Writer, _ []string) error {
 		problems = append(problems, "the Windows shim does not spawn the staged windows-amd64 binary")
 	}
 
-	problems = append(problems, onlyTheServerShips(root)...)
+	problems = append(problems, onlyTheServerShips(release)...)
 
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "\n"))
@@ -182,6 +213,40 @@ func pluginGate(w io.Writer, _ []string) error {
 	_, err = fmt.Fprintf(w, "plugin manifest ok: %d files staged across %d platforms\n",
 		len(staged()), len(platforms))
 	return err
+}
+
+// pluginMatrixProblems holds the staged platforms to the ones GoReleaser
+// builds, both ways: each staged one is built, and each built one is
+// staged or runs, under emulation, the staged one emulation names. An
+// entry in emulation for a platform the release does not build, or for
+// one the plugin stages, is refused, so the exemption cannot outlive its
+// reason.
+func pluginMatrixProblems(built []string, emulation map[string]string) []string {
+	staged := func(dir string) bool {
+		return slices.ContainsFunc(platforms, func(p platform) bool { return p.dir() == dir })
+	}
+	var problems []string
+	for _, p := range platforms {
+		if !slices.Contains(built, p.dir()) {
+			problems = append(problems, fmt.Sprintf(
+				"the bundle stages bin/%s, which .goreleaser.yaml does not build", p.dir()))
+		}
+	}
+	for _, b := range built {
+		if via, ok := emulation[b]; !staged(b) && (!ok || !staged(via)) {
+			problems = append(problems, fmt.Sprintf(
+				"GoReleaser builds %s and no launcher arm reaches it; that binary ships unusable", b))
+		}
+	}
+	for _, b := range slices.Sorted(maps.Keys(emulation)) {
+		switch {
+		case !slices.Contains(built, b):
+			problems = append(problems, fmt.Sprintf("emulated names %s, which .goreleaser.yaml does not build", b))
+		case staged(b):
+			problems = append(problems, fmt.Sprintf("emulated names %s, which the bundle stages", b))
+		}
+	}
+	return problems
 }
 
 // onlyTheServerShips holds the premise everything else in this
@@ -192,13 +257,10 @@ func pluginGate(w io.Writer, _ []string) error {
 // grounds that the code never leaves a maintainer's machine — and why
 // nothing under scripts/ is held to the tool surface's compatibility
 // promise. That premise was true and held by nothing; a second `main:`
-// in the build config would quietly ship the gates.
-func onlyTheServerShips(root string) []string {
-	data, err := os.ReadFile(filepath.Join(root, ".goreleaser.yaml"))
-	if err != nil {
-		return []string{err.Error()}
-	}
-	mains := buildMain.FindAllStringSubmatch(code(string(data)), -1)
+// in the build config would quietly ship the gates. release is
+// .goreleaser.yaml as goreleaserText read it.
+func onlyTheServerShips(release string) []string {
+	mains := buildMain.FindAllStringSubmatch(release, -1)
 	if len(mains) == 0 {
 		return []string{".goreleaser.yaml names no `main:`; this check is reading the wrong shape"}
 	}
@@ -256,20 +318,26 @@ var (
 	ignorePair = regexp.MustCompile(`(?m)^\s*-\s*goos:\s*([a-z0-9]+)\s*\n\s*goarch:\s*([a-z0-9]+)`)
 )
 
+// goreleaserText is .goreleaser.yaml under root with its comments
+// stripped, read once for every check that reads it.
+func goreleaserText(root string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(root, ".goreleaser.yaml"))
+	if err != nil {
+		return "", err
+	}
+	return code(string(data)), nil
+}
+
 // goreleaserMatrix is every goos-goarch pair the release actually
-// builds: the cross product of the two lists, less the ignore entries.
+// builds, read from text as goreleaserText gives it: the cross product
+// of the two lists, less the ignore entries.
 //
 // Read with regular expressions rather than a YAML parser, and that is a
 // deliberate limit rather than laziness: a parser is a dependency this
 // program does not otherwise need, and the file it reads is one this
 // repository writes. The floors below are what keep a changed layout
 // from reading as an empty matrix.
-func goreleaserMatrix(root string) ([]string, error) {
-	data, err := os.ReadFile(filepath.Join(root, ".goreleaser.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	text := code(string(data))
+func goreleaserMatrix(text string) ([]string, error) {
 	oses := listAfter(text, goosKey)
 	arches := listAfter(text, goarchKey)
 	if len(oses) < 2 || len(arches) < 2 {

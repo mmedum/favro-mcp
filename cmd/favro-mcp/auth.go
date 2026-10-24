@@ -93,7 +93,7 @@ func authLogin(ctx context.Context, stdin io.Reader, stderr io.Writer) error {
 // server and prints email / org id / source. The API token is never
 // printed, not even partially.
 func authStatus(ctx context.Context, stderr io.Writer) error {
-	rt, err := auth.ResolveDefault(ctx)
+	rt, err := auth.ResolveDefault(ctx, envCredentials())
 	if err != nil {
 		errf(stderr, "No Favro credentials configured.\n  hint: %s.\n  error: %v\n", missingCredsHint(), err)
 		return err
@@ -121,7 +121,7 @@ func authLogout(ctx context.Context, stderr io.Writer) error {
 // that no credentials are configured. Exit code is non-zero when no
 // credentials exist, so shells can branch on it.
 func authWhich(ctx context.Context, stderr io.Writer) error {
-	rt, err := auth.ResolveDefault(ctx)
+	rt, err := auth.ResolveDefault(ctx, envCredentials())
 	if err != nil {
 		errln(stderr, "(no credentials configured)")
 		return err

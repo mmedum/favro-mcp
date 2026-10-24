@@ -28,12 +28,11 @@ builds:
       - linux
       - darwin
       - windows
+    # Six archives: darwin, linux and windows, each on amd64 and arm64,
+    # as across the family. `gates mcpb` holds this list to them.
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
 
 universal_binaries:
   - id: universal

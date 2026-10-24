@@ -1,10 +1,11 @@
 // Package config is every FAVRO_* setting the process reads, resolved
 // once at startup and validated before anything uses it.
 //
-// Credentials are not here: those resolve through internal/auth, which
-// checks the environment and then the OS keyring and reports which one
-// won. What is here is the settings that change how the server behaves
-// rather than who it runs as — and every one of them is read in exactly
+// Credentials are read here and resolved elsewhere: CredentialsFrom reads
+// them from the environment, and internal/auth, which imports nothing of
+// the server's, is handed them and puts the OS keyring behind them. What
+// LoadFrom resolves is the settings that change how the server behaves
+// rather than who it runs as — and every variable is read in exactly
 // one place, so "what does this variable do" has a single answer.
 package config
 
@@ -13,8 +14,21 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+)
+
+// EnvPrefix starts the name of every variable the server reads.
+const EnvPrefix = "FAVRO_"
+
+// The credentials, which CredentialsFrom reads rather than LoadFrom, so
+// that Vars lists every variable the server reads and the bundle gate
+// imports no keyring.
+const (
+	EnvUserEmail      = "FAVRO_USER_EMAIL"
+	EnvAPIToken       = "FAVRO_API_TOKEN" //nolint:gosec // env var name, not a credential value
+	EnvOrganizationID = "FAVRO_ORGANIZATION_ID"
 )
 
 // Environment variable names. Exported so that --help, the README
@@ -25,9 +39,9 @@ const (
 	// error. Case-insensitive.
 	EnvLogLevel = "FAVRO_LOG_LEVEL"
 
-	// EnvSkipValidate, set to anything non-empty, suppresses the
-	// startup live-validation call. Lets protocol-only integration
-	// tests exercise the MCP surface without contacting Favro.
+	// EnvSkipValidate, set to true, suppresses the startup
+	// live-validation call. Lets protocol-only integration tests
+	// exercise the MCP surface without contacting Favro.
 	EnvSkipValidate = "FAVRO_MCP_SKIP_VALIDATE"
 
 	// EnvEnableDestructive registers the delete-style tools. Unset —
@@ -89,27 +103,118 @@ type Config struct {
 	Warnings []string
 }
 
-// Load reads the environment. It never fails: a value this package
-// cannot read falls back to the safe default and is described in
-// Warnings, so the caller can say so once a logger exists. A removed
-// setting still turned on is described in Refusals, and the server
-// refuses to start on it; the other commands still run.
+// LoadFrom reads the environment getenv describes: os.Getenv for the
+// server, and for the bundle gate the environment Claude Desktop builds
+// from the manifest's defaults, which it holds to an empty one's. It
+// never fails: a value this package cannot read falls back to the safe
+// default and is described in Warnings, so the caller can say so once a
+// logger exists. A removed setting still turned on is described in
+// Refusals, and the server refuses to start on it; the other commands
+// still run.
 //
 // Nothing here reads a flag, because the flags that exist (--dry-run,
 // --version, --dump-schemas) are a different kind of thing: they select
 // what the process does rather than configure how it does it, and
 // cmd/favro-mcp parses them where it dispatches on them.
-func Load() Config {
-	return LoadFrom(os.Getenv)
+func LoadFrom(getenv func(string) string) Config {
+	cfg, _ := load(getenv)
+	return cfg
 }
 
-// LoadFrom is Load over the environment getenv describes. The bundle
-// gate loads the environment Claude Desktop builds from the manifest's
-// defaults through it, and holds the result to an empty environment's.
-func LoadFrom(getenv func(string) string) Config {
-	cfg := Config{}
+// Credentials is the three credentials as an environment sets them.
+type Credentials struct {
+	Email, APIToken, OrganizationID string
+}
 
-	raw := strings.ToLower(strings.TrimSpace(getenv(EnvLogLevel)))
+// CredentialsFrom reads the credentials from the environment getenv
+// describes, each through Lookup. internal/auth resolves them, with the
+// keyring behind them, and imports nothing of the server's, so its
+// callers read them here and hand them over.
+func CredentialsFrom(getenv func(string) string) Credentials {
+	c, _ := credentials(getenv)
+	return c
+}
+
+// credentials is CredentialsFrom, and every variable it read, in order.
+func credentials(getenv func(string) string) (Credentials, []Var) {
+	var vars []Var
+	read := func(v Var) string {
+		vars = append(vars, v)
+		return Lookup(getenv, v.Name)
+	}
+	email := read(Var{Name: EnvUserEmail})
+	token := read(Var{Name: EnvAPIToken, Secret: true})
+	org := read(Var{Name: EnvOrganizationID})
+	return Credentials{Email: email, APIToken: token, OrganizationID: org}, vars
+}
+
+// Var is one variable the server reads.
+type Var struct {
+	// Name is the environment variable.
+	Name string
+	// Switch marks a setting that is on or off.
+	Switch bool
+	// Removed marks a setting a release took out, read only to refuse
+	// or warn a configuration that still sets it.
+	Removed bool
+	// Secret marks a credential, which a form asking for it must not
+	// show: the bundle gate holds its field to sensitive.
+	Secret bool
+}
+
+// Lookup is the value env gives the variable name, without the spaces
+// around it. Spaces alone are "", unset as an empty variable is, so a
+// form field cleared to a space means the default rather than a value
+// the server cannot read. LoadFrom and CredentialsFrom read every
+// variable through it, and so does doctor's report of where a value
+// came from.
+func Lookup(env func(string) string, name string) string {
+	return strings.TrimSpace(env(name))
+}
+
+// Vars is every variable the server reads, sorted by name: LoadFrom's,
+// the removed ones included, and the credentials. Each is recorded as
+// its reader reads it rather than listed, so none can fall behind. The
+// bundle and staleness gates derive what they hold from these.
+//
+// The record is of what each reader reads from an empty environment. A
+// variable read only when another is set would escape it; none is, and
+// the scan of the code for FAVRO_ names is the backstop.
+func Vars() []Var {
+	_, creds := credentials(func(string) string { return "" })
+	vars := append(defined(), creds...)
+	slices.SortFunc(vars, func(a, b Var) int { return strings.Compare(a.Name, b.Name) })
+	return vars
+}
+
+// EnvVars is the names of Vars, sorted. A name listed twice is a
+// variable read under two rules, which a test refuses, so it is not
+// compacted.
+func EnvVars() []string {
+	vars := Vars()
+	names := make([]string, 0, len(vars))
+	for _, v := range vars {
+		names = append(names, v.Name)
+	}
+	return names
+}
+
+// defined is every variable LoadFrom reads, in the order it reads them.
+func defined() []Var {
+	_, vars := load(func(string) string { return "" })
+	return vars
+}
+
+// load is LoadFrom, and every variable it read, in order.
+func load(getenv func(string) string) (Config, []Var) {
+	cfg := Config{}
+	var vars []Var
+	read := func(v Var) string {
+		vars = append(vars, v)
+		return Lookup(getenv, v.Name)
+	}
+
+	raw := strings.ToLower(read(Var{Name: EnvLogLevel}))
 	level, recognized := ParseLogLevel(raw)
 	cfg.LogLevel = level
 	if !recognized {
@@ -117,26 +222,14 @@ func LoadFrom(getenv func(string) string) Config {
 			fmt.Sprintf("unrecognized %s %q — falling back to info", EnvLogLevel, raw))
 	}
 
-	cfg.SkipValidate = getenv(EnvSkipValidate) != ""
+	cfg.SkipValidate = cfg.readSwitch(EnvSkipValidate, read(Var{Name: EnvSkipValidate, Switch: true}),
+		"the credentials are checked at startup")
+	cfg.Destructive = cfg.readSwitch(EnvEnableDestructive, read(Var{Name: EnvEnableDestructive, Switch: true}),
+		"delete-style tools stay unregistered")
 
-	// Anything Go cannot read as a bool, and anything absent, means
-	// off: a typo in the variable that enables deletes must not enable
-	// deletes.
-	if raw := getenv(EnvEnableDestructive); raw != "" {
-		on, err := strconv.ParseBool(raw)
-		switch {
-		case err != nil:
-			cfg.Warnings = append(cfg.Warnings,
-				fmt.Sprintf("ignoring unreadable %s %q — delete-style tools stay unregistered; set it to true or false",
-					EnvEnableDestructive, raw))
-		default:
-			cfg.Destructive = on
-		}
-	}
+	cfg.readRemoved(func(name string) string { return read(Var{Name: name, Removed: true}) })
 
-	cfg.readRemoved(getenv)
-
-	if raw := strings.TrimSpace(getenv(EnvUploadDir)); raw != "" {
+	if raw := read(Var{Name: EnvUploadDir}); raw != "" {
 		dir, err := UploadDir(raw)
 		switch {
 		case err != nil:
@@ -147,17 +240,35 @@ func LoadFrom(getenv func(string) string) Config {
 		}
 	}
 
-	return cfg
+	return cfg, vars
+}
+
+// readSwitch is a switch's value, raw as Lookup read it: what
+// strconv.ParseBool reads it as, and off when it is unset. Anything else
+// is off too, and described in Warnings with what off means: a typo in
+// the variable that enables deletes must not enable deletes, and one in
+// the variable that skips the credential check must not skip it.
+func (cfg *Config) readSwitch(name, raw, off string) bool {
+	if raw == "" {
+		return false
+	}
+	on, err := strconv.ParseBool(raw)
+	if err != nil {
+		cfg.Warnings = append(cfg.Warnings,
+			fmt.Sprintf("ignoring unreadable %s %q — %s; set it to true or false", name, raw, off))
+		return false
+	}
+	return on
 }
 
 // readRemoved describes the settings a release took out that the
 // environment still sets: in Refusals one that turned a guard on, so the
 // server does not start, and in Warnings one whose loss only makes the
-// server stricter.
-func (cfg *Config) readRemoved(getenv func(string) string) {
+// server stricter. read is Lookup, recording each as removed.
+func (cfg *Config) readRemoved(read func(string) string) {
 	// A removed setting set to anything but false is refused: a value
 	// that is not a boolean may mean on.
-	if raw := strings.TrimSpace(getenv(EnvRequirePrompt)); raw != "" {
+	if raw := read(EnvRequirePrompt); raw != "" {
 		if on, err := strconv.ParseBool(raw); err != nil || on {
 			cfg.Refusals = append(cfg.Refusals, EnvRequirePrompt+" was removed: the server no longer asks the "+
 				"person, and the client's own approval decides each call. Unset it to start the server. Leave "+
@@ -170,7 +281,7 @@ func (cfg *Config) readRemoved(getenv func(string) string) {
 	// makes the server stricter, so the server starts, but a deployment
 	// that relied on it is told why Claude Code now refuses those calls
 	// where it cannot prompt. true was the default, and changes nothing.
-	if raw := strings.TrimSpace(getenv(EnvInteractionHint)); raw != "" {
+	if raw := read(EnvInteractionHint); raw != "" {
 		if on, err := strconv.ParseBool(raw); err != nil || !on {
 			cfg.Warnings = append(cfg.Warnings, EnvInteractionHint+" was removed and is ignored: the widest "+
 				"destructive tools always carry Claude Code's requiresUserInteraction mark, so Claude Code prompts "+

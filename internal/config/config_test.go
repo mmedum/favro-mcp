@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -51,12 +52,14 @@ func TestLoadDestructive(t *testing.T) {
 		{"one", "1", true, false},
 		{"false", "false", false, false},
 		{"yes", "yes", false, true},
-		{"padded", "  true ", false, true}, // ParseBool does not trim, and neither do we
+		// Lookup drops the spaces around a value, as for every variable.
+		{"padded", "  true ", true, false},
+		{"spaces", "   ", false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(EnvEnableDestructive, tc.env)
-			cfg := Load()
+			cfg := LoadFrom(os.Getenv)
 			if got := cfg.Destructive; got != tc.want {
 				t.Errorf("cfg.Destructive = %v, want %v", got, tc.want)
 			}
@@ -77,7 +80,7 @@ func TestLoadDestructive(t *testing.T) {
 func TestLoadSkipValidateAndLevel(t *testing.T) {
 	t.Setenv(EnvSkipValidate, "")
 	t.Setenv(EnvLogLevel, "  ERROR ")
-	cfg := Load()
+	cfg := LoadFrom(os.Getenv)
 	if cfg.SkipValidate {
 		t.Error("cfg.SkipValidate = true, want false")
 	}
@@ -87,10 +90,35 @@ func TestLoadSkipValidateAndLevel(t *testing.T) {
 	if len(cfg.Warnings) != 0 {
 		t.Errorf("cfg.Warnings = %v, want empty", cfg.Warnings)
 	}
+}
 
-	t.Setenv(EnvSkipValidate, "1")
-	if !Load().SkipValidate {
-		t.Error("any non-empty value skips validation")
+// FAVRO_MCP_SKIP_VALIDATE is a switch: false and 0 check the
+// credentials, and a value it cannot read checks them too and says so.
+func TestLoadSkipValidate(t *testing.T) {
+	for _, tc := range []struct {
+		env    string
+		skip   bool
+		warned bool
+	}{
+		{"", false, false},
+		{"1", true, false},
+		{" true ", true, false},
+		{"false", false, false},
+		{"0", false, false},
+		{"yes", false, true},
+	} {
+		cfg := LoadFrom(func(name string) string { return map[string]string{EnvSkipValidate: tc.env}[name] })
+		if cfg.SkipValidate != tc.skip {
+			t.Errorf("%s=%q: SkipValidate %t, want %t", EnvSkipValidate, tc.env, cfg.SkipValidate, tc.skip)
+		}
+		want := []string(nil)
+		if tc.warned {
+			want = []string{`ignoring unreadable FAVRO_MCP_SKIP_VALIDATE "yes" — the credentials are checked at ` +
+				`startup; set it to true or false`}
+		}
+		if !slices.Equal(cfg.Warnings, want) {
+			t.Errorf("%s=%q: warnings %q, want %q", EnvSkipValidate, tc.env, cfg.Warnings, want)
+		}
 	}
 }
 
@@ -101,7 +129,7 @@ func TestWarningsNameTheVariable(t *testing.T) {
 	t.Setenv(EnvLogLevel, "loud")
 	t.Setenv(EnvEnableDestructive, "perhaps")
 
-	warnings := Load().Warnings
+	warnings := LoadFrom(os.Getenv).Warnings
 	if len(warnings) != 2 {
 		t.Fatalf("len(warnings) = %d, want 2", len(warnings))
 	}
@@ -140,7 +168,7 @@ func TestARemovedSettingIsRefusedUnlessOff(t *testing.T) {
 		{"yes", true},
 	} {
 		t.Setenv(EnvRequirePrompt, tc.env)
-		cfg := Load()
+		cfg := LoadFrom(os.Getenv)
 		if got := len(cfg.Refusals) == 1; got != tc.refused || len(cfg.Refusals) > 1 {
 			t.Errorf("FAVRO_REQUIRE_PROMPT=%q: refusals %q, want refused %v", tc.env, cfg.Refusals, tc.refused)
 		}
@@ -167,7 +195,7 @@ func TestARemovedHintIsWarnedWhenOff(t *testing.T) {
 		{"nope", true},
 	} {
 		t.Setenv(EnvInteractionHint, tc.env)
-		cfg := Load()
+		cfg := LoadFrom(os.Getenv)
 		var warned []string
 		for _, w := range cfg.Warnings {
 			if strings.HasPrefix(w, "FAVRO_INTERACTION_HINT was removed and is ignored") {
@@ -206,7 +234,7 @@ func TestLoadUploadDir(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		cfg := Load()
+		cfg := LoadFrom(os.Getenv)
 		warned := strings.Join(cfg.Warnings, "\n")
 		if cfg.UploadDir != tc.want || (tc.warn == "") != (warned == "") || !strings.Contains(warned, tc.warn) {
 			t.Errorf("%q: UploadDir %q, warnings %q", tc.env, cfg.UploadDir, warned)

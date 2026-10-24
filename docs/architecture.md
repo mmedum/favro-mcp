@@ -1,6 +1,6 @@
 # Architecture — favro-mcp
 
-**Status, 2026-10-24.** Released: v4.1.0, which gives the Claude Desktop bundle the shape the sibling servers' bundles share: every setting another client sets, each off or empty by default as the server is, a blank upload folder reaching the server empty rather than as `${user_config.upload_dir}`, the shared file names, Claude Desktop 0.10.0 or later and Favro's privacy policy; the server is unchanged. v4.0.0, in which the server asks nobody and per-call approval is the client's (§9.2, B2); every destructive call takes `confirm: true`; five tools carry the mark; widening a collection's sharing is its own tool, and the ordinary writes share only inside the organization; built with Go 1.27.3. Run live the same day: `make live` passed 120 steps, failed none and skipped 19, and `livefavro -writes` passed 15 checks, failed none and left no probe. Owed (§15): what Favro does with an invitation by email, and a share with a group that holds a guest, tried by hand. v3.2.0 marked the ten writes that asked the person with Claude Code's `requiresUserInteraction` for a client that could not ask. The server's own feature phases
+**Status, 2026-10-24.** Released: v4.2.0, which adds the windows_arm64 archive, reads every variable through `config.Lookup` (so `FAVRO_ENABLE_DESTRUCTIVE` and `FAVRO_MCP_SKIP_VALIDATE` drop the spaces around their value, and `FAVRO_MCP_SKIP_VALIDATE=false` no longer skips the credential check), and holds the bundle gate to the family's rules, after `/simplify`, `/code-review medium` and `/security-review` over v4.0.0..HEAD and a dry-run live run of 120 steps passed, 0 failed, 19 skipped (§18). v4.1.0 gave the Claude Desktop bundle the shape the sibling servers' bundles share: every setting another client sets, each off or empty by default as the server is, a blank upload folder reaching the server empty rather than as `${user_config.upload_dir}`, the shared file names, Claude Desktop 0.10.0 or later and Favro's privacy policy; the server is unchanged. v4.0.0, in which the server asks nobody and per-call approval is the client's (§9.2, B2); every destructive call takes `confirm: true`; five tools carry the mark; widening a collection's sharing is its own tool, and the ordinary writes share only inside the organization; built with Go 1.27.3. Run live the same day: `make live` passed 120 steps, failed none and skipped 19, and `livefavro -writes` passed 15 checks, failed none and left no probe. Owed (§15): what Favro does with an invitation by email, and a share with a group that holds a guest, tried by hand. v3.2.0 marked the ten writes that asked the person with Claude Code's `requiresUserInteraction` for a client that could not ask. The server's own feature phases
 (0–9) are complete and shipped, and **every phase of the alignment
 program in §16 is done**, A6's evals included — the note that said they
 needed a model API key was wrong, since the siblings drive the model
@@ -224,9 +224,12 @@ docs/
 
 Dependency direction runs one way: `server` → `tools` → `service` →
 `favroapi` → `favro`, with `config`, `cache`, `auth` and `render` as
-leaves. Nothing under `internal/service` or `internal/favroapi` imports
-MCP; `internal/favro` and `internal/render` import nothing from this
-module at all.
+leaves. `config` reads the credentials too, through `CredentialsFrom`,
+and the callers hand them to `auth`, so `config.Vars` lists every
+variable the server reads and `auth` stays a leaf. Nothing under
+`internal/service` or `internal/favroapi` imports MCP; `internal/favro`,
+`internal/render` and `internal/auth` import nothing from this module
+at all.
 
 **depguard holds it**, one rule per package naming what that package may
 not reach, so an import that runs uphill fails `make check` rather than
@@ -798,7 +801,8 @@ Stdout carries JSON-RPC frames only; logs go to stderr through `slog`.
 
 ## 12. Distribution
 
-Today: six platform archives plus a `favro-mcp.plugin` bundle (a Cowork /
+Today: six platform archives, darwin, linux and windows on amd64 and
+arm64 each, plus a `favro-mcp.plugin` bundle (a Cowork /
 Claude Code plugin: multi-arch binaries and a launcher, with a
 `.mcp.json` pointing at `${CLAUDE_PLUGIN_ROOT}`), built by goreleaser and
 a shell script, published from a tag.
@@ -810,11 +814,14 @@ signed rather than merely uploaded; an SBOM per archive; a keyless cosign
 signature over the checksums; `actions/attest-build-provenance`; and
 `mod_timestamp: {{ .CommitTimestamp }}` so a rebuild is byte-identical.
 The `.plugin` bundle stays — it is how this server is actually installed
-— and the manifest gate validates both against the staged tree rather
-than against a schema, because the failures that matter are referential:
-an `entry_point` nothing stages, a `platform_overrides` entry no declared
-platform can reach, a launcher choosing between binary names no manifest
-mentions.
+— and the manifest gate validates both against the staged tree, because
+the failures that matter are referential: an `entry_point` nothing
+stages, a `platform_overrides` entry no declared platform can reach, a
+launcher choosing between binary names no manifest mentions. The `.mcpb`
+manifest is held to a vendored copy of its published schema too, with
+its digest recorded. Both bundles stage the Windows amd64 binary alone,
+which Windows on arm64 runs under emulation; the windows_arm64 archive is
+for an install from the release page.
 
 The bundle asks for what a person sets in another client's
 configuration: the three credentials, `enable_destructive` and
@@ -823,9 +830,38 @@ lowercased. The switch defaults to the server's own default, which is
 off, and the folder to `""`, which `internal/config` reads as unset.
 Claude Desktop approves each tool and a person can always allow one, so
 a switch left off is the guard a bundle install keeps. `gates mcpb`
-holds every setting the source reads to an asked or a left-out list,
-and the defaults to `config.LoadFrom` with an empty environment (§18,
-2026-10-24). The staged files take the family's names:
+derives what the bundle asks for from `config.Vars`, the registry of
+every variable the server reads, the removed ones and the three
+credentials `config.CredentialsFrom` reads included: each is asked for
+or left out with a reason, and a reason for a variable the server does
+not read is refused. A switch is never required, since it has the
+server's default and a required key with no default would leave its
+variable out of the defaults check; the API token, which `config.Vars`
+marks secret, is asked as sensitive; and no default holds a `${...}`
+reference, which the host would expand and the defaults check does not. `mcp_config.args` is `[]` and no platform override sets
+`env` or `args`, since the host takes an override's in place of the
+base's. Every command starts with `${__dirname}/` and names a binary or
+the launcher, never `LICENSE`, `NOTICE` or `README.md`, and
+`entry_point` is the file the default command runs. The defaults start
+`config.LoadFrom` as an empty environment does, the differing fields
+named (§18, 2026-10-24), and every set of the switches is started, each
+switch turned from its default, with the ones the server refuses held to
+a declared list, which is empty: `config.LoadFrom` refuses only a removed
+setting still on. The gate and the packer start from one function,
+reading the manifest, `go.mod`, `LICENSE` and `.goreleaser.yaml` once
+from one root and generating the launcher, whose install hint names
+`go.mod`'s module; a key repeated in the manifest is refused, two that
+differ only in case included, since Go's decode matches a field's key in
+any case; a LICENSE the gate cannot name is refused; and the manifest
+the packer stamps is validated again. One table, `releaseMatrix`, names
+the six pairs the release builds and the one a bundle runs another's
+binary on, and the `mcpb` and `plugin` gates both read it. Every
+variable is read through `config.Lookup`, which drops the spaces around
+a value, so spaces alone are unset, and outside `internal/config` each
+is named by config's constant rather than typed. `config.Vars` records
+what each reader reads from an empty environment, so a variable read
+only when another is set would escape it; none is, and the test that
+scans the code for `FAVRO_` names is the backstop. The staged files take the family's names:
 `server/favro-mcp-darwin`, `server/favro-mcp.exe`,
 `server/favro-mcp-linux-amd64`, `server/favro-mcp-linux-arm64` and
 `server/launch-linux.sh`.
@@ -1281,6 +1317,11 @@ it; **asserted**, meaning believed and not yet held by anything.
 
 | Date | Claim | How checked | Verdict |
 |---|---|---|---|
+| 2026-10-24 | The family-rules branch holds the rules it adopts | `/code-review medium` over `v4.0.0..family-rules` | **Verified here — false in six places, each fixed with a test that fails on the old code.** Nothing held `api_token` to `sensitive`: `config.Var` has a `Secret` flag now, and a secret's field must be sensitive, with a floor. `FAVRO_MCP_SKIP_VALIDATE` skipped the credential check for any value, `false` included; it is a switch. The archive check typed the six pairs beside the plugin's tables; one `releaseMatrix` holds them and the emulated pair for both gates. An unrecognized LICENSE passed silently; `.goreleaser.yaml` was read twice; the README's plugin section named no Windows binary, which `staleness` now holds. Kept: Windows 10 on ARM has no x64 emulation, which Windows 11 has, so a bundle install there fails; every server stages amd64 for win32, and a native arm64 choice is a family change, deferred. And `config.Vars` records only what each reader reads from an empty environment (§12) |
+| 2026-10-24 | The bundle gate and config are no more complex than the rules need | `/simplify` over the same range, one agent reading reuse, simplification, efficiency and altitude | **Verified here — false in five places, fixed.** `defaultJSON` marshaled a string only compared with "nothing", the same test as `defaultValue() == nil`, and is gone. The launcher typed its module path and four helpers checked it against `go.mod`; it is generated from `go.mod` through the one `modulePath`. The archive matrix was stated twice (row above). `auth.Env*` aliased `config.Env*`, with callers split; config's names are the only ones. `auth`, a leaf by §5, imported `config`: its callers read the credentials through `config.CredentialsFrom` and hand them in, and depguard's `auth-is-a-leaf` holds it. `Load` wrapped `LoadFrom` for two callers passing `os.Getenv`, and is folded into it |
+| 2026-10-24 | The branch opens no hole | `/security-review` over the same range | **Verified here — nothing at confidence 8 or above.** One note acted on: a switch marked required with no default passed the defaults check, because the host's environment leaves such a key out, so a required switch is refused. The family's second-round fixes went in with these: `fieldDiff` reports an unexported difference whatever else differs, and compares a pointer by what it points at; a repeated key is found under case folding, named with quotes when it holds a dot or a bracket, and a walk that errors refuses; the `FAVRO_` scan reads a run another operand completes as a prefix; a default holding `${...}` is refused; one `modulePath` parses `go.mod`, a trailing comment included; the docs check matches a name whole on both sides and skips a `*` pattern; and a server variable is spelled once, in `internal/config`. The registry gate reads no bundle manifest, so the fix routing it through `committedManifest` does not apply |
+| 2026-10-24 | A platform override may carry its own `env` or `args`, and a command may be relative to the bundle | `~/.claude/mcpb-bundle-evidence.md` §E: anthropics/mcpb v2.1.2 `src/shared/config.ts` L114-124 takes `platformConfig.env \|\| result.env`, and an override's `args` replace the base's; MANIFEST.md shows a relative command once and never says what it resolves against, while L530 fixes `${__dirname}` to the extension's directory. Claude Desktop not probed | **Adopted — false.** An override's `env`, an empty one included, drops every base variable on that platform, and an argument such as `--dry-run` would configure the server past every check on `env`. `gates mcpb` refuses an override's `env` or `args`, a missing, null or non-empty `mcp_config.args`, and a command that does not start with `${__dirname}/` or names anything but a binary or the launcher |
+| 2026-10-24 | Windows on arm64 needs its own binary in the bundle | A manifest names one command per platform and has no key for the architecture (`~/.claude/mcp-server-standard.md` §10b); Windows on arm64 runs amd64 programs under emulation | **Adopted.** Both bundles keep the Windows amd64 binary. The release adds a `windows_arm64` archive, for someone installing from the release page; `gates mcpb` holds the matrix to the six archives and `gates plugin` names the arm64 build as emulated |
 | 2026-10-24 | The bundle's defaults start the server as an unconfigured one does | The bundle `goreleaser release --snapshot` packed, its Linux launcher started over stdio with placeholder credentials and `FAVRO_MCP_SKIP_VALIDATE=1`, once with the environment the reference host builds from the defaults (`FAVRO_ENABLE_DESTRUCTIVE=false`, `FAVRO_UPLOAD_DIR=` empty) and once with neither set; `mcpb validate` 2.1.2 on its manifest | **Verified here.** 69 tools both ways, the same names; 84 with `enable_destructive`, 71 with an upload folder, 86 with both. With the 4.0.0 placeholder as the folder, 69 tools and the not-absolute warning. The manifest passes `mcpb validate` |
 | 2026-10-24 | A blank optional field in the bundle reaches the server empty | `~/.claude/mcpb-bundle-evidence.md` §A: anthropics/mcpb v2.1.2 `src/shared/config.ts`, the code its README says Claude for macOS and Windows loads bundles with, builds the environment from each key's `default` and leaves `${user_config.x}` as written when there is none ("should handle undefined variables by keeping them as-is"). Whether Claude Desktop stores `""` or omits the key is not documented | **Adopted — false on the reference host.** The 4.0.0 bundle's `upload_dir` had no default, so a blank folder could reach the server as that text, which it logs as not an absolute path and leaves uploads off. It defaults to `""` now, and `internal/config` reads `""` as unset for `FAVRO_UPLOAD_DIR` and `FAVRO_ENABLE_DESTRUCTIVE` (`TestLoadUploadDir`, `TestLoadDestructive`). `gates mcpb` refuses an optional key with no default or with `multiple`, and a bundle whose substituted defaults load otherwise than an empty environment |
 | 2026-10-24 | A bundle install has a second approval behind the server, as Claude Code's ask rules are | The same evidence file, §C: claude.com/docs/connectors/getting-started, "Select Allow once to continue, or Always allow to skip the prompt for that tool from now on"; claude.com/docs/connectors/building/review-criteria, readOnlyHint and destructiveHint "determine auto-permissions in Claude"; anthropics/mcpb `70fe3b34`, `tools` declared for display and read only by `init`. No page names desktop extensions; Claude Desktop not probed | **Adopted — false.** Claude Desktop approves per tool and a person can always allow one, so `enable_destructive` defaults to off, the server's own default, and `gates mcpb` reads that default through `config.LoadFrom` with an empty environment and refuses any other, compared as JSON. The manifest has no `tools` list: the switch and the upload folder change what registers |

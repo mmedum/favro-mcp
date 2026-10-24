@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 	"github.com/mmedum/favro-mcp/v4/internal/render"
 )
 
@@ -22,7 +23,8 @@ type AuthError struct {
 }
 
 func (e *AuthError) Error() string {
-	return fmt.Sprintf("Favro authentication failed (HTTP %d) — check FAVRO_USER_EMAIL and FAVRO_API_TOKEN", e.Status)
+	return fmt.Sprintf("Favro authentication failed (HTTP %d) — check %s and %s",
+		e.Status, config.EnvUserEmail, config.EnvAPIToken)
 }
 
 // ForbiddenError is returned for HTTP 403 — the credentials are

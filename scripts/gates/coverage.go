@@ -26,7 +26,11 @@ var exemptFromFloor = map[string]string{}
 // the average. An average hides a package at 20% behind four at 95%,
 // and the one at 20% is where the next defect is.
 func coverageFloor(w io.Writer, profile string, minimum float64) error {
-	module, err := moduleName()
+	root, err := moduleRoot()
+	if err != nil {
+		return err
+	}
+	module, err := modulePath(root)
 	if err != nil {
 		return err
 	}
@@ -130,14 +134,6 @@ func readProfile(path string) (statements, error) {
 		return statements{}, fmt.Errorf("%s has no coverage blocks; the run that produced it covered nothing", path)
 	}
 	return s, nil
-}
-
-func moduleName() (string, error) {
-	out, err := exec.Command("go", "list", "-m").Output()
-	if err != nil {
-		return "", fmt.Errorf("go list -m: %w", err)
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 // internalPackages lists the packages under internal/ that have

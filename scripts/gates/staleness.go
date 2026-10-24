@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 var (
@@ -22,8 +24,12 @@ var (
 	// "83 tools", "83 typed tools" — a number in prose is a claim about
 	// the list beside it, and this is how that claim gets held.
 	toolCount = regexp.MustCompile(`\b(\d+)\s+(?:typed\s+)?tools\b`)
-	// Every environment variable the code reads, as a string literal.
-	envName = regexp.MustCompile(`"(FAVRO_[A-Z_]+)"`)
+	// A word: a run of letters of either case, digits and _, with the *
+	// after it when there is one. A setting's name is a whole word, so a
+	// longer one that contains it, such as FAVRO_UPLOAD_DIRS,
+	// FAVRO_UPLOAD_DIRs or xFAVRO_UPLOAD_DIR, is another word, and
+	// FAVRO_UPLOAD_* is a pattern rather than a name.
+	settingWord = regexp.MustCompile(`[A-Za-z0-9_]+\*?`)
 	// A version heading, as Keep a Changelog writes it.
 	versionHeading = regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\]`)
 	// The status line at the top of the design document, which is the
@@ -83,7 +89,8 @@ func staleness(w io.Writer, bin string) error {
 	problems = append(problems, toolsDocumented(tools, readme, registered)...)
 	problems = append(problems, permissionRulesRegistered(readme, dump)...)
 	problems = append(problems, countsMatch(readme, len(registered))...)
-	problems = append(problems, envDocumented(root, readme, docs["docs/configuration.md"])...)
+	problems = append(problems, envDocumented(config.Vars(), readme, docs["docs/configuration.md"])...)
+	problems = append(problems, pluginPlatformsDocumented(readme)...)
 	problems = append(problems, gatesDocumented(docs["docs/development.md"])...)
 	problems = append(problems, destructiveCountMatches(docs, dump)...)
 	problems = append(problems, statusCurrent(arch, changelog)...)
@@ -257,25 +264,72 @@ func proseCount(sources map[string]string, re *regexp.Regexp, want int, verb, mi
 	return problems
 }
 
-// envDocumented requires every FAVRO_* variable the code reads to be
-// named in the README. The list comes from the source, so a variable
-// added next week is documented or the gate fails on the commit that
-// added it.
-func envDocumented(root, readme, configuration string) []string {
-	seen, err := sourceEnvNames(root)
-	if err != nil {
-		return []string{err.Error()}
+// envDocumented requires every variable the server reads, vars, to be
+// named in the README and in docs/configuration.md, each as a whole
+// word, and the configuration page to name no other. The list is
+// config's registry, so a variable added next week is documented or the
+// gate fails on the commit that added it.
+func envDocumented(vars []config.Var, readme, configuration string) []string {
+	if len(vars) == 0 {
+		return []string{"config.Vars lists no variable; this check is reading nothing"}
 	}
+	words := func(text string) map[string]bool {
+		out := map[string]bool{}
+		for _, word := range settingWord.FindAllString(text, -1) {
+			if rest, ok := strings.CutPrefix(word, config.EnvPrefix); ok && rest != "" &&
+				strings.Trim(rest, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == "" {
+				out[word] = true
+			}
+		}
+		return out
+	}
+	inReadme, inConfiguration := words(readme), words(configuration)
 	var problems []string
-	for _, name := range slices.Sorted(maps.Keys(seen)) {
-		if !strings.Contains(readme, name) {
-			problems = append(problems, "README.md does not document "+name)
+	known := map[string]bool{}
+	for _, v := range vars {
+		known[v.Name] = true
+		if !inReadme[v.Name] {
+			problems = append(problems, "README.md does not document "+v.Name)
 		}
 		// docs/configuration.md is the reference, so a setting missing
 		// there is missing from the place someone goes to look it up —
 		// the README's table is a summary that may reasonably lag.
-		if !strings.Contains(configuration, name) {
-			problems = append(problems, "docs/configuration.md does not document "+name)
+		if !inConfiguration[v.Name] {
+			problems = append(problems, "docs/configuration.md does not document "+v.Name)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(inConfiguration)) {
+		if !known[name] {
+			problems = append(problems, "docs/configuration.md documents "+name+", which the server does not read")
+		}
+	}
+	return problems
+}
+
+// pluginPlatformsDocumented holds the README's plugin section to the
+// plugin's staging table: it names every directory the plugin stages a
+// binary under, and every pair releaseMatrix runs under emulation, with
+// the word. The section is the one under "### Cowork plugin", up to the
+// next heading.
+func pluginPlatformsDocumented(readme string) []string {
+	const heading = "### Cowork plugin"
+	_, section, found := strings.Cut(readme, heading)
+	if !found {
+		return []string{"README.md has no " + heading + " section, so nothing says what the plugin carries"}
+	}
+	if end := strings.Index(section, "\n#"); end >= 0 {
+		section = section[:end]
+	}
+	var problems []string
+	for _, p := range platforms {
+		if !strings.Contains(section, p.dir()) {
+			problems = append(problems, "README.md's plugin section does not name "+p.dir()+", which the plugin stages")
+		}
+	}
+	for _, pair := range slices.Sorted(maps.Keys(emulated())) {
+		if !strings.Contains(section, pair) || !strings.Contains(section, "emulation") {
+			problems = append(problems, fmt.Sprintf("README.md's plugin section does not say that %s runs the %s "+
+				"binary under emulation", pair, emulated()[pair]))
 		}
 	}
 	return problems
@@ -399,7 +453,7 @@ func statusCurrent(arch, changelog string) []string {
 // failing on those would make the document unable to describe its own
 // plan.
 func packageMapCurrent(root, arch string) []string {
-	module, err := moduleName()
+	module, err := modulePath(root)
 	if err != nil {
 		return []string{err.Error()}
 	}

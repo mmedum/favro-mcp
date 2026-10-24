@@ -12,6 +12,7 @@ import (
 	"github.com/zalando/go-keyring"
 
 	"github.com/mmedum/favro-mcp/v4/internal/auth"
+	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
 
 func TestRunAuth_NoArgs_PrintsUsage(t *testing.T) {
@@ -75,9 +76,9 @@ func TestAuthLogin_RejectsIncompleteInput(t *testing.T) {
 
 func TestAuthStatus_ReportsSourceAndOrgButNeverTheToken(t *testing.T) {
 	isolateCredentials(t)
-	t.Setenv(auth.EnvUserEmail, testEmail)
-	t.Setenv(auth.EnvAPIToken, testAPIToken)
-	t.Setenv(auth.EnvOrganizationID, testOrgID)
+	t.Setenv(config.EnvUserEmail, testEmail)
+	t.Setenv(config.EnvAPIToken, testAPIToken)
+	t.Setenv(config.EnvOrganizationID, testOrgID)
 
 	var stderr bytes.Buffer
 	if err := authStatus(context.Background(), &stderr); err != nil {
@@ -105,17 +106,17 @@ func TestAuthStatus_NoCredentials_ErrorsWithHint(t *testing.T) {
 	if !strings.Contains(stderr.String(), "No Favro credentials configured") {
 		t.Errorf("stderr.String() does not contain %q", "No Favro credentials configured")
 	}
-	if !strings.Contains(stderr.String(), auth.EnvOrganizationID) {
-		t.Errorf("stderr.String() does not contain %q", auth.EnvOrganizationID)
+	if !strings.Contains(stderr.String(), config.EnvOrganizationID) {
+		t.Errorf("stderr.String() does not contain %q", config.EnvOrganizationID)
 	}
 }
 
 func TestAuthWhich_EnvWinsOverKeyring(t *testing.T) {
 	isolateCredentials(t)
 	saveKeyringToken(t, keyringOnlyCredentials())
-	t.Setenv(auth.EnvUserEmail, testEmail)
-	t.Setenv(auth.EnvAPIToken, testAPIToken)
-	t.Setenv(auth.EnvOrganizationID, testOrgID)
+	t.Setenv(config.EnvUserEmail, testEmail)
+	t.Setenv(config.EnvAPIToken, testAPIToken)
+	t.Setenv(config.EnvOrganizationID, testOrgID)
 
 	var stderr bytes.Buffer
 	if err := authWhich(context.Background(), &stderr); err != nil {

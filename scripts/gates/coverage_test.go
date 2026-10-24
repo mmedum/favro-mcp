@@ -61,7 +61,7 @@ func TestEveryExemptionNamesARealPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module, err := moduleName()
+	module, err := modulePath(root)
 	if err != nil {
 		t.Fatal(err)
 	}

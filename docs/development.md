@@ -39,8 +39,8 @@ places, and the registry's `gate: true` flag is what says it belongs.
 | `registry` | The committed MCP registry entry obeys the rules the registry enforces in code — HTTPS identifier, a GitHub release asset URL ending in `.mcpb`, no `registryBaseUrl`, a 64-hex hash — none of which its schema carries. `registry-publish` fills the version and hash in from the signed checksums after the release exists. |
 | `live-cover` | The live driver exercises every tool and every option, or waives it with a reason. |
 | `parity` | `make check` and `ci.yml` run the same set — every prerequisite, matched by what each recipe runs rather than by target name. |
-| `plugin` | The committed `.plugin` manifest against the files the packer will stage. |
-| `mcpb` | The committed `.mcpb` manifest against the files the packer will stage, plus the release configuration that gets the bundle hashed, signed and published. It also holds what the bundle asks for to the server's own settings: every setting the source reads is asked for or left out with a reason, a switch defaults to the server's own default, an optional key has a default, the defaults configure the server as no environment does, and `privacy_policies` is not empty. |
+| `plugin` | The committed `.plugin` manifest against the files the packer will stage, and the release's pairs against the binaries it stages, from the one release matrix the `mcpb` gate reads too. |
+| `mcpb` | The committed `.mcpb` manifest against the programs the packer will stage and the vendored manifest schema, plus the release configuration that gets the bundle hashed, signed and published and builds the family's six archives, each of which the bundle runs on. Every command starts with `${__dirname}/` and names a binary or the launcher, `entry_point` is the default command's, the launcher's install hint is generated from `go.mod`'s module, a LICENSE it cannot name is refused, and a repeated key is refused, two that differ only in case included. It also holds what the bundle asks for to the server's own settings, from `config.Vars`: every variable the server reads is asked for or left out with a reason, `args` is `[]` and no platform override sets `env` or `args`, a switch is a boolean and never required, a credential marked secret is sensitive, an optional key has a default and no default holds a `${...}` reference, the defaults start `config.LoadFrom` as no environment does, naming the fields that differ, and every set of the switches starts or is declared refused. The packer runs the same checks from the same files, and validates the manifest it stamps. |
 | `rule8` | No tool input declares an `organization_id`. The server binds one organization at startup and Favro routes by a header, so such an input cannot select anything — `favro_get_organization` carried one, required, for the life of this server. |
 | `schema-diff` | The tool schemas against the last tag, so a breaking wire change is visible in the pull request. |
 | `smoke` | The binary driven over stdio, twice: a conversation, and an abrupt disconnect. |
@@ -149,9 +149,9 @@ Versioning is [SemVer](https://semver.org). Removing or renaming a tool
 input is a breaking change; so is un-registering a tool. If it ships in a
 minor, the changelog has to say why.
 
-Pushing a tag runs `.github/workflows/release.yml`: GoReleaser builds five
-platform archives — Linux and macOS on both architectures, Windows on
-amd64 — plus a macOS universal binary, the `.mcpb` bundle is
+Pushing a tag runs `.github/workflows/release.yml`: GoReleaser builds six
+platform archives — Linux, macOS and Windows, each on amd64 and arm64 —
+plus a macOS universal binary, the `.mcpb` bundle is
 packed in the universal binary's post hook, `checksums.txt` covers the
 lot, cosign signs it keylessly and `attest-build-provenance` attests it.
 `gates release-notes` supplies the release header from `CHANGELOG.md` and
