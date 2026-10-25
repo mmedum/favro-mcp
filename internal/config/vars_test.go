@@ -240,8 +240,8 @@ func TestServerVariablesAreSpelledOnce(t *testing.T) {
 }
 
 // The scan reads a + chain in order, so a name built after another
-// operand is seen; and a run another operand completes is a prefix, not
-// a name, while the words before it in the run still are. A struct tag
+// operand is seen, and each run whole: one ending in _ is a prefix, and
+// one ending in a name's last character ends in that name. A struct tag
 // types a name by hand and is not refused for it; anything else is.
 func TestTheScanReadsChainsAndTags(t *testing.T) {
 	const src = "package p\n\n" +
@@ -251,6 +251,7 @@ func TestTheScanReadsChainsAndTags(t *testing.T) {
 		"\tb = \"set \" + x + EnvPrefix + \"NEW\"\n" +
 		"\tc = \"FAVRO_OLD or \" + config.EnvPrefix + \"READ_\" + kind + \"_ONLY\"\n" +
 		"\td = config.EnvUploadDir + \"=\" + dir\n" +
+		"\te = EnvPrefix + \"WHOLE\" + suffix\n" +
 		")\n"
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "p.go", src, 0)
@@ -258,7 +259,7 @@ func TestTheScanReadsChainsAndTags(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := slices.Sorted(maps.Keys(spellings(fset, f)))
-	if want := []string{"FAVRO_NEW", "FAVRO_OLD", "FAVRO_TAGGED"}; !slices.Equal(got, want) {
+	if want := []string{"FAVRO_NEW", "FAVRO_OLD", "FAVRO_TAGGED", "FAVRO_WHOLE"}; !slices.Equal(got, want) {
 		t.Errorf("the names spelled are %q, want %q", got, want)
 	}
 	typed, constants := handTyped(fset, f)
@@ -324,18 +325,13 @@ func scanCode(t *testing.T) codeScan {
 
 // spellings is every FAVRO_ name f spells, with where: in a string
 // literal, or in a + chain of literals and EnvPrefix read in order, each
-// run of them one string. A run another operand follows is a prefix that
-// operand completes, as in EnvPrefix + "ENABLE_" + kind, so the word it
-// ends with is no name; the words before it are. A name built from any
-// other constant, or through a format verb, is not seen.
+// run of them one string, read whole: EnvPrefix + "ENABLE_" + kind spells
+// only a prefix, which is no name. A name built from any other constant,
+// or through a format verb, is not seen.
 func spellings(fset *token.FileSet, f *ast.File) map[string]string {
 	found := map[string]string{}
-	spell := func(s string, at token.Pos, open bool) {
-		words := strings.FieldsFunc(s, notNameRune)
-		if open && len(words) > 0 && strings.HasSuffix(s, words[len(words)-1]) {
-			words = words[:len(words)-1]
-		}
-		for _, word := range words {
+	spell := func(s string, at token.Pos) {
+		for _, word := range strings.FieldsFunc(s, notNameRune) {
 			if isName(word) {
 				found[word] = fset.Position(at).String()
 			}
@@ -357,15 +353,15 @@ func spellings(fset *token.FileSet, f *ast.File) map[string]string {
 					run += s
 					continue
 				}
-				spell(run, at, true)
+				spell(run, at)
 				run = ""
 				ast.Inspect(op, visit)
 			}
-			spell(run, at, false)
+			spell(run, at)
 			return false
 		case *ast.BasicLit:
 			if s, err := strconv.Unquote(n.Value); n.Kind == token.STRING && err == nil {
-				spell(s, n.Pos(), false)
+				spell(s, n.Pos())
 			}
 		}
 		return true
@@ -411,10 +407,10 @@ func notNameRune(r rune) bool {
 }
 
 // isName reports whether a word is a FAVRO_ name: the prefix and a
-// letter or digit after it.
+// letter or digit after it, ending in one, so FAVRO_ENABLE_ is a prefix.
 func isName(word string) bool {
 	rest, ok := strings.CutPrefix(word, config.EnvPrefix)
-	return ok && rest != "" && rest[0] != '_'
+	return ok && rest != "" && rest[0] != '_' && !strings.HasSuffix(rest, "_")
 }
 
 // operands is a + chain's operands in order, through parentheses.
