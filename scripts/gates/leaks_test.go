@@ -27,6 +27,9 @@ func TestFindLeaksCatchesEachShape(t *testing.T) {
 		{"a reserved name under a real country code", "someone@example.dk", "address at a real domain"},                  // leakcheck:allow
 		{"a reserved label inside a real domain", "someone@corp.test.com", "address at a real domain"},                   // leakcheck:allow
 		{"a real domain ending in a reserved name", "someone@notexample.com", "address at a real domain"},                // leakcheck:allow
+		{"another address at Anthropic's domain", "ask support@anthropic.com", "address at a real domain"},               // leakcheck:allow
+		{"another address at GitHub's domain", "mail someone@github.com", "address at a real domain"},                    // leakcheck:allow
+		{"a historic fixture address in the working tree", `Email: "u@e.com"`, "address at a real domain"},               // leakcheck:allow
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			found := findLeaks(tc.text)
@@ -58,6 +61,9 @@ func TestFindLeaksLeavesTheRepositoryAlone(t *testing.T) {
 		{"an invented organization id in the environment", "FAVRO_ORGANIZATION_ID=org-fixture-1"},              // leakcheck:allow
 		{"an invented token by keyword", `"api_token": "fixture-token-0123456789"`},                            // leakcheck:allow
 		{"an invented token in the environment", "FAVRO_API_TOKEN=placeholder-0123456789"},                     // leakcheck:allow
+		{"the co-author trailer", "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"},
+		{"Dependabot's sign-off", "Signed-off-by: dependabot[bot] <support@github.com>"},
+		{"a checksum algorithm", "`checksums.txt` (SHA-256)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if found := findLeaks(allowed(tc.text)); len(found) > 0 {
@@ -98,6 +104,113 @@ func TestEveryAllowedPrefixIsUsed(t *testing.T) {
 			t.Errorf("allowedRefPrefixes has %q (%s) and nothing in the repository uses it; "+
 				"delete the entry rather than leaving a hole open",
 				prefix, allowedRefPrefixes[prefix])
+		}
+	}
+}
+
+// The history scan reads a tag from its message down, and a blob whole.
+func TestHistoryReadsATagFromItsMessage(t *testing.T) {
+	header := "object " + strings.Repeat("ab", 20) + "\ntype commit\ntag v1.0.0\n" +
+		"tagger Someone <someone@a-real-company.com> 1792876206 +0200\n\n" // leakcheck:allow
+	for _, tc := range []struct {
+		name, kind, text string
+		want             int
+	}{
+		{"the tagger header", "tag", header + "v1.0.0\n", 0},
+		{"an address in the tag message", "tag", header + "for someone@a-real-company.com\n", 1}, // leakcheck:allow
+		{"the same bytes as a blob", "blob", header + "v1.0.0\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := objectFindings(tc.kind, "v1.0.0", []byte(tc.text)); len(got) != tc.want {
+				t.Errorf("objectFindings(%q, %q) = %v, want %d finding(s)", tc.kind, tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
+// The old auth tests' fixture addresses pass in a blob of an auth test in
+// the history and nowhere else; the tree's case is in
+// TestFindLeaksCatchesEachShape.
+func TestHistoricFixtureAddressesStayInTheirFiles(t *testing.T) {
+	for _, tc := range []struct {
+		name, path, text string
+		want             int
+	}{
+		{"the fixtures in an old auth test", "internal/auth/token_test.go", `Email: "u@e.com", Bad: "u\r@e.com"`, 0}, // leakcheck:allow
+		{"another address at the fixture domain", "internal/auth/token_test.go", `Email: "x@e.com"`, 1},              // leakcheck:allow
+		{"a fixture outside the auth tests", "internal/service/card_test.go", `Email: "u@e.com"`, 1},                 // leakcheck:allow
+		{"a fixture in auth code that is not a test", "internal/auth/token.go", `Email: "u@e.com"`, 1},               // leakcheck:allow
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := objectFindings("blob", tc.path, []byte(tc.text)); len(got) != tc.want {
+				t.Errorf("objectFindings(blob, %q, %q) = %v, want %d finding(s)", tc.path, tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
+// A known finding is accepted in the commit it is pinned to, by count,
+// and nowhere else.
+func TestKnownFindingIsPinnedToItsCommit(t *testing.T) {
+	const pinned = "af7cecf1fe538390910d0417a1d9827d6b4c652f"
+	const pinnedID = "f0baecd5fdcc6557f794b1661ef412b4cd5ceff1"
+	const other = "1234567890abcdef1234567890abcdef12345678"
+	trailer := "Co-Authored-By: Someone <someone@a-real-company.com>\n" // leakcheck:allow
+	id := "passing collection_id=5d1e9a7c3b2f4e6d8a0c1b3e returned\n"   // leakcheck:allow
+	for _, tc := range []struct {
+		name, hash, message string
+		want                int
+	}{
+		{"the pinned commit", pinned, "Fix it\n\n" + trailer, 0},
+		{"another commit with the same trailer", other, "Fix it\n\n" + trailer, 1},
+		{"the pinned commit with one more than it carries", pinned, "Fix it\n\n" + trailer + trailer, 1},
+		{"the commit pinned for an id", pinnedID, "Fix it\n\n" + id, 0},
+		{"another commit with the same id", other, "Fix it\n\n" + id, 1},
+		{"the id commit with one more than it carries", pinnedID, "Fix it\n\n" + id + id, 1},
+		{"an id in the commit pinned for an address", pinned, "Fix it\n\n" + id, 1},
+		{"an address in the commit pinned for an id", pinnedID, "Fix it\n\n" + trailer, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := commitFindings(tc.hash, tc.message); len(got) != tc.want {
+				t.Errorf("commitFindings(%s, %q) = %v, want %d finding(s)", tc.hash[:8], tc.message, got, tc.want)
+			}
+		})
+	}
+	for _, text := range []string{trailer, id} {
+		if got := objectFindings("blob", "docs/notes.md", []byte(text)); len(got) != 1 {
+			t.Errorf("objectFindings(blob, %q) = %v, want 1 finding", text, got)
+		}
+	}
+}
+
+// A pin that accepts nothing is a hole somebody forgot to close. Each is
+// held to the commit it names, by count, so a failure prints no value.
+func TestEveryKnownFindingIsInTheHistory(t *testing.T) {
+	root, err := moduleRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range knownFindings {
+		out, err := exec.Command("git", "-C", root, "log", "-1", "--format=%B", k.commit).Output()
+		if err != nil {
+			// CI's test job checks out one commit.
+			shallow, _ := exec.Command("git", "-C", root, "rev-parse", "--is-shallow-repository").Output()
+			if strings.TrimSpace(string(shallow)) == "true" {
+				t.Skipf("a shallow clone does not hold %s", k.commit[:8])
+			}
+			t.Fatalf("knownFindings pins %s, which the history does not hold: %v", k.commit[:8], err)
+		}
+		n := 0
+		for _, f := range findLeaks(allowed(string(out))) {
+			if strings.HasPrefix(f, k.rule+": ") {
+				n++
+			}
+		}
+		if n != k.count {
+			t.Errorf("%s carries %d finding(s) of %q and the pin says %d", k.commit[:8], n, k.rule, k.count)
+		}
+		if left := len(commitFindings(k.commit, string(out))); left != 0 {
+			t.Errorf("%s still reports %d finding(s) with its pin applied", k.commit[:8], left)
 		}
 	}
 }

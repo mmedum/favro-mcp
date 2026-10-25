@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Changed
+- `gates leaks history` passes on the existing history without rewriting it. It allows `noreply@anthropic.com` and `support@github.com` by the whole address, a tag's tagger header, `SHA-256`, and the old auth tests' two fixture addresses in those files only. It also accepts the two real findings the maintainer chose to leave, each pinned to its commit hash and never written down. It scans each commit message on its own.
+
 ## [4.2.0] - 2026-10-24
 
 ### Added
