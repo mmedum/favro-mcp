@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -106,7 +107,54 @@ var allowedRefPrefixes = map[string]string{
 	"MIT": "the SPDX identifier MIT-0, named where the license check ignores a module",
 	"UTF": "UTF-8, cited where internal/render explains why it clips on a rune boundary",
 	"BSC": "the example card reference in tool descriptions, fixtures and the search tokenizer's comment. Confirmed with the maintainer on 2026-09-13 that it belongs to no real board, which is the only thing that makes this entry an exemption rather than a hole — it has to stay invented",
+	"SHA": "SHA-256, the checksum algorithm older changelog entries name for checksums.txt, and docs/architecture.md §9 cites",
 }
+
+// addressRule names what the address check reports; knownFindings pins
+// by it.
+const addressRule = "an address at a real domain"
+
+// publicAddresses are addresses at a real domain that name nobody. Each
+// is allowed as the whole address, never by its domain, so anything else
+// at the same domain is still a finding.
+var publicAddresses = map[string]string{
+	"noreply@anthropic.com": "the Co-Authored-By trailer on commits Claude helped write: Anthropic's no-reply address, which names nobody",
+	"support@github.com":    "the Signed-off-by trailer Dependabot puts on its version bumps: GitHub's support address, which names nobody",
+}
+
+// historicFixtureAddresses are the addresses the auth tests used as
+// fixtures before A1 moved them to reserved domains. They are not people,
+// but e.com is a domain somebody can own, so each is allowed as the whole
+// address, only by the history scan, and only in a blob at
+// historicFixturePaths. The working-tree scan refuses them.
+var historicFixtureAddresses = map[string]string{
+	"u@e.com": "the user address in the old internal/auth token, keyring, env and validate tests: a fixture, not a person", // leakcheck:allow
+	"r@e.com": `the tail of u\r@e.com, an old token test's address with a carriage return in it: a fixture, not a person`,  // leakcheck:allow
+}
+
+// historicFixturePaths is where historicFixtureAddresses were used.
+const historicFixturePaths = "internal/auth/*_test.go"
+
+// knownFinding is a finding in one commit's message that the maintainer
+// decided to leave in the history rather than rewrite it.
+type knownFinding struct {
+	commit string // the full hash
+	rule   string // the rule that reports it, as findLeaks names it
+	count  int    // how many of that rule's findings the commit carries
+	reason string
+}
+
+// knownFindings are accepted by commit, never by value. A commit's hash
+// covers its message, so a pin cannot grow: the same value in any other
+// commit, in a blob or in the working tree is still a finding. The value
+// itself is not written here, since writing it down would leak it again.
+var knownFindings = []knownFinding{{
+	commit: "af7cecf1fe538390910d0417a1d9827d6b4c652f",
+	rule:   addressRule,
+	count:  1,
+	reason: "a Co-Authored-By trailer with an address at the organization's domain. The maintainer decided on " +
+		"2026-10-25 to leave it rather than rewrite a public history with released tags on it (docs/architecture.md §9)",
+}}
 
 func leaks(w io.Writer, args []string) error {
 	if len(args) == 1 && args[0] == "history" {
@@ -190,16 +238,27 @@ func leakHistory(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	messages, err := exec.Command("git", "-C", root, "log", "--format=%H%n%B").Output()
+	// -z ends each commit with a NUL, so each message is scanned on its
+	// own and a known finding stays pinned to the one commit it is in.
+	messages, err := exec.Command("git", "-C", root, "log", "-z", "--format=%H%n%B").Output()
 	if err != nil {
 		return fmt.Errorf("git log: %w", err)
 	}
 	var problems []string
-	for _, found := range findLeaks(allowed(string(messages))) {
-		problems = append(problems, "a commit message: "+found)
+	commits := 0
+	for entry := range strings.SplitSeq(strings.TrimSuffix(string(messages), "\x00"), "\x00") {
+		hash, message, _ := strings.Cut(entry, "\n")
+		commits++
+		for _, found := range commitFindings(hash, message) {
+			problems = append(problems, "commit "+hash[:min(8, len(hash))]+" message: "+found)
+		}
+	}
+	// 253 commits on 2026-10-25.
+	if commits < 100 {
+		return fmt.Errorf("only %d commit messages; the history scan is not reading the repository", commits)
 	}
 
-	// Every blob the history holds, by hash, deduplicated by git itself.
+	// Every object the history holds, by hash, deduplicated by git itself.
 	blobs, err := exec.Command("git", "-C", root, "rev-list", "--objects", "--all").Output()
 	if err != nil {
 		return fmt.Errorf("git rev-list: %w", err)
@@ -207,6 +266,10 @@ func leakHistory(w io.Writer) error {
 	lines := strings.Split(strings.TrimSpace(string(blobs)), "\n")
 	if len(lines) < 50 {
 		return fmt.Errorf("only %d objects; the history scan is not reading the repository", len(lines))
+	}
+	kinds, err := objectKinds(root, lines)
+	if err != nil {
+		return err
 	}
 	scanned := 0
 	for _, line := range lines {
@@ -216,18 +279,83 @@ func leakHistory(w io.Writer) error {
 		}
 		data, err := exec.Command("git", "-C", root, "cat-file", "-p", hash).Output()
 		if err != nil || bytes.IndexByte(data, 0) >= 0 {
-			continue // a tree, a tag, or a binary: not this rule's business
+			continue // a binary: not this rule's business
 		}
 		scanned++
-		for _, found := range findLeaks(allowed(string(data))) {
-			problems = append(problems, path+" (blob "+hash[:8]+"): "+found)
+		for _, found := range objectFindings(kinds[hash], path, data) {
+			problems = append(problems, path+" ("+kinds[hash]+" "+hash[:8]+"): "+found)
 		}
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "\n"))
 	}
-	_, err = fmt.Fprintf(w, "leaks history ok: %d blobs and every commit message scanned\n", scanned)
+	_, err = fmt.Fprintf(w, "leaks history ok: %d objects and %d commit messages scanned\n", scanned, commits)
 	return err
+}
+
+// objectKinds asks git for the type of every listed object in one call,
+// so a tag is known by what git says it is rather than by how its text
+// starts.
+func objectKinds(root string, lines []string) (map[string]string, error) {
+	var hashes strings.Builder
+	for _, line := range lines {
+		hash, _, _ := strings.Cut(line, " ")
+		hashes.WriteString(hash + "\n")
+	}
+	cmd := exec.Command("git", "-C", root, "cat-file", "--batch-check=%(objectname) %(objecttype)")
+	cmd.Stdin = strings.NewReader(hashes.String())
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git cat-file --batch-check: %w", err)
+	}
+	kinds := map[string]string{}
+	for line := range strings.Lines(string(out)) {
+		hash, kind, _ := strings.Cut(strings.TrimSpace(line), " ")
+		kinds[hash] = kind
+	}
+	return kinds, nil
+}
+
+// objectFindings reports the leaks in one object of the history: the
+// text of a blob or a tree, or an annotated tag's message.
+func objectFindings(kind, name string, data []byte) []string {
+	text := string(data)
+	var also map[string]string
+	switch kind {
+	case "tag":
+		// The header is git's: the object tagged, and the tagger, which is
+		// the maintainer's own git identity, published on every tag as a
+		// commit's author is on every commit. The message below it is
+		// what somebody wrote.
+		_, text, _ = strings.Cut(text, "\n\n")
+	case "blob":
+		if ok, _ := path.Match(historicFixturePaths, name); ok {
+			also = historicFixtureAddresses
+		}
+	}
+	return findLeaksAllowing(allowed(text), also)
+}
+
+// commitFindings reports the leaks in one commit's message, less those
+// knownFindings accepts for that commit.
+func commitFindings(hash, message string) []string {
+	found := findLeaks(allowed(message))
+	for _, k := range knownFindings {
+		if k.commit != hash {
+			continue
+		}
+		excused := 0
+		kept := found[:0]
+		for _, f := range found {
+			if excused < k.count && strings.HasPrefix(f, k.rule+": ") {
+				excused++
+				continue
+			}
+			kept = append(kept, f)
+		}
+		found = kept
+	}
+	return found
 }
 
 // allowed drops the lines carrying the marker. The planted strings in
@@ -254,12 +382,17 @@ func allowed(text string) string {
 // tenant. Separate from the walk so the rules can be tested against
 // planted strings: a scanner nobody has watched fail might match
 // nothing at all.
-func findLeaks(text string) []string {
+func findLeaks(text string) []string { return findLeaksAllowing(text, nil) }
+
+// findLeaksAllowing is findLeaks with more whole addresses allowed, for a
+// scan that has a reason the working-tree scan does not.
+func findLeaksAllowing(text string, addresses map[string]string) []string {
 	var out []string
 	for _, m := range email.FindAllStringSubmatch(text, -1) {
-		if !safeDomain(m[1]) {
-			out = append(out, "an address at a real domain: "+m[0])
+		if safeDomain(m[1]) || publicAddresses[m[0]] != "" || addresses[m[0]] != "" {
+			continue
 		}
+		out = append(out, addressRule+": "+m[0])
 	}
 	for _, m := range favroID.FindAllString(text, -1) {
 		if !invented(m) {

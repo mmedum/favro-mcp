@@ -552,10 +552,27 @@ out not to need a history rewrite at all:
   the conclusion drawn from it was not. `.entire/` is in `.gitignore`
   now, so the tool cannot stage one again.
 - The old test fixture's address at a registrable domain, in blobs
-  predating A1's fix.
-- `SHA-256` in older changelog entries, which is the card-reference <!-- leakcheck:allow -->
+  predating A1's fix. Allowed since 2026-10-25 by the whole address, in
+  the history scan only and only in `internal/auth/*_test.go` blobs; the
+  tree scan still refuses them.
+- `SHA-256` in older changelog entries, which is the card-reference
   rule's known false-positive class rather than a finding — and the
-  clearest illustration of why that rule needs a list at all.
+  clearest illustration of why that rule needs a list at all. `SHA` is an
+  allowed prefix since 2026-10-25.
+
+**A finding left in the history (maintainer, 2026-10-25).** Commit
+`af7cecf1fe538390910d0417a1d9827d6b4c652f` carries a `Co-Authored-By`
+trailer with an address at the organization's domain. It stays: removing
+it means rewriting a public history with released tags on it.
+`knownFindings` in `scripts/gates/leaks.go` accepts that one finding in
+that one commit, by hash and by count, and never writes the value down.
+The same address in any other commit, blob or file is still a finding.
+
+Since 2026-10-25 both scans allow two public trailer addresses, each as
+the whole address: Claude's `Co-Authored-By` and Dependabot's
+`Signed-off-by`. The history scan reads an annotated tag from its
+message down: the tagger header is the maintainer's own git identity,
+which every tag publishes, as every commit publishes its author.
 
 The working-tree scan is the one in `make check`; the history scan stays
 manual, because its findings are facts about the past rather than things
