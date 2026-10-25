@@ -560,13 +560,18 @@ out not to need a history rewrite at all:
   clearest illustration of why that rule needs a list at all. `SHA` is an
   allowed prefix since 2026-10-25.
 
-**A finding left in the history (maintainer, 2026-10-25).** Commit
-`af7cecf1fe538390910d0417a1d9827d6b4c652f` carries a `Co-Authored-By`
-trailer with an address at the organization's domain. It stays: removing
-it means rewriting a public history with released tags on it.
-`knownFindings` in `scripts/gates/leaks.go` accepts that one finding in
-that one commit, by hash and by count, and never writes the value down.
-The same address in any other commit, blob or file is still a finding.
+**Findings left in the history (maintainer, 2026-10-25).** The history
+stays as it is, because removing them means rewriting a public history
+with released tags on it. Two commit messages carry real findings:
+
+- `af7cecf1fe538390910d0417a1d9827d6b4c652f`: a `Co-Authored-By` trailer
+  with an address at the organization's domain.
+- `f0baecd5fdcc6557f794b1661ef412b4cd5ceff1`: a real collection id,
+  quoted from a live test of `favro_list_widgets`.
+
+`knownFindings` in `scripts/gates/leaks.go` accepts each one in its own
+commit, by hash, rule and count, and never writes the value down. The
+same value in any other commit, blob or file is still a finding.
 
 Since 2026-10-25 both scans allow two public trailer addresses, each as
 the whole address: Claude's `Co-Authored-By` and Dependabot's

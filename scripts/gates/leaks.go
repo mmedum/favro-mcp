@@ -110,9 +110,12 @@ var allowedRefPrefixes = map[string]string{
 	"SHA": "SHA-256, the checksum algorithm older changelog entries name for checksums.txt, and docs/architecture.md §9 cites",
 }
 
-// addressRule names what the address check reports; knownFindings pins
-// by it.
-const addressRule = "an address at a real domain"
+// addressRule and idRule name what two checks report; knownFindings
+// pins by them.
+const (
+	addressRule = "an address at a real domain"
+	idRule      = "a 24-character id of the shape Favro mints"
+)
 
 // publicAddresses are addresses at a real domain that name nobody. Each
 // is allowed as the whole address, never by its domain, so anything else
@@ -153,6 +156,12 @@ var knownFindings = []knownFinding{{
 	rule:   addressRule,
 	count:  1,
 	reason: "a Co-Authored-By trailer with an address at the organization's domain. The maintainer decided on " +
+		"2026-10-25 to leave it rather than rewrite a public history with released tags on it (docs/architecture.md §9)",
+}, {
+	commit: "f0baecd5fdcc6557f794b1661ef412b4cd5ceff1",
+	rule:   idRule,
+	count:  1,
+	reason: "a real collection id, quoted from a live test of favro_list_widgets. The maintainer decided on " +
 		"2026-10-25 to leave it rather than rewrite a public history with released tags on it (docs/architecture.md §9)",
 }}
 
@@ -396,7 +405,7 @@ func findLeaksAllowing(text string, addresses map[string]string) []string {
 	}
 	for _, m := range favroID.FindAllString(text, -1) {
 		if !invented(m) {
-			out = append(out, "a 24-character id of the shape Favro mints: "+m+
+			out = append(out, idRule+": "+m+
 				" (if it is synthetic, say so in the value: Synthetic, NoSuch, or a run of aaaa)")
 		}
 	}

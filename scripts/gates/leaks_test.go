@@ -153,8 +153,10 @@ func TestHistoricFixtureAddressesStayInTheirFiles(t *testing.T) {
 // and nowhere else.
 func TestKnownFindingIsPinnedToItsCommit(t *testing.T) {
 	const pinned = "af7cecf1fe538390910d0417a1d9827d6b4c652f"
+	const pinnedID = "f0baecd5fdcc6557f794b1661ef412b4cd5ceff1"
 	const other = "1234567890abcdef1234567890abcdef12345678"
 	trailer := "Co-Authored-By: Someone <someone@a-real-company.com>\n" // leakcheck:allow
+	id := "passing collection_id=5d1e9a7c3b2f4e6d8a0c1b3e returned\n"   // leakcheck:allow
 	for _, tc := range []struct {
 		name, hash, message string
 		want                int
@@ -162,6 +164,11 @@ func TestKnownFindingIsPinnedToItsCommit(t *testing.T) {
 		{"the pinned commit", pinned, "Fix it\n\n" + trailer, 0},
 		{"another commit with the same trailer", other, "Fix it\n\n" + trailer, 1},
 		{"the pinned commit with one more than it carries", pinned, "Fix it\n\n" + trailer + trailer, 1},
+		{"the commit pinned for an id", pinnedID, "Fix it\n\n" + id, 0},
+		{"another commit with the same id", other, "Fix it\n\n" + id, 1},
+		{"the id commit with one more than it carries", pinnedID, "Fix it\n\n" + id + id, 1},
+		{"an id in the commit pinned for an address", pinned, "Fix it\n\n" + id, 1},
+		{"an address in the commit pinned for an id", pinnedID, "Fix it\n\n" + trailer, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := commitFindings(tc.hash, tc.message); len(got) != tc.want {
@@ -169,8 +176,10 @@ func TestKnownFindingIsPinnedToItsCommit(t *testing.T) {
 			}
 		})
 	}
-	if got := objectFindings("blob", "docs/notes.md", []byte(trailer)); len(got) != 1 {
-		t.Errorf("the same trailer in a blob: %v, want 1 finding", got)
+	for _, text := range []string{trailer, id} {
+		if got := objectFindings("blob", "docs/notes.md", []byte(text)); len(got) != 1 {
+			t.Errorf("objectFindings(blob, %q) = %v, want 1 finding", text, got)
+		}
 	}
 }
 
