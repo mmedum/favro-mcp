@@ -8,6 +8,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [4.2.1] - 2026-10-26
+
 ### Fixed
 - `favro_move_card` and `favro_update_card` keep a nested card's place among its parent's children. A column move on a nested card used to move it to the end of its parent, because naming the parent makes Favro re-seat the card. They now carry the card's current `sheet_position` with its parent, unless you pass one, and the read-back reports whether it held.
 
@@ -421,7 +423,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.2.1...HEAD
+[4.2.1]: https://github.com/mmedum/favro-mcp/compare/v4.2.0...v4.2.1
 [4.2.0]: https://github.com/mmedum/favro-mcp/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/mmedum/favro-mcp/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/mmedum/favro-mcp/compare/v3.2.0...v4.0.0
