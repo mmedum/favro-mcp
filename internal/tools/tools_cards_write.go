@@ -171,11 +171,12 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 			"so a body naming none leaves the card at top level — and the " +
 			"response echoes a null parent either way, so the answer cannot tell you which " +
 			"happened. This tool therefore reads the card first on such a write and carries its " +
-			"existing parent through, saying so in `notes`. Pass `clear_parent: true` to detach " +
+			"existing parent through with its place among the parent's children " +
+			"(`sheet_position`), saying so in `notes`. Pass `clear_parent: true` to detach " +
 			"the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
 		Annotations: mutating("Update Favro card", false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
-		parent, notes, err := settleParent(ctx, r, in.CardID, in.WidgetCommonID, in.ParentCardID, in.ClearParent)
+		st, notes, err := settleParent(ctx, r, in.CardID, in.WidgetCommonID, in.ParentCardID, in.ClearParent, in.SheetPosition)
 		if err != nil {
 			return nil, writeOutput[favro.Card]{}, err
 		}
@@ -185,10 +186,10 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 			WidgetCommonID:      in.WidgetCommonID,
 			ColumnID:            in.ColumnID,
 			LaneID:              in.LaneID,
-			ParentCardID:        parent,
+			ParentCardID:        st.parent,
 			DragMode:            in.DragMode,
 			ListPosition:        in.ListPosition,
-			SheetPosition:       in.SheetPosition,
+			SheetPosition:       st.sheetPosition,
 			AddAssignmentIDs:    in.AddAssignmentIDs,
 			RemoveAssignmentIDs: in.RemoveAssignmentIDs,
 			AddTagIDs:           in.AddTagIDs,
@@ -211,7 +212,7 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 		if !out.DryRun {
 			r.InvalidateSearchCardCache()
 			in.readBack(&out, func() []string {
-				return verifyPlacement(ctx, r, in.CardID, out.Result, placement{in.WidgetCommonID, in.ColumnID, in.LaneID})
+				return verifyPlacement(ctx, r, in.CardID, out.Result, placement{in.WidgetCommonID, in.ColumnID, in.LaneID, req.SheetPosition})
 			})
 		}
 		return nil, out, nil
@@ -231,6 +232,7 @@ const (
 	noteClearParentInert = "clear_parent had no effect: only a write carrying widget_common_id can drop the card's parent. Pass the card's own widget_common_id alongside it to detach it."
 	noteParentNotOnBoard = "this write puts the card on a different board, and a parent must belong to the widget the write names — so this body names none and the card lands at top level there. Pass parent_card_id naming a card on that board to nest it."
 	noteParentCarried    = "kept the card's existing parent: Favro reads parentCardId off the body of a write carrying widget_common_id, so a body naming none would have left the card at top level. Pass clear_parent: true to detach on purpose, or parent_card_id to re-parent."
+	noteSheetCarried     = "kept the card's place among its parent's children: a body naming the parent re-seats the card after the parent's last child unless it also names sheet_position, so this one carries the card's current sheet_position, %g."
 )
 
 var errClearParentWithParent = render.Sentinel(render.ClassInvalid,
@@ -255,6 +257,13 @@ var errClearParentWithParent = render.Sentinel(render.ClassInvalid,
 // testable — Favro publishes no lane endpoint — and §15 records that as
 // permanent rather than pending.
 //
+// Naming the parent has a cost of its own. Probed live 2026-10-26 (§18):
+// a body naming a card's own parent re-seats it after the parent's last
+// child, sheetPosition 0 to 3 among three, unless the body names
+// sheetPosition too; naming the card's current one keeps it there, 0
+// included. So the read that finds the parent carries the card's place
+// as well, unless the caller named one.
+//
 // The notes still describe the body that was sent rather than the state
 // that resulted — hard rule 2 forbids inferring the second from a 200,
 // and the probe settled what Favro drops, not what any given write
@@ -264,20 +273,29 @@ var errClearParentWithParent = render.Sentinel(render.ClassInvalid,
 // runs under dry-run too, so the previewed body is the body that would
 // be sent (the same choice the description-editor tools make; a dry run
 // must not write, which is a different claim from must not read).
-func settleParent(ctx context.Context, r *service.Resolver, cardID, widgetCommonID, parentCardID string, clearParent bool) (string, []string, error) {
+func settleParent(ctx context.Context, r *service.Resolver, cardID, widgetCommonID, parentCardID string,
+	clearParent bool, sheetPosition *float64,
+) (seat, []string, error) {
 	if clearParent && parentCardID != "" {
-		return "", nil, errClearParentWithParent
+		return seat{}, nil, errClearParentWithParent
 	}
 	if widgetCommonID == "" { // not structural: nothing is re-seated
 		if clearParent {
-			return "", []string{noteClearParentInert}, nil
+			return seat{sheetPosition: sheetPosition}, []string{noteClearParentInert}, nil
 		}
-		return parentCardID, nil, nil
+		return seat{parentCardID, sheetPosition}, nil, nil
 	}
 	if clearParent || parentCardID != "" { // the body already settles it
-		return parentCardID, nil, nil
+		return seat{parentCardID, sheetPosition}, nil, nil
 	}
-	return parentFromCard(ctx, r, cardID, widgetCommonID)
+	return parentFromCard(ctx, r, cardID, widgetCommonID, sheetPosition)
+}
+
+// seat is what a structural write names to keep a card where it sits:
+// its parent, and its place among that parent's children.
+type seat struct {
+	parent        string
+	sheetPosition *float64
 }
 
 // parentFromCard is the half of settleParent that has to ask Favro:
@@ -287,20 +305,25 @@ func settleParent(ctx context.Context, r *service.Resolver, cardID, widgetCommon
 // A failed read refuses the write. The read is what makes the write
 // safe, and a caller who would rather not pay for it has two ways to
 // say so — parent_card_id or clear_parent — which the refusal names.
-func parentFromCard(ctx context.Context, r *service.Resolver, cardID, widgetCommonID string) (string, []string, error) {
+func parentFromCard(ctx context.Context, r *service.Resolver, cardID, widgetCommonID string, sheetPosition *float64) (seat, []string, error) {
 	current, err := r.Client().GetCard(ctx, cardID)
 	if err != nil {
-		return "", nil, fmt.Errorf("refusing a structural update to card %q: its current parent could not be read, and a structural write naming no parent detaches the card from its parent. Pass parent_card_id to name the parent yourself, or clear_parent: true if detaching is what you want: %w", cardID, err)
+		return seat{}, nil, fmt.Errorf("refusing a structural update to card %q: its current parent could not be read, and a structural write naming no parent detaches the card from its parent. Pass parent_card_id to name the parent yourself, or clear_parent: true if detaching is what you want: %w", cardID, err)
 	}
 	if current.ParentCardID == "" {
-		return "", nil, nil
+		return seat{sheetPosition: sheetPosition}, nil, nil
 	}
 	// A parent has to belong to the widget the body names, so one from
 	// the old board cannot travel with a card changing boards.
 	if current.WidgetCommonID != "" && current.WidgetCommonID != widgetCommonID {
-		return "", []string{noteParentNotOnBoard}, nil
+		return seat{sheetPosition: sheetPosition}, []string{noteParentNotOnBoard}, nil
 	}
-	return current.ParentCardID, []string{noteParentCarried}, nil
+	notes := []string{noteParentCarried}
+	if sheetPosition == nil {
+		sheetPosition = &current.SheetPosition
+		notes = append(notes, fmt.Sprintf(noteSheetCarried, current.SheetPosition))
+	}
+	return seat{current.ParentCardID, sheetPosition}, notes, nil
 }
 
 func registerArchiveCard(reg *registry, r *service.Resolver) {
@@ -368,7 +391,8 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 			"asked for, so a move Favro accepts and ignores comes back as an error rather " +
 			"than a success. A move carries widget_common_id, and Favro reads `parentCardId` " +
 			"off such a body: this tool reads the card's current parent first and carries it " +
-			"through, saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or " +
+			"through with the card's place among the parent's children (`sheet_position`), " +
+			"saying so in `notes`. Pass `clear_parent: true` to detach on purpose, or " +
 			"`parent_card_id` to nest it there; either one also skips the read. " +
 			verifyPlacementDescription +
 			"Successful live writes invalidate the search-cards cache. Pass " +
@@ -379,7 +403,7 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 		// it is not even optional on a column move — so every move is a
 		// structural write, and every move detaches a nested card unless
 		// the body names the parent. Same guard as favro_update_card.
-		parent, notes, err := settleParent(ctx, r, in.CardID, in.WidgetCommonID, in.ParentCardID, in.ClearParent)
+		st, notes, err := settleParent(ctx, r, in.CardID, in.WidgetCommonID, in.ParentCardID, in.ClearParent, in.SheetPosition)
 		if err != nil {
 			return nil, writeOutput[favro.Card]{}, err
 		}
@@ -387,9 +411,9 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 			WidgetCommonID: in.WidgetCommonID,
 			ColumnID:       in.ColumnID,
 			LaneID:         in.LaneID,
-			ParentCardID:   parent,
+			ParentCardID:   st.parent,
 			ListPosition:   in.ListPosition,
-			SheetPosition:  in.SheetPosition,
+			SheetPosition:  st.sheetPosition,
 			DragMode:       in.DragMode,
 		}
 		writeCtx := ctx
@@ -407,7 +431,7 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 		if !out.DryRun {
 			r.InvalidateSearchCardCache()
 			in.readBack(&out, func() []string {
-				return verifyPlacement(ctx, r, in.CardID, out.Result, placement{in.WidgetCommonID, in.ColumnID, in.LaneID})
+				return verifyPlacement(ctx, r, in.CardID, out.Result, placement{in.WidgetCommonID, in.ColumnID, in.LaneID, req.SheetPosition})
 			})
 		}
 		return nil, out, nil
@@ -537,6 +561,9 @@ func moveCardStateDiff(cardID string, in *favro.MoveCardRequest, clearParent boo
 		dest = append(dest, fmt.Sprintf("parent=%q", in.ParentCardID))
 	case clearParent:
 		dest = append(dest, "parent="+parentClearedPhrase)
+	}
+	if in.SheetPosition != nil {
+		dest = append(dest, fmt.Sprintf("sheet_position=%g", *in.SheetPosition))
 	}
 	if len(dest) == 0 {
 		return fmt.Sprintf("would PUT card %q with no destination set (favro_move_card requires at least one of widget_common_id, column_id, or lane_id)", cardID)
