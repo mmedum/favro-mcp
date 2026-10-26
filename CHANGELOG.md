@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Fixed
+- `favro_move_card` and `favro_update_card` keep a nested card's place among its parent's children. A column move on a nested card used to move it to the end of its parent, because naming the parent makes Favro re-seat the card. They now carry the card's current `sheet_position` with its parent, unless you pass one, and the read-back reports whether it held.
+
 ### Changed
 - `gates leaks history` passes on the existing history without rewriting it. It allows `noreply@anthropic.com` and `support@github.com` by the whole address, a tag's tagger header, `SHA-256`, and the old auth tests' two fixture addresses in those files only. It also accepts the two real findings the maintainer chose to leave, each pinned to its commit hash and never written down. It scans each commit message on its own.
 

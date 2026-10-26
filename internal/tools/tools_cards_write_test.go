@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -1385,5 +1386,159 @@ func TestMCP_CardPlacement_DryRun_ReadsNothingBack(t *testing.T) {
 	}
 	if len(out.Notes) != 0 {
 		t.Errorf("out.Notes = %v, want none", out.Notes)
+	}
+}
+
+// seatFixture is a Favro holding one card at sheetPosition 5.25 under
+// parent, or at top level when parent is empty. Before a write it
+// answers GET with that card; after one, with the column the write sent
+// and the sheetPosition Favro stored: reseatedAt when it is non-zero,
+// which is what Favro does to a card it re-nests, else the one the body
+// named. The PUT body is kept in put, and a PUT counted in puts.
+func seatFixture(t *testing.T, parent string, reseatedAt float64, put *favro.UpdateCardRequest, puts *atomic.Int32) *favroapi.Client {
+	t.Helper()
+	var mu sync.Mutex
+	stored := favro.Card{
+		CardID: "ci-1", CardCommonID: "cc-1", Name: "nested", WidgetCommonID: "w-1",
+		ColumnID: "col-1", ParentCardID: parent, SheetPosition: 5.25,
+	}
+	return favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPut {
+			puts.Add(1)
+			if err := json.NewDecoder(r.Body).Decode(put); err != nil {
+				t.Errorf("decode PUT body: %v", err)
+			}
+			stored.ColumnID = put.ColumnID
+			switch {
+			case reseatedAt != 0:
+				stored.SheetPosition = reseatedAt
+			case put.SheetPosition != nil:
+				stored.SheetPosition = *put.SheetPosition
+			}
+			// Favro echoes a null parent on a structural write.
+			_ = json.NewEncoder(w).Encode(favro.Card{
+				CardID: "ci-1", CardCommonID: "cc-1", WidgetCommonID: "w-1", ColumnID: put.ColumnID,
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(stored)
+	}))
+}
+
+// A structural write on a nested card names the card's parent, and
+// Favro re-seats a card whose body names its parent after the parent's
+// last child unless the body also names its sheet position (§18,
+// 2026-10-26). So the write carries the card's current one, and the
+// read-back says whether it held.
+func TestMCP_StructuralWrite_KeepsTheCardsPlaceUnderItsParent(t *testing.T) {
+	t.Parallel()
+	ptr := func(f float64) *float64 { return &f }
+	const carried = "carries the card's current sheet_position, 5.25"
+	tests := []struct {
+		name       string
+		tool       string
+		parent     string
+		reseatedAt float64
+		args       map[string]any
+		wantSheet  *float64 // the body's sheetPosition; nil for none
+		wantNotes  []string // substrings the notes must hold
+		wantNot    []string // substrings the notes must not hold
+	}{
+		{
+			name: "a column move keeps a nested card's place", tool: moveCardToolName, parent: "ci-parent",
+			args:      map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2"},
+			wantSheet: ptr(5.25),
+			wantNotes: []string{carried, "its sheet_position is 5.25, as the write named"},
+		},
+		{
+			name: "a sheet position the caller names is the one sent", tool: moveCardToolName, parent: "ci-parent",
+			args:      map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "sheet_position": 3},
+			wantSheet: ptr(3),
+			wantNotes: []string{"its sheet_position is 3, as the write named"},
+			wantNot:   []string{carried},
+		},
+		{
+			name: "a top-level card has no place under a parent to keep", tool: moveCardToolName, parent: "",
+			args:    map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2"},
+			wantNot: []string{carried, "sheet_position"},
+		},
+		{
+			name: "a card that moved anyway is reported", tool: moveCardToolName, parent: "ci-parent", reseatedAt: 9,
+			args:      map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2"},
+			wantSheet: ptr(5.25),
+			wantNotes: []string{"sheet_position did not hold: the card was read back at 9, not the 5.25 the write named"},
+		},
+		{
+			name: "a column nudge through favro_update_card keeps it too", tool: updateCardToolName, parent: "ci-parent",
+			args:      map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2"},
+			wantSheet: ptr(5.25),
+			wantNotes: []string{carried, "its sheet_position is 5.25, as the write named"},
+		},
+		{
+			name: "a card going to another board carries no place", tool: moveCardToolName, parent: "ci-parent",
+			args:    map[string]any{"card_id": "ci-1", "widget_common_id": "w-OTHER", "column_id": "col-9"},
+			wantNot: []string{carried},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var put favro.UpdateCardRequest
+			var puts atomic.Int32
+			cs := connectInMemoryWith(t, seatFixture(t, tt.parent, tt.reseatedAt, &put, &puts))
+			res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tt.tool, Arguments: tt.args})
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if res.IsError {
+				t.Fatalf("res.IsError = true, want false: %v", res.Content[0])
+			}
+			if puts.Load() != 1 {
+				t.Fatalf("%d PUTs, want 1", puts.Load())
+			}
+			switch {
+			case tt.wantSheet == nil && put.SheetPosition != nil:
+				t.Errorf("body.SheetPosition = %v, want none", *put.SheetPosition)
+			case tt.wantSheet != nil && (put.SheetPosition == nil || *put.SheetPosition != *tt.wantSheet):
+				t.Errorf("body.SheetPosition = %v, want %v", put.SheetPosition, *tt.wantSheet)
+			}
+			notes := strings.Join(decodeStructured[writeOutput[favro.Card]](t, res).Notes, " | ")
+			for _, want := range tt.wantNotes {
+				if !strings.Contains(notes, want) {
+					t.Errorf("notes must hold %q: %s", want, notes)
+				}
+			}
+			for _, not := range tt.wantNot {
+				if strings.Contains(notes, not) {
+					t.Errorf("notes must not hold %q: %s", not, notes)
+				}
+			}
+		})
+	}
+}
+
+// A dry run reads the card, as a live write would, so its preview names
+// the place the write would carry, and nothing is written.
+func TestMCP_MoveCard_DryRunPreviewsTheCarriedPlace(t *testing.T) {
+	t.Parallel()
+	var put favro.UpdateCardRequest
+	var puts atomic.Int32
+	cs := connectInMemoryWith(t, seatFixture(t, "ci-parent", 0, &put, &puts))
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: moveCardToolName, Arguments: map[string]any{
+		"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "dry_run": true,
+	}})
+	if err != nil || res.IsError {
+		t.Fatalf("err = %v, IsError = %v", err, res != nil && res.IsError)
+	}
+	if puts.Load() != 0 {
+		t.Errorf("a dry run sent %d PUTs", puts.Load())
+	}
+	out := decodeStructured[writeOutput[favro.Card]](t, res)
+	const want = `would move card "ci-1" to widget="w-1", column="col-2", parent="ci-parent", sheet_position=5.25`
+	if out.PredictedStateDiff != want {
+		t.Errorf("PredictedStateDiff = %q, want %q", out.PredictedStateDiff, want)
 	}
 }
