@@ -46,7 +46,8 @@ func (v verifyInput) readBack(out *writeOutput[favro.Card], check func() []strin
 
 // verifyPlacementDescription is the part of favro_update_card's and
 // favro_move_card's descriptions that says what the read-back does.
-const verifyPlacementDescription = "A write that sets `column_id` or `lane_id` is then read " +
+const verifyPlacementDescription = "A write that sets `column_id`, `lane_id` or " +
+	"`sheet_position`, which a structural write on a nested card sets for you, is then read " +
 	"back, and whether the card is where it was asked to be is reported in `notes` — the " +
 	"response alone cannot say, because a 200 echoing the requested column is also what an " +
 	"ignored write returns. That costs one request; pass `skip_verify: true` to drop it. "
@@ -59,6 +60,8 @@ const (
 	notePlacementIgnored  = "%s did not change: the card was read back after the write and reports %q, not %q. Favro answered 200 for a move it did not store."
 	notePlacementElsewise = "not verified: the card read back is on board %q, not the %q this write named. A write naming another board adds the card there and leaves this instance where it was, so compare on the target board."
 	noteLaneUnreadable    = "lane_id not verified: the card read back carries no laneId, which is also what a card on a board without lanes carries."
+	noteSheetVerified     = "verified by reading the card back: its sheet_position is %g, as the write named."
+	noteSheetMoved        = "sheet_position did not hold: the card was read back at %g, not the %g the write named, so it moved among its parent's children."
 	noteFieldPresent      = "verified by reading the card back: the %q field is on the card, carrying %s. Favro normalizes some values on the way in, so compare it with what was written."
 	noteFieldAbsent       = "the %q field is not on the card after the write. Favro answers 200 for a custom-field write it discarded, which is what it does when the card's widget has not enabled the field. If this write cleared the field, absence is expected."
 	noteSharingVerified   = "verified by reading the collection back: public_sharing is %q."
@@ -66,15 +69,17 @@ const (
 	noteSharingWas        = "public_sharing was %q before this call."
 )
 
-// placement is where a write asked Favro to put a card.
+// placement is where a write asked Favro to put a card. SheetPosition is
+// nil when the write named none.
 type placement struct {
 	WidgetCommonID, ColumnID, LaneID string
+	SheetPosition                    *float64
 }
 
 // verifyPlacement reads back the card a move produced and reports
-// whether it sits in the column and lane the write asked for. Only
-// columnId and laneId are compared: they are ids, so a mismatch cannot
-// be a formatting difference.
+// whether it sits in the column and lane the write asked for, and at the
+// sheet position. The ids are compared as ids. The position is compared
+// exactly: Favro stores the number it was sent (§18, 2026-10-26).
 //
 // widgetCommonId is deliberately not compared. A write naming another
 // board adds an instance there and leaves the source where it is, so
@@ -85,7 +90,7 @@ type placement struct {
 // The cardId in Favro's answer is read in preference to the one the
 // caller passed, falling back when the answer carried none.
 func verifyPlacement(ctx context.Context, r *service.Resolver, cardID string, written *favro.Card, want placement) []string {
-	if want.ColumnID == "" && want.LaneID == "" {
+	if want.ColumnID == "" && want.LaneID == "" && want.SheetPosition == nil {
 		return nil
 	}
 	if written != nil && written.CardID != "" {
@@ -116,6 +121,13 @@ func placementVerdict(card favro.Card, want placement) []string {
 	}
 	if want.LaneID != "" && !laneOK {
 		notes = append(notes, laneMismatch(card.LaneID, want.LaneID))
+	}
+	switch {
+	case want.SheetPosition == nil:
+	case card.SheetPosition == *want.SheetPosition:
+		notes = append(notes, fmt.Sprintf(noteSheetVerified, card.SheetPosition))
+	default:
+		notes = append(notes, fmt.Sprintf(noteSheetMoved, card.SheetPosition, *want.SheetPosition))
 	}
 	return notes
 }
