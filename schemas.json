@@ -4293,7 +4293,7 @@
         "readOnlyHint": true,
         "title": "Get a Favro card with names dereferenced"
       },
-      "description": "Fetch one Favro card with every id field dereferenced into a human-readable name: tag IDs → tag names, assignee userIds → user names + emails, widgetCommonId → widget name, columnId → column name, collectionIds (from the parent widget) → collection names, customFieldId → custom field name + display value. Custom-field display values cover Text, Number, Date, Date created, Checkbox, Link, Single select, Multiple select, Status (name + color), Members (resolved to user names), Rating ('value / total'), Timeline ('start → due'), Voting (yes/no), Progress (percent), Tags (resolved to tag names), Sequential ID (the auto-counter value), and Relations (a count summary; raw IDs available via the entry's `raw` field). Unknown future Types pass through with `dereferenced: false` and the raw JSON attached. Saves 4–7 follow-up calls in the typical 'fetch card → resolve everything' flow. Pass exactly one of `card_id` (per-widget), `card_common_id` (cross-widget), or `sequential_id` (integer of a 'BSC-123' ref). Comments are off by default — set `include_comments: true` to fetch the first page (cap with `comment_limit`, default 20). Pass `description_format: \"markdown\"` to see the description as Favro stored it. Read-only.",
+      "description": "Fetch one Favro card with every id field dereferenced into a human-readable name: tag IDs → tag names, assignee userIds → user names + emails, widgetCommonId → widget name, columnId → column name, collectionIds (from the parent widget) → collection names, customFieldId → custom field name + display value. Custom-field display values cover Text, Number, Date, Date created, Checkbox, Link, Single select, Multiple select, Status (name + color), Members (resolved to user names), Rating ('value / total'), Timeline ('start → due'), Voting (yes/no), Progress (percent), Tags (resolved to tag names), Sequential ID (the auto-counter value), and Relations (a count summary; raw IDs available via the entry's `raw` field). Unknown future Types pass through with `dereferenced: false` and the raw JSON attached. Saves 4–7 follow-up calls in the typical 'fetch card → resolve everything' flow. Pass exactly one of `card_id` (per-widget), `card_common_id` (cross-widget), or `sequential_id` (integer of a 'BSC-123' ref). A card assigned to someone also sits on their to-do list, a copy with no board or column; by `card_common_id` or `sequential_id` the card returned is its board copy, and `placements` lists every copy: each board and column by name, and each to-do list. Comments are off by default — set `include_comments: true` to fetch the first page (cap with `comment_limit`, default 20). Pass `description_format: \"markdown\"` to see the description as Favro stored it. Read-only.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4614,6 +4614,39 @@
           },
           "parentCardId": {
             "type": "string"
+          },
+          "placements": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "card_id": {
+                  "type": "string"
+                },
+                "column_id": {
+                  "type": "string"
+                },
+                "column_name": {
+                  "type": "string"
+                },
+                "todo_list_user_id": {
+                  "type": "string"
+                },
+                "widget_common_id": {
+                  "type": "string"
+                },
+                "widget_name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "card_id"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "position": {
             "type": "number"
@@ -5706,7 +5739,7 @@
             "type": "boolean"
           },
           "unique": {
-            "description": "if true, return one row per cardCommonId rather than one row per widget instance — useful when searching by name and cross-widget duplicates are noise",
+            "description": "if true, return one row per cardCommonId rather than one row per widget instance — useful when searching by name and cross-widget duplicates are noise. With card_common_id or sequential_id the row kept is the card's board copy when it has one, not its to-do list copy; with the other filters the dedupe is Favro's own, and Favro chooses the copy it keeps.",
             "type": "boolean"
           },
           "widget_common_id": {

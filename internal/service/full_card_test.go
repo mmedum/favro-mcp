@@ -813,7 +813,8 @@ func TestGetFullCard_SkipsResolversWhenCardHasNoIDs(t *testing.T) {
 
 	// Card has no tags / assignments / customFieldsValues / widgetCommonId,
 	// so the resolver MUST NOT touch /tags, /users, /widgets, /columns,
-	// /collections, /customfields. Only the GetCard call should fire.
+	// /collections, /customfields. Only the GetCard call and the listing
+	// of the card's copies should fire.
 	fix := newFullCardFixture(t, fullCardFixtureOpts{
 		cards: []favro.Card{{CardID: "c-1", CardCommonID: "cc-1", Name: "minimal"}},
 	})
@@ -823,8 +824,8 @@ func TestGetFullCard_SkipsResolversWhenCardHasNoIDs(t *testing.T) {
 		t.Fatalf("err: %v", err)
 	}
 
-	if got := fix.calls["/cards"].Load(); got != 1 {
-		t.Errorf("exactly one /cards call (the GetCard fetch): got %v, want %v", got, 1)
+	if got := fix.calls["/cards"].Load(); got != 2 {
+		t.Errorf("two /cards calls (the GetCard fetch and the copies): got %v, want %v", got, 2)
 	}
 	if got := fix.calls["/tags"].Load(); got != 0 {
 		t.Errorf("fix.calls[\"/tags\"].Load() = %v, want %v", got, 0)
@@ -852,3 +853,91 @@ func TestGetFullCard_SkipsResolversWhenCardHasNoIDs(t *testing.T) {
 // cfFloat returns a pointer to n. CardCustomFieldValue.Total is a
 // pointer so an explicit 0 stays distinguishable from an unset field.
 func cfFloat(n float64) *float64 { return &n }
+
+// A card assigned to someone has a to-do list copy, with no widget or
+// column, and Favro lists it before the board copy (§18, 2026-10-27).
+var (
+	todoCopy  = favro.Card{CardID: "c-todo", CardCommonID: "cc-1", Name: "assigned", SequentialID: 7, TodoListUserID: "u-1"}
+	boardCopy = favro.Card{
+		CardID: "c-board", CardCommonID: "cc-1", Name: "assigned", SequentialID: 7,
+		WidgetCommonID: "w-1", ColumnID: "col-2",
+	}
+)
+
+func TestOneCopyPerCard(t *testing.T) {
+	t.Parallel()
+	second := favro.Card{CardID: "c-board-2", CardCommonID: "cc-1", WidgetCommonID: "w-2"}
+	other := favro.Card{CardID: "c-other", CardCommonID: "cc-2", TodoListUserID: "u-1"}
+	for _, tc := range []struct {
+		name  string
+		cards []favro.Card
+		want  []string
+	}{
+		{"the board copy over a to-do copy listed first", []favro.Card{todoCopy, boardCopy}, []string{"c-board"}},
+		{"the first board copy of two", []favro.Card{boardCopy, second, todoCopy}, []string{"c-board"}},
+		{"a to-do copy when there is no board copy", []favro.Card{todoCopy}, []string{"c-todo"}},
+		{"cards in the order they first appear", []favro.Card{todoCopy, other, boardCopy}, []string{"c-board", "c-other"}},
+		{"nothing from nothing", nil, nil},
+	} {
+		var got []string
+		for _, c := range OneCopyPerCard(tc.cards) {
+			got = append(got, c.CardID)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Read by sequential_id or card_common_id, the card is its board copy,
+// and the placements name every copy.
+func TestGetFullCard_PrefersTheBoardCopyAndListsEveryPlacement(t *testing.T) {
+	t.Parallel()
+	opts := fullCardFixtureOpts{
+		cards:   []favro.Card{todoCopy, boardCopy},
+		widgets: []favro.Widget{{WidgetCommonID: "w-1", Name: "Sprint Board"}},
+		columns: []favro.Column{{ColumnID: "col-2", WidgetCommonID: "w-1", Name: "Done"}},
+	}
+	want := []CardPlacement{
+		{CardID: "c-todo", TodoListUserID: "u-1"},
+		{CardID: "c-board", WidgetCommonID: "w-1", WidgetName: "Sprint Board", ColumnID: "col-2", ColumnName: "Done"},
+	}
+	for _, id := range []FullCardIdentity{{SequentialID: 7}, {CardCommonID: "cc-1"}} {
+		fix := newFullCardFixture(t, opts)
+		got, err := fix.resolver.GetFullCard(context.Background(), id, FullCardOptions{})
+		if err != nil {
+			t.Fatalf("%+v: %v", id, err)
+		}
+		if got.CardID != "c-board" || got.WidgetName != "Sprint Board" || got.ColumnName != "Done" {
+			t.Errorf("%+v: the card is %s on %q, column %q; want c-board on Sprint Board, column Done",
+				id, got.CardID, got.WidgetName, got.ColumnName)
+		}
+		if !reflect.DeepEqual(got.Placements, want) {
+			t.Errorf("%+v: placements %+v, want %+v", id, got.Placements, want)
+		}
+		if n := fix.calls["/cards"].Load(); n != 1 {
+			t.Errorf("%+v: %d /cards calls; the one listing gives both the card and its copies", id, n)
+		}
+	}
+}
+
+// Read by card_id, the card is the copy asked for, and the placements
+// are listed by its cardCommonId.
+func TestGetFullCard_ByCardIDListsThePlacementsToo(t *testing.T) {
+	t.Parallel()
+	fix := newFullCardFixture(t, fullCardFixtureOpts{
+		cards:   []favro.Card{todoCopy, boardCopy},
+		widgets: []favro.Widget{{WidgetCommonID: "w-1", Name: "Sprint Board"}},
+		columns: []favro.Column{{ColumnID: "col-2", WidgetCommonID: "w-1", Name: "Done"}},
+	})
+	got, err := fix.resolver.GetFullCard(context.Background(), FullCardIdentity{CardID: "c-todo"}, FullCardOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CardID != "c-todo" {
+		t.Errorf("got.CardID = %s, want the copy asked for, c-todo", got.CardID)
+	}
+	if len(got.Placements) != 2 || got.Placements[1].ColumnName != "Done" {
+		t.Errorf("placements %+v, want the to-do copy and the board copy in Done", got.Placements)
+	}
+}

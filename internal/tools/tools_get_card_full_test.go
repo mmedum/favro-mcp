@@ -28,6 +28,10 @@ func TestMCP_GetCardFull_HappyPath(t *testing.T) {
 				ColumnID:       "col-2",
 				Tags:           []string{"tag-1"},
 			})
+		case r.URL.Path == "/cards":
+			_ = json.NewEncoder(w).Encode(favro.PageEnvelope[favro.Card]{Pages: 1, Entities: []favro.Card{
+				{CardID: "c-1", CardCommonID: "cc-1", WidgetCommonID: "w-1", ColumnID: "col-2"},
+			}})
 		case r.URL.Path == "/widgets":
 			_ = json.NewEncoder(w).Encode(favro.PageEnvelope[favro.Widget]{
 				Pages: 1,
@@ -152,7 +156,9 @@ func TestMCP_GetCardFull_DescriptionFormatForwarded(t *testing.T) {
 			c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				card := favro.Card{CardID: "c-1", CardCommonID: "cc-1", DetailedDescription: "* one"}
-				if strings.HasPrefix(r.URL.Path, "/cards") {
+				// The first /cards request reads the card; a card_id
+				// lookup lists the card's copies after it.
+				if strings.HasPrefix(r.URL.Path, "/cards") && saw == "" {
 					saw = r.URL.Query().Get("descriptionFormat")
 				}
 				switch r.URL.Path {
