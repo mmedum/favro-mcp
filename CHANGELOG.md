@@ -8,6 +8,13 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `favro_get_card_full` returns `placements`: every copy of the card, each board and column by name, and each member's to-do list it sits on.
+
+### Fixed
+- `favro_get_card_full` by `sequential_id` or `card_common_id` returns the card's board copy. A card assigned to someone also has a to-do list copy with no board or column, which Favro lists first and the tool used to return.
+- `favro_list_cards` with `unique: true` by `card_common_id` or `sequential_id` keeps the card's board copy. Favro's own dedupe kept the to-do list copy by `card_common_id`.
+
 ## [4.2.1] - 2026-10-26
 
 ### Fixed

@@ -34,6 +34,18 @@ type FullCard struct {
 	ResolvedAssignments  []ResolvedCardAssignment  `json:"resolved_assignments,omitempty"`
 	ResolvedCustomFields []ResolvedCardCustomField `json:"resolved_custom_fields,omitempty"`
 	Comments             []favro.Comment           `json:"comments,omitempty"`
+	Placements           []CardPlacement           `json:"placements,omitempty"`
+}
+
+// CardPlacement is one copy of a card: on a board, in a column, or on a
+// member's to-do list, which has no board or column.
+type CardPlacement struct {
+	CardID         string `json:"card_id"`
+	WidgetCommonID string `json:"widget_common_id,omitempty"`
+	WidgetName     string `json:"widget_name,omitempty"`
+	ColumnID       string `json:"column_id,omitempty"`
+	ColumnName     string `json:"column_name,omitempty"`
+	TodoListUserID string `json:"todo_list_user_id,omitempty"`
 }
 
 // ResolvedCardTag is one tag from a card's Tags list, dereferenced
@@ -141,7 +153,7 @@ func (r *Resolver) GetFullCard(ctx context.Context, id FullCardIdentity, opts Fu
 	if err := id.Validate(); err != nil {
 		return FullCard{}, err
 	}
-	card, err := r.FetchCardForIdentity(ctx, id, opts.DescriptionFormat)
+	card, copies, err := r.fetchCardAndCopies(ctx, id, opts.DescriptionFormat)
 	if err != nil {
 		return FullCard{}, err
 	}
@@ -157,6 +169,7 @@ func (r *Resolver) GetFullCard(ctx context.Context, id FullCardIdentity, opts Fu
 	g.Go(func() error { return r.dereferenceAssignments(gctx, &full) })
 	g.Go(func() error { return r.dereferenceWidgetContext(gctx, &full) })
 	g.Go(func() error { return r.dereferenceCustomFields(gctx, &full) })
+	g.Go(func() error { return r.dereferencePlacements(gctx, &full, copies) })
 	if opts.IncludeComments {
 		g.Go(func() error { return r.dereferenceComments(gctx, &full, commentLimit) })
 	}
@@ -259,7 +272,9 @@ func (r *Resolver) dereferenceComments(ctx context.Context, full *FullCard, comm
 // FetchCardForIdentity normalizes the three identity flavors into a
 // single Card. card_id calls GET /cards/{cardId} directly; the
 // other two call ListCards with the matching filter and take the
-// first row.
+// card's first board copy, or its first copy when it is on no board.
+// Favro lists a card's to-do list copy, which has no widget or column,
+// before its board copy (probed live 2026-10-27, §18).
 //
 // Unique is left false so the response includes per-widget
 // instances (each carries widgetCommonId / columnId). Setting
@@ -272,8 +287,16 @@ func (r *Resolver) dereferenceComments(ctx context.Context, full *FullCard, comm
 // descriptionFormat is passed through to Favro as descriptionFormat;
 // empty leaves Favro's plaintext default.
 func (r *Resolver) FetchCardForIdentity(ctx context.Context, id FullCardIdentity, descriptionFormat string) (favro.Card, error) {
+	card, _, err := r.fetchCardAndCopies(ctx, id, descriptionFormat)
+	return card, err
+}
+
+// fetchCardAndCopies is FetchCardForIdentity plus every copy of the card
+// the listing returned, or nil for card_id, whose GET returns one copy.
+func (r *Resolver) fetchCardAndCopies(ctx context.Context, id FullCardIdentity, descriptionFormat string) (favro.Card, []favro.Card, error) {
 	if id.CardID != "" {
-		return r.client.GetCardWithDescriptionFormat(ctx, id.CardID, descriptionFormat)
+		card, err := r.client.GetCardWithDescriptionFormat(ctx, id.CardID, descriptionFormat)
+		return card, nil, err
 	}
 
 	filter := favro.ListCardsFilter{DescriptionFormat: descriptionFormat}
@@ -285,12 +308,85 @@ func (r *Resolver) FetchCardForIdentity(ctx context.Context, id FullCardIdentity
 	}
 	env, err := r.client.ListCards(ctx, 0, "", filter)
 	if err != nil {
-		return favro.Card{}, err
+		return favro.Card{}, nil, err
 	}
 	if len(env.Entities) == 0 {
-		return favro.Card{}, errFullCardNotFound
+		return favro.Card{}, nil, errFullCardNotFound
 	}
-	return env.Entities[0], nil
+	card := OneCopyPerCard(env.Entities)[0]
+	return card, copiesOf(env.Entities, card.CardCommonID), nil
+}
+
+// OneCopyPerCard keeps one row per cardCommonId, in the order the cards
+// first appear: the card's first board copy, or its first copy when it
+// is on no board. A board copy is the one with a widget; a to-do list
+// copy has none.
+func OneCopyPerCard(cards []favro.Card) []favro.Card {
+	var out []favro.Card
+	at := map[string]int{}
+	for _, c := range cards {
+		i, seen := at[c.CardCommonID]
+		switch {
+		case !seen:
+			at[c.CardCommonID] = len(out)
+			out = append(out, c)
+		case out[i].WidgetCommonID == "" && c.WidgetCommonID != "":
+			out[i] = c
+		}
+	}
+	return out
+}
+
+// copiesOf is every card in cards with cardCommonID.
+func copiesOf(cards []favro.Card, cardCommonID string) []favro.Card {
+	var out []favro.Card
+	for _, c := range cards {
+		if c.CardCommonID == cardCommonID {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// dereferencePlacements lists every copy of the card with its board and
+// column names. copies is what the lookup already listed, or nil when
+// the card was read by card_id, in which case they are listed here.
+func (r *Resolver) dereferencePlacements(ctx context.Context, full *FullCard, copies []favro.Card) error {
+	if copies == nil {
+		if full.CardCommonID == "" {
+			return nil
+		}
+		env, err := r.client.ListCards(ctx, 0, "", favro.ListCardsFilter{CardCommonID: full.CardCommonID})
+		if err != nil {
+			return err
+		}
+		copies = env.Entities
+	}
+	var widgets []favro.Widget
+	for _, c := range copies {
+		p := CardPlacement{
+			CardID: c.CardID, WidgetCommonID: c.WidgetCommonID, ColumnID: c.ColumnID,
+			TodoListUserID: c.TodoListUserID,
+		}
+		if c.WidgetCommonID != "" {
+			if widgets == nil {
+				var err error
+				if widgets, _, err = r.listAllWidgets(ctx, false); err != nil {
+					return err
+				}
+			}
+			if w := findWidget(widgets, c.WidgetCommonID); w != nil {
+				p.WidgetName = w.Name
+				name, err := r.columnName(ctx, w, c.ColumnID)
+				if err != nil {
+					return err
+				}
+				p.ColumnName = name
+			}
+		}
+		full.Placements = append(full.Placements, p)
+	}
+	return nil
 }
 
 // dereferenceWidgetContext fills the widget name, the column name
@@ -320,22 +416,31 @@ func (r *Resolver) dereferenceWidgetContext(ctx context.Context, full *FullCard)
 		full.CollectionNames = projectCollectionNames(w.CollectionIDs, collections)
 	}
 
-	if full.ColumnID != "" {
-		// Prefer the embedded Widget.Columns summary (id+name+color)
-		// when populated — saves a /columns round-trip on cold cache.
-		// Fall back to the standalone /columns endpoint when the
-		// widget object didn't carry the summary.
-		if name := findColumnNameInWidget(w.Columns, full.ColumnID); name != "" {
-			full.ColumnName = name
-		} else {
-			columns, _, err := r.listColumnsForWidget(ctx, full.WidgetCommonID, false)
-			if err != nil {
-				return err
-			}
-			full.ColumnName = findColumnName(columns, full.ColumnID)
-		}
+	name, err := r.columnName(ctx, w, full.ColumnID)
+	if err != nil {
+		return err
 	}
+	full.ColumnName = name
 	return nil
+}
+
+// columnName is columnID's name on widget w, or "" for no column.
+// Prefer the embedded Widget.Columns summary (id+name+color) when
+// populated — saves a /columns round-trip on cold cache. Fall back to
+// the standalone /columns endpoint when the widget object didn't carry
+// the summary.
+func (r *Resolver) columnName(ctx context.Context, w *favro.Widget, columnID string) (string, error) {
+	if columnID == "" {
+		return "", nil
+	}
+	if name := findColumnNameInWidget(w.Columns, columnID); name != "" {
+		return name, nil
+	}
+	columns, _, err := r.listColumnsForWidget(ctx, w.WidgetCommonID, false)
+	if err != nil {
+		return "", err
+	}
+	return findColumnName(columns, columnID), nil
 }
 
 // listFirstComments fetches the first page of /comments scoped to

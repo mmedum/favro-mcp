@@ -39,7 +39,10 @@ func registerGetCardFull(reg *registry, r *service.Resolver) {
 			"and the raw JSON attached. Saves 4–7 follow-up calls in the typical 'fetch " +
 			"card → resolve everything' flow. Pass exactly one of `card_id` (per-widget), " +
 			"`card_common_id` (cross-widget), or `sequential_id` (integer of a 'BSC-123' " +
-			"ref). Comments are off by default — set `include_comments: true` to fetch " +
+			"ref). A card assigned to someone also sits on their to-do list, a copy with no " +
+			"board or column; by `card_common_id` or `sequential_id` the card returned is " +
+			"its board copy, and `placements` lists every copy: each board and column by " +
+			"name, and each to-do list. Comments are off by default — set `include_comments: true` to fetch " +
 			"the first page (cap with `comment_limit`, default 20). Pass " +
 			"`description_format: \"markdown\"` to see the description as Favro stored it. " +
 			"Read-only.",

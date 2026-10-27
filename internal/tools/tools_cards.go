@@ -7,6 +7,7 @@ import (
 
 	"github.com/mmedum/favro-mcp/v4/internal/favro"
 	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
+	"github.com/mmedum/favro-mcp/v4/internal/service"
 )
 
 const (
@@ -31,7 +32,7 @@ type listCardsInput struct {
 	ColumnID       string `json:"column_id,omitempty" jsonschema:"optional Favro columnId to scope the listing to a single column inside the widget/collection"`
 	TodoList       bool   `json:"todo_list,omitempty" jsonschema:"if true, restrict the listing to the authenticated user's personal todo list"`
 	Archived       bool   `json:"archived,omitempty" jsonschema:"if true, include archived cards in the result; default (false) hides them server-side"`
-	Unique         bool   `json:"unique,omitempty" jsonschema:"if true, return one row per cardCommonId rather than one row per widget instance — useful when searching by name and cross-widget duplicates are noise"`
+	Unique         bool   `json:"unique,omitempty" jsonschema:"if true, return one row per cardCommonId rather than one row per widget instance — useful when searching by name and cross-widget duplicates are noise. With card_common_id or sequential_id the row kept is the card's board copy when it has one, not its to-do list copy; with the other filters the dedupe is Favro's own, and Favro chooses the copy it keeps."`
 	descriptionFormatInput
 }
 
@@ -58,6 +59,11 @@ func registerCards(reg *registry, client *favroapi.Client) {
 			"SAME filters again) to retrieve subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro cards"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listCardsInput) (*mcp.CallToolResult, listOutput[favro.Card], error) {
+		// Favro's own dedupe keeps a card's to-do list copy by
+		// card_common_id and its board copy by sequential_id (probed
+		// live 2026-10-27, §18). Those two filters name one card, so
+		// the server lists every copy and keeps the board copy itself.
+		collapse := in.Unique && (in.CardCommonID != "" || in.SequentialID > 0)
 		env, err := client.ListCards(ctx, in.favroPage(), in.RequestID, favro.ListCardsFilter{
 			WidgetCommonID:    in.WidgetCommonID,
 			CollectionID:      in.CollectionID,
@@ -66,11 +72,14 @@ func registerCards(reg *registry, client *favroapi.Client) {
 			ColumnID:          in.ColumnID,
 			TodoList:          in.TodoList,
 			Archived:          in.Archived,
-			Unique:            in.Unique,
+			Unique:            in.Unique && !collapse,
 			DescriptionFormat: in.DescriptionFormat,
 		})
 		if err != nil {
 			return nil, listOutput[favro.Card]{}, err
+		}
+		if collapse {
+			env.Entities = service.OneCopyPerCard(env.Entities)
 		}
 		return nil, newListOutput(env), nil
 	})

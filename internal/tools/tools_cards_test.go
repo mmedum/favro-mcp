@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -98,8 +99,55 @@ func TestMCP_ListCards_FiltersForwarded(t *testing.T) {
 	if got := saw.seq; got != "123" {
 		t.Errorf("saw.seq = %v, want %v", got, "123")
 	}
-	if got := saw.unique; got != "true" {
-		t.Errorf("saw.unique = %v, want %v", got, "true")
+	// With card_common_id or sequential_id the server dedupes itself.
+	if got := saw.unique; got != "" {
+		t.Errorf("saw.unique = %v, want none", got)
+	}
+}
+
+// unique is Favro's own dedupe, except by card_common_id or
+// sequential_id: Favro keeps a card's to-do list copy by the first and
+// its board copy by the second (§18, 2026-10-27), so for those two the
+// server lists every copy and keeps the board copy itself.
+func TestMCP_ListCards_UniqueKeepsTheBoardCopy(t *testing.T) {
+	t.Parallel()
+	todo := favro.Card{CardID: "c-todo", CardCommonID: "cc-1", TodoListUserID: "u-1"}
+	board := favro.Card{CardID: "c-board", CardCommonID: "cc-1", WidgetCommonID: "w-1", ColumnID: "col-1"}
+	other := favro.Card{CardID: "c-other", CardCommonID: "cc-2", TodoListUserID: "u-1"}
+	for _, tc := range []struct {
+		name       string
+		args       map[string]any
+		wantUnique string
+		wantIDs    []string
+	}{
+		{"by card_common_id", map[string]any{"card_common_id": "cc-1", "unique": true}, "", []string{"c-board", "c-other"}},
+		{"by sequential_id", map[string]any{"sequential_id": 7, "unique": true}, "", []string{"c-board", "c-other"}},
+		{"by board, Favro's own", map[string]any{"widget_common_id": "w-1", "unique": true}, "true", []string{"c-todo", "c-board", "c-other"}},
+		{"without unique, every copy", map[string]any{"card_common_id": "cc-1"}, "", []string{"c-todo", "c-board", "c-other"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var sawUnique string
+			c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sawUnique = r.URL.Query().Get("unique")
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(favro.PageEnvelope[favro.Card]{Pages: 1, Entities: []favro.Card{todo, board, other}})
+			}))
+			res, err := connectInMemoryWith(t, c).CallTool(t.Context(), &mcp.CallToolParams{Name: listCardsToolName, Arguments: tc.args})
+			if err != nil || res.IsError {
+				t.Fatalf("err = %v, IsError = %v", err, res != nil && res.IsError)
+			}
+			if sawUnique != tc.wantUnique {
+				t.Errorf("unique sent = %q, want %q", sawUnique, tc.wantUnique)
+			}
+			var ids []string
+			for _, card := range decodeStructured[listOutput[favro.Card]](t, res).Items {
+				ids = append(ids, card.CardID)
+			}
+			if !slices.Equal(ids, tc.wantIDs) {
+				t.Errorf("rows %v, want %v", ids, tc.wantIDs)
+			}
+		})
 	}
 }
 
