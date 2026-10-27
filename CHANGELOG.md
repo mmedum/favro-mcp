@@ -8,6 +8,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-27
+
 ### Added
 - `favro_get_card_full` returns `placements`: every copy of the card, each board and column by name, and each member's to-do list it sits on.
 
@@ -430,7 +432,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.2.1...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.3.0...HEAD
+[4.3.0]: https://github.com/mmedum/favro-mcp/compare/v4.2.1...v4.3.0
 [4.2.1]: https://github.com/mmedum/favro-mcp/compare/v4.2.0...v4.2.1
 [4.2.0]: https://github.com/mmedum/favro-mcp/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/mmedum/favro-mcp/compare/v4.0.0...v4.1.0
