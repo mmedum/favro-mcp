@@ -181,6 +181,11 @@ func TestGatesDocumentedAgainstTheRegistry(t *testing.T) {
 	if problems := gatesDocumented(string(development)); len(problems) > 0 {
 		t.Errorf("%s", strings.Join(problems, "\n"))
 	}
+	// A gate that runs on a pull request alone is documented too.
+	without := strings.ReplaceAll(string(development), "`schema-ack`", "`elsewhere`")
+	if problems := gatesDocumented(without); !slices.Contains(problems, "docs/development.md does not name the schema-ack gate") {
+		t.Errorf("an undocumented pull-request gate passed: %q", problems)
+	}
 	// And the floor: an empty document must fail rather than pass for
 	// having found nothing to complain about.
 	if problems := gatesDocumented(""); len(problems) == 0 {

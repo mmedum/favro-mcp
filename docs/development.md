@@ -24,7 +24,10 @@ inside a string. Two shell scripts were replaced by it.
 `go run ./scripts/gates` lists them all. The starred ones run in both
 `make check` and `ci.yml`, and `gates parity` fails the build if those
 two lists stop agreeing — so adding a gate means adding it in both
-places, and the registry's `gate: true` flag is what says it belongs.
+places, and the registry's `runs: inCheck` is what says it belongs. The
+one marked `+`, `schema-ack`, runs in `ci.yml` on a pull request and
+never in `make check`, which has no pull request to measure from;
+`parity` holds that too.
 
 | Gate | Holds |
 |---|---|
@@ -42,7 +45,8 @@ places, and the registry's `gate: true` flag is what says it belongs.
 | `plugin` | The committed `.plugin` manifest against the files the packer will stage, and the release's pairs against the binaries it stages, from the one release matrix the `mcpb` gate reads too. |
 | `mcpb` | The committed `.mcpb` manifest against the programs the packer will stage and the vendored manifest schema, plus the release configuration that gets the bundle hashed, signed and published and builds the family's six archives, each of which the bundle runs on. Every command starts with `${__dirname}/` and names a binary or the launcher, `entry_point` is the default command's, the launcher's install hint is generated from `go.mod`'s module, a LICENSE it cannot name is refused, and a repeated key is refused, two that differ only in case included. It also holds what the bundle asks for to the server's own settings, from `config.Vars`: every variable the server reads is asked for or left out with a reason, `args` is `[]` and no platform override sets `env` or `args`, a switch is a boolean and never required, a credential marked secret is sensitive, an optional key has a default and no default holds a `${...}` reference, the defaults start `config.LoadFrom` as no environment does, naming the fields that differ, and every set of the switches starts or is declared refused. The packer runs the same checks from the same files, and validates the manifest it stamps. |
 | `rule8` | No tool input declares an `organization_id`. The server binds one organization at startup and Favro routes by a header, so such an input cannot select anything — `favro_get_organization` carried one, required, for the life of this server. |
-| `schema-diff` | The tool schemas against the last tag, so a breaking wire change is visible in the pull request. |
+| `schema-diff` | The committed `schemas.json` against the whole dump, every field but the build stamp, and the tool schemas against the last tag, so a wire change is visible in the pull request. A tool removed, an input removed and an input newly required are breaking; everything else that moved is listed. |
+| `schema-ack` | On a pull request, a commit footer names each item of the tool surface that changed since the merge-base: `SCHEMA-CHANGE: favro_update_card: what changed`, or `BREAKING CHANGE:` for a break of the newest tag. Only the names before the first `: ` count; a URI's own colon has no space after it. A refusal prints the footer that fixes it. |
 | `smoke` | The binary driven over stdio, twice: a conversation, and an abrupt disconnect. |
 | `staleness` | The documentation against the code. |
 

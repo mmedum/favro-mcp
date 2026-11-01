@@ -56,6 +56,26 @@ func DumpSchemas(ctx context.Context, srv *mcp.Server, w io.Writer, version stri
 		return fmt.Errorf("the server registered no tools; this dump would describe nothing")
 	}
 	slices.SortFunc(res.Tools, func(a, b *mcp.Tool) int { return strings.Compare(a.Name, b.Name) })
+	// Resources, templates and prompts too, and the instructions. The
+	// server has none of them today, so one added later still reaches the
+	// schema gates; while there is none, the dump leaves it out.
+	rs, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("list resources: %w", err)
+	}
+	slices.SortFunc(rs.Resources, func(a, b *mcp.Resource) int { return strings.Compare(a.URI, b.URI) })
+	tmpls, err := cs.ListResourceTemplates(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("list resource templates: %w", err)
+	}
+	slices.SortFunc(tmpls.ResourceTemplates, func(a, b *mcp.ResourceTemplate) int {
+		return strings.Compare(a.URITemplate, b.URITemplate)
+	})
+	ps, err := cs.ListPrompts(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("list prompts: %w", err)
+	}
+	slices.SortFunc(ps.Prompts, func(a, b *mcp.Prompt) int { return strings.Compare(a.Name, b.Name) })
 
 	// The build stamp deliberately does NOT go in the dump. schemas.json
 	// is committed, and version carries the git describe of whoever ran
@@ -64,10 +84,19 @@ func DumpSchemas(ctx context.Context, srv *mcp.Server, w io.Writer, version stri
 	// churning line per regeneration and a -dirty stamp on main. The
 	// SDK version stays, because the schema SHAPE depends on it.
 	out := struct {
-		Server string      `json:"server"`
-		SDK    string      `json:"sdk"`
-		Tools  []*mcp.Tool `json:"tools"`
-	}{tools.ServerName, sdkVersion(), res.Tools}
+		Server string `json:"server"`
+		SDK    string `json:"sdk"`
+		// The instructions are what a client puts in front of the model,
+		// read from the session, as a client reads them.
+		Instructions      string                  `json:"instructions,omitempty"`
+		Tools             []*mcp.Tool             `json:"tools"`
+		Resources         []*mcp.Resource         `json:"resources,omitempty"`
+		ResourceTemplates []*mcp.ResourceTemplate `json:"resourceTemplates,omitempty"`
+		Prompts           []*mcp.Prompt           `json:"prompts,omitempty"`
+	}{
+		tools.ServerName, sdkVersion(), cs.InitializeResult().Instructions, res.Tools, rs.Resources,
+		tmpls.ResourceTemplates, ps.Prompts,
+	}
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

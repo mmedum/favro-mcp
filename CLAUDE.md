@@ -145,8 +145,9 @@ smoke, staleness.
 The seventeen gates among those are `scripts/gates`, one Go binary with a
 registry, and `gates parity` fails if `make check` and
 `ci.yml` stop running the same set — so adding a gate means adding it in
-both places, and the registry's `gate: true` flag is what says a gate
-belongs in both.
+both places, and the registry's `runs: inCheck` is what says a gate
+belongs in both. On a pull request CI also runs `schema-ack`: a commit
+footer names each changed item of the tool surface.
 
 Go 1.27. `go.mod` is the single source of truth — every CI job resolves
 via `go-version-file: go.mod`. Don't add a job pinned to an older minor.
