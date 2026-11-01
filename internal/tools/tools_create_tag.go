@@ -30,7 +30,7 @@ func registerCreateTag(reg *registry, r *service.Resolver) {
 			"randomly. On success the org-global tag list cache is invalidated so the next " +
 			"resolve / list call re-fetches. Pass `dry_run: true` to preview the request " +
 			"(method + URL + body + predicted state change) without contacting Favro.",
-		Annotations: mutating("Create Favro tag", false),
+		Annotations: adding("Create Favro tag"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createTagInput) (*mcp.CallToolResult, writeOutput[favro.Tag], error) {
 		writeCtx := ctx
 		if in.DryRun {

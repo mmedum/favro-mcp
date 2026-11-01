@@ -71,7 +71,7 @@ func registerAppendCardDescription(reg *registry, r *service.Resolver) {
 			"so the LLM can confirm the change is structurally what it intended. Successful " +
 			"live writes invalidate the search-cards cache. Pass `dry_run: true` to preview " +
 			"the diff without writing.",
-		Annotations: mutating("Append to Favro card description", false),
+		Annotations: changing("Append to Favro card description"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in appendCardDescriptionInput) (*mcp.CallToolResult, writeOutput[service.EditorResult], error) {
 		card, err := r.Client().GetCardWithDescriptionFormat(ctx, in.CardID, favro.DescriptionFormatMarkdown)
 		if err != nil {
@@ -93,7 +93,7 @@ func registerPrependCardDescription(reg *registry, r *service.Resolver) {
 			"PUTs `detailedDescription = text + '\\n\\n' + old`. Returns `{old, new, " +
 			"unified_diff}`. Successful live writes invalidate the search-cards cache. " +
 			"Pass `dry_run: true` to preview.",
-		Annotations: mutating("Prepend to Favro card description", false),
+		Annotations: changing("Prepend to Favro card description"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in prependCardDescriptionInput) (*mcp.CallToolResult, writeOutput[service.EditorResult], error) {
 		card, err := r.Client().GetCardWithDescriptionFormat(ctx, in.CardID, favro.DescriptionFormatMarkdown)
 		if err != nil {
@@ -118,7 +118,7 @@ func registerReplaceInCardDescription(reg *registry, r *service.Resolver) {
 			" Returns `{old, new, " +
 			"unified_diff}`. Successful live writes invalidate the search-cards cache. " +
 			"Pass `dry_run: true` to preview.",
-		Annotations: mutating("Replace in Favro card description", false),
+		Annotations: changing("Replace in Favro card description"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in replaceInCardDescriptionInput) (*mcp.CallToolResult, writeOutput[service.EditorResult], error) {
 		card, err := r.Client().GetCardWithDescriptionFormat(ctx, in.CardID, favro.DescriptionFormatMarkdown)
 		if err != nil {

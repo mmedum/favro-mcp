@@ -89,7 +89,7 @@ func registerUploadAttachment(reg *registry, r *service.Resolver) {
 			"Card — verified live). Successful live writes invalidate the search-cards cache " +
 			"(cached card payloads carry stale attachment lists otherwise). Pass `dry_run: true` " +
 			"to preview without contacting Favro. Use favro_remove_attachment to detach a file.",
-		Annotations: mutating("Upload Favro attachment", false),
+		Annotations: adding("Upload Favro attachment"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in uploadAttachmentInput) (*mcp.CallToolResult, writeOutput[favro.CardAttachment], error) {
 		content, filename, err := prepareUpload(reg.uploadDir, in.FilePath, in.Filename)
 		if err != nil {
@@ -232,7 +232,7 @@ func registerUploadCommentAttachment(reg *registry, r *service.Resolver) {
 			"card itself: reads `file_path` from " + config.EnvUploadDir + " only, `filename` defaults to the " +
 			"basename, 8 MiB cap enforced before any HTTP work, returns the created " +
 			"attachment object `{name, fileURL}`. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Upload Favro comment attachment", false),
+		Annotations: adding("Upload Favro comment attachment"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in uploadCommentAttachmentInput) (*mcp.CallToolResult, writeOutput[favro.CardAttachment], error) {
 		content, filename, err := prepareUpload(reg.uploadDir, in.FilePath, in.Filename)
 		if err != nil {
@@ -268,7 +268,7 @@ func registerRemoveAttachment(reg *registry, r *service.Resolver) {
 			"stable object URL before sending. Favro returns HTTP 200 whether or not anything " +
 			"matched, so verify by re-reading the card. Successful live writes invalidate the " +
 			"search-cards cache. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Remove Favro attachment", true),
+		Annotations: changing("Remove Favro attachment"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in removeAttachmentInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		writeCtx := ctx
 		if in.DryRun {

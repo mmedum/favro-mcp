@@ -108,7 +108,7 @@ func registerSetCardCustomField(reg *registry, r *service.Resolver) {
 			"and discarded — so the tool reads the card back after the write and reports in " +
 			"`notes` whether the field is on the card and what it now carries. That costs one " +
 			"request; pass `skip_verify: true` to drop it.",
-		Annotations: mutating("Set Favro card custom field", false),
+		Annotations: changing("Set Favro card custom field"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in setCardCustomFieldInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		field, err := lookupCustomFieldType(ctx, r, in.CustomFieldID, in.ForceRefresh)
 		if err != nil {

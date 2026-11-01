@@ -207,6 +207,8 @@ type schemaDump struct {
 type schemaTool struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	// Annotations are part of the surface sameSurface compares, so a
+	// changed hint shows up in the committed schemas.json.
 	Annotations struct {
 		DestructiveHint bool   `json:"destructiveHint"`
 		ReadOnlyHint    bool   `json:"readOnlyHint"`
@@ -216,6 +218,14 @@ type schemaTool struct {
 		Required   []string                   `json:"required"`
 		Properties map[string]json.RawMessage `json:"properties"`
 	} `json:"inputSchema"`
+}
+
+// takesConfirm reports whether the tool takes confirm, which is what
+// makes a tool destructive here: registered only with
+// FAVRO_ENABLE_DESTRUCTIVE.
+func (t schemaTool) takesConfirm() bool {
+	_, ok := t.InputSchema.Properties["confirm"]
+	return ok
 }
 
 func parseSchemas(b []byte) (*schemaDump, error) {

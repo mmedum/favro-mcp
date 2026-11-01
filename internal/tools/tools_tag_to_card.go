@@ -53,7 +53,7 @@ func registerAddTagToCard(reg *registry, r *service.Resolver) {
 			"directly (or to bypass the exact-match guard), call favro_update_card with " +
 			"add_tag_ids. Successful live writes invalidate the search-cards cache. Pass " +
 			"`dry_run: true` to preview.",
-		Annotations: mutating("Add Favro tag to card by name", false),
+		Annotations: changing("Add Favro tag to card by name"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in addTagToCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		return runTagToCard(ctx, r, in.CardID, in.TagName, in.DryRun, true)
 	})
@@ -65,7 +65,7 @@ func registerRemoveTagFromCard(reg *registry, r *service.Resolver) {
 		Description: "Remove an org-global tag from a Favro card by tag NAME. Hard-fails if " +
 			"the name doesn't match exactly. Successful live writes invalidate the " +
 			"search-cards cache. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Remove Favro tag from card by name", false),
+		Annotations: changing("Remove Favro tag from card by name"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in removeTagFromCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		return runTagToCard(ctx, r, in.CardID, in.TagName, in.DryRun, false)
 	})

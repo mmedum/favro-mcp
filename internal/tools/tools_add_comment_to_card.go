@@ -79,7 +79,7 @@ func registerAddCommentToCard(reg *registry, r *service.Resolver) {
 			"within 0.2) by returning the candidate list — pick one and re-run with " +
 			"card_common_id. Successful live writes do NOT invalidate any cache (comments " +
 			"aren't cached at the resolver layer). Pass `dry_run: true` to preview.",
-		Annotations: mutating("Add Favro comment to card", false),
+		Annotations: adding("Add Favro comment to card"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in addCommentToCardInput) (*mcp.CallToolResult, writeOutput[addCommentToCardResult], error) {
 		ccid, ambiguous, candidates, err := resolveAddCommentTarget(ctx, r, &in)
 		if err != nil {

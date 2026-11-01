@@ -49,7 +49,7 @@ type Options struct {
 // makes the order the linker's business rather than a decision.
 //
 // Every call below is unconditional. Whether a destructive tool is
-// admitted is decided in addTool, from the tool's own annotation;
+// admitted is decided in addTool, from whether its input takes confirm;
 // gating here instead would mean a second list of which tools are
 // destructive, and a new one would be missed by exactly the person who
 // forgot the first list existed.

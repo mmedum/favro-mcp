@@ -93,7 +93,7 @@ func registerWriteDependencies(reg *registry, client *favroapi.Client) {
 			"Returns the card's full dependency list afterwards. Use " +
 			"favro_replace_dependencies to overwrite the whole list instead. Pass " +
 			"`dry_run: true` to preview.",
-		Annotations: mutating("Add Favro card dependencies", false),
+		Annotations: changing("Add Favro card dependencies"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in writeDependenciesInput) (*mcp.CallToolResult, writeOutput[favro.CardDependencies], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -120,7 +120,7 @@ func registerWriteDependencies(reg *registry, client *favroapi.Client) {
 			"Use favro_add_dependencies to add without clearing. Returns the resulting " +
 			"list. Destructive — MCP hosts may warn before auto-confirming. Pass " +
 			"`dry_run: true` to preview.",
-		Annotations: mutating("Replace Favro card dependencies", true),
+		Annotations: changing("Replace Favro card dependencies"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in replaceDependenciesInput) (*mcp.CallToolResult, writeOutput[favro.CardDependencies], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -145,7 +145,7 @@ func registerWriteDependencies(reg *registry, client *favroapi.Client) {
 		Description: "Flip the direction of one existing dependency on a Favro card. " +
 			dependencyDirectionDoc + "Returns the card's full dependency list afterwards. " +
 			"Pass `dry_run: true` to preview.",
-		Annotations: mutating("Update Favro card dependency", false),
+		Annotations: changing("Update Favro card dependency"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateDependencyInput) (*mcp.CallToolResult, writeOutput[favro.CardDependencies], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -173,7 +173,7 @@ func registerDeleteDependencies(reg *registry, client *favroapi.Client) {
 		Name: deleteDependencyToolName,
 		Description: "Remove one dependency link from a Favro card. The cards themselves are " +
 			"untouched — only the link between them goes away. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Delete Favro card dependency", true),
+		Annotations: changing("Delete Favro card dependency"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteDependencyInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -198,7 +198,7 @@ func registerDeleteDependencies(reg *registry, client *favroapi.Client) {
 		Description: "Remove EVERY dependency link from a Favro card. The cards themselves " +
 			"are untouched. Destructive — MCP hosts may warn before auto-confirming. Pass " +
 			"`dry_run: true` to preview.",
-		Annotations: mutating("Delete all Favro card dependencies", true),
+		Annotations: changing("Delete all Favro card dependencies"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteAllDependenciesInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {

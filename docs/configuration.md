@@ -16,7 +16,7 @@ space means the default.
 | `FAVRO_API_TOKEN` | keyring, else unset | A Favro API token, created under My Profile → API tokens. The password half. |
 | `FAVRO_ORGANIZATION_ID` | keyring, else unset | The organization every request is scoped to. This server is single-org and no tool takes another. |
 | `FAVRO_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`, case-insensitive. Logs go to stderr. A value this server cannot read falls back to `info` and says so. |
-| `FAVRO_ENABLE_DESTRUCTIVE` | `false` | Register the destructive tools: the deletes, and `favro_widen_collection_sharing`. See below — "off" means absent from `tools/list`, not guarded. Anything unreadable as a bool leaves them off. |
+| `FAVRO_ENABLE_DESTRUCTIVE` | `false` | Register the destructive tools: the deletes, `favro_remove_attachment`, `favro_replace_dependencies` and `favro_widen_collection_sharing`. See below — "off" means absent from `tools/list`, not guarded. Anything unreadable as a bool leaves them off. |
 | `FAVRO_UPLOAD_DIR` | unset | The one directory the upload tools read files from. Unset, and they are not registered. It must be an absolute path to a directory that exists; anything else is logged at startup and leaves uploads off. See below. |
 | `FAVRO_REQUIRE_PROMPT` | removed | It refused the writes that asked the person when the client could not ask. The server asks nobody now, so the setting is gone: set to anything but `false`, the server refuses to start rather than quietly allow what it was set to stop, and `doctor` reports it. Unset it, and leave `FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody watching. |
 | `FAVRO_INTERACTION_HINT` | removed | Set to `false`, it took Claude Code's `requiresUserInteraction` mark off the writes the server asked about. The five marked tools now always carry the mark, so Claude Code prompts on every call of them and refuses them where it cannot prompt. Set to anything but `true`, it is ignored with a warning; unset it. |
@@ -80,7 +80,8 @@ rather than a wire one.
 
 ## The destructive flag
 
-There are fifteen destructive tools: the deletes, and
+There are fifteen destructive tools: the deletes,
+`favro_remove_attachment`, `favro_replace_dependencies` and
 `favro_widen_collection_sharing`. Unset, they are not in
 `tools/list` at all. That is the
 point: a client-side confirmation prompt is not a safety layer, because a
@@ -89,9 +90,10 @@ host in an auto-approve permission mode runs a tool annotated
 treat tool annotations as untrusted. The only tool that cannot run
 unattended is the one that was never registered.
 
-Which tools those are is read from the annotation at registration, never
-from a list of names, so a delete tool added later is gated by having
-been written rather than by somebody remembering to add it.
+Which tools those are is read at registration from whether a tool takes
+`confirm`, never from a list of names, so a delete tool added later is
+gated by having been written rather than by somebody remembering to add
+it.
 
 Registered, each one still refuses a call without `confirm: true`, unless
 it is a dry run. That is a sign the caller meant the call, not approval:
@@ -113,9 +115,10 @@ would attach to a card.
 ## Approving calls
 
 The server asks the person nothing; the MCP client approves each call.
-claude.ai and Codex prompt by `destructiveHint`, which the fifteen
-destructive tools carry, and VS Code prompts on every tool without
-`readOnlyHint`, which only the reads carry.
+claude.ai and Codex ask before any write that changes or removes
+something, which says `destructiveHint: true`. A write that only
+adds, such as a new card, comment or attachment, says false. VS Code asks
+before every tool without `readOnlyHint`, which only the reads carry.
 
 Five tools carry Claude Code's `requiresUserInteraction`, so Claude Code
 prompts on every call of them whatever its rules say, and refuses them

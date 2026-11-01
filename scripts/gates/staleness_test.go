@@ -67,8 +67,7 @@ func TestToolsDocumentedReadsBothDirections(t *testing.T) {
 // copied the example, so the rules are held to the dump both ways. A
 // README with none is a check reading nothing.
 func TestPermissionRulesNameRegisteredTools(t *testing.T) {
-	dump := &schemaDump{Tools: []schemaTool{{Name: "favro_ping"}, {Name: "favro_delete_tag"}}}
-	dump.Tools[1].Annotations.DestructiveHint = true
+	dump := &schemaDump{Tools: []schemaTool{{Name: "favro_ping"}, tool("favro_delete_tag", nil, "confirm")}}
 	for _, tc := range []struct {
 		readme string
 		want   string
@@ -135,10 +134,8 @@ func TestStalenessAgainstThisRepository(t *testing.T) {
 // fourteenth delete tool and the changelog sentence stayed at thirteen.
 func TestDestructiveCountMatchesTheBinary(t *testing.T) {
 	dump := &schemaDump{Tools: []schemaTool{
-		{Name: "favro_delete_one"}, {Name: "favro_delete_two"}, {Name: "favro_read"},
+		tool("favro_delete_one", nil, "confirm"), tool("favro_delete_two", nil, "confirm"), {Name: "favro_read"},
 	}}
-	dump.Tools[0].Annotations.DestructiveHint = true
-	dump.Tools[1].Annotations.DestructiveHint = true
 
 	if problems := destructiveCountMatches(map[string]string{
 		"a.md": "the two delete-style tools are gated",
@@ -152,16 +149,16 @@ func TestDestructiveCountMatchesTheBinary(t *testing.T) {
 	} {
 		problems := destructiveCountMatches(map[string]string{"a.md": prose}, dump)
 		if len(problems) == 0 {
-			t.Errorf("%q was not caught against a binary annotating 2", prose)
+			t.Errorf("%q was not caught against a binary gating 2", prose)
 		}
 	}
 
-	// The floors. A dump with nothing annotated means the field moved;
+	// The floors. A dump with no tool taking confirm means the field moved;
 	// a document set stating no count means the extractor stopped
 	// matching, and both print the same "ok" otherwise.
 	if problems := destructiveCountMatches(map[string]string{"a.md": "two delete-style tools"},
 		&schemaDump{Tools: []schemaTool{{Name: "favro_read"}}}); len(problems) == 0 {
-		t.Error("a dump annotating nothing destructive was not caught")
+		t.Error("a dump with no tool taking confirm was not caught")
 	}
 	if problems := destructiveCountMatches(map[string]string{"a.md": "no claim here"}, dump); len(problems) == 0 {
 		t.Error("a document set stating no count was not caught")

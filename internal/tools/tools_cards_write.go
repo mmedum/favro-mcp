@@ -122,7 +122,7 @@ func registerCreateCard(reg *registry, r *service.Resolver) {
 			"— add-tag-by-name with hard-fail-on-unknown is the Phase 6 favro_add_tag_to_card " +
 			"tool. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` " +
 			"to preview the request without contacting Favro.",
-		Annotations: mutating("Create Favro card", false),
+		Annotations: adding("Create Favro card"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -174,7 +174,7 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 			"existing parent through with its place among the parent's children " +
 			"(`sheet_position`), saying so in `notes`. Pass `clear_parent: true` to detach " +
 			"the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
-		Annotations: mutating("Update Favro card", false),
+		Annotations: changing("Update Favro card"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		st, notes, err := settleParent(ctx, r, in.CardID, in.WidgetCommonID, in.ParentCardID, in.ClearParent, in.SheetPosition)
 		if err != nil {
@@ -333,7 +333,7 @@ func registerArchiveCard(reg *registry, r *service.Resolver) {
 			"favro_update_card with `archive: true`. Reversible via favro_unarchive_card. " +
 			"Successful live writes invalidate the search-cards cache. Pass `dry_run: true` " +
 			"to preview without contacting Favro.",
-		Annotations: mutating("Archive Favro card", false),
+		Annotations: changing("Archive Favro card"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in archiveCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -359,7 +359,7 @@ func registerUnarchiveCard(reg *registry, r *service.Resolver) {
 		Description: "Unarchive a Favro card by its per-widget cardId. Convenience over " +
 			"favro_update_card with `archive: false`. Successful live writes invalidate " +
 			"the search-cards cache. Pass `dry_run: true` to preview without contacting Favro.",
-		Annotations: mutating("Unarchive Favro card", false),
+		Annotations: changing("Unarchive Favro card"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in unarchiveCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -397,7 +397,7 @@ func registerMoveCard(reg *registry, r *service.Resolver) {
 			verifyPlacementDescription +
 			"Successful live writes invalidate the search-cards cache. Pass " +
 			"`dry_run: true` to preview.",
-		Annotations: mutating("Move Favro card", false),
+		Annotations: changing("Move Favro card"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in moveCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
 		// A move always carries widgetCommonId — since errMoveNeedsWidget
 		// it is not even optional on a column move — so every move is a
@@ -447,7 +447,7 @@ func registerDeleteCard(reg *registry, r *service.Resolver) {
 			"from EVERY widget — irreversible. Returns the list of cardIds Favro deleted. " +
 			"Successful live writes invalidate the search-cards cache. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Delete Favro card", true),
+		Annotations: changing("Delete Favro card"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteCardInput) (*mcp.CallToolResult, writeOutput[favro.DeleteCardResponse], error) {
 		writeCtx := ctx
 		if in.DryRun {

@@ -68,7 +68,7 @@ func registerCreateWidget(reg *registry, r *service.Resolver) {
 			"and `name` are required. `type` defaults to Favro's choice ('backlog') when " +
 			"omitted; pass 'board' / 'calendar' / 'table' / 'matrix' to override. Successful " +
 			"live writes invalidate the widget cache. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Create Favro widget", false),
+		Annotations: adding("Create Favro widget"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createWidgetInput) (*mcp.CallToolResult, writeOutput[favro.Widget], error) {
 		if err := checkWidgetRoles(in.OwnerRole, in.EditRole); err != nil {
 			return nil, writeOutput[favro.Widget]{}, err
@@ -115,7 +115,7 @@ func registerUpdateWidget(reg *registry, r *service.Resolver) {
 			"`collection_id`, because a widget can belong to several collections and Favro " +
 			"scopes the archive to one of them. Successful live writes invalidate the " +
 			"widget cache. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Update Favro widget", false),
+		Annotations: changing("Update Favro widget"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateWidgetInput) (*mcp.CallToolResult, writeOutput[favro.Widget], error) {
 		if err := checkWidgetRoles(in.OwnerRole, in.EditRole); err != nil {
 			return nil, writeOutput[favro.Widget]{}, err
@@ -158,7 +158,7 @@ func registerDeleteWidget(reg *registry, r *service.Resolver) {
 			"just that collection, or `everywhere: true` to delete every instance across all " +
 			"collections the widget belongs to; one of the two is required. On success the " +
 			"widget / column / search-cards caches are invalidated. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Delete Favro widget", true),
+		Annotations: changing("Delete Favro widget"),
 		Meta:        promptEveryCall(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteWidgetInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		// A blank collection_id names no collection, and Favro reads an

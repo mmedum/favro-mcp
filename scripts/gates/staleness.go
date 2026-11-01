@@ -216,7 +216,7 @@ func permissionRulesRegistered(readme string, dump *schemaDump) []string {
 		}
 	}
 	for _, t := range dump.Tools {
-		if t.Annotations.DestructiveHint && !slices.Contains(ruled, t.Name) {
+		if t.takesConfirm() && !slices.Contains(ruled, t.Name) {
 			problems = append(problems, "README.md gives no permission rule for "+t.Name+", which is destructive")
 		}
 	}
@@ -361,7 +361,8 @@ func gatesDocumented(development string) []string {
 }
 
 // destructiveCountMatches holds any prose count of the delete-style
-// tools to the number the binary actually annotates.
+// tools to the number the binary actually gates: the tools that take
+// confirm.
 //
 // This is the §7b failure the design document describes, and it has now
 // happened twice in this repository: the count was written as twelve
@@ -371,12 +372,12 @@ func gatesDocumented(development string) []string {
 func destructiveCountMatches(docs map[string]string, dump *schemaDump) []string {
 	want := 0
 	for _, t := range dump.Tools {
-		if t.Annotations.DestructiveHint {
+		if t.takesConfirm() {
 			want++
 		}
 	}
 	if want == 0 {
-		return []string{"the dump annotates no destructive tools; this check is reading the wrong field"}
+		return []string{"the dump has no tool that takes confirm; this check is reading the wrong field"}
 	}
 
 	// CHANGELOG.md is excluded for the reason documentsWithPaths gives:
@@ -390,7 +391,7 @@ func destructiveCountMatches(docs map[string]string, dump *schemaDump) []string 
 			live[name] = text
 		}
 	}
-	return proseCount(live, destructiveCount, want, "annotates",
+	return proseCount(live, destructiveCount, want, "gates",
 		fmt.Sprintf("no living document states how many delete-style tools there are, so this check "+
 			"is reading nothing; the count it would hold is %d", want))
 }

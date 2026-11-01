@@ -86,7 +86,7 @@ func registerTasklists(reg *registry, client *favroapi.Client) {
 			"the same request rather than calling favro_create_task per item. " +
 			"`card_common_id` is the cross-widget card identity, not the per-widget cardId. " +
 			"Pass `dry_run: true` to preview.",
-		Annotations: mutating("Create Favro tasklist", false),
+		Annotations: adding("Create Favro tasklist"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createTasklistInput) (*mcp.CallToolResult, writeOutput[favro.Tasklist], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -116,7 +116,7 @@ func registerTasklists(reg *registry, client *favroapi.Client) {
 		Description: "Rename or reorder a Favro checklist. Its items are managed separately " +
 			"via favro_create_task / favro_update_task / favro_delete_task. Pass " +
 			"`dry_run: true` to preview.",
-		Annotations: mutating("Update Favro tasklist", false),
+		Annotations: changing("Update Favro tasklist"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateTasklistInput) (*mcp.CallToolResult, writeOutput[favro.Tasklist], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -141,7 +141,7 @@ func registerTasklists(reg *registry, client *favroapi.Client) {
 		Name: deleteTasklistToolName,
 		Description: "Delete a Favro checklist and every item in it. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Delete Favro tasklist", true),
+		Annotations: changing("Delete Favro tasklist"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteTasklistInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {
