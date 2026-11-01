@@ -51,7 +51,7 @@ func registerCreateColumn(reg *registry, r *service.Resolver) {
 		Description: "Create a new column on a Favro widget. `widget_common_id` and `name` " +
 			"are required. `position` is 0-based; omit to append. Successful live writes " +
 			"invalidate the column cache for the widget. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Create Favro column", false),
+		Annotations: adding("Create Favro column"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createColumnInput) (*mcp.CallToolResult, writeOutput[favro.Column], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -87,7 +87,7 @@ func registerUpdateColumn(reg *registry, r *service.Resolver) {
 			"Pass `widget_common_id` if known so the cache invalidation can be scoped to one " +
 			"widget; otherwise every cached column list is dropped on success. Pass " +
 			"`dry_run: true` to preview.",
-		Annotations: mutating("Update Favro column", false),
+		Annotations: changing("Update Favro column"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateColumnInput) (*mcp.CallToolResult, writeOutput[favro.Column], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -120,7 +120,7 @@ func registerDeleteColumn(reg *registry, r *service.Resolver) {
 			"before auto-confirming. Favro forbids deleting a column that contains cards " +
 			"(returns HTTP 400); move or archive the cards out first. Pass `widget_common_id` " +
 			"if known for scoped cache invalidation. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Delete Favro column", true),
+		Annotations: changing("Delete Favro column"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteColumnInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {

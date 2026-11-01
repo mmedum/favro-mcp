@@ -46,7 +46,7 @@ func registerCreateComment(reg *registry, r *service.Resolver) {
 			"`comment` is the markdown body. Pass `dry_run: true` to preview the " +
 			"request without contacting Favro. Comments are not cached at the " +
 			"resolver layer, so no invalidation is needed on success.",
-		Annotations: mutating("Create Favro comment", false),
+		Annotations: adding("Create Favro comment"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createCommentInput) (*mcp.CallToolResult, writeOutput[favro.Comment], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -76,7 +76,7 @@ func registerUpdateComment(reg *registry, r *service.Resolver) {
 		Description: "Replace the body of an existing Favro comment. The new `comment` " +
 			"text replaces the existing body in full; surgical edit-in-place is " +
 			"not yet supported. Pass `dry_run: true` to preview without writing.",
-		Annotations: mutating("Update Favro comment", false),
+		Annotations: changing("Update Favro comment"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateCommentInput) (*mcp.CallToolResult, writeOutput[favro.Comment], error) {
 		writeCtx := ctx
 		if in.DryRun {
@@ -108,7 +108,7 @@ func registerDeleteComment(reg *registry, r *service.Resolver) {
 		Name: deleteCommentToolName,
 		Description: "Delete a Favro comment by its commentId. Destructive — MCP hosts " +
 			"may warn before auto-confirming. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Delete Favro comment", true),
+		Annotations: changing("Delete Favro comment"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteCommentInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {

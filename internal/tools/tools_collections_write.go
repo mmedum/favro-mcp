@@ -77,7 +77,7 @@ func registerCreateCollection(reg *registry, r *service.Resolver) {
 			"organization or to anyone with its link, create it and then call " +
 			"favro_widen_collection_sharing. Successful live writes invalidate the collection " +
 			"cache. Pass `dry_run: true` to preview the request without contacting Favro.",
-		Annotations: mutating("Create Favro collection", false),
+		Annotations: adding("Create Favro collection"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createCollectionInput) (*mcp.CallToolResult, writeOutput[favro.Collection], error) {
 		if err := checkPublicSharing(createCollectionToolName, in.PublicSharing); err != nil {
 			return nil, writeOutput[favro.Collection]{}, err
@@ -128,7 +128,7 @@ func registerUpdateCollection(reg *registry, r *service.Resolver) {
 			"the whole organization or to anyone with its link is favro_widen_collection_sharing; " +
 			"`public_sharing: 'users'` here narrows it back. Successful live writes invalidate " +
 			"the collection cache. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Update Favro collection", false),
+		Annotations: changing("Update Favro collection"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateCollectionInput) (*mcp.CallToolResult, writeOutput[favro.Collection], error) {
 		if err := checkPublicSharing(updateCollectionToolName, in.PublicSharing); err != nil {
 			return nil, writeOutput[favro.Collection]{}, err
@@ -182,7 +182,7 @@ func registerDeleteCollection(reg *registry, r *service.Resolver) {
 			"collection is removed; widgets that lived only in this collection may become " +
 			"orphaned. On success the collection / widget / search-cards caches are " +
 			"invalidated. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Delete Favro collection", true),
+		Annotations: changing("Delete Favro collection"),
 		Meta:        promptEveryCall(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteCollectionInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
@@ -232,7 +232,7 @@ func registerWidenCollectionSharing(reg *registry, r *service.Resolver) {
 			"favro_update_collection refuse these two modes; favro_update_collection with " +
 			"`public_sharing: 'users'` narrows a collection again. The collection is read back " +
 			"after the write and `notes` says whether the mode took. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Widen Favro collection sharing", true),
+		Annotations: changing("Widen Favro collection sharing"),
 		Meta:        promptEveryCall(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in widenCollectionSharingInput) (*mcp.CallToolResult, writeOutput[favro.Collection], error) {
 		mode := sharingMode(in.PublicSharing)

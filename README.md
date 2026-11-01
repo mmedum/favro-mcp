@@ -99,7 +99,7 @@ Four more variables change how the server runs rather than who it runs as:
 | --- | --- |
 | `FAVRO_LOG_LEVEL` | `debug` / `info` (default) / `warn` / `error`. Logs go to stderr; stdout carries only the MCP protocol stream. |
 | `FAVRO_MCP_SKIP_VALIDATE` | Set to `true` to skip the startup call that checks the credentials against Favro. For offline testing; the server then fails on the first real tool call instead of at startup. `false`, `0` and anything it cannot read as true leave the check on. |
-| `FAVRO_ENABLE_DESTRUCTIVE` | Set to `true` to register the destructive tools: the deletes, and `favro_widen_collection_sharing`. Off by default, and "off" means they are absent from `tools/list` rather than guarded — a host in an auto-approve mode runs a tool without prompting, so not registering it is the only guarantee. Anything the value cannot be read as `true` leaves them off. Each call must also pass `confirm: true`. |
+| `FAVRO_ENABLE_DESTRUCTIVE` | Set to `true` to register the destructive tools: the deletes, `favro_remove_attachment`, `favro_replace_dependencies` and `favro_widen_collection_sharing`. Off by default, and "off" means they are absent from `tools/list` rather than guarded — a host in an auto-approve mode runs a tool without prompting, so not registering it is the only guarantee. Anything the value cannot be read as `true` leaves them off. Each call must also pass `confirm: true`. |
 | `FAVRO_UPLOAD_DIR` | The one directory the upload tools read files from, as an absolute path. Unset, and they are not registered. Nothing outside it is read, and a link out of it is refused. |
 
 Every variable, the credentials included, is read without the spaces around its value, and spaces alone count as unset.
@@ -112,8 +112,10 @@ keep their mark.
 ### Approving calls
 
 Your MCP client approves each call; the server does not ask you itself.
-claude.ai and Codex prompt for the destructive tools, which are marked
-`destructiveHint`, and VS Code prompts for every tool that writes.
+claude.ai and Codex ask before any write that changes or removes
+something, which says `destructiveHint: true`. A write that only
+adds, such as a new card, comment or attachment, says false. VS Code asks
+before every tool that writes.
 
 In Claude Code, five tools ask on every call whatever your rules say:
 `favro_delete_tag`, `favro_delete_group`, `favro_delete_widget` and

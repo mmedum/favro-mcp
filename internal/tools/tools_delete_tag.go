@@ -28,7 +28,7 @@ func registerDeleteTag(reg *registry, r *service.Resolver) {
 			"resolve / list call re-fetches. Pass `dry_run: true` to preview the " +
 			"request without contacting Favro. Destructive — MCP hosts may warn " +
 			"users before auto-confirming.",
-		Annotations: mutating("Delete Favro tag", true),
+		Annotations: changing("Delete Favro tag"),
 		Meta:        promptEveryCall(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteTagInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx

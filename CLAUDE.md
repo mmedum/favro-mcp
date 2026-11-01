@@ -60,10 +60,15 @@ is current before starting work that a later phase is going to move.**
 10. **No auto-commit, no auto-push.** Never push a tag without being
     asked.
 11. **Destructive tools are registered only when
-    `FAVRO_ENABLE_DESTRUCTIVE=true`**, and which ones is read from the
-    `DestructiveHint` annotation in `addTool` — never from a list of
-    names. `dry_run` is not a second guard for this: a host in an
-    auto-approve mode runs an annotated tool without prompting.
+    `FAVRO_ENABLE_DESTRUCTIVE=true`.** A tool is destructive when its
+    input embeds `confirmInput`; `addTool` reads that, never a list of
+    names. `destructiveHint` is not the gate. Every write that changes or
+    removes something says true (`changing`); only a write that creates
+    something new and changes nothing already there says false
+    (`adding`). `TestEveryWriteIsClassified` names every write as one
+    that adds, changes or destroys; a new write fails it until it is in
+    one list. `dry_run` is not a second guard for this: a host in
+    an auto-approve mode runs an annotated tool without prompting.
 12. **Every error a tool returns is `[class] actionable message`**, from
     the closed vocabulary in `internal/render`. The class comes from the
     error's type, never from matching its text; a new sentinel is built

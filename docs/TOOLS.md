@@ -7,6 +7,11 @@ Page numbers are 1-indexed: omit `page` or pass `1` for the first page.
 Pass the `next_page` value from a response rather than counting, because
 paging also requires the `request_id` from that same response.
 
+Every write that changes or removes something says
+`destructiveHint: true`. Only the writes that create something new and
+change nothing already there say false: the creates,
+`favro_add_comment_to_card` and the two uploads.
+
 The rows marked **Destructive** are not registered unless
 `FAVRO_ENABLE_DESTRUCTIVE=true` is set in the server's environment.
 Without it they are absent from `tools/list` rather than guarded: a host

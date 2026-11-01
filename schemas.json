@@ -229,7 +229,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Add Favro card dependencies"
@@ -372,7 +372,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Add Favro tag to card by name"
@@ -741,7 +741,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Append to Favro card description"
@@ -850,7 +850,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Archive Favro card"
@@ -7446,7 +7446,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Move Favro card"
@@ -7893,7 +7893,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Prepend to Favro card description"
@@ -8457,7 +8457,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Remove Favro tag from card by name"
@@ -8973,7 +8973,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Replace in Favro card description"
@@ -9742,7 +9742,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Set Favro card custom field"
@@ -10248,7 +10248,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Unarchive Favro card"
@@ -10612,7 +10612,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Update Favro card"
@@ -11074,7 +11074,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Update Favro collection"
@@ -11340,7 +11340,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Update Favro column"
@@ -11479,7 +11479,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Update Favro comment"
@@ -11632,7 +11632,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Update Favro card dependency"
@@ -11765,7 +11765,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Update Favro group"
@@ -11930,7 +11930,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Update Favro tag"
@@ -12041,7 +12041,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Bulk-update Favro tags"
@@ -12171,7 +12171,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Update Favro task"
@@ -12301,7 +12301,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Update Favro tasklist"
@@ -12420,7 +12420,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "readOnlyHint": false,
         "title": "Update Favro widget"

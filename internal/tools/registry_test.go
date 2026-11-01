@@ -40,12 +40,19 @@ func listToolsWith(t *testing.T, opts Options) map[string]*mcp.Tool {
 	return out
 }
 
+// takesConfirm reports whether a listed tool's input has confirm, which
+// is what makes a tool destructive here (addTool).
+func takesConfirm(t *testing.T, tool *mcp.Tool) bool {
+	t.Helper()
+	_, ok := inputProperties(t, tool)["confirm"]
+	return ok
+}
+
 // TestDestructiveToolsAreOptIn is the whole of FAVRO_ENABLE_DESTRUCTIVE.
 //
-// The set it checks is derived from the annotations rather than typed
-// out here, so a destructive tool added later is covered by having
-// been annotated — which its author has to do anyway — rather than by
-// somebody remembering this file exists.
+// The set it checks is derived from the confirm input rather than typed
+// out here, so a destructive tool added later is covered by taking
+// confirm rather than by somebody remembering this file exists.
 func TestDestructiveToolsAreOptIn(t *testing.T) {
 	t.Parallel()
 
@@ -54,7 +61,7 @@ func TestDestructiveToolsAreOptIn(t *testing.T) {
 
 	var gated []string
 	for name, tool := range all {
-		if destructive(tool) {
+		if takesConfirm(t, tool) {
 			gated = append(gated, name)
 		}
 	}
@@ -64,7 +71,7 @@ func TestDestructiveToolsAreOptIn(t *testing.T) {
 	// fifteen — a number that is allowed to change, but not to become
 	// zero without somebody noticing.
 	if len(gated) < 15 {
-		t.Errorf("read %d destructive tools out of a surface of %d; the annotation-derived set cannot have shrunk that far: got %v, want at least %v", len(gated), len(all), len(gated), 15)
+		t.Errorf("read %d destructive tools out of a surface of %d; the set derived from confirm cannot have shrunk that far: got %v, want at least %v", len(gated), len(all), len(gated), 15)
 	}
 	if len(all) <= len(gated) {
 		t.Errorf("the surface is not all deletes: got %v, want greater than %v", len(all), len(gated))
@@ -72,7 +79,7 @@ func TestDestructiveToolsAreOptIn(t *testing.T) {
 
 	for _, name := range gated {
 		if _, present := def[name]; present {
-			t.Errorf("%s is annotated destructive but is registered without FAVRO_ENABLE_DESTRUCTIVE: %q present", name, name)
+			t.Errorf("%s takes confirm but is registered without FAVRO_ENABLE_DESTRUCTIVE: %q present", name, name)
 		}
 	}
 	if len(def) != len(all)-len(gated) {
@@ -82,45 +89,35 @@ func TestDestructiveToolsAreOptIn(t *testing.T) {
 	for name := range all {
 		if _, kept := def[name]; !kept {
 			if !slices.Contains(gated, name) {
-				t.Errorf("%s disappeared from the default surface without being annotated destructive: %q missing", name, name)
+				t.Errorf("%s disappeared from the default surface without taking confirm: %q missing", name, name)
 			}
 		}
 	}
 }
 
-// TestEveryToolIsAnnotated closes the way the destructive gate can
-// fail open.
-//
-// addTool decides from `DestructiveHint`, and treats nil as "not
-// destructive" — which is right for the read tools, whose readOnly()
-// annotations leave it unset, and wrong for anything that mutates. A
-// tool registered with no annotations at all, or a mutating tool whose
-// DestructiveHint was left nil, is registered unconditionally and
-// every other assertion in this file still passes: both surfaces agree
-// about it, because both read the same missing annotation.
-//
-// So the gate's real precondition is that the annotation is always
-// there to read, and this is what holds it. Note the SDK's own default
-// runs the other way — `DestructiveHint` nil means destructive to a
-// client — which is a second reason nil must never reach the wire on a
-// tool that writes.
+// TestEveryToolIsAnnotated holds that every tool says what it is to a
+// client. A tool with no annotations reads as a destructive write that
+// is not read-only, and a write whose DestructiveHint is nil reads as
+// destructive by the schema's default: neither is a decision anybody
+// made. The read tools leave DestructiveHint unset, which the schema
+// ignores when readOnlyHint is true.
 func TestEveryToolIsAnnotated(t *testing.T) {
 	t.Parallel()
 
-	all := listToolsWith(t, Options{Destructive: true})
+	all := listToolsWith(t, Options{Destructive: true, UploadDir: t.TempDir()})
 	if len(all) < 83 {
 		t.Errorf("read %d tools; the surface cannot have shrunk that far: got %v, want at least %v", len(all), len(all), 83)
 	}
 
 	for name, tool := range all {
 		if tool.Annotations == nil {
-			t.Fatalf("%s carries no annotations, so addTool's destructive gate has nothing to read and registers it unconditionally", name)
+			t.Fatalf("%s carries no annotations; use readOnly, changing or adding", name)
 		}
 		if tool.Annotations.ReadOnlyHint {
 			continue
 		}
 		if tool.Annotations.DestructiveHint == nil {
-			t.Fatalf("%s mutates and left DestructiveHint nil; use mutating(title, …), which always sets it explicitly", name)
+			t.Fatalf("%s mutates and left DestructiveHint nil; use changing or adding, which always set it", name)
 		}
 	}
 }
@@ -494,8 +491,8 @@ func inputProperties(t *testing.T, tool *mcp.Tool) map[string]schemaProperty {
 
 // TestEveryDestructiveCallNeedsConfirm: a destructive call without
 // confirm: true is refused [blocked] before Favro hears of it, and the
-// same call as a dry run is not. The tools come from the annotations, so
-// a delete added later is covered by having been annotated.
+// same call as a dry run is not. The tools come from the confirm input,
+// so a delete added later is covered by taking it.
 func TestEveryDestructiveCallNeedsConfirm(t *testing.T) {
 	t.Parallel()
 
@@ -517,7 +514,7 @@ func TestEveryDestructiveCallNeedsConfirm(t *testing.T) {
 	}
 	checked := 0
 	for _, tool := range res.Tools {
-		if !destructive(tool) {
+		if !takesConfirm(t, tool) {
 			continue
 		}
 		checked++
@@ -584,7 +581,7 @@ func TestADryRunWritesNothingWhateverTheHandlerDoes(t *testing.T) {
 	}
 	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
 	addTool(&registry{srv: srv, destructive: true, client: c},
-		&mcp.Tool{Name: "favro_delete_forgetfully", Annotations: mutating("x", true)},
+		&mcp.Tool{Name: "favro_delete_forgetfully", Annotations: changing("x")},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ input) (*mcp.CallToolResult, struct{}, error) {
 			_ = c.DeleteTag(ctx, "t-1") // the handler's own dry-run handling, forgotten
 			return nil, struct{}{}, nil
@@ -628,9 +625,9 @@ func TestOnlyTheWidestWritesPrompt(t *testing.T) {
 	}
 }
 
-// A destructive tool that forgets confirm, or an ordinary one that
-// carries the mark, fails when the server starts rather than when a
-// person first calls it.
+// A tool that takes confirm without saying destructiveHint: true, or an
+// ordinary one that carries the mark, fails when the server starts
+// rather than when a person first calls it.
 func TestRegistrationRefusesAMissingRule(t *testing.T) {
 	t.Parallel()
 
@@ -645,27 +642,207 @@ func TestRegistrationRefusesAMissingRule(t *testing.T) {
 	hc := func(context.Context, *mcp.CallToolRequest, withConfirm) (*mcp.CallToolResult, struct{}, error) {
 		return nil, struct{}{}, nil
 	}
-	for name, add := range map[string]func(*registry){
-		"a delete without confirm": func(reg *registry) {
-			addTool(reg, &mcp.Tool{Name: "x", Annotations: mutating("x", true)}, hn)
-		},
-		"a marked ordinary write": func(reg *registry) {
-			addTool(reg, &mcp.Tool{Name: "x", Annotations: mutating("x", false), Meta: promptEveryCall()}, hc)
-		},
-		"a marked read": func(reg *registry) {
-			addTool(reg, &mcp.Tool{Name: "x", Annotations: readOnly("x"), Meta: promptEveryCall()}, hc)
-		},
+	for name, c := range map[string]struct {
+		add  func(*registry)
+		want string
+	}{
+		"a confirm on a write that adds": {func(reg *registry) {
+			addTool(reg, &mcp.Tool{Name: "x", Annotations: adding("x")}, hc)
+		}, "takes confirm and is not annotated destructive"},
+		"a confirm on a read": {func(reg *registry) {
+			addTool(reg, &mcp.Tool{Name: "x", Annotations: readOnly("x")}, hc)
+		}, "takes confirm and is not annotated destructive"},
+		"a marked ordinary write": {func(reg *registry) {
+			addTool(reg, &mcp.Tool{Name: "x", Annotations: changing("x"), Meta: promptEveryCall()}, hn)
+		}, "is not destructive"},
+		"a marked read": {func(reg *registry) {
+			addTool(reg, &mcp.Tool{Name: "x", Annotations: readOnly("x"), Meta: promptEveryCall()}, hn)
+		}, "is not destructive"},
 	} {
 		func() {
 			defer func() {
-				if recover() == nil {
-					t.Errorf("%s: registered without a panic", name)
+				got := fmt.Sprint(recover())
+				if !strings.Contains(got, c.want) {
+					t.Errorf("%s: panicked with %q, want it to say %q", name, got, c.want)
 				}
 			}()
-			add(&registry{srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), destructive: true})
+			c.add(&registry{srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), destructive: true})
 		}()
 	}
-	// And the rules' own shape registers.
-	addTool(&registry{srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), destructive: true},
-		&mcp.Tool{Name: "x", Annotations: mutating("x", true), Meta: promptEveryCall()}, hc)
+	// And the rules' own shapes register: a marked delete, and an
+	// ordinary write that changes something without taking confirm.
+	reg := &registry{srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), destructive: true}
+	addTool(reg, &mcp.Tool{Name: "x", Annotations: changing("x"), Meta: promptEveryCall()}, hc)
+	addTool(reg, &mcp.Tool{Name: "y", Annotations: changing("y")}, hn)
+}
+
+// TestNoWriteWithoutConfirmSendsADelete backs up TestEveryWriteIsClassified
+// with what a write does rather than where it is listed. Every write that
+// does not take confirm runs its smoke row as a dry run, and none may
+// preview an HTTP DELETE. A removal sent as a PUT, as
+// favro_remove_attachment's is, passes this; its list is what holds it.
+func TestNoWriteWithoutConfirmSendsADelete(t *testing.T) {
+	t.Parallel()
+
+	cs := connectInMemoryWith(t, favroFixture(t, smokeFixtureHandler(t)))
+	file := writeSmokeAttachment(t)
+	res, err := cs.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, tool := range res.Tools {
+		if tool.Annotations == nil || tool.Annotations.ReadOnlyHint || takesConfirm(t, tool) {
+			continue
+		}
+		out, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tool.Name, Arguments: substituteSmokePlaceholders(smokeToolInputs[tool.Name], file)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.IsError {
+			t.Errorf("%s: its smoke row's dry run failed, so nothing was checked: %s", tool.Name, serializedResponseString(t, out))
+			continue
+		}
+		raw, err := json.Marshal(out.StructuredContent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var preview struct {
+			WouldCall *DryRunCall `json:"would_call"`
+		}
+		if err := json.Unmarshal(raw, &preview); err != nil {
+			t.Fatal(err)
+		}
+		if preview.WouldCall == nil {
+			t.Errorf("%s: its dry run names no would_call, so nothing was checked", tool.Name)
+			continue
+		}
+		checked++
+		if preview.WouldCall.Method == http.MethodDelete {
+			t.Errorf("%s takes no confirm and previews %s %s; a delete embeds confirmInput",
+				tool.Name, preview.WouldCall.Method, preview.WouldCall.URL)
+		}
+	}
+	if checked < 33 {
+		t.Errorf("checked %d writes' previews; the surface cannot have shrunk that far: got %v, want at least %v", checked, checked, 33)
+	}
+}
+
+// The writes, by what each does. Which list a write is in is a decision
+// made per tool, so the lists are typed out: a new write fails
+// TestEveryWriteIsClassified until somebody puts it in one, and moving a
+// tool between them is a change a reviewer sees.
+var (
+	// writesThatAdd create something new and change nothing already
+	// there: destructiveHint false, registered by default.
+	writesThatAdd = []string{
+		"favro_add_comment_to_card", "favro_create_card", "favro_create_collection",
+		"favro_create_column", "favro_create_comment", "favro_create_group",
+		"favro_create_tag", "favro_create_task", "favro_create_tasklist",
+		"favro_create_widget", "favro_upload_attachment", "favro_upload_comment_attachment",
+	}
+	// writesThatChange change or remove something already there and can
+	// be set back by another write: destructiveHint true, registered by
+	// default, no confirm.
+	writesThatChange = []string{
+		"favro_add_dependencies", "favro_add_tag_to_card", "favro_append_card_description",
+		"favro_archive_card", "favro_move_card", "favro_prepend_card_description",
+		"favro_remove_tag_from_card", "favro_replace_in_card_description", "favro_set_card_custom_field",
+		"favro_unarchive_card", "favro_update_card", "favro_update_collection",
+		"favro_update_column", "favro_update_comment", "favro_update_dependency",
+		"favro_update_group", "favro_update_tag", "favro_update_tags",
+		"favro_update_task", "favro_update_tasklist", "favro_update_widget",
+	}
+	// writesThatDestroy cannot be undone, or open a collection wide:
+	// destructiveHint true, and they take confirm, which puts them behind
+	// FAVRO_ENABLE_DESTRUCTIVE.
+	writesThatDestroy = []string{
+		"favro_delete_all_dependencies", "favro_delete_card", "favro_delete_collection",
+		"favro_delete_column", "favro_delete_comment", "favro_delete_dependency",
+		"favro_delete_group", "favro_delete_tag", "favro_delete_task",
+		"favro_delete_tasklist", "favro_delete_webhook", "favro_delete_widget",
+		"favro_remove_attachment", "favro_replace_dependencies", "favro_widen_collection_sharing",
+	}
+)
+
+// TestOnlyToolsThatAddSayTheyAreNotDestructive is the family rule
+// (standard §3). The MCP schema reads destructiveHint false as "the tool
+// performs only additive updates", so a write says false only when it
+// creates something new and changes nothing already there. A card's
+// tags and dependencies are changes to the card, and an append rewrites
+// the whole description.
+func TestOnlyToolsThatAddSayTheyAreNotDestructive(t *testing.T) {
+	t.Parallel()
+
+	var got []string
+	for name, tool := range listToolsWith(t, Options{Destructive: true, UploadDir: t.TempDir()}) {
+		if tool.Annotations == nil {
+			t.Errorf("%s carries no annotations", name)
+			continue
+		}
+		if h := tool.Annotations.DestructiveHint; !tool.Annotations.ReadOnlyHint && h != nil && !*h {
+			got = append(got, name)
+		}
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, writesThatAdd) {
+		t.Errorf("writes that say destructiveHint false = %v, want %v", got, writesThatAdd)
+	}
+}
+
+// TestEveryWriteIsClassified closes the gate's blind side. The gate reads
+// confirm, and a delete and an update both use changing(), so a delete
+// written without confirmInput would register by default and run
+// unasked. Every write has to be in one of the three lists, and its hint
+// and its confirm have to be the ones the list says.
+func TestEveryWriteIsClassified(t *testing.T) {
+	t.Parallel()
+
+	type class struct {
+		hint, confirm bool
+	}
+	want := map[string]class{}
+	for _, l := range []struct {
+		names []string
+		c     class
+	}{
+		{writesThatAdd, class{hint: false, confirm: false}},
+		{writesThatChange, class{hint: true, confirm: false}},
+		{writesThatDestroy, class{hint: true, confirm: true}},
+	} {
+		for _, name := range l.names {
+			if _, twice := want[name]; twice {
+				t.Errorf("%s is in two lists", name)
+			}
+			want[name] = l.c
+		}
+	}
+
+	writes := 0
+	for name, tool := range listToolsWith(t, Options{Destructive: true, UploadDir: t.TempDir()}) {
+		if tool.Annotations == nil {
+			t.Errorf("%s carries no annotations", name)
+			continue
+		}
+		if tool.Annotations.ReadOnlyHint {
+			continue
+		}
+		writes++
+		w, listed := want[name]
+		if !listed {
+			t.Errorf("%s is a write in none of writesThatAdd, writesThatChange or writesThatDestroy; put it in the one that says what it does", name)
+			continue
+		}
+		delete(want, name)
+		h := tool.Annotations.DestructiveHint
+		if got := (class{hint: h == nil || *h, confirm: takesConfirm(t, tool)}); got != w {
+			t.Errorf("%s: destructiveHint %v and confirm %v, want %v and %v", name, got.hint, got.confirm, w.hint, w.confirm)
+		}
+	}
+	for name := range want {
+		t.Errorf("%s is listed but not registered", name)
+	}
+	if writes < 48 {
+		t.Errorf("read %d writes; the surface cannot have shrunk that far: got %v, want at least %v", writes, writes, 48)
+	}
 }

@@ -44,7 +44,7 @@ func registerUpdateTags(reg *registry, r *service.Resolver) {
 			"error names the offending tagId and index so callers can recover. On a " +
 			"successful live write the org's tag cache is invalidated. Pass " +
 			"`dry_run: true` to preview without contacting Favro.",
-		Annotations: mutating("Bulk-update Favro tags", false),
+		Annotations: changing("Bulk-update Favro tags"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateTagsInput) (*mcp.CallToolResult, writeOutput[[]favro.Tag], error) {
 		writeCtx := ctx
 		if in.DryRun {

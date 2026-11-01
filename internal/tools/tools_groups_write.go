@@ -50,7 +50,7 @@ func registerCreateGroup(reg *registry, r *service.Resolver) {
 			"optional (Favro creates an empty group when omitted) and takes members of the " +
 			"organization by userId. Successful live writes invalidate the group cache. Pass " +
 			"`dry_run: true` to preview.",
-		Annotations: mutating("Create Favro group", false),
+		Annotations: adding("Create Favro group"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createGroupInput) (*mcp.CallToolResult, writeOutput[favro.Group], error) {
 		if err := checkGrants(ctx, r, createGroupToolName, "administrator", noneHeld, memberGrants(in.Members)); err != nil {
 			return nil, writeOutput[favro.Group]{}, err
@@ -89,7 +89,7 @@ func registerUpdateGroup(reg *registry, r *service.Resolver) {
 			"a role; someone new must be a member of the organization, and nobody becomes " +
 			"administrator who is not one already. Successful live writes invalidate the group " +
 			"cache. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Update Favro group", false),
+		Annotations: changing("Update Favro group"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateGroupInput) (*mcp.CallToolResult, writeOutput[favro.Group], error) {
 		// Who is in the group is read, not assumed from the call: the list
 		// replaces the whole one, so everyone who stays is in it.
@@ -127,7 +127,7 @@ func registerDeleteGroup(reg *registry, r *service.Resolver) {
 			"before auto-confirming. The group is removed from any sharing / assignment / " +
 			"custom-field references it appeared in. Successful live writes invalidate the " +
 			"group cache. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Delete Favro group", true),
+		Annotations: changing("Delete Favro group"),
 		Meta:        promptEveryCall(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteGroupInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx

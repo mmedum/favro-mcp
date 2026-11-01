@@ -253,7 +253,7 @@ func TestEverySharingArgumentRefusesItsWidestValue(t *testing.T) {
 	}
 	checked := 0
 	for name, tool := range listToolsWith(t, Options{Destructive: true, UploadDir: t.TempDir()}) {
-		if destructive(tool) {
+		if takesConfirm(t, tool) {
 			continue
 		}
 		for prop := range inputProperties(t, tool) {

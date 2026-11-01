@@ -112,21 +112,25 @@ func readOnly(title string) *mcp.ToolAnnotations {
 	}
 }
 
-// mutating returns the canonical ToolAnnotations for a non-read-only
-// (mutating) tool. destructive controls Favro's destructiveHint —
-// true for delete-style tools so MCP hosts can warn users before
-// auto-confirming the call.
+// changing returns the ToolAnnotations of a write that changes or
+// removes something already there: an update, a move, an archive, a
+// card's tags or dependencies, and every delete. destructiveHint is
+// true, as the MCP schema defines it: false would say the tool "performs
+// only additive updates".
+func changing(title string) *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{DestructiveHint: new(true), Title: title}
+}
+
+// adding returns the ToolAnnotations of a write that creates something
+// new and changes nothing already there: a card, a comment, a tag, a
+// task, an attachment. It is the only write that says destructiveHint
+// false, and TestOnlyToolsThatAddSayTheyAreNotDestructive names each one.
 //
-// The MCP SDK's `DestructiveHint` defaults to true when nil, so we
-// always pass an explicit pointer (even for non-destructive tools)
-// — letting a future refactor drop the pointer would silently flip
-// every `mutating(..., false)` tool into "destructive" semantics.
-func mutating(title string, destructive bool) *mcp.ToolAnnotations {
-	return &mcp.ToolAnnotations{
-		ReadOnlyHint:    false,
-		DestructiveHint: &destructive,
-		Title:           title,
-	}
+// The pointer is always set. The schema's default for a nil
+// destructiveHint is true, so dropping it would quietly make the tool
+// destructive to a client.
+func adding(title string) *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{DestructiveHint: new(false), Title: title}
 }
 
 // dryRunInput is embedded in every mutating tool's input so the

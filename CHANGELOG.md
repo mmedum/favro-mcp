@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Changed
+- claude.ai, Claude Desktop and Codex may now ask before 21 writes that change what is there, which now say `destructiveHint: true`, as the MCP spec reads `false` as "only additive updates": the updates, `favro_move_card`, `favro_archive_card`, `favro_unarchive_card`, the three description edits, `favro_set_card_custom_field`, `favro_add_tag_to_card`, `favro_remove_tag_from_card`, `favro_update_tags` and `favro_add_dependencies`. If you run them unattended there, allow them again. They still need no `FAVRO_ENABLE_DESTRUCTIVE` and no `confirm`.
+
 ## [4.3.0] - 2026-10-27
 
 ### Added

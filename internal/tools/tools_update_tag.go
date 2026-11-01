@@ -30,7 +30,7 @@ func registerUpdateTag(reg *registry, r *service.Resolver) {
 			"propagates to every card the tag is applied to. On a successful live " +
 			"update the org's tag cache is invalidated. Pass `dry_run: true` to " +
 			"preview the request without contacting Favro.",
-		Annotations: mutating("Update Favro tag", false),
+		Annotations: changing("Update Favro tag"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateTagInput) (*mcp.CallToolResult, writeOutput[favro.Tag], error) {
 		writeCtx := ctx
 		if in.DryRun {

@@ -47,8 +47,8 @@ var schemaOptions = &jsonschema.ForOptions{
 type registry struct {
 	srv *mcp.Server
 	// destructive is FAVRO_ENABLE_DESTRUCTIVE. When false, a tool
-	// whose annotations set DestructiveHint is not registered — not
-	// hidden, not guarded, not present. See addTool.
+	// whose input takes confirm is not registered — not hidden, not
+	// guarded, not present. See addTool.
 	destructive bool
 
 	// uploadDir is FAVRO_UPLOAD_DIR, the one directory the upload tools
@@ -60,8 +60,8 @@ type registry struct {
 	client *favroapi.Client
 }
 
-// destructive reports whether t is annotated destructive.
-func destructive(t *mcp.Tool) bool {
+// annotatedDestructive reports whether t says destructiveHint: true.
+func annotatedDestructive(t *mcp.Tool) bool {
 	return t.Annotations != nil && t.Annotations.DestructiveHint != nil && *t.Annotations.DestructiveHint
 }
 
@@ -120,11 +120,11 @@ func (reg *registry) before(ctx context.Context, tool string, gated bool, in any
 }
 
 // requireRules panics on a tool that breaks a rule of §9.2: a
-// destructive tool whose input does not embed confirmInput, or a tool
-// that carries the mark and is not destructive.
-func requireRules[In any](t *mcp.Tool, gated bool) {
-	if _, ok := any(*new(In)).(confirmer); gated && !ok {
-		panic(fmt.Sprintf("tool %q is destructive and its input does not embed confirmInput", t.Name))
+// destructive tool not annotated destructiveHint: true, or a tool that
+// carries the mark and is not destructive.
+func requireRules(t *mcp.Tool, gated bool) {
+	if gated && !annotatedDestructive(t) {
+		panic(fmt.Sprintf("tool %q takes confirm and is not annotated destructive; use changing(title)", t.Name))
 	}
 	if _, marked := t.Meta[promptMeta]; marked && !gated {
 		panic(fmt.Sprintf("tool %q carries %s and is not destructive", t.Name, promptMeta))
@@ -134,20 +134,24 @@ func requireRules[In any](t *mcp.Tool, gated bool) {
 // addTool registers one tool, and is the single place five things
 // happen that would otherwise have to happen in every handler.
 //
-// **The destructive gate.** A tool annotated destructive is registered
-// only when the flag is set. The check reads the annotation rather than
-// a list of names, so a destructive tool added later is gated by having
-// been annotated — which the author has to do anyway — instead of by
-// somebody remembering to add it somewhere else. Standard §3 is blunt
+// **The destructive gate.** A destructive tool — a delete, a whole-list
+// replace or a collection opened wide — is one whose input embeds
+// confirmInput, and it is registered only when the flag is set. The
+// check reads the input type rather than a list of names, so a
+// destructive tool added later is gated by taking confirm, which it
+// needs anyway to be refused without one, instead of by somebody
+// remembering to add it somewhere else. It does not read
+// destructiveHint, which is true on every write that changes something
+// (changing) and false only on one that adds (adding). Standard §3 is blunt
 // about why this is registration and not a runtime guard: a host in an
 // auto-approve permission mode runs an annotated tool without
 // prompting, and the spec says clients treat tool annotations as
 // untrusted. Assume every registered tool can run unattended.
 //
-// **confirm: true.** A destructive tool's input embeds confirmInput, or
-// registration panics, and a call without it is refused [blocked]
-// unless it is a dry run. The rule lives here so no delete can forget
-// it.
+// **confirm: true.** A call of a destructive tool without it is
+// refused [blocked] unless it is a dry run, and registration panics on
+// a destructive tool not annotated destructiveHint: true. The rule
+// lives here so no delete can forget it.
 //
 // **The mark.** Only a destructive tool may carry promptMeta, or
 // registration panics: the mark goes on the few writes whose prompt is
@@ -162,11 +166,11 @@ func requireRules[In any](t *mcp.Tool, gated bool) {
 // **The error class.** Errors leave as "[class] actionable message",
 // classified from the error's own type rather than from its text.
 func addTool[In, Out any](reg *registry, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
-	gated := destructive(t)
+	_, gated := any(*new(In)).(confirmer)
 	if gated && !reg.destructive {
 		return
 	}
-	requireRules[In](t, gated)
+	requireRules(t, gated)
 
 	// The output schema is generated here rather than left to the SDK,
 	// so schemaOptions applies. Registration panics on a bad schema,

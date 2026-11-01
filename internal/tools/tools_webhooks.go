@@ -73,7 +73,7 @@ func registerWebhooks(reg *registry, client *favroapi.Client) {
 			"receiving them — this server cannot tell you what that is, so confirm with " +
 			"a human before removing a webhook you did not create. Resolve the id with " +
 			"`favro_list_webhooks`. Pass `dry_run: true` to preview.",
-		Annotations: mutating("Delete Favro webhook", true),
+		Annotations: changing("Delete Favro webhook"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteWebhookInput) (*mcp.CallToolResult, writeOutput[struct{}], error) {
 		writeCtx := ctx
 		if in.DryRun {

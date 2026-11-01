@@ -93,9 +93,9 @@ func TestMCP_Dependencies_AddVsReplaceMethod(t *testing.T) {
 	}
 }
 
-// Replacing and clearing dependencies are annotated destructive so
-// MCP hosts can warn; adding and re-pointing one are not.
-func TestMCP_Dependencies_DestructiveAnnotations(t *testing.T) {
+// Listing dependencies is a read. The dependency writes' hints are held
+// with every other write's by TestOnlyToolsThatAddSayTheyAreNotDestructive.
+func TestMCP_Dependencies_ListIsReadOnly(t *testing.T) {
 	t.Parallel()
 
 	cs := connectInMemory(t)
@@ -103,38 +103,15 @@ func TestMCP_Dependencies_DestructiveAnnotations(t *testing.T) {
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
-
-	want := map[string]bool{
-		listDependenciesToolName:      false,
-		addDependenciesToolName:       false,
-		updateDependencyToolName:      false,
-		replaceDependenciesToolName:   true,
-		deleteDependencyToolName:      true,
-		deleteAllDependenciesToolName: true,
-	}
-	seen := 0
 	for _, tool := range res.Tools {
-		wantDestructive, ok := want[tool.Name]
-		if !ok {
-			continue
-		}
-		seen++
 		if tool.Name == listDependenciesToolName {
 			if !tool.Annotations.ReadOnlyHint {
 				t.Errorf("%s must be read-only", tool.Name)
 			}
-			continue
-		}
-		if tool.Annotations.DestructiveHint == nil {
-			t.Fatalf("%s must set DestructiveHint explicitly", tool.Name)
-		}
-		if got := *tool.Annotations.DestructiveHint; got != wantDestructive {
-			t.Errorf("%s: got %v, want %v", tool.Name, got, wantDestructive)
+			return
 		}
 	}
-	if len(want) != seen {
-		t.Fatalf("every dependency tool must be advertised: got %d", len(want))
-	}
+	t.Fatalf("%s is not advertised", listDependenciesToolName)
 }
 
 func TestMCP_DependencyWrites_DryRun_NeverDispatch(t *testing.T) {
