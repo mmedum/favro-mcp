@@ -100,7 +100,7 @@ On a pull request, CI also runs `schema-ack`. A commit footer has to name each
 item of the tool surface that changed since the merge-base, a hint or a
 description included: `SCHEMA-CHANGE: favro_update_card, favro_move_card:
 destructiveHint true`. Name a tool by its name and the instructions as
-`instructions`; only the names before the first colon count, and the rest is
+`instructions`; only the names before the first `: ` count, and the rest is
 yours to describe the change. A break of something the last tag shipped also
 fails `schema-diff`, which has no way past it, so it needs the maintainer's
 decision first; schema-ack then wants it named in a `BREAKING CHANGE:` footer.

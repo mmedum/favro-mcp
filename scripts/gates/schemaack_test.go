@@ -217,6 +217,7 @@ func TestReleasedBreaksReadTheBaseBranchTag(t *testing.T) {
 	t.Chdir(dir)
 	gitIn(t, "init", "-q", "-b", "main")
 	gitIn(t, "commit", "--quiet", "--allow-empty", "-m", "Start")
+	gitIn(t, "branch", "before-any-release")
 	head := surfaceOf(t, renamed)
 
 	breaks, err := releasedBreaks("HEAD", head)
@@ -246,6 +247,11 @@ func TestReleasedBreaksReadTheBaseBranchTag(t *testing.T) {
 	}
 	if breaks, err := releasedBreaks("feature", head); err != nil || !slices.Equal(breaks, renameBreak) {
 		t.Errorf("releasedBreaks against feature = %v, %v; want %v, from v1.0.0", breaks, err, renameBreak)
+	}
+	// A branch whose history reaches no tag has no release, although the
+	// repository has tags.
+	if breaks, err := releasedBreaks("before-any-release", head); err != nil || len(breaks) != 0 {
+		t.Errorf("releasedBreaks against a branch that reaches no tag = %v, %v; want none", breaks, err)
 	}
 }
 

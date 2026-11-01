@@ -85,11 +85,12 @@ func releaseSurface(rev string) (toolSurface, string, error) {
 	return s, tag, nil
 }
 
-// lastTagOn is the newest tag rev reaches, or "" when the repository has
-// no tag at all. Any other failure is an error: a tag that could not be
+// lastTagOn is the newest tag rev reaches, or "" when it reaches none: no
+// tag yet, or only tags outside its history, as a fork that fetched
+// upstream's has. Any other failure is an error: a tag that could not be
 // read is not a release that does not exist.
 func lastTagOn(rev string) (string, error) {
-	tags, err := git("tag", "--list")
+	tags, err := git("tag", "--merged", rev)
 	if err != nil || tags == "" {
 		return "", err
 	}
