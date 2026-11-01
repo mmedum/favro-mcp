@@ -37,30 +37,24 @@ func schemaDiff(w io.Writer, bin string) error {
 	if err != nil {
 		return fmt.Errorf("%w — run `make schemas` and commit the result", err)
 	}
-	if err := sameSurface(w, committed, current); err != nil {
+	now, err := readToolSurface(current)
+	if err != nil {
+		return err
+	}
+	if err := sameSurface(w, committed, now); err != nil {
 		return err
 	}
 
-	last := lastTag()
-	if last == "" {
-		_, err := fmt.Fprintln(w, "no previous tag; schemas.json is current")
-		return err
-	}
-	old, err := schemasAtTag(last)
-	if errors.Is(err, errNoDumpAtTag) {
+	was, last, err := releaseSurface("HEAD")
+	switch {
+	case errors.Is(err, errNoDumpAtTag):
 		_, err := fmt.Fprintf(w, "schemas.json is current; the build at %s predates --dump-schemas, "+
 			"so there is nothing to compare against\n", last)
 		return err
-	}
-	if err != nil {
+	case err != nil:
 		return err
-	}
-	was, err := readToolSurface(old)
-	if err != nil {
-		return fmt.Errorf("%s: %w", last, err)
-	}
-	now, err := readToolSurface(current)
-	if err != nil {
+	case last == "":
+		_, err := fmt.Fprintln(w, "no previous tag; schemas.json is current")
 		return err
 	}
 	c := compareSurfaces(was, now)
@@ -69,6 +63,37 @@ func schemaDiff(w io.Writer, bin string) error {
 		return fmt.Errorf("the tool surface changed in a way that breaks a caller since %s", last)
 	}
 	return nil
+}
+
+// releaseSurface is the surface of the newest tag rev reaches, read from
+// that tag's schemas.json, and the tag: "" when the repository has no
+// tag yet. A tag older than --dump-schemas gives errNoDumpAtTag beside
+// its name.
+func releaseSurface(rev string) (toolSurface, string, error) {
+	tag, err := lastTagOn(rev)
+	if err != nil || tag == "" {
+		return toolSurface{}, "", err
+	}
+	data, err := schemasAtTag(tag)
+	if err != nil {
+		return toolSurface{}, tag, err
+	}
+	s, err := readToolSurface(data)
+	if err != nil {
+		return toolSurface{}, tag, fmt.Errorf("schemas.json at %s: %w", tag, err)
+	}
+	return s, tag, nil
+}
+
+// lastTagOn is the newest tag rev reaches, or "" when the repository has
+// no tag at all. Any other failure is an error: a tag that could not be
+// read is not a release that does not exist.
+func lastTagOn(rev string) (string, error) {
+	tags, err := git("tag", "--list")
+	if err != nil || tags == "" {
+		return "", err
+	}
+	return git("describe", "--tags", "--abbrev=0", rev)
 }
 
 // sameSurface fails unless the committed schemas.json is the surface this
@@ -80,14 +105,10 @@ func schemaDiff(w io.Writer, bin string) error {
 // and CI's build, and comparing it would fail this gate on every commit
 // for a reason that has nothing to do with the tool surface — which is
 // the shape of a check people learn to re-run until it passes.
-func sameSurface(w io.Writer, committed, current []byte) error {
+func sameSurface(w io.Writer, committed []byte, now toolSurface) error {
 	was, err := readToolSurface(committed)
 	if err != nil {
 		return fmt.Errorf("schemas.json: %w — run `make schemas` and commit the result", err)
-	}
-	now, err := readToolSurface(current)
-	if err != nil {
-		return err
 	}
 	if c := compareSurfaces(was, now); !c.empty() {
 		c.write(w, "the committed schemas.json")
@@ -114,47 +135,22 @@ func schemasAtTag(tag string) ([]byte, error) {
 }
 
 // buildSchemasAtTag builds the binary as it was at a tag and asks it for
-// its schemas. The worktree is removed whether or not the build
-// succeeds: leaving one behind makes every later `git worktree add` fail
-// with a message about the path already existing, which is a confusing
-// way to learn that a gate crashed an hour ago.
-func buildSchemasAtTag(tag string) (out []byte, err error) {
-	tmp, err := os.MkdirTemp("", "gates-schema-*")
+// its schemas.
+//
+// A tag from before --dump-schemas existed cannot answer this, and
+// building it to watch the flag be rejected would report a broken gate
+// instead of a missing feature. The condition is the source at that tag
+// rather than the failure, so this stops applying by itself once a
+// tagged release carries the flag.
+func buildSchemasAtTag(tag string) ([]byte, error) {
+	main, err := git("show", tag+":cmd/favro-mcp/main.go")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read the tagged main.go: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(tmp) }()
-
-	src := filepath.Join(tmp, "src")
-	if err := runCmd("git", "worktree", "add", "-q", "--detach", src, tag); err != nil {
-		return nil, fmt.Errorf("worktree for %s: %w", tag, err)
-	}
-	defer func() {
-		if rmErr := runCmd("git", "worktree", "remove", "-f", src); rmErr != nil && err == nil {
-			err = fmt.Errorf("remove worktree: %w", rmErr)
-		}
-	}()
-
-	// A tag from before --dump-schemas existed cannot answer this, and
-	// building it to watch the flag be rejected would report a broken
-	// gate instead of a missing feature. The condition is the source at
-	// that tag rather than the failure, so this stops applying by itself
-	// once a tagged release carries the flag.
-	supported, err := tagSupportsDump(src)
-	if err != nil {
-		return nil, err
-	}
-	if !supported {
+	if !strings.Contains(main, "dump-schemas") {
 		return nil, errNoDumpAtTag
 	}
-
-	oldBin := filepath.Join(tmp, "old")
-	build := exec.Command("go", "build", "-o", oldBin, "./cmd/favro-mcp")
-	build.Dir = src
-	if b, buildErr := build.CombinedOutput(); buildErr != nil {
-		return nil, fmt.Errorf("build %s: %w: %s", tag, buildErr, b)
-	}
-	return dumpSchemas(oldBin)
+	return dumpAt(tag)
 }
 
 // dumpSchemas asks a build for its schemas. The binary decides what that
@@ -177,24 +173,6 @@ func dumpSchemas(bin string) ([]byte, error) {
 // errNoDumpAtTag says the comparison could not be made rather than that
 // it failed.
 var errNoDumpAtTag = errors.New("the build at that tag has no --dump-schemas")
-
-// tagSupportsDump reports whether the checked-out source registers the
-// flag this gate depends on.
-func tagSupportsDump(src string) (bool, error) {
-	data, err := os.ReadFile(filepath.Join(src, "cmd", "favro-mcp", "main.go"))
-	if err != nil {
-		return false, fmt.Errorf("read the tagged main.go: %w", err)
-	}
-	return strings.Contains(string(data), "dump-schemas"), nil
-}
-
-func lastTag() string {
-	out, err := exec.Command("git", "describe", "--tags", "--abbrev=0").Output()
-	if err != nil {
-		return "" // no tags yet, or not a checkout
-	}
-	return strings.TrimSpace(string(out))
-}
 
 func runCmd(name string, args ...string) error {
 	if out, err := exec.Command(name, args...).CombinedOutput(); err != nil {

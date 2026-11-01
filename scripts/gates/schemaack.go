@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 )
@@ -84,33 +83,14 @@ func surfaceAt(rev string) (toolSurface, error) {
 // Before the first tag nothing is a break, nor against a tag older than
 // --dump-schemas.
 func releasedBreaks(baseRef string, head toolSurface) ([]change, error) {
-	tag, err := lastTagOn(baseRef)
-	if err != nil || tag == "" {
-		return nil, err
-	}
-	data, err := schemasAtTag(tag)
-	if errors.Is(err, errNoDumpAtTag) {
+	release, tag, err := releaseSurface(baseRef)
+	if errors.Is(err, errNoDumpAtTag) || (err == nil && tag == "") {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	release, err := readToolSurface(data)
-	if err != nil {
-		return nil, fmt.Errorf("schemas.json at %s: %w", tag, err)
-	}
 	return compareSurfaces(release, head).breaking, nil
-}
-
-// lastTagOn is the newest tag rev reaches, or "" when the repository has
-// no tag at all. Any other failure is an error: a tag that could not be
-// read is not a release that does not exist.
-func lastTagOn(rev string) (string, error) {
-	tags, err := git("tag", "--list")
-	if err != nil || tags == "" {
-		return "", err
-	}
-	return git("describe", "--tags", "--abbrev=0", rev)
 }
 
 // releaseBreaksOnly keeps as breaks only those the head also makes
@@ -319,10 +299,7 @@ func dumpAt(rev string) (raw []byte, err error) {
 			err = rmErr
 		}
 	}()
-	bin := filepath.Join(tmp, "favro-mcp")
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
+	bin := filepath.Join(tmp, "favro-mcp"+exeSuffix())
 	build := exec.Command("go", "build", "-trimpath", "-o", bin, "./cmd/favro-mcp")
 	build.Dir = src
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")

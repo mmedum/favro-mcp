@@ -103,12 +103,7 @@ func staleness(w io.Writer, bin string) error {
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "\n"))
 	}
-	gates := 0
-	for _, c := range commands {
-		if c.runs == inCheck {
-			gates++
-		}
-	}
+	gates := len(commandsIn(inCheck)) + len(commandsIn(inPR))
 	_, err = fmt.Fprintf(w,
 		"staleness ok: %d tools and %d gates documented across %d documents, counts and paths current\n",
 		len(registered), gates, len(docs))
@@ -607,9 +602,11 @@ func trackedTopLevel(root string) (map[string]bool, error) {
 // legitimately empty. A sibling's version of this blocked its own
 // release pull request, which is how the exception got written.
 func changelogDocumentsTheChange(root, changelog string) error {
-	tag := lastTag()
-	if tag == "" {
-		return nil
+	// A checkout whose tags cannot be read has no range to compare,
+	// which is a fact about the checkout rather than about the changelog.
+	tag, err := lastTagOn("HEAD")
+	if err != nil || tag == "" {
+		return nil //nolint:nilerr // deliberate, as below
 	}
 	out, err := exec.Command("git", "-C", root, "diff", "--name-only", tag+"..HEAD").Output()
 	if err != nil {

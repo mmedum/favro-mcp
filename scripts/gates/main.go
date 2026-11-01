@@ -235,11 +235,15 @@ func usage() string {
 // defaultBinary is where `make build` puts the server. Every gate that
 // drives a binary takes one as an optional argument and falls back here.
 func defaultBinary() string {
-	name := filepath.Join("bin", "favro-mcp")
+	return filepath.Join("bin", "favro-mcp"+exeSuffix())
+}
+
+// exeSuffix is what the platform appends to an executable's name.
+func exeSuffix() string {
 	if runtime.GOOS == "windows" {
-		name += ".exe"
+		return ".exe"
 	}
-	return name
+	return ""
 }
 
 func binOr(args []string) string {
@@ -254,15 +258,12 @@ type schemaDump struct {
 	Tools []schemaTool `json:"tools"`
 }
 
+// schemaTool is the part of a dumped tool the gates read by name. The
+// schema diff compares every field, through surface.go, not this.
 type schemaTool struct {
 	Name        string `json:"name"`
-	Description string `json:"description"`
-	// Annotations are part of the surface sameSurface compares, so a
-	// changed hint shows up in the committed schemas.json.
 	Annotations struct {
-		DestructiveHint bool   `json:"destructiveHint"`
-		ReadOnlyHint    bool   `json:"readOnlyHint"`
-		Title           string `json:"title"`
+		ReadOnlyHint bool `json:"readOnlyHint"`
 	} `json:"annotations"`
 	InputSchema struct {
 		Required   []string                   `json:"required"`

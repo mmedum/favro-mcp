@@ -45,10 +45,6 @@ jobs:
           name: coverage
           path: coverage.out
 
-  # Not `needs: test`. Only the coverage floor depends on the matrix, and
-  # it has its own job below; the other fourteen gates read the repository
-  # and the built binary, so making all of them wait for a three-OS race
-  # run put the whole matrix's wall clock in front of every one of them.
   # A pull request whose tool surface changes says so in a commit footer
   # naming each item, since an annotation or a description change breaks
   # no schema and still changes what a client does. It measures from the
@@ -81,9 +77,20 @@ jobs:
       - name: schema change acknowledged
         run: go run ./scripts/gates schema-ack "$PR_BASE_REF" "$PR_HEAD"
 
+  # Not `needs: test`. Only the coverage floor depends on the matrix, and
+  # it has its own job below; the other fourteen gates read the repository
+  # and the built binary, so making all of them wait for a three-OS race
+  # run put the whole matrix's wall clock in front of every one of them.
   gates:
     name: gates
     runs-on: ubuntu-latest
+    # The flags `make build` builds the server with. Set for the job, so
+    # `go run ./scripts/gates`, which imports most of the server, compiles
+    # with them too rather than compiling it twice. Not for the workflow:
+    # the race tests need cgo.
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -trimpath
     steps:
       # The schema diff builds the binary as it was at the last tag, and
       # the staleness gate reads the range since that tag, so this

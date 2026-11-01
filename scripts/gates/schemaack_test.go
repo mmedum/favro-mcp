@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -225,15 +224,9 @@ func TestReleasedBreaksReadTheBaseBranchTag(t *testing.T) {
 		t.Fatalf("releasedBreaks with no tag = %v, %v; want none", breaks, err)
 	}
 
-	put := func(body string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, "schemas.json"), []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
 	commit := func(body, message string) {
 		t.Helper()
-		put(body)
+		put(t, dir, "schemas.json", body)
 		gitIn(t, "add", "schemas.json")
 		gitIn(t, "commit", "--quiet", "-m", message)
 	}
@@ -246,7 +239,7 @@ func TestReleasedBreaksReadTheBaseBranchTag(t *testing.T) {
 	gitIn(t, "switch", "--quiet", "feature")
 	// A later commit and the working tree are not the release.
 	commit(`{"tools":[{"name":"other"}]}`, "After")
-	put(`{"tools":[{"name":"another"}]}`)
+	put(t, dir, "schemas.json", `{"tools":[{"name":"another"}]}`)
 
 	if breaks, err := releasedBreaks("main", head); err != nil || len(breaks) != 0 {
 		t.Errorf("releasedBreaks against main = %v, %v; want none, as v2.0.0 shipped the rename", breaks, err)

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -243,18 +241,7 @@ func TestParityAgainstThisRepository(t *testing.T) {
 // The registry's pull-request gates reach the check: with the schema-ack
 // step taken out of this repository's ci.yml, parity names it.
 func TestParityHoldsThisRepositorysPullRequestGates(t *testing.T) {
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ci, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	makefile, ci := repoFile(t, "Makefile"), repoFile(t, ".github/workflows/ci.yml")
 	without := strings.ReplaceAll(string(ci), "./scripts/gates schema-ack", "./scripts/gates elsewhere")
 	if without == string(ci) {
 		t.Fatal("ci.yml does not run schema-ack, so this test removes nothing")
@@ -263,7 +250,7 @@ func TestParityHoldsThisRepositorysPullRequestGates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := `gate "schema-ack" runs on a pull request and no ` + "`run:`" + ` step in ci.yml runs it`; !strings.Contains(strings.Join(problems, "\n"), want) {
+	if want := `gate "schema-ack" runs on a pull request and no ` + "`run:`" + ` step in ci.yml runs it`; !has(problems, want) {
 		t.Errorf("problems = %q, want one saying %q", problems, want)
 	}
 }

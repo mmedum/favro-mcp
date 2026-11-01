@@ -84,16 +84,8 @@ func TestCompareSurfacesNamesEveryBreakingChange(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			was, err := readToolSurface(dumpOf(t, tc.old...))
-			if err != nil {
-				t.Fatal(err)
-			}
-			now, err := readToolSurface(dumpOf(t, tc.fresh...))
-			if err != nil {
-				t.Fatal(err)
-			}
 			var out strings.Builder
-			compareSurfaces(was, now).write(&out, "the tag")
+			compareSurfaces(surfaceOf(t, string(dumpOf(t, tc.old...))), surfaceOf(t, string(dumpOf(t, tc.fresh...)))).write(&out, "the tag")
 			if out.String() != tc.want {
 				t.Errorf("the report is\n%s\nwant\n%s", out.String(), tc.want)
 			}
@@ -103,42 +95,39 @@ func TestCompareSurfacesNamesEveryBreakingChange(t *testing.T) {
 
 // The committed dump is compared by surface, not by bytes: the build
 // stamp differs between a maintainer's build and CI's. Everything else
-// counts, an annotation the old projection did not read included.
+// counts, an annotation the old projection did not read included. Each
+// changed dump differs from the committed one in its one field alone.
 func TestSameSurfaceIgnoresTheBuildStamp(t *testing.T) {
-	tools := []schemaTool{tool("favro_ping", nil)}
-	committed := []byte(`{"version":"v1.1.2 (abc1234)","sdk":"v1.7.0","tools":` + string(mustTools(t, tools)) + `}`)
-	current := []byte(`{"version":"dev (unknown)","sdk":"v1.8.0","tools":` + string(mustTools(t, tools)) + `}`)
-	if err := sameSurface(io.Discard, committed, current); err != nil {
+	const ping = `{"name":"favro_ping","annotations":{"readOnlyHint":true},"inputSchema":{"type":"object","properties":{}}}`
+	committed := []byte(`{"version":"v1.1.2 (abc1234)","sdk":"v1.7.0","tools":[` + ping + `]}`)
+	restamped := `{"version":"dev (unknown)","sdk":"v1.8.0","tools":[` + ping + `]}`
+	if err := sameSurface(io.Discard, committed, surfaceOf(t, restamped)); err != nil {
 		t.Errorf("two dumps of the same surface differ only by the stamp, and sameSurface = %v; this gate would be "+
 			"red on every commit for a reason that has nothing to do with the tool surface", err)
 	}
-
-	for _, changed := range [][]byte{
-		[]byte(`{"tools":` + string(mustTools(t, []schemaTool{tool("favro_ping", nil, "verbose")})) + `}`),
-		[]byte(`{"tools":[{"name":"favro_ping","annotations":{"idempotentHint":true},"inputSchema":{"properties":{}}}]}`),
-		[]byte(`{"tools":` + string(mustTools(t, tools)) + `,"instructions":"Start with favro_ping."}`),
+	for name, changed := range map[string]string{
+		"a new input": strings.Replace(restamped, `"properties":{}`, `"properties":{"verbose":{"type":"boolean"}}`, 1),
+		"a hint the old projection did not read": strings.Replace(restamped, `{"readOnlyHint":true}`,
+			`{"readOnlyHint":true,"idempotentHint":true}`, 1),
+		"the instructions": strings.Replace(restamped, `"tools":`, `"instructions":"Start with favro_ping.","tools":`, 1),
 	} {
-		var out sink
-		if err := sameSurface(&out, committed, changed); err == nil || !strings.Contains(err.Error(), "make schemas") {
-			t.Errorf("a surface change passed, or failed without naming make schemas: %v\n%s", err, out.String())
-		}
+		t.Run(name, func(t *testing.T) {
+			var out sink
+			if err := sameSurface(&out, committed, surfaceOf(t, changed)); err == nil || !strings.Contains(err.Error(), "make schemas") {
+				t.Errorf("a surface change passed, or failed without naming make schemas: %v\n%s", err, out.String())
+			}
+			if strings.Count(out.String(), "\n  ") != 1 {
+				t.Errorf("the report should name the one change:\n%s", out.String())
+			}
+		})
 	}
 }
 
 func TestSameSurfaceRefusesADocumentThatIsNotOne(t *testing.T) {
 	good := dumpOf(t, tool("favro_ping", nil))
-	if err := sameSurface(io.Discard, []byte(`{"tools":[]}`), good); err == nil {
+	if err := sameSurface(io.Discard, []byte(`{"tools":[]}`), surfaceOf(t, string(good))); err == nil {
 		t.Error("an empty committed dump should name itself rather than compare equal to nothing")
 	} else if !strings.Contains(err.Error(), "make schemas") {
 		t.Errorf("the failure should say how to fix it, got %q", err)
 	}
-}
-
-func mustTools(t *testing.T, tools []schemaTool) []byte {
-	t.Helper()
-	b, err := json.Marshal(tools)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
 }
