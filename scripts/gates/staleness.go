@@ -105,7 +105,7 @@ func staleness(w io.Writer, bin string) error {
 	}
 	gates := 0
 	for _, c := range commands {
-		if c.gate {
+		if c.runs == inCheck {
 			gates++
 		}
 	}
@@ -346,7 +346,7 @@ func gatesDocumented(development string) []string {
 	var problems []string
 	counted := 0
 	for _, name := range slices.Sorted(maps.Keys(commands)) {
-		if !commands[name].gate {
+		if commands[name].runs == manual {
 			continue
 		}
 		counted++

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -73,7 +75,7 @@ const goodCI = `jobs:
 var declaredForTest = []string{"coverage", "leaks", "parity", "pins", "smoke"}
 
 func TestParityAcceptsTwoListsThatAgree(t *testing.T) {
-	problems, vets, err := parityCheck(goodMakefile, goodCI, declaredForTest)
+	problems, vets, err := parityCheck(goodMakefile, goodCI, declaredForTest, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +148,7 @@ func TestParityCatchesEachDivergence(t *testing.T) {
 			if tc.name == "a prerequisite with no recipe at all" {
 				makefile = strings.Replace(makefile, "parity smoke\n", "parity smoke placeholder\n", 1)
 			}
-			problems, _, err := parityCheck(makefile, tc.ci, declaredForTest)
+			problems, _, err := parityCheck(makefile, tc.ci, declaredForTest, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -161,20 +163,20 @@ func TestParityCatchesEachDivergence(t *testing.T) {
 // reason, and so does one where the Makefile's shape has changed under
 // the parser.
 func TestParityRefusesToCompareNothing(t *testing.T) {
-	if _, _, err := parityCheck(goodMakefile, goodCI, []string{"leaks"}); err == nil {
+	if _, _, err := parityCheck(goodMakefile, goodCI, []string{"leaks"}, nil); err == nil {
 		t.Error("one declared gate is not a registry; the check should refuse")
 	}
-	if _, _, err := parityCheck("all: build\n", goodCI, declaredForTest); err == nil {
+	if _, _, err := parityCheck("all: build\n", goodCI, declaredForTest, nil); err == nil {
 		t.Error("a Makefile with no check target should fail loudly")
 	}
-	if _, _, err := parityCheck("check: fmt\n", goodCI, declaredForTest); err == nil {
+	if _, _, err := parityCheck("check: fmt\n", goodCI, declaredForTest, nil); err == nil {
 		t.Error("a check target with one prerequisite is not the whole list")
 	}
 	// Every prerequisite present but every recipe unreadable: the
 	// signatures would all come back empty and every comparison would
 	// trivially pass.
 	bare := "check: a b c d e f g h i j k\n"
-	if _, _, err := parityCheck(bare, goodCI, declaredForTest); err == nil {
+	if _, _, err := parityCheck(bare, goodCI, declaredForTest, nil); err == nil {
 		t.Error("prerequisites with no recipes mean nothing was compared; the check should refuse")
 	}
 }
@@ -236,4 +238,62 @@ func TestParityAgainstThisRepository(t *testing.T) {
 		t.Fatalf("`make check` and ci.yml should agree: %v", err)
 	}
 	out.mustSay(t, "gates in both")
+}
+
+// The registry's pull-request gates reach the check: with the schema-ack
+// step taken out of this repository's ci.yml, parity names it.
+func TestParityHoldsThisRepositorysPullRequestGates(t *testing.T) {
+	root, err := moduleRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ci, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	without := strings.ReplaceAll(string(ci), "./scripts/gates schema-ack", "./scripts/gates elsewhere")
+	if without == string(ci) {
+		t.Fatal("ci.yml does not run schema-ack, so this test removes nothing")
+	}
+	problems, _, err := parityOf(string(makefile), without)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `gate "schema-ack" runs on a pull request and no ` + "`run:`" + ` step in ci.yml runs it`; !strings.Contains(strings.Join(problems, "\n"), want) {
+		t.Errorf("problems = %q, want one saying %q", problems, want)
+	}
+}
+
+// A pull-request gate measures from a merge-base, which `make check` does
+// not have: it runs in a ci.yml run: step, and never in `make check`.
+func TestParityHoldsAPullRequestGateToCIAlone(t *testing.T) {
+	ack := "      - run: go run ./scripts/gates schema-ack \"$PR_BASE_REF\" \"$PR_HEAD\"\n"
+	inCheck := strings.Replace(goodMakefile, "check: fmt-check", "schema-ack:\n\t@$(GO) run ./scripts/gates schema-ack origin/main HEAD\n\ncheck: schema-ack fmt-check", 1)
+	for _, tc := range []struct{ name, makefile, ci, want string }{
+		{"in ci.yml alone", goodMakefile, goodCI + ack, ""},
+		{"in make check too", inCheck, goodCI + ack, `gate "schema-ack" runs on a pull request and ` + "`make check`" + ` depends on it`},
+		{"in neither", goodMakefile, goodCI, `gate "schema-ack" runs on a pull request and no ` + "`run:`" + ` step in ci.yml runs it`},
+		{
+			"in a commented-out step", goodMakefile, goodCI + "      # - run: go run ./scripts/gates schema-ack\n",
+			`gate "schema-ack" runs on a pull request and no ` + "`run:`" + ` step in ci.yml runs it`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			problems, _, err := parityCheck(tc.makefile, tc.ci, declaredForTest, []string{"schema-ack"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := strings.Join(problems, "\n")
+			switch {
+			case tc.want == "" && got != "":
+				t.Errorf("problems = %s, want none", got)
+			case tc.want != "" && !strings.Contains(got, tc.want):
+				t.Errorf("problems = %q, want one saying %q", got, tc.want)
+			}
+		})
+	}
 }

@@ -65,30 +65,21 @@ func parity(w io.Writer, _ []string) error {
 		return fmt.Errorf("no ci.yml among the workflows; the check is reading the wrong place")
 	}
 
-	declared := declaredGates()
-	problems, vetPasses, err := parityCheck(string(makefile), ci, declared)
+	problems, vetPasses, err := parityOf(string(makefile), ci)
 	if err != nil {
 		return err
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "\n"))
 	}
-	_, err = fmt.Fprintf(w, "parity ok: %d gates in both, %d tagged vet passes in both\n",
-		len(declared), vetPasses)
+	_, err = fmt.Fprintf(w, "parity ok: %d gates in both, %d on pull requests only, %d tagged vet passes in both\n",
+		len(commandsIn(inCheck)), len(commandsIn(inPR)), vetPasses)
 	return err
 }
 
-// declaredGates is every command the registry marks as running in both
-// places, sorted.
-func declaredGates() []string {
-	var declared []string
-	for name, c := range commands {
-		if c.gate {
-			declared = append(declared, name)
-		}
-	}
-	slices.Sort(declared)
-	return declared
+// parityOf is parityCheck with the gates the registry declares.
+func parityOf(makefile, ci string) (problems []string, vetPasses int, err error) {
+	return parityCheck(makefile, ci, commandsIn(inCheck), commandsIn(inPR))
 }
 
 // parityCheck is the rule itself, over the text of the two files rather
@@ -104,7 +95,11 @@ func declaredGates() []string {
 // the govulncheck step from CI left this gate green while the Makefile
 // went on calling `check` "everything CI runs". The list it reads now is
 // the `check:` line itself, which is the same list the sentence claims.
-func parityCheck(makefile, ci string, declared []string) (problems []string, vetPasses int, err error) {
+//
+// prOnly are the gates that run on a pull request alone: in a `run:` step
+// of ci.yml, and never in `make check`, which has no pull request to
+// measure from.
+func parityCheck(makefile, ci string, declared, prOnly []string) (problems []string, vetPasses int, err error) {
 	if len(declared) < 5 {
 		return nil, 0, fmt.Errorf("only %d gates declared; the registry is not being read", len(declared))
 	}
@@ -173,6 +168,18 @@ func parityCheck(makefile, ci string, declared []string) (problems []string, vet
 		if !slices.Contains(prereqs, name) && !slices.Contains(prereqs, makeTargetFor(name)) {
 			problems = append(problems, fmt.Sprintf(
 				"gate %q is declared in scripts/gates but `make check` does not depend on it", name))
+		}
+	}
+
+	for _, name := range prOnly {
+		if !strings.Contains(ciRuns, "./scripts/gates "+name) {
+			problems = append(problems, fmt.Sprintf(
+				"gate %q runs on a pull request and no `run:` step in ci.yml runs it, so it guards nothing", name))
+		}
+		if slices.Contains(prereqs, name) || slices.Contains(prereqs, makeTargetFor(name)) {
+			problems = append(problems, fmt.Sprintf(
+				"gate %q runs on a pull request and `make check` depends on it; check has no pull request "+
+					"to measure from", name))
 		}
 	}
 

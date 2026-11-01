@@ -49,6 +49,38 @@ jobs:
   # it has its own job below; the other fourteen gates read the repository
   # and the built binary, so making all of them wait for a three-OS race
   # run put the whole matrix's wall clock in front of every one of them.
+  # A pull request whose tool surface changes says so in a commit footer
+  # naming each item, since an annotation or a description change breaks
+  # no schema and still changes what a client does. It measures from the
+  # merge-base, which only a pull request has, so it is not in `make
+  # check`.
+  pr:
+    name: pr
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PR_BASE_REF: origin/${{ github.base_ref }}
+      # The head commit, not the merge commit the checkout sits on.
+      PR_HEAD: ${{ github.event.pull_request.head.sha }}
+      # The flags schema-ack builds both sides with; `go run` uses them
+      # too, so the gates and the server share compiled packages.
+      CGO_ENABLED: "0"
+      GOFLAGS: -trimpath
+    steps:
+      # The merge-base and the last tag are in the history, not in one
+      # commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: schema change acknowledged
+        run: go run ./scripts/gates schema-ack "$PR_BASE_REF" "$PR_HEAD"
+
   gates:
     name: gates
     runs-on: ubuntu-latest

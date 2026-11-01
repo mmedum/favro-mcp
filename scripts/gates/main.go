@@ -22,6 +22,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -39,11 +40,39 @@ type command struct {
 	run  func(io.Writer, []string) error
 	args string
 	doc  string
-	// gate marks a command that must run in BOTH `make check` and the CI
-	// workflow. The parity check reads this field, which is the whole
-	// reason the registry exists: the two lists it compares are a
-	// Makefile and a workflow, with nothing else tying them together.
-	gate bool
+	// runs says where the command has to run. The parity check reads
+	// it, which is the whole reason the registry exists: the two lists
+	// it compares are a Makefile and a workflow, with nothing else tying
+	// them together.
+	runs where
+}
+
+// where is the pipeline a command has to run in. Three states, because a
+// gate that only a pull request can run is neither a gate `make check`
+// runs nor a convenience nothing does.
+type where int
+
+const (
+	// manual is a maintainer convenience or a release step; nothing
+	// holds it to a pipeline.
+	manual where = iota
+	// inCheck has to run in BOTH `make check` and the CI workflow.
+	inCheck
+	// inPR has to run in CI on a pull request and NOT in `make check`:
+	// it measures from the merge-base, which only a pull request has.
+	inPR
+)
+
+// commandsIn are the commands that have to run in w, sorted.
+func commandsIn(w where) []string {
+	var out []string
+	for name, c := range commands {
+		if c.runs == w {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // commands is the one list of what this program does — the usage text,
@@ -56,15 +85,15 @@ var commands map[string]command
 func init() {
 	commands = map[string]command{
 		"coverage": {
-			run: coverage, args: "PROFILE MIN", gate: true,
+			run: coverage, args: "PROFILE MIN", runs: inCheck,
 			doc: "enforce the per-package statement floor",
 		},
 		"leaks": {
-			run: leaks, args: "[history]", gate: true,
+			run: leaks, args: "[history]", runs: inCheck,
 			doc: "nothing identifying a tenant may be in the repository",
 		},
 		"pins": {
-			run: pins, args: "", gate: true,
+			run: pins, args: "", runs: inCheck,
 			doc: "every action is a SHA and every tool version is exact",
 		},
 		"api-diff": {
@@ -72,23 +101,23 @@ func init() {
 			doc: "refetch the Favro API surface snapshot (network; maintainer only)",
 		},
 		"api-coverage": {
-			run: apiCoverage, args: "", gate: true,
+			run: apiCoverage, args: "", runs: inCheck,
 			doc: "every documented Favro endpoint has a verdict, and every verdict an endpoint",
 		},
 		"api-fields": {
-			run: apiFields, args: "", gate: true,
+			run: apiFields, args: "", runs: inCheck,
 			doc: "every documented field is modeled by a wire type, or waived with a reason",
 		},
 		"transcript": {
-			run: transcript, args: "", gate: true,
+			run: transcript, args: "", runs: inCheck,
 			doc: "the live driver prints only through the redactor",
 		},
 		"outcomes": {
-			run: outcomes, args: "", gate: true,
+			run: outcomes, args: "", runs: inCheck,
 			doc: "no tool states an outcome the response did not carry",
 		},
 		"registry": {
-			run: registry, args: "", gate: true,
+			run: registry, args: "", runs: inCheck,
 			doc: "the committed MCP registry entry obeys the rules that registry enforces in code",
 		},
 		"registry-publish": {
@@ -96,39 +125,43 @@ func init() {
 			doc: "print the registry entry to publish, with the bundle's hash from the signed checksums",
 		},
 		"live-cover": {
-			run: liveCover, args: "", gate: true,
+			run: liveCover, args: "", runs: inCheck,
 			doc: "the live driver exercises every tool and option, or waives it",
 		},
 		"classes": {
-			run: classes, args: "", gate: true,
+			run: classes, args: "", runs: inCheck,
 			doc: "the closed error vocabulary and the document that names it",
 		},
 		"parity": {
-			run: parity, args: "", gate: true,
+			run: parity, args: "", runs: inCheck,
 			doc: "`make check` and CI run the same gates",
 		},
 		"schema-diff": {
-			run: schemaDiffCmd, args: "[BIN]", gate: true,
+			run: schemaDiffCmd, args: "[BIN]", runs: inCheck,
 			doc: "diff the tool schemas against the last tag",
 		},
+		"schema-ack": {
+			run: schemaAck, args: "BASE HEAD", runs: inPR,
+			doc: "a pull request's commits name each item of the tool surface it changes",
+		},
 		"smoke": {
-			run: smoke, args: "[BIN]", gate: true,
+			run: smoke, args: "[BIN]", runs: inCheck,
 			doc: "drive the binary over stdio, twice",
 		},
 		"staleness": {
-			run: stalenessCmd, args: "[BIN]", gate: true,
+			run: stalenessCmd, args: "[BIN]", runs: inCheck,
 			doc: "the documentation must match the code",
 		},
 		"plugin": {
-			run: pluginGate, args: "", gate: true,
+			run: pluginGate, args: "", runs: inCheck,
 			doc: "the committed plugin manifest against the files the packer stages",
 		},
 		"rule8": {
-			run: rule8, args: "[BIN]", gate: true,
+			run: rule8, args: "[BIN]", runs: inCheck,
 			doc: "no tool input takes an organization_id; the server is single-org",
 		},
 		"mcpb": {
-			run: mcpbGate, args: "", gate: true,
+			run: mcpbGate, args: "", runs: inCheck,
 			doc: "the committed Claude Desktop manifest against the files the packer stages",
 		},
 		"mcpb-pack": {
@@ -163,8 +196,28 @@ func main() {
 		fail("unknown command %q\n\n%s", os.Args[1], usage())
 	}
 	if err := c.run(os.Stdout, os.Args[2:]); err != nil {
-		fail("%v", err)
+		fmt.Fprintf(os.Stderr, "gates: %v\n", err)
+		os.Exit(exitCode(err))
 	}
+}
+
+// couldNotRun is an error that stopped schema-ack before it could judge:
+// a build or a git call that failed. Its message says so, which is what
+// tells it from a refusal in CI, since `go run` exits 1 whatever the
+// program's own status was.
+type couldNotRun struct{ error }
+
+func (e couldNotRun) Error() string { return "could not run: " + e.error.Error() }
+
+func (e couldNotRun) Unwrap() error { return e.error }
+
+// exitCode is 2 for a gate that could not run, as for a usage error, and
+// 1 for a gate that ran and refused. A built binary exits with it.
+func exitCode(err error) int {
+	if errors.As(err, new(couldNotRun)) {
+		return 2
+	}
+	return 1
 }
 
 func usage() string {
@@ -172,13 +225,10 @@ func usage() string {
 	b.WriteString("usage: gates COMMAND [ARGS]\n\n")
 	for _, name := range slices.Sorted(maps.Keys(commands)) {
 		c := commands[name]
-		mark := " "
-		if c.gate {
-			mark = "*"
-		}
+		mark := map[where]string{manual: " ", inCheck: "*", inPR: "+"}[c.runs]
 		fmt.Fprintf(&b, "  %s %-14s %-14s %s\n", mark, name, c.args, c.doc)
 	}
-	b.WriteString("\n  * runs in both `make check` and CI; the parity gate checks that.\n")
+	b.WriteString("\n  * runs in both `make check` and CI; + runs in CI on a pull request only; the parity gate checks both.\n")
 	return b.String()
 }
 
@@ -311,13 +361,6 @@ func moduleRoot() (string, error) {
 		}
 		dir = parent
 	}
-}
-
-func list(xs []string) string {
-	if len(xs) == 0 {
-		return "none"
-	}
-	return "[" + strings.Join(xs, ", ") + "]"
 }
 
 func fail(format string, args ...any) {
