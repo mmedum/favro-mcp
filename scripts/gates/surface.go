@@ -128,7 +128,9 @@ func itemName(key string) string {
 // is what a footer names, and how the report shows it. The item is a
 // tool's name, a resource's template or URI, a list item's name, or a
 // top-level key such as instructions. field is, on the break of a tool
-// still there, the field it breaks, such as "input card_id".
+// still there, the field it breaks, such as "input card_id", and on a
+// removed item its whole key, so a removed prompt and a tool of one name
+// differ.
 type change struct {
 	item, text, field string
 }
@@ -157,7 +159,7 @@ func compareSurfaces(was, now toolSurface) surfaceChanges {
 		name := itemName(key)
 		switch {
 		case !inNow:
-			removed = append(removed, change{item: name, text: key + " removed"})
+			removed = append(removed, change{item: name, text: key + " removed", field: key})
 		case !inWas:
 			c.added = append(c.added, change{item: name, text: key})
 		default:

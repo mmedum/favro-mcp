@@ -9,7 +9,7 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ## [Unreleased]
 
 ### Changed
-- For contributors: CI fails a pull request that changes the tool surface until a commit footer names each item that changed. `SCHEMA-CHANGE:` names a change and `BREAKING CHANGE:` a break of the last tag. `make schema-diff` now holds the committed `schemas.json` to the whole dump, so a changed `idempotentHint`, `openWorldHint`, output schema or `_meta` mark has to be committed too.
+- For contributors: CI fails a pull request that changes the tool surface until a commit footer names each item that changed. `SCHEMA-CHANGE:` names a change and `BREAKING CHANGE:` a break of the last tag. `make schema-diff` now holds the committed `schemas.json` to the whole dump, so a changed `idempotentHint`, `openWorldHint`, output schema or `_meta` mark has to be committed too. Only the names before the first colon followed by white space in a footer's value count, and a list wraps only after a comma. A footer's value may run on over several lines, and a footer beside it, such as `Closes #12`, does not drop it.
 
 ## [4.4.0] - 2026-11-01
 
