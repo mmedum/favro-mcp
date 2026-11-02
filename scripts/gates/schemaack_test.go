@@ -57,6 +57,16 @@ func TestSchemaAckNeedsEveryItemNamed(t *testing.T) {
 		{"an unchanged surface needs nothing", plain, "Tidy the README", ""},
 		{"a change needs a footer", flipped, "Mark favro_update_card destructive", wantUnnamed},
 		{"a footer naming the tool acknowledges it", flipped, "Mark it\n\nSCHEMA-CHANGE: favro_update_card: destructiveHint true", ""},
+		{"a tab after the colon starts the description too", flipped, "Mark it\n\nSCHEMA-CHANGE: favro_get_card:\tdestructive, favro_update_card", wantUnnamed},
+		{"a value wrapped at the margin continues it", flipped, "Mark them\n\nSCHEMA-CHANGE: favro_get_card,\nfavro_update_card: destructiveHint true", ""},
+		{"prose after a bare list names nothing", flipped, "Mark it\n\nSCHEMA-CHANGE: favro_get_card\nfavro_update_card is destructive now", wantUnnamed},
+		{"a bare list ends at its line, and its name counts", flipped, "Mark it\n\nSCHEMA-CHANGE: favro_update_card\nhints flipped", ""},
+		{"prose after a trailing comma names nothing", flipped, "Mark them\n\nSCHEMA-CHANGE: favro_get_card,\nwhich favro_update_card also reads", wantUnnamed},
+		{"a list is split on commas, not spaces", flipped, "Mark them\n\nSCHEMA-CHANGE: favro_get_card favro_update_card: hints", wantUnnamed},
+		{"a Token #value footer is a footer", flipped, "Mark it\n\nSCHEMA-CHANGE: favro_update_card: hints\n\nCloses #12", ""},
+		{"a Token #value footer acknowledges nothing", flipped, "Mark it\n\nSCHEMA-CHANGE #favro_update_card", wantUnnamed},
+		{"nor does a BREAKING CHANGE #value one", renamed, "Rename it\n\nBREAKING CHANGE #favro_update_card", wantUnnamedBreak},
+		{"a footer ends the value before it", flipped, "Mark it\n\nSCHEMA-CHANGE: favro_get_card,\nRefs #12, favro_update_card", wantUnnamed},
 		{"a footer naming another tool does not", flipped, "Mark it\n\nSCHEMA-CHANGE: favro_get_card: destructiveHint true", wantUnnamed},
 		{
 			"a name in the description names nothing", flipped,
@@ -166,6 +176,15 @@ func TestARefusalQuotesANameTheFooterWouldSplit(t *testing.T) {
 	}
 }
 
+// A break no footer names is asked for once, as a break: the BREAKING
+// CHANGE: footer that fixes it names it for both checks.
+func TestARefusalAsksForAnUnnamedBreakOnce(t *testing.T) {
+	err := checkAck(io.Discard, compareSurfaces(surfaceOf(t, plain), surfaceOf(t, renamed)), nil, "base")
+	if want := "the tool surface changed since base, and no BREAKING CHANGE: footer names favro_update_card. "; err == nil || !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("checkAck = %v, want it to start %q", err, want)
+	}
+}
+
 // A break of the released surface needs BREAKING CHANGE:; removing a tool
 // added since the release breaks no caller, so it is a plain change, and
 // the report lists it as one.
@@ -205,6 +224,14 @@ func TestABreakOfTheReleaseIsMatchedByItsField(t *testing.T) {
 	c := releaseBreaksOnly(compareSurfaces(base, head), compareSurfaces(release, head).breaking)
 	if len(c.breaking) != 0 {
 		t.Errorf("breaking = %v, want draft, which no release shipped, as a change", c.breaking)
+	}
+	// Nor does a released tool of the name of a prompt the pull request
+	// removes: they are two items, though a footer names both alike.
+	release = surfaceOf(t, `{"tools":[{"name":"favro_get_card"},{"name":"summarize"}]}`)
+	base = surfaceOf(t, `{"tools":[{"name":"favro_get_card"}],"prompts":[{"name":"summarize"}]}`)
+	head = surfaceOf(t, `{"tools":[{"name":"favro_get_card"}],"prompts":[]}`)
+	if c := releaseBreaksOnly(compareSurfaces(base, head), compareSurfaces(release, head).breaking); len(c.breaking) != 0 {
+		t.Errorf("breaking = %v, want the unreleased prompt's removal as a change", c.breaking)
 	}
 }
 
