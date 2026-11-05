@@ -8,6 +8,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-11-05
+
 ### Changed
 - For contributors: a pull request that changes the tool surface needs a commit footer naming each changed item; `CONTRIBUTING.md` gives the syntax.
 - For contributors: decisions in `docs/architecture.md` carry IDs; cite one by ID, never by section number.
@@ -450,7 +452,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.4.0...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.4.1...HEAD
+[4.4.1]: https://github.com/mmedum/favro-mcp/compare/v4.4.0...v4.4.1
 [4.4.0]: https://github.com/mmedum/favro-mcp/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/mmedum/favro-mcp/compare/v4.2.1...v4.3.0
 [4.2.1]: https://github.com/mmedum/favro-mcp/compare/v4.2.0...v4.2.1

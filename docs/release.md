@@ -37,9 +37,11 @@ The tag waits for the owner's explicit go.
   go run ./scripts/gates plugin-pack
   ```
 
-  The version must agree in the archives' and the bundle's file names,
-  `--version` and `checksums.txt`. A bundle missing from `checksums.txt`
-  ships unsigned and looks no different.
+  The version must agree in the archives' and the bundle's file names
+  and `checksums.txt`. A rehearsal's `--version` names the last tag and
+  the commit, since the binary is stamped from the tag; after the real
+  release it names the new version. A bundle missing from
+  `checksums.txt` ships unsigned and looks no different.
 
 ## Steps
 
