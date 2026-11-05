@@ -153,7 +153,7 @@ var (
 )
 
 // golangciAction is the version input of a golangci-lint-action step.
-var golangciAction = regexp.MustCompile(`(golangci/golangci-lint-action@[^\n]*\n\s+with:\n\s+version:\s*)\S+`)
+var golangciAction = regexp.MustCompile(`(golangci/golangci-lint-action@[^\n]*\n\s+with:\r?\n\s+version:\s*)\S+`)
 
 // set writes version into the one place the copy is, and fails the test
 // when the file holds it anywhere else or nowhere.
