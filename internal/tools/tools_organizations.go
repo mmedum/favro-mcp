@@ -14,21 +14,23 @@ const (
 	getOrgToolName   = "favro_get_organization"
 )
 
-// getOrgInput is the input for favro_get_organization: nothing.
+// getOrgInput is the input for favro_get_organization: nothing (D-02).
 //
-// It used to take an `organization_id`, which Favro documents as "the id
-// of the organization to be retrieved. Required." The live API does not
-// honor it — it routes by the `organizationId` HEADER, which Favro
-// documents separately as required "to ensure the request is routed to
-// the correct server" — so any value, a malformed one included, returned
-// the organization the header names. §2.1 again, and this server makes
-// it structural rather than merely surprising: it binds one organization
-// at startup and sets that header on every request, so the path segment
-// could never select anything else here.
+// Favro's reference documents the path id of GET /organizations/{id} as
+// "the id of the organization to be retrieved. Required." The live API
+// ignores it and routes by the organizationId header, which the
+// reference separately documents as required "to ensure the request is
+// routed to the correct server": any value, a malformed one included,
+// returns the organization the header names. This server binds one
+// organization at startup and sets that header on every request, so
+// the path id can never select anything else here. The ignored id was
+// probed by hand; the live step "read the organization" calls the tool.
+// https://favro.com/developer/#get-an-organization
+// https://favro.com/developer/#routing
 //
-// A required input that cannot affect the result is worse than no input.
-// It reads as a choice, and a model asking for one organization was
-// silently handed another.
+// A required input that cannot affect the result is worse than no input:
+// it reads as a choice, and a model asking for one organization is
+// handed another.
 //
 // A named type rather than struct{} keeps the JSON Schema generation
 // consistent with every other tool.

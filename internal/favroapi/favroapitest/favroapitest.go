@@ -1,13 +1,10 @@
 // Package favroapitest is the Favro client fixture the test packages
 // above internal/favroapi share.
 //
-// It exists because the credential triple is load-bearing: hard rule 1
-// says nothing in this repository may carry a real tenant's values, and
-// a fixture repeated per package is a fixture that drifts. It drifted
-// once already — the copies in internal/service and internal/tools had
-// grown two different sets of invented values and two different
-// comments explaining the same rule — which is the argument for one
-// copy in one place.
+// It exists because the credential triple is load-bearing: nothing in
+// this repository may carry a real tenant's values, and a
+// fixture repeated per package drifts into several sets of invented
+// values, so there is one copy in one place.
 //
 // It is a non-test package so that several test packages can import it;
 // GoReleaser builds only ./cmd/..., so none of it ships.

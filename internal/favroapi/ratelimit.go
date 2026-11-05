@@ -7,7 +7,10 @@ import (
 	"time"
 )
 
-// Favro response headers we observe. Documented at favro.com/developer.
+// The response headers the client reads. The reference's table spells
+// the first one X-RateLimit-Limt; the client reads X-RateLimit-Limit.
+// It documents no Retry-After.
+// https://favro.com/developer/#response-headers
 const (
 	headerRateLimitLimit     = "X-RateLimit-Limit"
 	headerRateLimitRemaining = "X-RateLimit-Remaining"
@@ -19,10 +22,18 @@ const (
 
 // RateLimitSnapshot captures the most-recent rate-limit signal Favro
 // returned. Exposed via the favro_rate_limit_status MCP tool so an
-// LLM can see when it's burning the per-organization quota.
+// LLM can see when it's burning the quota.
+//
+// Favro counts calls per user per hour: 50 on the user-level routes
+// (get a user, get all organizations, create an organization), and on
+// every other route a number the organization's plan sets: Trial 100,
+// Lite 0, Standard 1000, Enterprise 10000. The live step
+// "read the rate limit status" shows what a real response carried and
+// asserts none of it.
+// https://favro.com/developer/#rate-limiting-and-throttling
 type RateLimitSnapshot struct {
-	// Limit is the per-org quota (requests per hour) Favro reported
-	// in X-RateLimit-Limit. 0 means the header was absent.
+	// Limit is the hourly quota Favro reported in X-RateLimit-Limit. 0
+	// means the header was absent.
 	Limit int
 	// Remaining is the count of requests left in the current window,
 	// from X-RateLimit-Remaining. -1 means "header absent" so 0 stays
@@ -37,8 +48,9 @@ type RateLimitSnapshot struct {
 	// Delay is how long Favro itself held the response back to let
 	// the token bucket refill, from X-RateLimit-Delay. A non-zero
 	// value means the call already succeeded but the account is
-	// being throttled; Favro fails the request outright once the
-	// needed delay would exceed 10 seconds.
+	// being throttled; Favro answers 429 once the needed delay would
+	// exceed 10 seconds.
+	// https://favro.com/developer/#throttling
 	Delay time.Duration
 	// ObservedAt is when this snapshot was recorded.
 	ObservedAt time.Time

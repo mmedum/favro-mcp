@@ -28,7 +28,7 @@ type rateLimitInput struct{}
 // when no Favro request has been made yet (HaveSeen == false).
 type RateLimitOutput struct {
 	HaveSeen          bool    `json:"have_seen" jsonschema:"true once at least one Favro response has been observed"`
-	Limit             int     `json:"limit" jsonschema:"per-organization quota Favro reported (X-RateLimit-Limit)"`
+	Limit             int     `json:"limit" jsonschema:"the quota Favro reported in X-RateLimit-Limit; 0 if the header was absent"`
 	Remaining         int     `json:"remaining" jsonschema:"requests remaining in the current window (X-RateLimit-Remaining); -1 means the header was absent"`
 	ResetUnix         int64   `json:"reset_unix" jsonschema:"epoch seconds when the current window resets (X-RateLimit-Reset); 0 if absent"`
 	ResetIn           string  `json:"reset_in" jsonschema:"human-readable time until reset"`

@@ -340,8 +340,8 @@ func rows(out map[string]any, key string) []map[string]any {
 // substitute fills a prompt's placeholders and refuses one it cannot.
 //
 // A prompt that reaches a model still carrying braces is the failure
-// this guards: a sibling's first full eval run passed two tasks while
-// sending the agent a literal placeholder.
+// this guards: a task can pass while the agent is sent a literal
+// placeholder.
 func substitute(prompt string, vals map[string]string) (string, error) {
 	out := prompt
 	for k, v := range vals {

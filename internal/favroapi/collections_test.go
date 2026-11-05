@@ -150,9 +150,10 @@ func TestGetCollection_EmptyID_NoNetworkCall(t *testing.T) {
 	}
 }
 
-// TestListCollections_ArchivedAndNewFields pins favro.ListCollectionsFilter.Archived
-// → ?archived=true and that the new favro.Collection response fields
-// (organizationId, background) decode without dropping data.
+// TestListCollections_ArchivedAndNewFields pins that
+// favro.ListCollectionsFilter.Archived sends no archived parameter,
+// since archived=true returns archived collections only, and that the
+// favro.Collection response fields organizationId and background decode.
 func TestListCollections_ArchivedAndNewFields(t *testing.T) {
 	t.Parallel()
 
@@ -172,8 +173,8 @@ func TestListCollections_ArchivedAndNewFields(t *testing.T) {
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if got := h.seen()[0].Query.Get("archived"); got != "true" {
-		t.Errorf("h.seen()[0].Query.Get(\"archived\") = %v, want %v", got, "true")
+	if q := h.seen()[0].Query; q.Has("archived") {
+		t.Errorf("h.seen()[0].Query[\"archived\"] = %v, want no archived parameter", q["archived"])
 	}
 	if len(env.Entities) != 1 {
 		t.Fatalf("len(env.Entities) = %d, want 1", len(env.Entities))

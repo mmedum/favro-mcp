@@ -31,8 +31,9 @@ type step struct {
 // it without running a vet pass over the whole module.
 //
 // Each entry calls the same implementation `make check` and CI call,
-// rather than restating it: the gofmt rule had three spellings in two
-// languages before this, and nothing held them together.
+// rather than restating it, so the hook cannot drift from them. The hook
+// is the fast subset: gitleaks is not in it, and runs in `make check`
+// and CI.
 func precommitSteps() []step {
 	return []step{
 		{"gofmt", func(w io.Writer) error { return fmtCheck(w, nil) }},

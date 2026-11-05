@@ -38,9 +38,8 @@ import (
 // does nothing. The manifest is held to the vendored schema as well
 // (schemavendor.go), and to the staged tree here.
 //
-// Three checks here are ones the shared standard names and the sibling
-// implementation did not have, because a review found them after it
-// shipped:
+// Three checks here catch a bundle that packs and installs cleanly and
+// then runs the wrong file:
 //
 //   - Every platform_overrides entry names a platform
 //     compatibility.platforms claims. An override nothing can reach is
@@ -74,6 +73,7 @@ const (
 	// specification fixes to the bundle. It shows a relative command
 	// once and never says what it is resolved against, and the reference
 	// host resolves no path.
+	// https://github.com/anthropics/mcpb/blob/v2.1.2/MANIFEST.md#L532
 	dirnameRef = "${__dirname}/"
 )
 
@@ -154,9 +154,9 @@ func mcpbPrograms() []string {
 const launcherPlatform = "linux"
 
 // mcpbPlatformFile maps each platform the bundle supports to the file
-// that platform must end up running. This is the table behind the check
-// the standard names last: a manifest can name a staged file for every
-// platform and still hand Windows the macOS binary.
+// that platform must end up running. A manifest can name a staged file
+// for every platform and still hand Windows the macOS binary, and this
+// table is what catches it.
 //
 // Derived from the one table rather than written out: a row naming a
 // platform serves it directly, and any row carrying uname values is
@@ -523,6 +523,7 @@ func checkBundleManifest(m bundleManifest, programs []string) []string {
 // the schema nor `mcpb validate` enforces it. That the platforms are
 // exactly the ones the packer stages for is checkBundleManifest's, both
 // ways.
+// https://github.com/anthropics/mcpb/blob/v2.1.2/MANIFEST.md#L254
 func identityProblems(m bundleManifest) []string {
 	var problems []string
 	if m.Name != tools.ServerName {
@@ -669,14 +670,15 @@ func bundleVarsFrom(vars []config.Var, leftOut map[string]string) (asked []confi
 }
 
 // bundleKey is the user_config key a setting is asked under: its name
-// without the prefix, lowercased, which gives the family's bundles the
-// same keys.
+// without the prefix, lowercased, so the key follows from the variable
+// and is never chosen by hand.
 func bundleKey(name string) string {
 	return strings.ToLower(strings.TrimPrefix(name, config.EnvPrefix))
 }
 
 // settingProblems holds what the bundle asks for to the server's own
 // settings, and reports everything wrong rather than the first thing.
+// leftOut is bundleLeftOut, or a test's.
 //
 // Every setting bundleVarsFrom derives is asked for and reaches its
 // variable, and nothing else is. A switch is asked as a boolean, so
@@ -685,18 +687,23 @@ func bundleKey(name string) string {
 // variable out of the defaults check. A credential config marks secret
 // is asked as sensitive, so the form does not show it, and the bundle
 // asks for at least one. An optional key the environment spends has a
-// default, because the reference host passes ${user_config.x} to the
-// server as written when it has none and the person leaves the field
-// blank, and no default holds a ${...} reference. The environment the defaults give the server configures it as
-// no environment does: a bundle install may turn on nothing an
-// unconfigured server leaves off, because in Claude Desktop the only
-// other guard is its approval of each tool, which a person can set to
-// always allow. The sets of switches the server refuses together are
-// the ones bundleRefused declares. mcp_config.args is there and empty,
-// and a platform override carries neither env nor args, an empty one
-// included: the reference host replaces the base's with an override's
-// rather than merging, and an argument would configure the server past
-// every check on env. leftOut is bundleLeftOut, or a test's.
+// default, as mcpbSpentOptionProblems explains, and no default holds a
+// ${...} reference. The sets of switches the server refuses together are
+// the ones bundleRefused declares.
+//
+// The environment the defaults give the server configures it as no
+// environment does: a bundle install may turn on nothing an unconfigured
+// server leaves off. The other guard is the approval of each tool, which
+// Claude's connector settings let a person set to always allow; that page
+// does not name desktop extensions, and Claude Desktop is not probed.
+// https://claude.com/docs/connectors/getting-started
+//
+// mcp_config.args is there and empty, and a platform override carries
+// neither env nor args, an empty one included: the reference host
+// replaces the base's env and args with an override's rather than
+// merging them, and an argument would configure the server past every
+// check on env.
+// https://github.com/anthropics/mcpb/blob/v2.1.2/src/shared/config.ts#L114-L122
 func settingProblems(m bundleManifest, leftOut map[string]string) []string {
 	vars := config.Vars()
 	asked, problems := bundleVarsFrom(vars, leftOut)
@@ -808,8 +815,10 @@ func referencingDefaults(m bundleManifest) []string {
 // one a host substitutes. The reference host leaves ${user_config.x} as
 // written when the key is optional with no default, so a blank field
 // would reach the server as that text, and it does not substitute an
-// array into a string. A key nothing declares is checkBundleManifest's
-// own rule.
+// array into a string. Claude Desktop's handling of a blank field is
+// undocumented. A key nothing declares is checkBundleManifest's own rule.
+// https://github.com/anthropics/mcpb/blob/v2.1.2/test/config.test.ts#L74
+// https://github.com/anthropics/mcpb/blob/v2.1.2/src/shared/config.ts#L33
 func mcpbSpentOptionProblems(m bundleManifest) []string {
 	env := m.Server.MCPConfig.Env
 	var problems []string
@@ -1193,9 +1202,10 @@ func goreleaserBlocks(text string) (map[string]string, error) {
 }
 
 // releaseProblems holds .goreleaser.yaml under root, read once, to the
-// bundle: it builds every binary the table stages and the family's
-// archives, the bundle reaches every one of them, and the lines that
-// make the bundle exist, be hashed, be signed and be published are there.
+// bundle: it builds every binary the table stages and every
+// releaseMatrix archive, the bundle reaches every one of them, and the
+// lines that make the bundle exist, be hashed, be signed and be
+// published are there.
 func releaseProblems(root string) []string {
 	text, err := goreleaserText(root)
 	if err != nil {
@@ -1230,25 +1240,26 @@ func releaseProblems(root string) []string {
 	return problems
 }
 
-// releaseArchiveProblems holds the build matrix to the family's
-// archives, releaseMatrix, both ways. A pair left out is a machine whose
-// owner has nothing to download; a bundle reaching it under emulation
-// does not help someone who installs from an archive. A pair beyond it
-// is an archive no sibling's release carries.
+// releaseArchiveProblems holds the build matrix to releaseMatrix, both
+// ways. A pair left out is a machine whose owner has nothing to download;
+// a bundle reaching it under emulation does not help someone who installs
+// from an archive. A pair beyond it is a platform the table does not
+// name, and the Desktop bundle gate reads only the table.
 func releaseArchiveProblems(built []string) []string {
-	family := releasePairs()
+	matrix := releasePairs()
 	var problems []string
-	for _, pair := range family {
+	for _, pair := range matrix {
 		if !slices.Contains(built, pair) {
 			problems = append(problems, fmt.Sprintf(".goreleaser.yaml does not build %s, so the release carries "+
-				"no %s archive; the family's releases carry %s", pair, strings.ReplaceAll(pair, "-", "_"),
-				strings.Join(family, ", ")))
+				"no %s archive; the release matrix is %s", pair, strings.ReplaceAll(pair, "-", "_"),
+				strings.Join(matrix, ", ")))
 		}
 	}
 	for _, pair := range built {
-		if !slices.Contains(family, pair) {
-			problems = append(problems, fmt.Sprintf(".goreleaser.yaml builds %s, which is not one of the "+
-				"family's archives, %s", pair, strings.Join(family, ", ")))
+		if !slices.Contains(matrix, pair) {
+			problems = append(problems, fmt.Sprintf(".goreleaser.yaml builds %s, which is not in the "+
+				"release matrix, %s; add it to releaseMatrix, which both bundle gates read",
+				pair, strings.Join(matrix, ", ")))
 		}
 	}
 	return problems
@@ -1284,10 +1295,10 @@ func mcpbMatrixProblems(binaries []mcpbBinary) []string {
 // still passes, the checks above still report a valid manifest — and
 // the bundle ships absent from checksums.txt and therefore outside the
 // signature, while README's "Verifying a download" goes on telling
-// people it is covered. The standard says both `checksum.extra_files`
-// and `release.extra_files`, "or the bundle ships unsigned, or is hashed
-// and never published"; this is what holds that sentence, and seven more
-// beside it.
+// people it is covered. The bundle needs both `checksum.extra_files` and
+// `release.extra_files`, or it ships unsigned, or is hashed and never
+// published, since GoReleaser hashes and uploads only what it built.
+// https://goreleaser.com/customization/checksum/
 func mcpbReleaseWiring(blocks map[string]string) (problems []string, checked int) {
 	require := func(block, needle, why string) {
 		checked++
@@ -1365,11 +1376,8 @@ func mcpbPack(w io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
-	// The fifth place. A bundle claims a version in its filename, the
-	// archive names, the manifest inside it, checksums.txt and the
-	// binary's own --version, and a sibling shipped one that agreed in
-	// four of them. This is the only one checkable from here, and it is
-	// the one a user actually sees at runtime.
+	// The binary's own --version, the one of a bundle's five version
+	// claims checkable from here, and the one a user sees at runtime.
 	if err := versionsAgree(binaries, version); err != nil {
 		return err
 	}
@@ -1613,12 +1621,12 @@ var immutableRef = regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{40})$`
 // minManifestVersion is the format version this repository has checked
 // against the published schemas.
 //
-// Checked 2026-09-17: v0.2, v0.3 and v0.4 are served and v0.5 is not,
-// and 0.4's only difference from 0.3 is a `uv` value in the
-// `server.type` enum — which a `binary` server gains nothing from. Raise
-// it after checking what a newer format changes AND that a desktop
-// installs a bundle declaring it, not because another repository moved.
-// mcpbSchemaFile moves with it.
+// At mcpb v2.1.2 the newest schema is v0.4, and its only difference
+// from 0.3 is a `uv` value in the `server.type` enum, which a
+// `binary` server gains nothing from. Raise it after checking what a
+// newer format changes AND that a desktop installs a bundle declaring
+// it, not because another repository moved. mcpbSchemaFile moves with it.
+// https://github.com/anthropics/mcpb/tree/v2.1.2/schemas
 const minManifestVersion = "0.3"
 
 // declarationProblems holds what the manifest claims about itself: which
@@ -1670,7 +1678,7 @@ func (m bundleManifest) declarationProblems() []string {
 	}
 	if m.Compatibility.ClaudeDesktop == "" {
 		problems = append(problems, "compatibility.claude_desktop is empty, so the bundle names no Claude "+
-			"Desktop it was made for; the family claims >=0.10.0")
+			"Desktop it was made for; name a version range, such as >=0.10.0")
 	}
 	return problems
 }

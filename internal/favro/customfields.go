@@ -7,12 +7,12 @@ package favro
 //   - The schema (this type): "what custom fields exist, what types
 //     they are, and what the legal options are for select/status
 //     types".
-//   - The per-card value (Phase 4 / 6 — comes via the card payload's
-//     customFieldsValues field, which references CustomFieldID +
-//     CustomFieldItemID for select-flavored fields).
+//   - The per-card value, which comes in the card payload's custom
+//     fields and references CustomFieldID + CustomFieldItemID for
+//     select-flavored fields.
 //
 // Type is the human-facing display label Favro uses for the field
-// kind — verified live values include "Text", "Number", "Date",
+// kind — values read live include "Text", "Number", "Date",
 // "Date created", "Checkbox", "Single select", "Multiple select",
 // "Members", "Tags", "Rating", "Link", "Progress", "Voting",
 // "Relations", "Sequential ID", "Timeline". Favro extends this set
@@ -24,14 +24,12 @@ package favro
 type CustomField struct {
 	CustomFieldID  string `json:"customFieldId"`
 	OrganizationID string `json:"organizationId,omitempty"`
-	// WidgetCommonID is the widget this field is enabled on.
-	//
-	// It is the missing half of §7.4's sharpest footgun: custom fields
-	// are org-global, but they are enabled per widget, and writing to a
-	// field the card's widget has not enabled is accepted and silently
-	// ignored. Without this, nothing in a response says which widgets a
-	// field applies to. Found by `gates api-fields`, which is the kind
-	// of gap a field list catches and an endpoint list cannot.
+	// WidgetCommonID is the widget the field is local to, in Favro's
+	// words, and Favro sends it on every row. It does not say where a
+	// field is enabled: a board's cards carry values for fields whose
+	// widgetCommonId names another board. Fields are org-global and
+	// enabled per widget, and the reference says neither.
+	// https://favro.com/developer/#custom-field-object
 	WidgetCommonID   string            `json:"widgetCommonId,omitempty"`
 	Type             string            `json:"type"`
 	Name             string            `json:"name"`

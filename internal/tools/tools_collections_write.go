@@ -60,6 +60,16 @@ type deleteCollectionInput struct {
 // favro_widen_collection_sharing. collection_name is a witness: the
 // person approving the call sees which collection it opens, where an id
 // says nothing.
+//
+// Favro's reference says 'public' opens a collection to "Everyone on
+// the Internet". That is not probed, since a public collection is the
+// act a probe would test: the live run opens a probe to the
+// organization only, and checks that creating a public one is refused.
+// Checked by the live steps
+// "favro_widen_collection_sharing opens it to the organization and reads it back",
+// "favro_create_collection with public_sharing public is [blocked]" and
+// "creating a public collection is [blocked]".
+// https://favro.com/developer/#collection-public-sharing
 type widenCollectionSharingInput struct {
 	dryRunInput
 	confirmInput
@@ -271,7 +281,9 @@ func registerWidenCollectionSharing(reg *registry, r *service.Resolver) {
 }
 
 // sharingReadBack reads a collection back after a sharing write and
-// says whether it holds the mode asked for (hard rule 2).
+// says whether it holds the mode asked for: Favro's 200 to the write is
+// not evidence that it stored the mode. Checked by the live step
+// "favro_widen_collection_sharing opens it to the organization and reads it back".
 func sharingReadBack(ctx context.Context, r *service.Resolver, id, mode string) string {
 	col, err := r.Client().GetCollection(ctx, id)
 	switch {

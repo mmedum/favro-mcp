@@ -1,10 +1,8 @@
 // Package auth resolves and validates Favro credentials.
 //
 // Where credentials come from (Source) is separated from what they are
-// (Token). v0.1 ships two Source implementations — environment
-// variables and the OS keyring — and the abstraction lets a future
-// OAuth flow plug in without changing the HTTP client or the MCP
-// tools.
+// (Token). There are two Sources: environment variables and the OS
+// keyring.
 package auth
 
 import (
@@ -21,8 +19,7 @@ const headerOrganizationID = "organizationId"
 // secret — it must never appear in tool responses, error messages, or
 // log lines.
 //
-// favro-mcp is single-organization for v0.1: OrganizationID is fixed
-// at startup and tools never accept it as input.
+// OrganizationID is bound at startup, and no tool takes it as input.
 type Token struct {
 	Email          string
 	APIToken       string
@@ -31,6 +28,17 @@ type Token struct {
 
 // Apply sets HTTP Basic Auth credentials and the organizationId header
 // on req. Safe to call repeatedly on the same request.
+//
+// Favro's REST API takes HTTP Basic, the email and an API token, and
+// publishes no OAuth flow. Checked by the live step "list organizations".
+// https://favro.com/developer/#authentication
+//
+// The organizationId header routes the call: Favro's reference says it
+// rejects an organization route without one. It also decides
+// GET /organizations/{id}, which answers with the header's organization
+// whatever id the path names, although the reference documents the
+// path id as required.
+// https://favro.com/developer/#get-an-organization
 func (t Token) Apply(req *http.Request) {
 	req.SetBasicAuth(t.Email, t.APIToken)
 	if t.OrganizationID != "" {

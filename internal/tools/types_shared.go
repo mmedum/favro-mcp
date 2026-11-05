@@ -16,34 +16,37 @@ import (
 )
 
 // listInput is the shared input shape for every list-tool that maps
-// to a Favro paginated endpoint. The `request_id` round-trip is
-// required because Favro's pagination is stateful: page N+1 is only
-// reachable from the backend that produced page N's cursor.
+// to a Favro paginated endpoint. Favro's reference asks for the first
+// response's requestId on every later page; the client sends it as the
+// X-Favro-Backend-Identifier header. Favro serves a later page from
+// page alone, so request_id changes nothing (favroapi.Paginate).
+// https://favro.com/developer/#pagination
 type listInput struct {
 	// Page is the 1-indexed page number. Omit (or 0) for the first
 	// page. Pass values from a prior call's `next_page`.
 	//
 	// 1-indexed here and 0-indexed on the wire: see favroPage.
 	Page int `json:"page,omitempty" jsonschema:"1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting."`
-	// RequestID is the prior call's `request_id`. Required when Page
-	// > 0; ignored otherwise.
-	RequestID string `json:"request_id,omitempty" jsonschema:"request_id from a prior page; required when page > 0 (Favro routes via X-Favro-Backend-Identifier)"`
+	// RequestID is the previous page's `request_id`, which the reference
+	// asks for from page 2 on. The client sends it whenever it is set, on
+	// page 1 as well, as the X-Favro-Backend-Identifier header
+	// (favroapi.fetchOne).
+	RequestID string `json:"request_id,omitempty" jsonschema:"the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header."`
 }
 
 // favroPage converts this tool's 1-indexed page number into the
 // 0-indexed one Favro's `page` parameter takes.
 //
-// The two numberings used to be the same number. The schema has said
-// "1-indexed" since these tools shipped, and the value went to Favro
-// untouched — so a caller that believed the schema and asked for page 1
-// was served Favro's page 1, the *second* page, and never saw the
-// first. Nothing failed: it returned a valid page of real results, and
-// the missing rows were simply absent.
+// Sent untouched, the value would serve a caller who believed the
+// schema and asked for page 1 Favro's page 1, the *second* page.
+// Nothing would fail: it is a valid page of real results, and the first
+// page's rows are simply absent.
 //
-// The conversion lives here rather than in internal/favro because that
-// package is a faithful client of Favro's REST API, and Favro's page is
-// 0-indexed. This is the MCP layer keeping the promise its own schema
-// makes.
+// The conversion lives here rather than in internal/favroapi because
+// that package is a faithful client of Favro's REST API, and Favro's
+// page is 0-indexed. This is the MCP layer keeping the promise its own
+// schema makes.
+// https://favro.com/developer/#pagination
 func (in listInput) favroPage() int {
 	if in.Page <= 0 {
 		return 0 // omitted, or an explicit first page
@@ -95,9 +98,8 @@ type resolveOutput[T any] struct {
 // favro_resolve_* tool description.
 //
 // Built from the constants the resolver actually scores with, rather
-// than written out beside them. The two used to be a sentence and three
-// literals in one package, kept in step by a comment; A3 put them in
-// two packages, where a comment would have had nothing to hold.
+// than written out beside them: the sentence and the constants live in
+// two packages, where a comment keeping them in step would hold nothing.
 var resolveScoreScaleDoc = fmt.Sprintf(
 	"Score scale: exact match %.1f, prefix %.1f, substring %.1f. ",
 	service.ScoreExact, service.ScorePrefix, service.ScoreSubstring)
@@ -117,6 +119,7 @@ func readOnly(title string) *mcp.ToolAnnotations {
 // card's tags or dependencies, and every delete. destructiveHint is
 // true, as the MCP schema defines it: false would say the tool "performs
 // only additive updates".
+// https://modelcontextprotocol.io/specification/2025-11-25/schema#toolannotations
 func changing(title string) *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{DestructiveHint: new(true), Title: title}
 }
@@ -143,7 +146,7 @@ type dryRunInput struct {
 
 func (d dryRunInput) dryRun() bool { return d.DryRun }
 
-// writeOutput is the standard output shape for every mutating tool.
+// writeOutput is the shared output shape for every mutating tool.
 // Either Result (live mode) OR WouldCall+RequestBody+StateDiff
 // (dry-run) is populated; DryRun is true exactly when the latter
 // branch fires.
@@ -163,10 +166,10 @@ type writeOutput[T any] struct {
 
 	// Notes is what the tool did beyond what the caller asked for,
 	// and what it knows about the write that the returned resource
-	// does not say. A caller cannot see either from Result: hard
-	// rule 2's whole point is that Favro's answer to a write is not
-	// evidence about the write, so anything the server learned by
-	// looking has to be carried separately.
+	// does not say. A caller cannot see either from Result: Favro's
+	// answer to a write is not evidence about the write, since it
+	// answers 200 to a body it ignored, so anything the server learned
+	// by looking has to be carried separately.
 	Notes []string `json:"notes,omitempty" jsonschema:"what the tool did beyond the literal request, and what it observed about the write — read these before treating the call as done"`
 }
 
@@ -270,8 +273,7 @@ func (o listOutput[T]) Summary() string {
 // Summary renders a write for the readable half. The dry-run branch
 // leads with the verdict and the method and URL, because "did this
 // actually happen" is the only question a caller has about a mutating
-// call, and a result that looks like a success is how §2.1's problem
-// starts.
+// call, and Favro answers 200 even to a body it ignored.
 func (o writeOutput[T]) Summary() string {
 	var b strings.Builder
 	switch {

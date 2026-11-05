@@ -190,7 +190,7 @@ func TestDo_5xx_RetriesUpToBudgetThenTransientError(t *testing.T) {
 	// Fast-path the backoff for the test by overriding the schedule
 	// via a private helper; we keep the constants intact for production.
 	// In the absence of an injection point, we just accept the
-	// production schedule (250ms, 1s, 4s) — total ≈ 5.25s. Worth it
+	// production schedule (250ms, then 1s) — total ≈ 1.25s. Worth it
 	// for correctness coverage; a separate fast-path test could be
 	// added later if this lands in the slow-tests bucket.
 	resp, err := c.Do(context.Background(), http.MethodGet, "/x", nil, nil)
@@ -199,11 +199,11 @@ func TestDo_5xx_RetriesUpToBudgetThenTransientError(t *testing.T) {
 	if !errors.As(err, &te) {
 		t.Fatalf("got %v, want te", err)
 	}
-	if got := te.Attempts; got != transientMaxAttempts {
-		t.Errorf("te.Attempts = %v, want %v", got, transientMaxAttempts)
+	if got := te.Attempts; got != 3 {
+		t.Errorf("te.Attempts = %v, want 3", got)
 	}
-	if got := calls.Load(); got != transientMaxAttempts {
-		t.Errorf("client should attempt %d times before giving up: got %v, want %v", transientMaxAttempts, got, transientMaxAttempts)
+	if got := calls.Load(); got != 3 {
+		t.Errorf("client should attempt 3 times before giving up: got %v", got)
 	}
 }
 
@@ -236,8 +236,8 @@ func TestDo_401_ReturnsAuthErrorNoRetry(t *testing.T) {
 // TestDo_403_ReturnsForbiddenErrorNotAuthError pins the contract
 // that 403 is mapped to *ForbiddenError, not *AuthError. Favro
 // answers 403 for resources the token can't see (intentionally
-// avoiding 404 to not leak existence); reporting that as
-// "check FAVRO_USER_EMAIL" was misleading. Phase 3.10 follow-up.
+// avoiding 404 to not leak existence), and reporting that as
+// "check FAVRO_USER_EMAIL" would send the caller to the wrong fix.
 func TestDo_403_ReturnsForbiddenErrorNotAuthError(t *testing.T) {
 	t.Parallel()
 
@@ -456,9 +456,7 @@ func TestRedactHeaders_Authorization(t *testing.T) {
 		t.Errorf("out[\"Authorization\"] = %v, want %v", got, "[REDACTED]")
 	}
 	// organizationId names the tenant and rides on every request, so
-	// it is redacted too. This assertion used to read the other way,
-	// which is how the leak survived: the behavior was not an
-	// oversight, it was pinned.
+	// it is redacted too.
 	if got := out["Organizationid"]; got != "[REDACTED]" {
 		t.Errorf("out[\"Organizationid\"] = %v, want %v", got, "[REDACTED]")
 	}

@@ -17,10 +17,9 @@ import (
 	"github.com/mmedum/favro-mcp/v4/internal/favroapi/favroapitest"
 )
 
-// These forward to the one shared fixture; see favroapitest for why
-// there is only one. Two packages had grown their own invented values
-// and their own comment explaining hard rule 1, which is how a rule
-// ends up meaning two things.
+// These forward to the one shared fixture, so every package invents
+// the same values, none of them from a real tenant; see favroapitest
+// for why there is only one.
 func fixtureToken() auth.Token { return favroapitest.Token() }
 
 // connectInMemory wires the server under test to a fresh client over a
@@ -158,7 +157,7 @@ func connectServer(t *testing.T, srv *mcp.Server) *mcp.ClientSession {
 	t.Helper()
 	ctx := t.Context()
 
-	// The client can ask the person, and the server asks nobody (§9.2):
+	// The client can ask the person, and the server asks nobody (D-31):
 	// a question put to it fails the test that made the call, whichever
 	// tool that was.
 	client := mcp.NewClient(&mcp.Implementation{Name: "favro-mcp-test", Version: "v0.0.0"}, &mcp.ClientOptions{

@@ -15,9 +15,8 @@ const (
 	keyringService = "favro-mcp"
 	// keyringActiveService + keyringActiveAccount form the pointer
 	// entry that tells the server which account to load on startup.
-	// The indirection is overkill for v0.1 (single account) but lets
-	// a future switch-between-accounts feature land without a
-	// storage migration.
+	// The server holds one account; the indirection keeps a second
+	// from needing a storage migration.
 	keyringActiveService = "favro-mcp:active"
 	keyringActiveAccount = "active"
 )

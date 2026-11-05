@@ -80,8 +80,8 @@ func TestListCards_NoFilters(t *testing.T) {
 	if len(rec[0].Query.Get("page")) != 0 {
 		t.Errorf("page=0 must NOT add ?page=: got %v", rec[0].Query.Get("page"))
 	}
-	if len(rec[0].Query.Encode()) != 0 {
-		t.Errorf("empty filter must produce empty query: got %v", rec[0].Query.Encode())
+	if got := rec[0].Query.Encode(); got != "archived=false" {
+		t.Errorf("a zero filter must ask for active cards only: got query %q, want %q", got, "archived=false")
 	}
 }
 
@@ -266,8 +266,9 @@ func TestListCards_AllFiltersForwarded(t *testing.T) {
 	if got := rec[0].Query.Get("todoList"); got != "true" {
 		t.Errorf("rec[0].Query.Get(\"todoList\") = %v, want %v", got, "true")
 	}
-	if got := rec[0].Query.Get("archived"); got != "true" {
-		t.Errorf("rec[0].Query.Get(\"archived\") = %v, want %v", got, "true")
+	// Archived sends no parameter: archived=true returns archived cards only.
+	if rec[0].Query.Has("archived") {
+		t.Errorf("rec[0].Query[\"archived\"] = %v, want no archived parameter", rec[0].Query["archived"])
 	}
 	if got := rec[0].Query.Get("unique"); got != "true" {
 		t.Errorf("rec[0].Query.Get(\"unique\") = %v, want %v", got, "true")
@@ -726,8 +727,8 @@ func TestUnarchiveCard_SendsArchiveFalse(t *testing.T) {
 }
 
 // TestUpdateCard_ListPositionIsJSONNumber pins the wire-contract
-// gotcha caught live in Phase 5.3: Favro rejects string-valued
-// listPosition with HTTP 400 ("Unexpected value of listPosition").
+// gotcha: Favro rejects string-valued listPosition with HTTP 400
+// ("Unexpected value of listPosition").
 // The field must marshal as a JSON number; pointer typing also
 // preserves an explicit 0 (top-of-column) which omitempty would
 // strip if the field were a plain float64.
@@ -809,8 +810,7 @@ func TestMoveCard_EmptyMove_NoNetworkCall(t *testing.T) {
 // TestDeleteCard_HappyPath_DefaultEverywhere pins the default-case
 // (everywhere=false) wire shape: DELETE /cards/{id} with no
 // `everywhere=` param, response decodes into favro.DeleteCardResponse —
-// verified live Phase 5.3, Favro returns a BARE JSON array, NOT
-// the object form the docs hint at.
+// Favro returns a BARE JSON array, not an object.
 func TestDeleteCard_HappyPath_DefaultEverywhere(t *testing.T) {
 	t.Parallel()
 
@@ -997,9 +997,9 @@ func TestCard_CustomFields_EmptyWhenNeitherKeyPresent(t *testing.T) {
 }
 
 // TestUpdateCard_ColumnMoveWithoutWidget_NoNetworkCall pins the
-// wire-contract gotcha found by A6's evals: Favro answers a column
-// move that omits widgetCommonId with HTTP 200 and a stub card, and
-// does not move the card. The request never leaves this process.
+// wire-contract gotcha: Favro answers a column move that omits
+// widgetCommonId with HTTP 200 and a stub card, and does not move the
+// card. The request never leaves this process.
 func TestUpdateCard_ColumnMoveWithoutWidget_NoNetworkCall(t *testing.T) {
 	t.Parallel()
 
@@ -1056,8 +1056,8 @@ func TestUpdateCard_RenameNeedsNoWidget(t *testing.T) {
 }
 
 // TestUpdateCard_MoveIgnored pins that a 200 is not taken as
-// confirmation. The stub body is the one Favro returns for a move it
-// ignores, recorded live 2026-09-15.
+// confirmation. The stub body has the shape Favro returns for a move it
+// ignores.
 func TestUpdateCard_MoveIgnored(t *testing.T) {
 	t.Parallel()
 
@@ -1119,9 +1119,8 @@ func TestMoveCard_ColumnMoveWithoutWidget(t *testing.T) {
 	}
 }
 
-// TestMoveCard_ColumnMoveNeedsNoListPosition pins the correction to
-// the Phase 5.3 note. A column move lands without one; the field that
-// was actually missing is widgetCommonId.
+// TestMoveCard_ColumnMoveNeedsNoListPosition pins that a column move
+// needs no listPosition; the field it needs is widgetCommonId.
 func TestMoveCard_ColumnMoveNeedsNoListPosition(t *testing.T) {
 	t.Parallel()
 

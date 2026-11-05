@@ -183,8 +183,8 @@ func TestConcurrentUse(t *testing.T) {
 // transcript.
 //
 // A card's name is ordinary words. A pattern that caught it would catch
-// the sentence around it, which is §9's reasoning for the leak gate and
-// has the same consequence for this one.
+// the sentence around it, which is why the leak gate cannot catch a name
+// either.
 func TestNamesAreNotRedacted(t *testing.T) {
 	t.Parallel()
 

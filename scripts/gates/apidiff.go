@@ -15,7 +15,7 @@ import (
 
 // The Favro API reference, and where the snapshot of it lives.
 //
-// There is no discovery document — §17b's second deviation — so the
+// Favro publishes no machine-readable description of its API, so the
 // surface is scraped from the published reference. That makes the
 // parsing rules below load-bearing, and it is why every one of them
 // asserts a floor: a page restructure has to fail this command loudly
@@ -26,10 +26,12 @@ const (
 	apiSurfacePath  = "testdata/api-surface.json"
 	apiCoveragePath = "testdata/api-coverage.tsv"
 	apiFetchTimeout = 60 * time.Second
-	apiMinEndpoints = 80 // 88 at the last fetch; a page that lost a tenth of them is a parse failure
+	// Each floor sits well under what the reference holds, so only a page
+	// that lost a large part of itself fails the parse.
+	apiMinEndpoints = 80
 	apiMinSections  = 10
-	apiMinResources = 12        // 15 at the last fetch
-	apiMinPageBytes = 200 << 10 // the page was 492 KB
+	apiMinResources = 12
+	apiMinPageBytes = 200 << 10
 )
 
 // endpointPattern matches the one shape the reference uses to state an

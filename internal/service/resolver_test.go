@@ -714,16 +714,14 @@ func TestResolveGroup_HappyPath(t *testing.T) {
 	}
 }
 
-// TestInvalidateCacheHooks pins the contract for the 6 non-tag
-// invalidate*Cache hooks. Each is reserved for Phase 6 mutating
-// tools (favro_create_<x>, favro_update_<x>, favro_delete_<x>) to
-// call after a successful write so the next resolve sees fresh
-// data. They have no callers in this PR; the table here both
-// satisfies the `unused` linter and pins the contract: after
-// invalidate, the next call misses the cache and re-fetches.
+// TestInvalidateCacheHooks pins the contract of the non-tag
+// invalidate*Cache hooks, which a write tool calls after a successful
+// write so the next resolve sees fresh data: after invalidate, the next
+// call misses the cache and re-fetches. The user and custom-field
+// hooks have no write tool to call them, so the table is also what
+// keeps them past the `unused` linter.
 //
-// The tag invalidate is exercised by TestResolveTag_InvalidateCache
-// (the original Phase 4.1 test).
+// The tag invalidate is exercised by TestResolveTag_InvalidateCache.
 func TestInvalidateCacheHooks(t *testing.T) {
 	t.Parallel()
 

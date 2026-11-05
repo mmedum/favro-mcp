@@ -14,9 +14,9 @@ import (
 )
 
 // The launcher is generated from the same table the packer stages from,
-// which is what closes the hole the shared standard names last: a
-// manifest can pass every referential check while the launcher, which no
-// manifest mentions, dispatches to names nothing stages.
+// which closes the quietest hole a bundle has: a manifest can pass every
+// referential check while the launcher, which no manifest mentions,
+// dispatches to names nothing stages.
 func TestLauncherDispatchesToEveryStagedBinary(t *testing.T) {
 	script := launcherScript()
 	files := staged()
@@ -42,9 +42,9 @@ func TestLauncherDispatchesToEveryStagedBinary(t *testing.T) {
 	}
 }
 
-// releaseMatrix is the family's six archives, windows-arm64 among them,
-// and the one pair a bundle runs another's binary on: Windows on arm64
-// runs windows-amd64 under emulation. Every other test reads the table.
+// releaseMatrix is six archives, windows-arm64 among them, and the one
+// pair a bundle runs another's binary on: Windows on arm64 runs
+// windows-amd64 under emulation. Every other test reads the table.
 func TestTheReleaseMatrixIsTheFamilysSix(t *testing.T) {
 	want := []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"}
 	if got := releasePairs(); !slices.Equal(got, want) {
@@ -84,7 +84,7 @@ func TestGoreleaserMatrixIsTheOneTheBundleClaims(t *testing.T) {
 func TestPluginMatrixProblems(t *testing.T) {
 	six := releasePairs()
 	if got := pluginMatrixProblems(six, emulated()); len(got) != 0 {
-		t.Errorf("the family's six with windows-arm64 emulated: %q", got)
+		t.Errorf("the six release pairs with windows-arm64 emulated: %q", got)
 	}
 	for _, tc := range []struct {
 		name      string
@@ -223,9 +223,8 @@ func TestPluginGateAgainstThisRepository(t *testing.T) {
 }
 
 // The version the manifest will claim, against the version the binary
-// reports. A sibling shipped a bundle that agreed in four of the five
-// places it states its version; this is the one of the five that a user
-// meets at runtime.
+// reports. A bundle states its version in five places, and this is the
+// one a user meets at runtime.
 func TestVersionsAgree(t *testing.T) {
 	host := runtime.GOOS + "-" + runtime.GOARCH
 

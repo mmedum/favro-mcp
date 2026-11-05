@@ -18,9 +18,8 @@ import (
 // leaks is the confidentiality gate: nothing that identifies a Favro
 // tenant may be in this repository.
 //
-// CLAUDE.md has carried that rule since phase 3 and nothing held it,
-// which is the shape the shared standard warns about — a rule nobody can
-// fail is a rule nobody is keeping. This is the thing that can fail.
+// A rule nobody can fail is a rule nobody is keeping, so this gate is
+// what holds it (D-49).
 //
 // A leak gate cannot be patterns alone when the payload is ordinary
 // words: an organization's name, a card title or a sentence out of a
@@ -28,7 +27,7 @@ import (
 // that kind of payload reports clean because it can report nothing else.
 // Two rules make this gate real rather than decorative, and they live
 // outside it: fixtures are generated, never recorded from a live
-// response, and the live driver (phase A6) reads only what it wrote. So
+// response, and the live driver reads only what it wrote. So
 // what is scanned here is the residue those two rules cannot prevent —
 // an id pasted into a comment, an address in a commit message, a URL
 // copied out of the app.
@@ -37,9 +36,8 @@ import (
 // generated values cannot take: a hex id of exactly the length Favro
 // mints, a keyword immediately before a value, an `@` with a
 // dot-suffixed domain, a known URL prefix. Anchoring that way is what
-// keeps a four-character value from colliding with a timestamp, which is
-// how a sibling's scan failed one run in twenty-five and taught everyone
-// to rerun it.
+// keeps a four-character value from colliding with a timestamp, which
+// would fail a clean run at random and teach everyone to rerun it.
 
 // skipFiles are files whose content is machine-generated in a shape that
 // trips the id rules and carries nothing about anybody.
@@ -62,9 +60,9 @@ var (
 
 	// An organization id is base62 and mixed-case, which is too ordinary
 	// a shape to match on its own — so it is matched by the keyword in
-	// front of it instead. That is the construction the standard
-	// recommends wherever the payload has no shape: a literal keyword
-	// before an id cannot collide with anything the server generates.
+	// front of it instead. That construction fits any payload with no
+	// shape of its own: a literal keyword before an id cannot collide
+	// with anything the server generates.
 	//
 	// The value must be QUOTED, or the assignment must be an environment
 	// one. Without that, `{"organization_id": smokeOrgID}` reads as a
@@ -100,14 +98,17 @@ var (
 // asserted by TestEveryAllowedPrefixIsUsed to actually occur in the
 // repository — an exemption that exempts nothing reads as a considered
 // decision and is really just a hole somebody forgot to close.
+//
+// Never add a prefix to excuse an example. Describe a card reference's
+// shape in words instead, as .github/ISSUE_TEMPLATE/bug_report.yml does.
 var allowedRefPrefixes = map[string]string{
 	"GO":  "Go vulnerability database ids (GO-2026-4971), cited in the changelog",
 	"ISO": "ISO-8601, cited wherever a date format is described",
 	"BSD": "SPDX license identifiers (BSD-2-Clause, BSD-3-Clause) in the license allowlist",
 	"MIT": "the SPDX identifier MIT-0, named where the license check ignores a module",
 	"UTF": "UTF-8, cited where internal/render explains why it clips on a rune boundary",
-	"BSC": "the example card reference in tool descriptions, fixtures and the search tokenizer's comment. Confirmed with the maintainer on 2026-09-13 that it belongs to no real board, which is the only thing that makes this entry an exemption rather than a hole — it has to stay invented",
-	"SHA": "SHA-256, the checksum algorithm older changelog entries name for checksums.txt, and docs/architecture.md §9 cites",
+	"BSC": "the example card reference in tool descriptions, fixtures and the search tokenizer's comment. Confirmed with the maintainer that it belongs to no real board, which is the only thing that makes this entry an exemption rather than a hole — it has to stay invented",
+	"SHA": "SHA-256, the checksum algorithm older changelog entries name for checksums.txt",
 }
 
 // addressRule and idRule name what two checks report; knownFindings
@@ -126,7 +127,7 @@ var publicAddresses = map[string]string{
 }
 
 // historicFixtureAddresses are the addresses the auth tests used as
-// fixtures before A1 moved them to reserved domains. They are not people,
+// fixtures before they moved to reserved domains. They are not people,
 // but e.com is a domain somebody can own, so each is allowed as the whole
 // address, only by the history scan, and only in a blob at
 // historicFixturePaths. The working-tree scan refuses them.
@@ -147,22 +148,23 @@ type knownFinding struct {
 	reason string
 }
 
-// knownFindings are accepted by commit, never by value. A commit's hash
-// covers its message, so a pin cannot grow: the same value in any other
-// commit, in a blob or in the working tree is still a finding. The value
-// itself is not written here, since writing it down would leak it again.
+// knownFindings are accepted by commit, never by value (D-50). A
+// commit's hash covers its message, so a pin cannot grow: the same value
+// in any other commit, in a blob or in the working tree is still a
+// finding. The value itself is not written here, since writing it down
+// would leak it again.
 var knownFindings = []knownFinding{{
 	commit: "af7cecf1fe538390910d0417a1d9827d6b4c652f",
 	rule:   addressRule,
 	count:  1,
-	reason: "a Co-Authored-By trailer with an address at the organization's domain. The maintainer decided on " +
-		"2026-10-25 to leave it rather than rewrite a public history with released tags on it (docs/architecture.md §9)",
+	reason: "a Co-Authored-By trailer with an address at the organization's domain. The maintainer decided " +
+		"to leave it rather than rewrite a public history with released tags on it",
 }, {
 	commit: "f0baecd5fdcc6557f794b1661ef412b4cd5ceff1",
 	rule:   idRule,
 	count:  1,
-	reason: "a real collection id, quoted from a live test of favro_list_widgets. The maintainer decided on " +
-		"2026-10-25 to leave it rather than rewrite a public history with released tags on it (docs/architecture.md §9)",
+	reason: "a real collection id, quoted from a live test of favro_list_widgets. The maintainer decided " +
+		"to leave it rather than rewrite a public history with released tags on it",
 }}
 
 func leaks(w io.Writer, args []string) error {
@@ -176,13 +178,7 @@ func leaks(w io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
-	// --others --exclude-standard adds files that are not committed yet
-	// but would be by the next `git add -A`. Scanning only the index
-	// would let a brand-new file carrying an id pass until somebody
-	// staged it, which is the wrong way round: the point is to catch it
-	// before it reaches the history at all.
-	out, err := exec.Command("git", "-C", root, "ls-files", "-z",
-		"--cached", "--others", "--exclude-standard").Output()
+	files, err := lsFiles(root)
 	if err != nil {
 		// Outside a git checkout there is nothing to enumerate and
 		// nothing to be wrong. Any other failure is a broken check, and
@@ -192,9 +188,8 @@ func leaks(w io.Writer, args []string) error {
 			_, err := fmt.Fprintln(w, "leaks: not a git checkout; nothing to enumerate")
 			return err
 		}
-		return fmt.Errorf("git ls-files: %w", err)
+		return err
 	}
-	files := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
 	if len(files) < 20 {
 		return fmt.Errorf("only %d files; the scan is not seeing the repository", len(files))
 	}
@@ -210,12 +205,10 @@ func leaks(w io.Writer, args []string) error {
 			continue // deleted or unreadable is not this gate's business
 		}
 		if bytes.IndexByte(data, 0) >= 0 {
-			// Binary, so none of the rules below can read it — which is
-			// how a sibling's 8 MB build artifact passed a leak gate,
-			// `make check` and eight green checks while carrying 66
-			// absolute paths from a maintainer's machine. What can still
-			// be said about a binary is whether it belongs in a
-			// repository of source at all.
+			// Binary, so none of the rules below can read it, and a build
+			// artifact can carry absolute paths from a maintainer's
+			// machine. What can still be said about a binary is whether it
+			// belongs in a repository of source at all.
 			if why := artifact(data); why != "" {
 				problems = append(problems, name+": "+why)
 			}
@@ -234,6 +227,36 @@ func leaks(w io.Writer, args []string) error {
 	}
 	_, err = fmt.Fprintf(w, "leaks ok: %d files scanned\n", scanned)
 	return err
+}
+
+// lsFiles is every file git tracks under root, and every untracked file
+// it does not ignore, slash-separated and relative to root, each once.
+// --others --exclude-standard adds the files the next `git add -A` would
+// commit: the index alone leaves out a file nobody has staged, so a gate
+// would pass a working tree carrying an id until somebody staged it.
+// The output is read as git wrote it, never through git(), whose trim
+// would take the space off a path that starts or ends with one.
+// https://git-scm.com/docs/git-ls-files
+func lsFiles(root string) ([]string, error) {
+	out, err := exec.Command("git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard").Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+			return nil, fmt.Errorf("git -C %s ls-files: %w: %s", root, err, bytes.TrimSpace(ee.Stderr))
+		}
+		return nil, fmt.Errorf("git -C %s ls-files: %w", root, err)
+	}
+	var files []string
+	seen := map[string]bool{}
+	for _, name := range strings.Split(strings.TrimRight(string(out), "\x00"), "\x00") {
+		// Each path once: a file with unmerged stages is listed per stage.
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		files = append(files, name)
+	}
+	return files, nil
 }
 
 // leakHistory runs the same rules over every blob and every commit
@@ -262,7 +285,7 @@ func leakHistory(w io.Writer) error {
 			problems = append(problems, "commit "+hash[:min(8, len(hash))]+" message: "+found)
 		}
 	}
-	// 253 commits on 2026-10-25.
+	// A floor well under the history's length: a shallow clone fails here.
 	if commits < 100 {
 		return fmt.Errorf("only %d commit messages; the history scan is not reading the repository", commits)
 	}

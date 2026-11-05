@@ -44,8 +44,8 @@ func TestFindLeaksCatchesEachShape(t *testing.T) {
 }
 
 // The other direction, which is what stops the gate being reverted by
-// the first person it annoys. Each of these was a real finding from the
-// first run over this repository.
+// the first person it annoys. Each of these is ordinary text in this
+// repository that a looser rule reports.
 func TestFindLeaksLeavesTheRepositoryAlone(t *testing.T) {
 	for _, tc := range []struct{ name, text string }{
 		{"a reserved documentation domain", "user@example.test and user@example.com"},                          // leakcheck:allow
@@ -249,9 +249,8 @@ func TestLeaksReadsTheRepository(t *testing.T) {
 	if _, err := fmt.Sscanf(out.String(), "leaks ok: %d files scanned", &scanned); err != nil {
 		t.Fatalf("the gate must say how much it read, got %q: %v", out.String(), err)
 	}
-	// The repository held 298 text files on 2026-10-01; the floor sits
-	// well below that so it fails on a scan that stopped reading, not
-	// on a cleanup.
+	// The floor sits well below the repository's file count, so it fails
+	// on a scan that stopped reading, not on a cleanup.
 	if scanned < 200 {
 		t.Errorf("leaks scanned %d files, want at least 200", scanned)
 	}

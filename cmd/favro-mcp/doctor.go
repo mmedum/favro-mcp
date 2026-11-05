@@ -21,15 +21,14 @@ import (
 
 // `favro-mcp doctor` answers the question every first-run bug report is
 // really asking: which of the four things that can be wrong is wrong.
-// The shared standard asks for it because most first reports are a
-// missing credential or a binding that names an organization the token
-// cannot see, and neither produces an error a user can act on — the
-// server logs "credentials rejected" and exits.
+// Most first reports are a missing credential or a binding that names
+// an organization the token cannot see, and neither produces an error a
+// user can act on — the server logs "credentials rejected" and exits.
 //
 // **Its output is written to be pasted into a public issue**, which is
 // what the issue form asks for. That is why every line goes through
-// internal/redact rather than being printed directly: hard rule 1 does
-// not stop applying because the person pasting is the tenant. The
+// internal/redact rather than being printed directly: tenant values
+// stay out of public text even when the person pasting is the tenant. The
 // redactor's placeholders are stable within a run, so a report still
 // shows that the organization id the credentials carry is or is not one
 // of the ids the token can see — which is the whole diagnostic value,

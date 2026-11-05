@@ -34,11 +34,10 @@ var (
 // gates.
 //
 // The two lists live in different files and you are only ever editing
-// one of them, so they drift silently. Three of the four sibling servers
-// had them diverged, usually with the local list ahead — which means
-// build-tagged files compiling only on a maintainer's laptop. A comment
-// in a Makefile claiming "everything CI runs" is the sentence that stops
-// the next person checking.
+// one of them, so they drift silently, usually with the local list
+// ahead: a check that runs only on a maintainer's laptop. A comment in a
+// Makefile claiming "everything CI runs" is the sentence that stops the
+// next person checking.
 //
 // The comparison is by command rather than by target name, because a
 // target and the thing CI runs for it need not be spelled alike.
@@ -88,13 +87,11 @@ func parityOf(makefile, ci string) (problems []string, vetPasses int, err error)
 // the rule is here, where a test can hand it a Makefile and a workflow
 // that disagree.
 //
-// **Every prerequisite of `check`, not every gate.** The first version
-// compared the gate registry against the workflow, which covered eight
-// of the fifteen things `make check` runs: `vet`, `lint`, `vuln`,
-// `licenses`, `secrets`, `tidy` and `fmt-check` were unheld, so deleting
-// the govulncheck step from CI left this gate green while the Makefile
-// went on calling `check` "everything CI runs". The list it reads now is
-// the `check:` line itself, which is the same list the sentence claims.
+// **Every prerequisite of `check`, not every gate.** `make check` also
+// runs things that are not gates, such as `vet`, `lint`, `vuln`,
+// `licenses`, `secrets`, `tidy` and `fmt-check`, and comparing only the
+// gate registry would let CI drop one unseen. The list it reads is the
+// `check:` line itself, which is the same list the sentence claims.
 //
 // prOnly are the gates that run on a pull request alone: in a `run:` step
 // of ci.yml, and never in `make check`, which has no pull request to

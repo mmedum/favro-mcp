@@ -1,12 +1,10 @@
 // Command livefavro drives the built binary against a real Favro
 // organization.
 //
-// It exists because unit tests cannot catch what §2.1 describes: Favro
+// It exists because unit tests cannot catch how Favro behaves: Favro
 // answers 200 for a body it ignored, and its reference disagrees with
-// the live API in places. Every one of those disagreements this
-// repository knows about was found by a call, and most of them by a
-// call made after the tests were already green — a fixture written to
-// match an assumption agrees with the assumption.
+// the live API in places. A fixture written to match an assumption
+// agrees with the assumption; only a call to Favro tests it.
 //
 // Everything it prints goes through one *redact.Redactor, and the
 // `transcript` gate fails the build if anything else reaches the
@@ -57,7 +55,7 @@ var stopTimeout = 5 * time.Second
 func main() {
 	bin := flag.String("bin", defaultBinary, "the built server to drive")
 	only := flag.String("only", "", "run only the steps for this tool")
-	verbose := flag.Bool("v", false, "print each result, redacted")
+	verbose := flag.Bool("v", false, "print what each step is for after its name, and each result, redacted")
 	writes := flag.Bool("writes", false, "run the write checks instead of the steps: a probe tag and a probe "+
 		"collection this run creates are deleted without and with confirm, and the collection is opened to the "+
 		"organization, read back and narrowed again")
@@ -183,18 +181,20 @@ type tally struct{ passed, failed, skipped int }
 
 // runSteps executes each step in order, feeding every result back into
 // the pool so a later step can be called against something this
-// organization actually has.
-func runSteps(srv *session, out *printer, p *pool, steps []livecover.Step, tools map[string]tool, verbose bool) tally {
+// organization actually has. Each line names the step by the name a
+// code comment cites.
+func runSteps(srv caller, out *printer, p *pool, steps []livecover.Step, tools map[string]tool, verbose bool) tally {
 	var t tally
 	for _, step := range steps {
+		label := stepLabel(step, verbose)
 		if _, registered := tools[step.Tool]; !registered {
-			out.line("SKIP %-38s not registered", step.Tool)
+			out.line("SKIP %s: %s is not registered", label, step.Tool)
 			t.skipped++
 			continue
 		}
 		args, missing := p.resolve(step.Args)
 		if missing != "" {
-			out.line("SKIP %-38s no %s seen yet in this organization", step.Tool, missing)
+			out.line("SKIP %s: no %s seen yet in this organization", label, missing)
 			t.skipped++
 			continue
 		}
@@ -202,13 +202,13 @@ func runSteps(srv *session, out *printer, p *pool, steps []livecover.Step, tools
 		res, callErr := srv.call(step.Tool, args)
 		if v := judge(step, res, callErr); v.ok {
 			t.passed++
-			out.line("ok   %-38s %s", step.Tool, step.Why)
+			out.line("ok   %s", label)
 			if verbose && res != nil {
 				out.result(res)
 			}
 		} else {
 			t.failed++
-			out.line("FAIL %-38s %s", step.Tool, v.detail)
+			out.line("FAIL %s: %s", label, v.detail)
 			if res != nil {
 				out.result(res)
 			}
@@ -218,6 +218,16 @@ func runSteps(srv *session, out *printer, p *pool, steps []livecover.Step, tools
 		}
 	}
 	return t
+}
+
+// stepLabel is how a line names a step: its name, and under -v what the
+// step is for, so that a step that no longer does it shows in the
+// transcript.
+func stepLabel(step livecover.Step, verbose bool) string {
+	if verbose && step.Why != "" {
+		return step.Name + " (" + step.Why + ")"
+	}
+	return step.Name
 }
 
 // filter returns the steps for one tool.
@@ -240,8 +250,8 @@ type verdict struct {
 // judge decides whether a step did what it said it would.
 //
 // A step that expects an error is not satisfied by any failure: it
-// names the class, because §6.2's vocabulary is only worth something if
-// the classes that come back from a real API are the documented ones.
+// names the class, because the error vocabulary is only worth something
+// if the classes that come back from a real API are the documented ones.
 func judge(step livecover.Step, res *callResult, err error) verdict {
 	if err != nil {
 		return verdict{detail: "call failed: " + err.Error()}
@@ -301,13 +311,9 @@ func (p *printer) result(res *callResult) {
 	}
 }
 
-// clip shortens a value for one line, on a rune boundary.
-//
-// Slicing at a byte offset is what the first version did, and it wrote
-// invalid UTF-8 into the transcript the moment a real card name
-// contained an emoji — the same defect this repository had already
-// fixed once in internal/render, reintroduced by writing the obvious
-// three lines again.
+// clip shortens a value for one line, on a rune boundary: a cut at a
+// byte offset writes invalid UTF-8 into the transcript when a card name
+// holds a multi-byte character, such as an emoji.
 func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -458,8 +464,8 @@ func (p *pool) resolve(args map[string]any) (map[string]any, string) {
 // way a top-level argument does.
 //
 // A map is resolved wherever it sits. A share entry is a map inside a
-// []any, and without the map case its placeholder went out as the
-// literal "{own_user_id}", which the server rightly refused as nobody
+// []any, and without the map case its placeholder goes out as the
+// literal "{own_user_id}", which the server rightly refuses as nobody
 // in the organization.
 func (p *pool) value(v any) (any, string) {
 	switch t := v.(type) {
@@ -545,23 +551,18 @@ func start(bin string, args []string, onElicit func(string), env ...string) (*se
 
 // stop closes the server's stdin and waits for it to go.
 //
-// **It has to close the write end, and cmd.Stdin is the read end.**
-// StdinPipe sets cmd.Stdin to the read side of the pipe and RETURNS the
-// write side; the previous version type-asserted cmd.Stdin to a Closer,
-// which succeeds — it is an *os.File — and closed the wrong end. The
-// server never saw EOF, so it never exited, so Wait never returned.
-// Every run of this driver therefore printed its summary and then hung
-// forever, holding the server process open, and `make live` never
-// returned. It was survivable only because the summary comes first and
-// a person reads it and presses Ctrl-C.
-//
-// Go's own documentation is where this is easy to get wrong: it says
-// Wait closes the pipe after seeing the command exit, which for stdin
-// is circular — the command exits when stdin closes.
+// **It closes the write end StdinPipe returned, never cmd.Stdin.**
+// StdinPipe sets cmd.Stdin to the read side of the pipe and returns the
+// write side. cmd.Stdin is an *os.File, so a type assertion to a Closer
+// succeeds and closes the wrong end: the server never sees EOF, never
+// exits, and Wait never returns. Wait closes the pipe only after the
+// command exits, so a command that exits on EOF needs the caller to
+// close it first.
+// https://pkg.go.dev/os/exec#Cmd.StdinPipe
 //
 // The bounded wait is the second half. A server wedged in a request
 // will not exit on EOF either, and a driver run by hand should not need
-// a Ctrl-C for that any more than for this.
+// a Ctrl-C for that.
 func (s *session) stop() {
 	_ = s.stdin.Flush()
 	_ = s.in.Close()

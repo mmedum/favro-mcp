@@ -1,6 +1,49 @@
 package livecover
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+// A code comment cites a live step or a -writes check by its name, so
+// every step and check has one and no two share it. A failure names each
+// by the list it is written in and its index there.
+func TestEveryStepAndCheckHasANameNoOtherHas(t *testing.T) {
+	type named struct{ site, name string }
+	var all []named
+	for _, list := range []struct {
+		name  string
+		steps []Step
+	}{
+		{"SeedSteps", SeedSteps()},
+		{"optionSteps", optionSteps()},
+		{"extraSteps", extraSteps()},
+	} {
+		for i, s := range list.steps {
+			all = append(all, named{fmt.Sprintf("%s()[%d] (%s)", list.name, i, s.Tool), s.Name})
+		}
+	}
+	for c := range checkCount {
+		all = append(all, named{fmt.Sprintf("checkNames[%d]", c), c.Name()})
+	}
+	taken := map[string]string{}
+	for _, n := range all {
+		if strings.TrimSpace(n.name) == "" {
+			t.Errorf("%s has no name", n.site)
+			continue
+		}
+		if first, ok := taken[n.name]; ok {
+			t.Errorf("%s and %s are both named %q", first, n.site, n.name)
+			continue
+		}
+		taken[n.name] = n.site
+	}
+	// The lists read here are every list Names gives.
+	if got := len(Names()); len(all) != got {
+		t.Errorf("read %d names, and Names gives %d", len(all), got)
+	}
+}
 
 // The server refuses a share with anyone it cannot find among the
 // organization's members, so a share step expected to go through names
@@ -16,7 +59,7 @@ func TestShareStepsNameTheSignedInAccountAndSeeTheRefusal(t *testing.T) {
 			case s.ExpectError == "":
 				shares[s.Tool] = true
 				if id != OwnUserID {
-					t.Errorf("a %s step (%q) shares with %v and expects it to go through; name %s", s.Tool, s.Why, id, OwnUserID)
+					t.Errorf("a %s step (%q) shares with %v and expects it to go through; name %s", s.Tool, s.Name, id, OwnUserID)
 				}
 			case s.ExpectError == "blocked" && id == OutsideUserID:
 				refuses[s.Tool] = true

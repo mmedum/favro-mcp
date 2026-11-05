@@ -23,10 +23,17 @@ func (c *Client) ListCards(ctx context.Context, page int, requestID string, filt
 
 // GetCard returns a single card by its per-widget CardID. Note this
 // is the per-widget instance id, NOT the cross-widget CardCommonID:
-// Favro's GET /cards/{id} endpoint 403s on a CardCommonID. To fetch
-// a card known only by CardCommonID, call ListCards with the filter
-// CardCommonID set (and Unique=true if cross-widget duplication is
-// noise).
+// GET /cards/{id} answers 403 for a CardCommonID, which Favro's
+// reference does not say and no live step sends. To fetch a card known
+// only by CardCommonID, call ListCards with the filter CardCommonID set
+// (and Unique=true if cross-widget duplication is noise).
+//
+// Each endpoint takes one of the two ids: /comments and /tasklists
+// filter by cardCommonId, and /cards/{id}/activities takes the cardId.
+// Checked by the live steps "read a card in full by common id",
+// "list cards by common id", "list a card's comments, page 1 with a request id"
+// and "list a card's activities since a date".
+// https://favro.com/developer/#get-a-card
 //
 // Returns *NotFoundError if no such card exists in the active
 // organization.
@@ -36,7 +43,7 @@ func (c *Client) GetCard(ctx context.Context, cardID string) (favro.Card, error)
 
 // GetCardWithDescriptionFormat fetches one card with the response's
 // `detailedDescription` rendered in the requested format. Favro's
-// default is "plaintext"; pass "markdown" for the form Phase 6's
+// default is "plaintext"; pass "markdown" for the form the
 // description editor tools require so the markdown stays
 // edit-correct round-trip. Empty cardID short-circuits with
 // errMissingID; *NotFoundError on 404. Empty format falls through
@@ -104,12 +111,16 @@ var errMoveNeedsWidget = render.Sentinel(render.ClassInvalid, "favro: a column o
 // Favro errors propagate via the wrapped PutJSON, including
 // *DryRunRecord-wrapping-ErrDryRun under dry-run.
 //
-// **Wire-contract gotcha (verified live 2026-09-15).** A request that
-// sets ColumnID or LaneID must carry WidgetCommonID too. Without it
-// Favro answers HTTP 200 with a stub card — cardId, cardCommonId, name
-// and timeOnBoard, nothing else — and the card does not move. Nothing
-// else on a card needs it: a rename and a description edit both land
-// without one and come back as a full card.
+// **Wire-contract gotcha.** A request that sets ColumnID or LaneID must
+// carry WidgetCommonID too. Without it Favro answers HTTP 200 with a
+// stub card — cardId, cardCommonId, name and timeOnBoard, nothing else
+// — and the card does not move. The reference says only that the
+// column must belong to the widget the body names. Nothing else on a
+// card needs it: a rename and a description edit both land without one
+// and come back as a full card. The live step
+// "move a card to another column, dry run" only builds the body; the
+// agent eval "move-to-column" reads the card back.
+// https://favro.com/developer/#update-a-card
 //
 // Two things follow, and both are here rather than in MoveCard because
 // favro_update_card takes a column_id as well and had the same hole.
@@ -120,9 +131,10 @@ var errMoveNeedsWidget = render.Sentinel(render.ClassInvalid, "favro: a column o
 // That check is evidence, not a read-back: the PUT response comes from
 // the same request handling that ignored the body, so a response
 // echoing the requested columnId while storing nothing would pass it.
-// It caught this bug because Favro answered with a stub instead. The
-// honest version, a GET after the move, is done by the MCP tools
-// (internal/tools/verify.go), where skip_verify can drop it.
+// Whether Favro ever answers that way is unknown: no move read back
+// has failed to land. The honest version, a GET after the move, is
+// done by the MCP tools (internal/tools/verify.go), where skip_verify
+// can drop it.
 func (c *Client) UpdateCard(ctx context.Context, cardID string, req favro.UpdateCardRequest) (favro.Card, error) {
 	if cardID == "" {
 		return favro.Card{}, errMissingID
@@ -135,11 +147,12 @@ func (c *Client) UpdateCard(ctx context.Context, cardID string, req favro.Update
 	if err := c.doJSON(ctx, http.MethodPut, path, writeDescriptionFormatQuery(req.DescriptionFormat), req, &out); err != nil {
 		return favro.Card{}, err
 	}
-	// Only the column is checked. A lane move is the same contract by
-	// symmetry, but a card on a board without lanes legitimately comes
-	// back with no laneId, so checking it would invent a failure. This
-	// is permanent, not pending: Favro publishes no lane endpoint, so
-	// there is no API call that would set a lane up to probe. §15.
+	// Only the column is checked. A lane move is assumed to be the same
+	// contract, but a card on a board without lanes legitimately comes
+	// back with no laneId, so checking it would invent a failure. Favro
+	// publishes no lane endpoint, only the laneId and isLane card fields,
+	// so no API call can set a lane up to probe.
+	// https://favro.com/developer/#card
 	if req.ColumnID != "" && out.ColumnID != req.ColumnID {
 		return favro.Card{}, &WriteIgnoredError{Field: "column", Want: req.ColumnID, Got: out.ColumnID}
 	}
@@ -188,7 +201,9 @@ func (c *Client) MoveCard(ctx context.Context, cardID string, req favro.MoveCard
 // only the per-widget instance referenced by cardID is removed;
 // other widgets sharing the same cardCommonId keep their copies.
 // With everywhere=true the cardCommonId is purged across every
-// widget — an irreversible op.
+// widget — an irreversible op. The live step "delete a card, dry run"
+// only builds the request.
+// https://favro.com/developer/#delete-a-card
 //
 // Empty cardID short-circuits with errMissingID; *NotFoundError /
 // other typed errors propagate via doJSON; *DryRunRecord wraps

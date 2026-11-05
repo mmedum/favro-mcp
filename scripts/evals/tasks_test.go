@@ -10,10 +10,10 @@ import (
 // placeholder nobody fills is the failure this whole file exists for.
 var evalVals = []string{"board", "card", "newCard", "column", "comment", "tag", "topic"}
 
-// Every prompt substitutes cleanly. A sibling's first full eval run
-// passed two tasks while sending the agent a literal `{folder}`; the
-// guard belongs here, where it costs nothing, rather than in a live run
-// that costs ten minutes and an account.
+// Every prompt substitutes cleanly. A task can pass while the agent is
+// sent a literal placeholder; the guard belongs here, where it costs
+// nothing, rather than in a live run that costs ten minutes and an
+// account.
 func TestEveryPromptSubstitutes(t *testing.T) {
 	vals := map[string]string{}
 	for _, k := range evalVals {
@@ -69,8 +69,8 @@ func TestEveryTaskIsScorableAndExplained(t *testing.T) {
 		if task.EndState == nil && task.Trace == nil {
 			t.Errorf("%s: scores nothing", task.Name)
 		}
-		// §13: where the end state cannot be read, the task must SAY
-		// which half went unchecked rather than quietly checking one.
+		// Where the end state cannot be read, the task must SAY which
+		// half went unchecked rather than quietly checking one.
 		if task.EndState == nil && strings.TrimSpace(task.Unverifiable) == "" {
 			t.Errorf("%s: has no EndState and does not say why", task.Name)
 		}

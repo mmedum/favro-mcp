@@ -4,9 +4,9 @@ import "net/url"
 
 // Tag is a Favro tag — org-global metadata applied to cards. Tags
 // are not scoped to a widget or collection; one tag can appear on
-// any card in the org. The plan's tag-resolution workflow
-// (Phase 4) leans on the org-global property to cache the full tag
-// list and resolve names with a single round-trip.
+// any card in the org. Tag resolution leans on the org-global
+// property to cache the full tag list and resolve names with a single
+// round-trip.
 //
 // Color is one of Favro's named palette values ("blue", "red",
 // "green", "lime", "purple", "cyan", "brown", "orange", "gray",

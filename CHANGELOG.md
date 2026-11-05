@@ -9,7 +9,17 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 ## [Unreleased]
 
 ### Changed
-- For contributors: CI fails a pull request that changes the tool surface until a commit footer names each item that changed. `SCHEMA-CHANGE:` names a change and `BREAKING CHANGE:` a break of the last tag. `make schema-diff` now holds the committed `schemas.json` to the whole dump, so a changed `idempotentHint`, `openWorldHint`, output schema or `_meta` mark has to be committed too. Only the names before the first colon followed by white space in a footer's value count, and a list wraps only after a comma. A footer's value may run on over several lines, and a footer beside it, such as `Closes #12`, does not drop it.
+- For contributors: a pull request that changes the tool surface needs a commit footer naming each changed item; `CONTRIBUTING.md` gives the syntax.
+- For contributors: decisions in `docs/architecture.md` carry IDs; cite one by ID, never by section number.
+- For contributors: a verified Favro behavior goes in the comment at the code that depends on it, naming the live step that checks it.
+- For contributors: the `rule8` gate is `one-organization`; run `make one-organization`.
+
+### Fixed
+- The README and `favro_rate_limit_status`'s `limit` said limits are per organization, Lite about 100 an hour; both now follow Favro's reference.
+- The list tools' `request_id` said it was required when `page > 0`, though `page` is 1-indexed; pass it with every page after the first.
+- `favro_create_widget` refuses a call without `type` before sending it, and names the types Favro takes, `backlog` and `board`; its description said Favro picks one.
+- The descriptions of `favro_create_card`, `favro_update_card` and `favro_upload_attachment` no longer carry internal labels or notes on how a fact was checked.
+- `favro_list_cards`, `favro_list_widgets`, `favro_list_collections` and `favro_search_cards` hid nothing archived by default and, asked to include archived items, returned only archived ones.
 
 ## [4.4.0] - 2026-11-01
 

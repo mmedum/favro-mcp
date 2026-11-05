@@ -14,7 +14,8 @@ import (
 	"github.com/mmedum/favro-mcp/v4/internal/favro"
 )
 
-// These markers stand in for the values §9 forbids in a log. Each has
+// These markers stand in for the values a log must never carry: the
+// tenant, the resources it touched and the credentials. Each has
 // the length of the real thing and says in itself that it is invented,
 // which is what the leak gate asks of a synthetic id. They are checked
 // for as substrings, so a log line carrying half of one still fails.
@@ -31,9 +32,8 @@ const (
 // captureLogs installs a slog handler at the most verbose level for
 // the duration of the test and returns the buffer it writes to.
 //
-// LevelDebug matters: the leak this test exists for only ever appeared
-// at debug, so a capture at the default level would have passed
-// against the broken code.
+// LevelDebug matters: the request line is emitted only at debug, so a
+// capture at the default level would pass whatever that line carried.
 func captureLogs(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
@@ -43,14 +43,14 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
-// TestDebugLogNeverCarriesTheSubject is the test §9 says A2 owes.
+// TestDebugLogNeverCarriesTheSubject holds that no log line, at any
+// level, carries a value that identifies the subject.
 //
-// Favro addresses everything by id in the query string, so a debug
-// line that logged the query reconstructed which cards a session
-// touched — which is what the code did until this commit. The
+// Favro puts ids in both the query and the path, so a debug line that
+// logged either would reconstruct which cards a session touched. The
 // assertion is deliberately over the whole captured output rather than
-// over the one line under suspicion: the rule is that no forbidden
-// value reaches a log at any level, not that one call site was fixed.
+// over one line: the rule is that no forbidden value reaches a log at
+// any level, not that one call site is clean.
 func TestDebugLogNeverCarriesTheSubject(t *testing.T) {
 	buf := captureLogs(t)
 
@@ -79,8 +79,8 @@ func TestDebugLogNeverCarriesTheSubject(t *testing.T) {
 	}
 
 	// ...and a get-one call, where the id is in the path rather than
-	// the query. Driving only a list endpoint is how the first version
-	// of this test passed while /cards/{cardId} was still logged whole.
+	// the query. A list endpoint alone would pass while /cards/{cardId}
+	// was logged whole.
 	_, _ = c.GetCard(context.Background(), markerCardID)
 
 	logged := buf.String()
@@ -93,7 +93,7 @@ func TestDebugLogNeverCarriesTheSubject(t *testing.T) {
 		markerSequentialID, markerCardID, markerEmail, markerToken,
 	} {
 		if strings.Contains(logged, forbidden) {
-			t.Errorf("a value that identifies the subject reached the log; §9 forbids it at every level: %q present", forbidden)
+			t.Errorf("a value that identifies the subject reached the log, which no level may carry: %q present", forbidden)
 		}
 	}
 

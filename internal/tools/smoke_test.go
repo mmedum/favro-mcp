@@ -135,10 +135,9 @@ var smokeToolInputs = map[string]map[string]any{
 	archiveCardToolName:   {"card_id": smokeCardID, "dry_run": true},
 	unarchiveCardToolName: {"card_id": smokeCardID, "dry_run": true},
 	// A move needs a destination, and a column move additionally needs
-	// the widget, or Favro answers 200 and moves nothing (verified live
-	// 2026-09-15) — so the minimal call here carries both. The
-	// positioning knobs ride along to keep them smoke-covered; neither
-	// is required.
+	// the widget, or Favro answers 200 and moves nothing — so the
+	// minimal call here carries both. The positioning knobs ride along
+	// to keep them smoke-covered; neither is required.
 	moveCardToolName: {
 		"card_id":          smokeCardID,
 		"widget_common_id": smokeWidgetID,
@@ -157,7 +156,7 @@ var smokeToolInputs = map[string]map[string]any{
 		"collection_id": smokeCollectionID, "collection_name": "Fixture Collection",
 		"public_sharing": "organization", "dry_run": true,
 	},
-	createWidgetToolName: {"collection_id": smokeCollectionID, "name": "smoke widget", "dry_run": true},
+	createWidgetToolName: {"collection_id": smokeCollectionID, "name": "smoke widget", "type": "board", "dry_run": true},
 	updateWidgetToolName: {"widget_common_id": smokeWidgetID, "name": "renamed", "dry_run": true},
 	deleteWidgetToolName: {"widget_common_id": smokeWidgetID, "collection_id": smokeCollectionID, "dry_run": true},
 	createColumnToolName: {"widget_common_id": smokeWidgetID, "name": "Doing", "dry_run": true},

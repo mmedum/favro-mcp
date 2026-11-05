@@ -299,11 +299,10 @@ func (r *trackingReader) Read([]byte) (int, error) {
 
 // TestRunAuth_HelpNeverActs pins what a help token has to do everywhere
 // in the auth subtree: print usage, return nil, read no stdin, and
-// leave the stored credentials alone. The tokens used to reach only
-// `auth --help`; after a subcommand they fell through to the
-// subcommand itself, so `auth login --help` prompted (reading whatever
-// stdin was redirected from) and `auth logout --help` deleted the
-// keyring entries.
+// leave the stored credentials alone. A help token that fell through
+// to its subcommand would make `auth login --help` prompt (reading
+// whatever stdin was redirected from) and `auth logout --help` delete
+// the keyring entries.
 func TestRunAuth_HelpNeverActs(t *testing.T) {
 	for _, sub := range []string{"login", "status", "logout", "which"} {
 		for _, token := range []string{"help", "--help", "-h"} {
@@ -332,8 +331,8 @@ func TestRunAuth_HelpNeverActs(t *testing.T) {
 }
 
 // TestRunAuth_HelpTokenAlone_PrintsUsage keeps `auth help` / `auth
-// --help` / `auth -h` working now that the dispatch switch no longer
-// carries a case for them.
+// --help` / `auth -h` working, which the dispatch switch has no case
+// for.
 func TestRunAuth_HelpTokenAlone_PrintsUsage(t *testing.T) {
 	t.Parallel()
 

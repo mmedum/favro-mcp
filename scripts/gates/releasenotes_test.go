@@ -27,7 +27,7 @@ const sampleChangelog = `# Changelog
 `
 
 func TestChangelogSectionTakesOneVersion(t *testing.T) {
-	got := changelogSection(sampleChangelog, "1.1.2")
+	got := sectionFor(sampleChangelog, "1.1.2")
 	if !strings.Contains(got, "The thing that was wrong.") {
 		t.Errorf("the section is missing its own entries: %q", got)
 	}
@@ -45,7 +45,7 @@ func TestChangelogSectionTakesOneVersion(t *testing.T) {
 // The last version in a file is followed by the link references rather
 // than by another heading, and those are not release notes.
 func TestChangelogSectionStopsAtTheLinkReferences(t *testing.T) {
-	got := changelogSection(sampleChangelog, "1.1.1")
+	got := sectionFor(sampleChangelog, "1.1.1")
 	if strings.Contains(got, "https://example.test") {
 		t.Errorf("the link reference block leaked into the notes: %q", got)
 	}
@@ -57,7 +57,7 @@ func TestChangelogSectionStopsAtTheLinkReferences(t *testing.T) {
 // A release whose entry was never written should fail at tag time rather
 // than publish with empty notes.
 func TestChangelogSectionIsEmptyForAnUnknownVersion(t *testing.T) {
-	if got := changelogSection(sampleChangelog, "9.9.9"); got != "" {
+	if got := sectionFor(sampleChangelog, "9.9.9"); got != "" {
 		t.Errorf("an unwritten version should produce nothing, got %q", got)
 	}
 }
@@ -75,9 +75,9 @@ func TestReleaseNotesNeedsAVersion(t *testing.T) {
 // A tag name reaches a `run:` block in the release job, and that job
 // holds id-token: write. Git permits $ ( ) ` ; and {} in a ref name, so
 // a tag can carry a command substitution, and ${IFS} supplies the space
-// git forbids. The workflow passes the tag through the environment now
-// and its trigger no longer admits those characters; this is the layer
-// that holds if either is changed back.
+// git forbids. The workflow passes the tag through the environment and
+// its trigger admits none of those characters; this is the layer that
+// holds if either changes.
 func TestReleaseNotesRefusesATagThatIsNotAVersion(t *testing.T) {
 	for _, tag := range []string{
 		"v1.2.3-$(id)",

@@ -58,7 +58,7 @@ PUT	/api/v1/groups/:groupId	implemented	UpdateGroup
 DELETE	/api/v1/groups/:groupId	implemented	DeleteGroup
 GET	/api/v1/organizations	implemented	ListOrganizations
 GET	/api/v1/organizations/:organizationId	implemented	GetOrganization
-POST	/api/v1/organizations	out	Creates a Favro organization. This server binds one organization at startup (§8) and a token scoped to one tenant has no business minting another; there is no model workflow that ends in a new organization.
+POST	/api/v1/organizations	out	Creates a Favro organization. This server binds one organization at startup, and a token scoped to one tenant has no business minting another; there is no model workflow that ends in a new organization.
 PUT	/api/v1/organizations/:organizationId	out	Renames the organization and rewrites its membership and roles. Both are tenant administration rather than work inside a tenant, and the blast radius is every user of the org — the one write where a model's mistake cannot be scoped by a widget or a card.
 GET	/api/v1/tags	implemented	ListTags
 POST	/api/v1/tags	implemented	CreateTag

@@ -16,10 +16,9 @@ import (
 // this repository that points a live session at a real organization and
 // prints what came back.
 //
-// It was one directory, as a const, until scripts/evals was added
-// beside it and printed a failing task's whole trace — live ids the
-// model had resolved — with nothing failing, because the gate read the
-// other driver. A rule scoped to one path is a rule about that path.
+// A failing eval prints its task's whole trace, live ids the model
+// resolved included, so a gate that reads only one driver passes while
+// the other leaks. A rule scoped to one path is a rule about that path.
 // Adding a driver means adding it here.
 var transcriptDriverDirs = []string{"scripts/livefavro", "scripts/evals"}
 
@@ -35,10 +34,9 @@ var transcriptPrinters = map[string]bool{
 // transcriptNamesTheTerminal are the only functions allowed to mention
 // os.Stdout or os.Stderr at all.
 //
-// This is the rule that actually holds, and the first version of this
-// gate did not have it. That version looked for writes to os.Stdout and
-// found one, because the driver wraps the terminal in a bufio.Writer
-// once and every print goes through the field — which a syntactic rule
+// This is the rule that actually holds. A check for writes to os.Stdout
+// finds only one, because the driver wraps the terminal in a bufio.Writer
+// once and every print goes through the field, which a syntactic rule
 // cannot follow. Checking who may *name* the terminal needs no
 // dataflow: if only the printer's constructor can reach it, everything
 // else has to go through the printer, and the printer redacts.

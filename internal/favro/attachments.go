@@ -6,9 +6,8 @@ import "strings"
 // URL, leaving the stable S3 object URL.
 //
 // This matters because Favro hands back a *presigned* fileURL, minted
-// per request. Two reads of the same attachment, 56 minutes apart,
-// returned the same object key with different X-Amz-Date and
-// X-Amz-Signature values (verified live 2026-08-26). So the fileURL a
+// per request: two reads of the same attachment return the same object
+// key with different X-Amz-Date and X-Amz-Signature values. So the fileURL a
 // caller reads back is never byte-equal to anything Favro could have
 // stored, and matching on it cannot work. Everything up to the "?" is
 // stable; everything after it is a signature with a 24-hour expiry.

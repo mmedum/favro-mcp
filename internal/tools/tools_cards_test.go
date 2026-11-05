@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -107,8 +108,8 @@ func TestMCP_ListCards_FiltersForwarded(t *testing.T) {
 
 // unique is Favro's own dedupe, except by card_common_id or
 // sequential_id: Favro keeps a card's to-do list copy by the first and
-// its board copy by the second (§18, 2026-10-27), so for those two the
-// server lists every copy and keeps the board copy itself.
+// its board copy by the second, so for those two the server lists
+// every copy and keeps the board copy itself.
 func TestMCP_ListCards_UniqueKeepsTheBoardCopy(t *testing.T) {
 	t.Parallel()
 	todo := favro.Card{CardID: "c-todo", CardCommonID: "cc-1", TodoListUserID: "u-1"}
@@ -287,5 +288,106 @@ func TestMCP_GetCard_DescriptionFormatForwarded(t *testing.T) {
 				t.Errorf("descriptionFormat sent = %q, want %q", saw, format)
 			}
 		})
+	}
+}
+
+// The archived flag reaches Favro in the form that makes each tool's
+// description true. The default sends archived=false, which Favro
+// answers with active items only. The flag sends no archived parameter,
+// which Favro answers with active and archived items; archived=true
+// would return archived items only.
+func TestMCP_ArchivedFlagReachesFavro(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name, tool, path string
+		args             map[string]any
+		want             []string
+	}{
+		{"list_cards default", listCardsToolName, "/cards", map[string]any{"widget_common_id": "w-1"}, []string{"false"}},
+		{"list_cards archived", listCardsToolName, "/cards", map[string]any{"widget_common_id": "w-1", "archived": true}, nil},
+		{"list_widgets default", listWidgetsToolName, "/widgets", map[string]any{}, []string{"false"}},
+		{"list_widgets archived", listWidgetsToolName, "/widgets", map[string]any{"archived": true}, nil},
+		{"list_collections default", listCollectionsToolName, "/collections", map[string]any{}, []string{"false"}},
+		{"list_collections archived", listCollectionsToolName, "/collections", map[string]any{"archived": true}, nil},
+		{"search_cards default", searchCardsToolName, "/cards", map[string]any{"query": "plants", "widget_common_id": "w-1"}, []string{"false"}},
+		{"search_cards include_archived", searchCardsToolName, "/cards", map[string]any{"query": "plants", "widget_common_id": "w-1", "include_archived": true}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assertArchivedSent(t, tc.tool, tc.path, tc.args, tc.want)
+		})
+	}
+}
+
+// A lookup by id or by name sees archived items: an id names one card
+// whether or not it is archived, and an archived widget or collection is
+// resolved by name to unarchive it. Each sends no archived parameter.
+func TestMCP_LookupsSeeArchivedItems(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name, tool, path string
+		args             map[string]any
+	}{
+		{"get_card_full by card_common_id", getCardFullToolName, "/cards", map[string]any{"card_common_id": "cc-1"}},
+		{"get_card_full by sequential_id", getCardFullToolName, "/cards", map[string]any{"sequential_id": 7}},
+		{"get_card_full lists the copies of a card read by card_id", getCardFullToolName, "/cards", map[string]any{"card_id": "c-1"}},
+		{"resolve_widget", resolveWidgetToolName, "/widgets", map[string]any{"name": "sprint"}},
+		{"resolve_collection", resolveCollectionToolName, "/collections", map[string]any{"name": "doc"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assertArchivedSent(t, tc.tool, tc.path, tc.args, nil)
+		})
+	}
+}
+
+// assertArchivedSent calls tool with args and requires every request to
+// path to carry want as its archived values; nil means no parameter.
+func assertArchivedSent(t *testing.T, tool, path string, args map[string]any, want []string) {
+	t.Helper()
+
+	var (
+		mu   sync.Mutex
+		sent [][]string
+	)
+	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == path {
+			mu.Lock()
+			sent = append(sent, r.URL.Query()["archived"])
+			mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		card := favro.Card{CardID: "c-1", CardCommonID: "cc-1", Name: "Water the plants"}
+		switch r.URL.Path {
+		case "/cards/c-1":
+			_ = json.NewEncoder(w).Encode(card)
+		case "/cards":
+			_ = json.NewEncoder(w).Encode(favro.PageEnvelope[favro.Card]{Pages: 1, Entities: []favro.Card{card}})
+		default:
+			_ = json.NewEncoder(w).Encode(favro.PageEnvelope[json.RawMessage]{Pages: 1})
+		}
+	}))
+
+	res, err := connectInMemoryWith(t, c).CallTool(t.Context(), &mcp.CallToolParams{Name: tool, Arguments: args})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("%s failed: %s", tool, serializedResponseString(t, res))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) == 0 {
+		t.Fatalf("%s sent no request to %s", tool, path)
+	}
+	for i, got := range sent {
+		if !slices.Equal(got, want) {
+			t.Errorf("request %d to %s carried archived %q, want %q", i, path, got, want)
+		}
 	}
 }

@@ -1,8 +1,8 @@
 // Package redact is the one thing the live driver prints through.
 //
 // The driver talks to a real Favro organization, so everything it sees
-// is exactly what hard rule 1 says may never enter this repository:
-// card names, ids, addresses, an organization id in every header. A
+// is exactly what may never enter this repository: card names, ids,
+// addresses, an organization id in every header. A
 // transcript is useful anyway — it is how a person checks what the
 // wire contract turned out to be — so the answer is not to print less
 // but to print through here.
@@ -22,16 +22,14 @@
 // below is anchored on something a tenant's data is and this server's
 // values are not — a 24-hex run, an address, a link. A card's *name* is
 // none of those: it is ordinary words, and a pattern that caught it
-// would catch the rest of the sentence too. That is the same reasoning
-// §9 gives for the leak gate, and it has the same consequence here.
+// would catch the rest of the sentence too. The leak gate draws the
+// same boundary for the same reason.
 //
-// So a verbose transcript carries real names. Measured on a complete
-// run against a real organization — 104 steps, 56,902 bytes, 88 values
-// replaced: zero ids, zero addresses, zero links, and 54 names. That is
-// acceptable for what this is, a
-// maintainer's terminal showing them an organization they already have
-// a token for. It is not acceptable in a file, and the leak gate cannot
-// catch it, because names are words. **Do not commit a transcript.**
+// So a verbose transcript carries real names. That is acceptable for
+// what this is, a maintainer's terminal showing them an organization
+// they already have a token for. It is not acceptable in a file, and
+// the leak gate cannot catch it, because names are words. **Do not
+// commit a transcript.**
 package redact
 
 import (
@@ -43,9 +41,9 @@ import (
 )
 
 // The shapes a Favro tenant's data takes. Each is anchored on something
-// this server's own values cannot look like, for the reason §9 gives:
-// an organization name is ordinary words, so patterns alone would
-// either miss it or redact the whole transcript.
+// this server's own values cannot look like, because an organization
+// name is ordinary words, so patterns alone would either miss it or
+// redact the whole transcript.
 var (
 	// favroID is the 24-character hex id Favro mints for most
 	// resources. The length is the discriminator — a 24-hex run is not
@@ -153,10 +151,9 @@ func New(literal ...string) *Redactor {
 //
 // Every pattern in this package is anchored on a shape — a 24-hex run,
 // an address, a link — which means a value that is tenant data and does
-// not take one of those shapes passes straight through. That is not
-// hypothetical: `favro-mcp doctor` prints the organization ids a token
-// can see, they arrive from the API rather than from configuration, and
-// nothing but the id pattern stood between them and a report written to
+// not take one of those shapes passes straight through. `favro-mcp
+// doctor` prints the organization ids a token can see, which arrive
+// from the API rather than from configuration, into a report written to
 // be pasted into a public issue. A caller that KNOWS a value is tenant
 // data should not have to hope a regex agrees.
 func (r *Redactor) Literal(k, value string) {

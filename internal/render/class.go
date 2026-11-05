@@ -6,9 +6,8 @@
 // When a handler returns a typed output and a nil *mcp.CallToolResult,
 // mcp/server.go marshals the output into StructuredContent and — seeing
 // Content unset — puts the identical serialized JSON in a TextContent
-// block. Every tool in this repository was in that state. A client that
-// shows only one half then has the same thing either way, and the
-// standard's §2 asks for two halves that differ.
+// block. A client that shows only one half then has the same thing
+// either way, so the two halves must differ.
 //
 // The error vocabulary lives here for the same reason: a class is a
 // presentation decision about an error, not a property of the wire.
@@ -22,20 +21,20 @@ import (
 	"strings"
 )
 
-// Class is one member of the closed error vocabulary. Every error a
+// Class is one member of the closed error vocabulary: the constants
+// below are every class a tool error can carry (D-40). Every error a
 // tool returns is rendered as "[class] actionable message", and the
-// `classes` gate holds this list and the table in
-// docs/architecture.md §6.2 to each other from both sides: a class
-// declared here and undocumented fails, and a documented class with no
-// constant here fails too.
+// `classes` gate holds this list and the error-class table in
+// docs/TOOLS.md#error-classes to each other from both sides: a class declared
+// here and undocumented fails, and a documented class with no constant
+// here fails too.
 //
-// Closed means closed. Adding a member is a deliberate act that edits
-// the document in the same commit — which is the point, because the
-// value of a vocabulary is entirely in the caller being able to switch
-// on it.
+// Adding a member is a deliberate act that edits the document in the
+// same commit — which is the point, because the value of a vocabulary is
+// entirely in the caller being able to switch on it.
 type Class string
 
-// The six from the shared standard.
+// The six that are not particular to Favro.
 const (
 	// ClassInvalid is the request as given cannot be served: a missing
 	// argument, two mutually exclusive ones, a value out of range. The
@@ -58,8 +57,8 @@ const (
 	ClassUnsupported Class = "unsupported"
 )
 
-// The three this platform forces. §6.2 says why each one cannot be
-// folded into a member above.
+// The three Favro forces. Each says why it cannot be folded into a
+// member above.
 const (
 	// ClassForbidden is Favro's 403, which it uses both for "no
 	// permission" and for "exists but not visible to this token".
@@ -75,7 +74,8 @@ const (
 	ClassAmbiguous Class = "ambiguous"
 )
 
-// The two that writes force (§9.2, §11).
+// The two that writes force: a write this server refuses, and a write
+// whose outcome is unknown.
 const (
 	// ClassBlocked is a write this server refuses as asked: a destructive
 	// call without confirm: true, or one an ordinary tool would widen
@@ -88,8 +88,8 @@ const (
 	ClassAmbiguousOutcome Class = "ambiguous_outcome"
 )
 
-// Classes is every class, in the order §6.2 lists them, for a caller
-// that needs to range over the vocabulary.
+// Classes is every class, in the order the documented table lists
+// them, for a caller that needs to range over the vocabulary.
 //
 // The `classes` gate reads the constants above, not this slice, and
 // then requires the two to hold the same set — so a constant declared
@@ -129,7 +129,7 @@ type Classed interface {
 // Classify returns the class of err.
 //
 // Every error this repository raises names its own class: the server's
-// sentinels through classed(), and the client's typed errors through
+// sentinels through Sentinel, and the client's typed errors through
 // ErrorClass() methods on themselves. Classify walks the chain for one,
 // then falls back to the transport layer, which is the only place an
 // error arrives that nobody here constructed.
@@ -171,7 +171,7 @@ func classifyTransport(err error) (Class, bool) {
 	return "", false
 }
 
-// Error renders err as the standard's "[class] actionable message".
+// Error renders err as "[class] actionable message".
 //
 // The returned error is what the handler hands the SDK, which puts its
 // text in a TextContent block and sets IsError — errors are tool

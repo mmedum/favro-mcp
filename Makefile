@@ -21,8 +21,8 @@ BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
 # fetches them. Not whatever is on the PATH: a distribution's
 # golangci-lint built with an older Go refuses this module outright — and
 # says so as "can't load config", which names the wrong thing. `gates
-# pins` holds each of these to exactly one version, and holds the
-# gitleaks pin to the one CI installs.
+# pins` holds each of these to exactly one version, and to the version
+# CI runs or installs.
 GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 GOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@v1.8.0
 GOLICENSES    ?= github.com/google/go-licenses@v1.6.0
@@ -70,6 +70,12 @@ tidy: ## go.mod and go.sum are what `go mod tidy` would write
 
 .PHONY: vuln
 vuln: ## govulncheck
+# Source mode, which follows call paths rather than a symbol table. It
+# checks the standard library of the go command on PATH, and a
+# distribution-patched version string it cannot read makes it skip the
+# standard library and report clean, which its reference does not say;
+# run it under an official Go release.
+# https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck
 	$(GO) run $(GOVULNCHECK) ./...
 
 .PHONY: licenses
@@ -77,10 +83,10 @@ licenses: ## every dependency's license is one we accept
 # segmentio/asm is ignored by path, not by license name. It relicensed
 # to MIT No Attribution (MIT-0) in v1.2.1 — strictly more permissive than
 # the MIT it carried before, and OSI-approved — and go-licenses v1.6.0's
-# classifier, which is from 2023, does not recognize MIT-0 at all: it
-# reports an empty license name, so no --allowed_licenses value can
-# satisfy it. Verified by reading the module's LICENSE. It arrives
+# classifier does not recognize MIT-0 at all: it reports an empty license
+# name, so no --allowed_licenses value can satisfy it. It arrives
 # transitively through the MCP SDK's jsonschema dependency.
+# https://github.com/segmentio/asm/blob/main/LICENSE
 	$(GO) run $(GOLICENSES) check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC --ignore github.com/segmentio/asm
 
 .PHONY: secrets
@@ -143,9 +149,9 @@ parity: ## `make check` and ci.yml run the same things
 plugin: ## the committed plugin manifest, against the files the packer will stage
 	@$(GO) run ./scripts/gates plugin
 
-.PHONY: rule8
-rule8: build ## no tool input takes an organization_id
-	@$(GO) run ./scripts/gates rule8 $(BIN)
+.PHONY: one-organization
+one-organization: build ## no tool input takes an organization_id
+	@$(GO) run ./scripts/gates one-organization $(BIN)
 
 .PHONY: mcpb
 mcpb: ## the committed Claude Desktop manifest, against the files the packer will stage
@@ -177,6 +183,10 @@ smoke: build ## drive the binary over stdio
 staleness: build ## the docs must match the code
 	@$(GO) run ./scripts/gates staleness $(BIN)
 
+.PHONY: docs
+docs: ## decision IDs, citations, links, paths, the codemap and live steps resolve
+	@$(GO) run ./scripts/gates docs
+
 .PHONY: hooks
 hooks: ## point git at the repository's own hooks
 	git config core.hooksPath .githooks
@@ -191,7 +201,7 @@ package-mcpb: ## build a snapshot .mcpb bundle (requires goreleaser)
 	goreleaser release --snapshot --clean --skip=publish
 
 .PHONY: check
-check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields transcript outcomes registry live-cover parity plugin mcpb rule8 schema-diff smoke staleness ## everything CI runs
+check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields transcript outcomes registry live-cover parity plugin mcpb one-organization schema-diff smoke staleness docs ## everything CI runs
 
 .PHONY: clean
 clean: ## remove build artifacts

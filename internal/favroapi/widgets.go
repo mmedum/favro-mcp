@@ -7,7 +7,15 @@ import (
 	"net/url"
 
 	"github.com/mmedum/favro-mcp/v4/internal/favro"
+	"github.com/mmedum/favro-mcp/v4/internal/render"
 )
+
+// errMissingWidgetType is a create without a type. Favro's reference
+// marks type required and lists backlog and board, and Favro refuses
+// a widget without one, so the request is never sent.
+// https://favro.com/developer/#create-a-widget
+var errMissingWidgetType = render.Sentinel(render.ClassInvalid,
+	"favro: widget type is required: pass 'backlog' or 'board'")
 
 // ListWidgets returns one page of widgets in the active organization.
 // Filters are optional; a zero filter requests every widget the
@@ -32,6 +40,9 @@ func (c *Client) CreateWidget(ctx context.Context, req favro.CreateWidgetRequest
 	}
 	if req.Name == "" {
 		return favro.Widget{}, fmt.Errorf("favro: widget name is required")
+	}
+	if req.Type == "" {
+		return favro.Widget{}, errMissingWidgetType
 	}
 	var out favro.Widget
 	if err := c.PostJSON(ctx, "/widgets", req, &out); err != nil {

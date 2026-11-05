@@ -66,6 +66,10 @@ func registerWebhooks(reg *registry, client *favroapi.Client) {
 		return nil, listWebhooksOutput{Webhooks: hooks, Count: len(hooks)}, nil
 	})
 
+	// Only a dry run of this delete runs live, and that stays so: no tool
+	// creates a webhook, so a run has none of its own to delete. Checked
+	// by the live step "delete a webhook, dry run".
+	// https://favro.com/developer/#delete-a-webhook
 	addTool(reg, &mcp.Tool{
 		Name: deleteWebhookToolName,
 		Description: "Delete an outgoing webhook by `webhook_id`. Favro stops posting card " +

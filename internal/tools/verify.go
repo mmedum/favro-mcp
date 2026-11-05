@@ -9,16 +9,21 @@ import (
 	"github.com/mmedum/favro-mcp/v4/internal/service"
 )
 
-// Hard rule 2: a 200 from Favro is not confirmation, and a write is
-// verified by reading the resource back. favroapi.UpdateCard already
-// compares a move's own response with what was asked for, but that
-// response comes from the same request handling that ignored the body,
-// so a response echoing the requested column while storing nothing
-// passes it. Only a GET afterwards is evidence.
+// A 200 from Favro is not confirmation: Favro answers 200 to a request
+// body it ignores, so a write is verified by reading the resource back.
+// favroapi.UpdateCard already compares a move's own response with what
+// was asked for, but that response comes from the same request handling
+// that ignored the body, so a response echoing the requested column
+// while storing nothing passes it. Only a GET afterwards is evidence.
 //
 // The same holds for a custom-field write: Favro answers 200, with the
 // full card, for a write to a field the card's widget has not enabled,
-// and the field is simply absent from the card.
+// and the field is simply absent from the card. A Text field write, the
+// only type seen to succeed live, reads back as {customFieldId, value}.
+// Both were probed by hand on a dormant board; no live step reads a
+// card back after a write.
+// https://favro.com/developer/#update-a-card
+// https://favro.com/developer/#card-custom-fields
 //
 // So the tools that make those writes read the card back and report
 // what they saw as a note. The response check in favroapi stays an
@@ -35,8 +40,8 @@ type verifyInput struct {
 }
 
 // readBack appends check's notes to a live write's output, unless the
-// caller passed skip_verify. Dry-run wrote nothing, so there is nothing
-// to read.
+// caller passed skip_verify (D-24). Dry-run wrote nothing, so there is
+// nothing to read.
 func (v verifyInput) readBack(out *writeOutput[favro.Card], check func() []string) {
 	if out.DryRun || v.SkipVerify {
 		return
@@ -78,8 +83,11 @@ type placement struct {
 
 // verifyPlacement reads back the card a move produced and reports
 // whether it sits in the column and lane the write asked for, and at the
-// sheet position. The ids are compared as ids. The position is compared
-// exactly: Favro stores the number it was sent (§18, 2026-10-26).
+// sheet position. Favro answers 200 to a move body it ignores, and its
+// reference does not say so, so this read is what confirms a move. No
+// live step sends a move, so only unit tests reach it. The ids are
+// compared as ids. The position is compared exactly: Favro stores the
+// number it was sent.
 //
 // widgetCommonId is deliberately not compared. A write naming another
 // board adds an instance there and leaves the source where it is, so
@@ -159,9 +167,16 @@ func laneMismatch(got, want string) string {
 // verifyCustomField reads the card back and reports whether the field
 // is on it, and with what value.
 //
+// Custom fields are organization-wide and enabled per widget. A write
+// to a field the card's widget has not enabled answers 200 with the
+// full card and the field absent from customFields. Favro's reference
+// documents neither the per-widget enabling nor that 200. Probed by
+// hand; no live step sends a custom-field write.
+// https://favro.com/developer/#card-custom-fields
+//
 // Presence, not equality: Favro normalizes dates and re-shapes select
 // values, so comparing values would raise false alarms on writes that
-// worked. An absent field is the signature of the documented failure.
+// worked. An absent field is the signature of the discarded write.
 // The value is rendered the way favro_get_card_full renders it, so the
 // caller can judge the rest.
 func verifyCustomField(ctx context.Context, r *service.Resolver, cardID string, field favro.CustomField) []string {

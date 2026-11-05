@@ -30,18 +30,14 @@ func TestFavroPage(t *testing.T) {
 	}
 }
 
-// TestListToolPageNumberingIsOneIndexed is the regression test for the
-// bug this conversion fixes.
-//
-// The schema has said "1-indexed" since these tools shipped and the
-// value went to Favro untouched, so a caller that believed the schema
-// and asked for page 1 was served Favro's page 1 — the second page —
-// and never saw the first. Nothing failed: a valid page of real
-// results came back and the missing rows were simply absent, which is
-// why no test caught it and a live run had to.
+// TestListToolPageNumberingIsOneIndexed holds that a caller's page 1
+// reaches Favro as its page 0. Sent untouched, page 1 would serve
+// Favro's page 1, the second page, and nothing would fail: a valid page
+// of real results comes back and the first page's rows are simply
+// absent.
 //
 // The assertion is on the query Favro actually received, because that
-// is the only place the off-by-one was ever visible.
+// is the only place the off-by-one is visible.
 func TestListToolPageNumberingIsOneIndexed(t *testing.T) {
 	t.Parallel()
 

@@ -203,9 +203,8 @@ func TestGetOrganization_PathEscapesID(t *testing.T) {
 	}
 }
 
-// TestListOrganizations_NewFieldsDecoding pins decode for the
-// Phase 4.5 additions: favro.Organization.Thumbnail and
-// favro.SharedUser.JoinDate.
+// TestListOrganizations_NewFieldsDecoding pins decode for
+// favro.Organization.Thumbnail and favro.SharedUser.JoinDate.
 func TestListOrganizations_NewFieldsDecoding(t *testing.T) {
 	t.Parallel()
 

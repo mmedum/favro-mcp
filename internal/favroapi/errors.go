@@ -48,9 +48,8 @@ func (e *ForbiddenError) Error() string {
 }
 
 // RateLimitError is returned when Favro responds with HTTP 429.
-// RetryAfter carries the parsed `Retry-After` header (or the time
-// until X-RateLimit-Reset, whichever is available); zero if neither
-// header was present.
+// RetryAfter is the parsed `Retry-After` header, zero when it was absent
+// or unparseable.
 type RateLimitError struct {
 	RetryAfter time.Duration
 	Status     int
@@ -149,25 +148,21 @@ func (e *APIError) Error() string {
 // accepted the request, raised no complaint, and the field the caller
 // asked to change came back unchanged.
 //
-// It exists because hard rule 2 is not satisfied by reading the status
-// line, and because the write's own response already carries the field.
-// That makes it evidence rather than a read-back — a response echoing
-// the request while storing nothing would pass — but it is evidence
-// that costs no call, and it catches the shape Favro actually answers
-// with, which is the field simply missing.
+// It exists because a 200 from Favro is not confirmation, and the
+// write's own response already carries the field. That makes it
+// evidence rather than a read-back — a response echoing the request
+// while storing nothing would pass — but it costs no call, and it
+// catches the shape Favro answers with, which is the field missing.
 //
-// Two paths are known to need this, which is why the type is named for
-// the class of failure rather than for the first one found:
+// UpdateCard raises it for a column move whose response carries another
+// column or none. A move that omits widgetCommonId, which Favro answers
+// with a stub card and no columnId, is refused before it is sent.
 //
-//   - a column move that omits widgetCommonId, where Favro answers with
-//     a stub card carrying no columnId at all. UpdateCard refuses that
-//     shape before it reaches the network, so what raises this there is
-//     a well-formed move ignored for some other reason.
-//   - a custom-field write to a field the card's widget has not
-//     enabled, where Favro answers with the FULL card and the field
-//     simply absent from customFields (§2.7, verified live
-//     2026-09-15). Not yet guarded — see §15 item 1 for the one thing
-//     that blocks it.
+// A custom-field write to a field the card's widget has not enabled
+// also answers 200, with the full card and the field absent. That case
+// is not this error: verifyCustomField in internal/tools reads the card
+// back and reports it as a note, because clearing a field leaves it
+// absent too.
 type WriteIgnoredError struct {
 	// Field names what did not change, in the caller's vocabulary
 	// ("column"), not the wire's.
@@ -189,13 +184,10 @@ func (e *WriteIgnoredError) Error() string {
 
 // The error vocabulary, named by the errors themselves.
 //
-// A class used to be read off these types from outside, by a switch in
-// internal/render. That worked and was wrong in one specific way: an
-// eighth error type added here would have fallen through that switch to
-// the ClassInvalid fallback, and nothing would have failed. Naming the
-// class at the type makes forgetting it a compile-time concern instead
-// — TestEveryErrorTypeNamesItsClass reads this file and requires each
-// of them to have one.
+// Each type names its own class, because a switch elsewhere would let a
+// new type fall through to the ClassInvalid fallback with nothing
+// failing. TestEveryErrorTypeNamesItsClass reads this file and requires
+// each of them to have one.
 
 // ErrorClass reports that credentials were rejected: a human has to fix
 // this, and no retry will.
@@ -247,13 +239,11 @@ func (e *AmbiguousWriteError) ErrorClass() render.Class { return render.ClassAmb
 // is a specific story there is no evidence for. What is left is
 // "Favro failed", which is what ClassUnavailable says.
 //
-// It is the closest of the nine and it is not exact: unavailable tells
-// the caller to retry later, and this result is deterministic, so a
-// retry returns it forever. The message carries the correction, which
-// is where it belongs — the standard's shape is "[class] actionable
-// message", and a tenth member of a deliberately closed vocabulary is a
-// worse way to say "do not retry" than saying it. §17 decision 5 keeps
-// the question open for a second path to answer.
+// It is the closest class and not an exact one: unavailable tells the
+// caller to retry later, and this result is deterministic, so a retry
+// returns it forever. The message carries the correction, since every
+// tool error is "[class] actionable message" from a closed vocabulary.
+// Whether this failure needs a class of its own is an open question.
 func (e *WriteIgnoredError) ErrorClass() render.Class { return render.ClassUnavailable }
 
 // ErrorClass maps the statuses *APIError can actually carry.

@@ -20,8 +20,8 @@ const (
 
 // errTagToCardUnknown is returned when no exact-match tag exists for
 // the supplied tag_name. The MCP error message points the LLM at
-// favro_create_tag explicitly — auto-creating from a typo is the
-// failure mode plan §6a wants prevented at all costs.
+// favro_create_tag explicitly: auto-creating from a typo would make it
+// a permanent organization-wide tag (D-21).
 var errTagToCardUnknown = render.Sentinel(render.ClassNotFound, "favro: tag name not found in active organization (typo? to add a brand-new tag, call favro_create_tag explicitly)")
 
 // errTagToCardAmbiguous is returned when multiple tags share the

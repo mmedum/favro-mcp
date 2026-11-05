@@ -35,6 +35,14 @@ func (c *Client) CreateGroup(ctx context.Context, req favro.CreateGroupRequest) 
 
 // UpdateGroup updates a group by id. Returns the updated favro.Group.
 // Empty groupID short-circuits with errMissingID.
+//
+// Members, when set, is sent as the whole intended list. Favro's
+// reference documents a per-entry delete flag, as if a write applied a
+// change, while a write by hand replaced the whole list; the whole list
+// is right under either reading, and which one Favro does is open. The
+// live steps "replace a group's members, dry run" and
+// "rename a group, dry run" only build the body.
+// https://favro.com/developer/#group-user-share-object-parameters
 func (c *Client) UpdateGroup(ctx context.Context, groupID string, req favro.UpdateGroupRequest) (favro.Group, error) {
 	if groupID == "" {
 		return favro.Group{}, errMissingID

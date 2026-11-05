@@ -8,11 +8,9 @@
 //
 // What decays here is the claim, not the code. A driver covers the
 // surface on the day it is written and stops the moment the surface
-// grows: the standard records one repository where the same assertion
-// ran at 14 of 28 tools, and another where a later phase added 67 tool
-// options with no step. So coverage is measured against the binary's
-// own published schema, per option and not per tool, and the gate fails
-// on anything no step exercises.
+// grows, by a tool or by one option of a tool. So coverage is measured
+// against the binary's own published schema, per option and not per
+// tool, and the gate fails on anything no step exercises.
 package livecover
 
 import (
@@ -22,18 +20,21 @@ import (
 
 // Step is one call the live driver makes.
 type Step struct {
+	// Name says what the step shows; it is what a code comment cites.
+	Name string
 	// Tool is the MCP tool name.
 	Tool string
 	// Args are the arguments to send. Placeholder values are resolved
 	// at run time — see Placeholder.
 	Args map[string]any
-	// Why says what this step is for, and is printed in the transcript.
-	// A step whose purpose is not obvious from its arguments is a step
-	// nobody can tell has regressed.
+	// Why says what the step is for where its name does not, and the
+	// driver prints it after the name under -v. A step whose purpose is
+	// not obvious from its arguments is a step nobody can tell has
+	// regressed.
 	Why string
 	// ExpectError marks a step that is supposed to fail, and names the
 	// error class it must fail with. Exercising an error path is
-	// coverage too: §6.2's vocabulary is only worth something if the
+	// coverage too: the error vocabulary is only worth something if its
 	// classes come back from a real API.
 	ExpectError string
 }

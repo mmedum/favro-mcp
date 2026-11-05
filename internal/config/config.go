@@ -61,7 +61,7 @@ const (
 	EnvUploadDir = "FAVRO_UPLOAD_DIR"
 
 	// EnvRequirePrompt was removed with the question it governed: the
-	// server no longer asks the person, and the client's own approval
+	// server asks the person nothing, and the client's own approval
 	// decides each call. It is read only to refuse a configuration that
 	// still turns it on (readRemoved).
 	EnvRequirePrompt = "FAVRO_REQUIRE_PROMPT"

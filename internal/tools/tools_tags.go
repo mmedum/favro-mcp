@@ -14,7 +14,7 @@ const (
 	getTagToolName   = "favro_get_tag"
 )
 
-// listTagsInput extends the standard pagination shape with the
+// listTagsInput extends the shared pagination shape with the
 // optional name filter (Favro's exact-match server-side filter).
 type listTagsInput struct {
 	listInput

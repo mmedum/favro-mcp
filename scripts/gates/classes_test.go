@@ -18,7 +18,7 @@ func TestClassesAgainstThisRepository(t *testing.T) {
 		t.Fatalf("the error vocabulary and its documentation disagree: %v", err)
 	}
 	out.mustSay(t, "in the vocabulary")
-	out.mustSay(t, "§6.2")
+	out.mustSay(t, "docs/TOOLS.md#error-classes")
 }
 
 const sampleClassSource = `package render
@@ -61,57 +61,115 @@ func TestDeclaredClassesReadsValuesNotIdentifiers(t *testing.T) {
 	}
 }
 
-const sampleDoc = `## 6. Addressing and error classes
+const sampleDoc = `# Tool reference
 
-### 6.1 How the model addresses things
+## Tools
 
 Prose that mentions ` + "`invalid`" + ` in passing, and a table of its own:
 
-| Thing | Note |
-|---|---|
-| a row | that is not a class |
+| Tool | What it does |
+| --- | --- |
+| ` + "`favro_ping`" + ` | a row that is not a class |
 
-### 6.2 Error classes
+### Error classes
 
-| Class | When | What the caller does about it |
+| ` + "`early`" + ` | under a heading that only ends like the section's | must not be read |
+
+## Error classes
+
+` + "```markdown" + `
+## A heading in an example
+| ` + "`fenced`" + ` | a row in an example | must not be read |
+` + "```" + `
+
+| Class | When | What the caller does |
 |---|---|---|
 | ` + "`invalid`" + ` | bad arguments | change them |
 | ` + "`not_found`" + ` | not there | stop looking |
 
 Prose after the table mentioning ` + "`unverified`" + `, which is not a class.
 
-### 6.3 Something else
+### Retrying
 
-| ` + "`leaked`" + ` | a class in the next section | must not be read |
+| ` + "`leaked`" + ` | a row under a subheading | must not be read |
+
+## Next
+
+| ` + "`later`" + ` | a row in the next section | must not be read |
 `
 
-// The parser has to take the table in §6.2 and nothing else: a class
-// name in prose, in §6.1's unrelated table, or in §6.3 would each
-// quietly widen or narrow what the gate thinks is documented.
+// The parser has to take the error-class table and nothing else: a
+// class name in prose, in another table, in a fenced example, under a
+// heading that only ends like the section's, or past the next heading
+// would each quietly widen or narrow what the gate thinks is documented.
+// A heading in a fence ends nothing. CRLF line endings read the same.
 func TestDocumentedClassesTakesOnlyItsOwnTable(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "architecture.md")
-	if err := os.WriteFile(path, []byte(sampleDoc), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	for name, doc := range map[string]string{
+		"LF":   sampleDoc,
+		"CRLF": strings.ReplaceAll(sampleDoc, "\n", "\r\n"),
+	} {
+		path := filepath.Join(t.TempDir(), "TOOLS.md")
+		if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
 
-	got, rows, err := documentedClasses(path)
-	if err != nil {
-		t.Fatal(err)
+		got, rows, err := documentedClasses(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rows != 2 {
+			t.Errorf("%s: read %d rows, want 2", name, rows)
+		}
+		if strings.Join(got, ",") != "invalid,not_found" {
+			t.Errorf("%s: got %v; prose, fences, other tables and other sections must all be out of scope", name, got)
+		}
 	}
-	if rows != 2 {
-		t.Errorf("read %d rows, want 2", rows)
-	}
-	if strings.Join(got, ",") != "invalid,not_found" {
-		t.Errorf("got %v; prose, §6.1's table and §6.3 must all be out of scope", got)
+}
+
+// The table is held to the vocabulary both ways: a declared class with
+// no row fails, and a row naming no declared class fails.
+func TestClassesHoldTheTableBothWays(t *testing.T) {
+	declared := []string{"invalid", "not_found"}
+	for _, tc := range []struct {
+		name, old, new string
+		want           []string
+	}{
+		{"the table as it stands", "", "", nil},
+		{"a declared class with no row", "| `not_found` | not there | stop looking |\n", "", []string{
+			`internal/render/class.go declares "not_found", and docs/TOOLS.md#error-classes does not name it`,
+		}},
+		{"a row naming no declared class", "| `invalid` |", "| `invented` | made up | nothing |\n| `invalid` |", []string{
+			`docs/TOOLS.md#error-classes documents "invented", and internal/render/class.go declares no constant for it`,
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := sampleDoc
+			if tc.old != "" {
+				if !strings.Contains(doc, tc.old) {
+					t.Fatalf("the sample does not contain %q", tc.old)
+				}
+				doc = strings.Replace(doc, tc.old, tc.new, 1)
+			}
+			path := filepath.Join(t.TempDir(), "TOOLS.md")
+			if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			documented, _, err := documentedClasses(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := classesDisagree(declared, declared, documented, declared); !slices.Equal(got, tc.want) {
+				t.Errorf("problems\n got %q\nwant %q", got, tc.want)
+			}
+		})
 	}
 }
 
 // A renamed or deleted section must fail rather than agree with an
 // empty set — the failure this whole gate design exists to prevent.
 func TestDocumentedClassesReportsAMissingSection(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "architecture.md")
-	if err := os.WriteFile(path, []byte("# Nothing here\n"), 0o600); err != nil {
+	path := filepath.Join(t.TempDir(), "TOOLS.md")
+	if err := os.WriteFile(path, []byte("# Nothing here\n\n### Error classes\n\n| `invalid` | a row | under the wrong heading |\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

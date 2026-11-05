@@ -55,15 +55,17 @@ var stamp = sync.OnceValue(func() buildStamp {
 	return stampFrom(Tag, Commit, info)
 })
 
-// stampFrom implements the fallback the shared standard's §10 names
-// first: `go install` applies no ldflags, so a binary installed the
-// documented way reports "dev (unknown)" and every bug report from one
-// is unattributable to a build. Go records the module version and the
-// VCS revision itself, and both are available without a build system.
+// stampFrom falls back to what Go embeds itself (D-86): the documented
+// `go install` passes no -ldflags, so without it a binary installed that
+// way reports "dev (unknown)" and no bug report from one can be tied to
+// a build. Go records the module version and the VCS revision, and
+// both are available without a build system.
+// https://go.dev/ref/mod#go-install
+// https://pkg.go.dev/runtime/debug#ReadBuildInfo
 //
 // The linker wins when it spoke. A release binary carries the tag
-// goreleaser stamped, and that string is the one five other places in a
-// release agree about.
+// goreleaser stamped, and that string is the one the rest of a release
+// agrees on.
 //
 // Its two inputs are passed in rather than read from the package and the
 // runtime, so every branch below can be tested against a build this test

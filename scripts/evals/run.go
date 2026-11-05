@@ -17,23 +17,21 @@ func environ() []string { return os.Environ() }
 // drive gives one task to a model and records what it did.
 //
 // The model gets this server's tools and nothing else, and the way that
-// is spelled matters more than it looks. The first version of this
-// harness named the host's built-ins in a disallow list, which is a
-// denylist and fails open: it listed six, and the model used Grep and
-// Glob — both absent — to read the maintainer's own notes about Favro's
-// quirks mid-task. Naming more of them was the wrong repair. A
-// hand-typed list of a surface somebody else ships is exactly what hard
-// rule 14 says not to build, and re-auditing it against each CLI
-// release is a job nobody will do; a later read found Monitor still
-// missing, which runs a shell command under a name that is not Bash.
+// is spelled matters more than it looks. A disallow list of the host's
+// built-ins is a denylist and fails open: a built-in it leaves out, or
+// one a later CLI release adds, stays usable, and a model with Grep or
+// Glob can read the maintainer's files mid-task. A hand-typed list of a
+// surface somebody else ships is a list nobody keeps in step.
 //
 // So the built-in surface is turned off at the source instead:
 // --tools "" disables all of them, and the only tools that survive are
-// the MCP ones --allowed-tools names. --setting-sources= drops the
+// the MCP ones --allowed-tools names; --allowed-tools alone only
+// pre-approves tools and removes none. --setting-sources= drops the
 // developer's own settings, hooks, skills and pre-approved permission
 // rules, which would otherwise decide what a built-in may do, and
 // --strict-mcp-config keeps their other MCP servers out. What is left
 // is this server's tools, which is the thing being scored.
+// https://code.claude.com/docs/en/cli-reference
 //
 // This is also the security boundary, not just a scoring one. The run
 // reads a real organization, so card text written by anyone with access

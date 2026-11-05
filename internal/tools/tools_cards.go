@@ -60,9 +60,10 @@ func registerCards(reg *registry, client *favroapi.Client) {
 		Annotations: readOnly("List Favro cards"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listCardsInput) (*mcp.CallToolResult, listOutput[favro.Card], error) {
 		// Favro's own dedupe keeps a card's to-do list copy by
-		// card_common_id and its board copy by sequential_id (probed
-		// live 2026-10-27, §18). Those two filters name one card, so
+		// card_common_id and its board copy by sequential_id, which its
+		// reference does not say. Those two filters name one card, so
 		// the server lists every copy and keeps the board copy itself.
+		// Probed by hand; see service.FetchCardForIdentity.
 		collapse := in.Unique && (in.CardCommonID != "" || in.SequentialID > 0)
 		env, err := client.ListCards(ctx, in.favroPage(), in.RequestID, favro.ListCardsFilter{
 			WidgetCommonID:    in.WidgetCommonID,

@@ -38,9 +38,8 @@ type CreateGroupRequest struct {
 }
 
 // UpdateGroupRequest is the body for PUT /groups/{groupId}. Both
-// fields are optional. Note: Members, when set, REPLACES the group's
-// member list — Favro's update endpoint does not have add/remove
-// semantics on this field.
+// fields are optional. Members, when set, is the group's whole intended
+// member list; favroapi.UpdateGroup says why.
 type UpdateGroupRequest struct {
 	Name    string        `json:"name,omitempty"`
 	Members []GroupMember `json:"members,omitempty"`

@@ -72,8 +72,8 @@ func run() error {
 	defer admin.stop()
 
 	h := &harness{admin: admin}
-	// Registered BEFORE the build, not after: the first run of this
-	// failed halfway through and left a real collection behind in the
+	// Registered BEFORE the build, not after: a build that fails halfway
+	// would otherwise leave a real collection behind in the
 	// organization. teardown is a no-op until there is something to
 	// remove, and every id is recorded the moment it exists.
 	if !*keep {
@@ -147,8 +147,9 @@ func (h *harness) build() error {
 		"collection_id": h.box.CollectionID,
 		"name":          h.box.BoardName,
 		// Favro rejects a widget with no type — "type is expected as
-		// one of backlog, board" — though the tool schema has it
-		// optional. Section 2.1: the reference and the live API differ.
+		// one of backlog, board" — as its reference marks type required,
+		// though the tool's schema has it optional.
+		// https://favro.com/developer/#create-a-widget
 		"type": "board",
 	})
 	if err != nil {
@@ -183,9 +184,8 @@ func (h *harness) build() error {
 
 // created unwraps what a write tool returns. Every mutating tool in
 // this server answers with {dry_run, result, …} rather than the bare
-// resource, so reading the id off the top level silently yields "" —
-// which is how the first run created a collection and then could not
-// name the thing it had just made.
+// resource, so reading the id off the top level silently yields "", and
+// the harness cannot name the thing it just made.
 func created(out map[string]any) map[string]any {
 	if inner, ok := out["result"].(map[string]any); ok {
 		return inner

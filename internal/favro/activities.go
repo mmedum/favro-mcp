@@ -22,6 +22,7 @@ type Activity struct {
 	// documented field table says cardCommonId. Both are decoded
 	// because the docs contradict themselves and no live payload has
 	// been captured to settle it; prefer CommonID.
+	// https://favro.com/developer/#activity-object
 	CardCommonKey string `json:"cardCommonKey,omitempty"`
 	CardName      string `json:"cardName,omitempty"`
 

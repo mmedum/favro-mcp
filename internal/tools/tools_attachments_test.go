@@ -70,7 +70,7 @@ func TestMCP_UploadAttachment_HappyPath(t *testing.T) {
 
 	out := decodeStructured[writeOutput[favro.CardAttachment]](t, res)
 	if got := out.Result.Name; got != "note.txt" {
-		t.Errorf("Favro returns the attachment object, not the Card — verified live Phase 7.1: got %v, want %v", got, "note.txt")
+		t.Errorf("Favro answers an upload with the attachment object, not the Card: got %v, want %v", got, "note.txt")
 	}
 	if got := out.Result.FileURL; got != "https://favro.invalid/a/note.txt" {
 		t.Errorf("out.Result.FileURL = %v, want %v", got, "https://favro.invalid/a/note.txt")
@@ -205,12 +205,6 @@ func TestMCP_UploadAttachment_MissingRequiredFields(t *testing.T) {
 		})
 	}
 }
-
-// favro_remove_attachment is intentionally NOT registered (Favro
-// silently no-ops `removeAttachments` on PUT /cards — verified live
-// Phase 7.1). MCP-layer tests for it are gated until the right wire
-// shape is found; see favro.RemoveAttachment for the favro-layer
-// stub kept for future investigation.
 
 // The upload tools read inside FAVRO_UPLOAD_DIR and nowhere else: a path
 // relative to it or absolute within it is read, and a "..", an absolute

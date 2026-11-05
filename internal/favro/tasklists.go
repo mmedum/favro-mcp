@@ -5,8 +5,9 @@ package favro
 //
 // Name carries the checklist's title. Favro's documented field table
 // calls it `name` and its example responses call it `description`,
-// so both wire keys are accepted on decode and Name() reconciles
-// them — see the Title method.
+// so both wire keys are accepted on decode and Title() reconciles
+// them.
+// https://favro.com/developer/#task-list
 type Tasklist struct {
 	TaskListID     string `json:"taskListId"`
 	CardCommonID   string `json:"cardCommonId,omitempty"`

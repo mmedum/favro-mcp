@@ -33,16 +33,16 @@ import (
 const (
 	// DefaultBaseURL is the production Favro REST API base URL.
 	DefaultBaseURL = "https://favro.com/api/v1"
-	// defaultTimeout caps any single request (including retries
-	// re-using the parent context). 30s is generous for a write
-	// operation against a live API.
+	// defaultTimeout is the HTTP client's timeout, which applies to each
+	// attempt: a read retried after a 5xx can take longer in all, bounded
+	// only by the caller's context.
 	defaultTimeout = 30 * time.Second
-	// rateLimitRetryCap is the upper bound on the Retry-After-driven
-	// sleep before we give up and surface RateLimitError. Per plan §7.
+	// rateLimitRetryCap is the longest Retry-After a 429 is waited out
+	// for; a longer one is returned as RateLimitError at once.
 	rateLimitRetryCap = 30 * time.Second
-	// transientMaxAttempts is the total attempt count for 5xx responses
-	// (1 initial + 2 retries). Backoff schedule is below.
-	transientMaxAttempts = 3
+	// transientMaxAttempts is the total attempt count for 5xx responses:
+	// the first, and one retry after each wait in the schedule below.
+	transientMaxAttempts = len(transientBackoffSchedule) + 1
 	// maxBodyBytes caps the per-error body excerpt we keep in memory
 	// for ValidationError / APIError. Favro responses are small.
 	maxBodyBytes = 4 * 1024
@@ -51,12 +51,12 @@ const (
 	redactedValue = "[REDACTED]"
 )
 
-// transientBackoffSchedule[i] is the sleep before attempt i+1.
-// Indices are 0-based; the schedule has transientMaxAttempts-1 entries.
-var transientBackoffSchedule = []time.Duration{
+// transientBackoffSchedule[i] is the sleep after attempt i+1 of a read
+// fails with a 5xx. The last attempt's 5xx is returned rather than slept
+// on. An array, so its length is a constant.
+var transientBackoffSchedule = [...]time.Duration{
 	250 * time.Millisecond,
 	1 * time.Second,
-	4 * time.Second,
 }
 
 // Client is an authenticated, retrying Favro REST client with
@@ -234,11 +234,13 @@ func (c *Client) doJSON(ctx context.Context, method, path string, query url.Valu
 // server response. Caller is responsible for closing the body.
 //
 // On decode failure the error includes the response status,
-// content-type, and a length-capped body prefix so wire-contract
-// gaps (e.g. Favro returning HTML where JSON was expected) can be
-// diagnosed from the MCP tool error alone. The diagnostic buffer
-// is bounded at bodyPrefixCap bytes via a TeeReader, so the
-// success path stays streaming and memory-bounded.
+// content-type, and a length-capped body prefix, so one round trip is
+// enough to diagnose it from the tool error alone. Favro answers a path
+// it does not serve with its web app's HTML page rather than a 404,
+// which its reference does not mention. The diagnostic buffer is
+// bounded at bodyPrefixCap bytes via a TeeReader, so the success path
+// stays streaming and memory-bounded.
+// https://favro.com/developer/#errors
 func decodeJSONLenient(resp *http.Response, out any) error {
 	prefix := &boundedBuffer{cap: bodyPrefixCap}
 	dec := json.NewDecoder(io.TeeReader(resp.Body, prefix))
@@ -305,14 +307,18 @@ func (b *boundedBuffer) escapedString() string {
 // NotFoundError / ValidationError / TransientError / APIError /
 // *DryRunRecord) is returned.
 //
-// Retry policy (per plan §7):
-//   - 429: single retry honoring Retry-After capped at 30s, then
-//     RateLimitError.
-//   - 5xx on a read: exponential backoff (250ms, 1s, 4s), max 3
-//     attempts total.
+// Retry policy:
+//   - 429: retried once when it carries a Retry-After of at most 30s,
+//     otherwise RateLimitError. Favro's reference documents no
+//     Retry-After, so a 429 without one is returned at once.
+//   - 5xx on a read: three attempts, 250ms and then 1s apart, then
+//     TransientError.
 //   - 5xx on a write, or a write cut off after it was sent: never
 //     retried; AmbiguousWriteError.
 //   - 401 / 403 / 404: never retried.
+//
+// The timeout applies to each attempt, not to the call.
+// https://favro.com/developer/#throttling
 func (c *Client) Do(ctx context.Context, method, path string, query url.Values, body any, opts ...RequestOption) (*http.Response, error) {
 	method = strings.ToUpper(method)
 
@@ -461,7 +467,7 @@ func transportError(method, fullURL string, err error) error {
 // safeToRepeat reports whether a request may be sent again after it
 // may have reached Favro. Only reads: a repeated POST creates a second
 // card, and a repeated DELETE answers 404 for the card the first one
-// removed.
+// removed (D-41).
 func safeToRepeat(method string) bool {
 	return method == http.MethodGet || method == http.MethodHead
 }
@@ -555,12 +561,10 @@ func shouldDryRun(c *Client, ctx context.Context, method string) bool {
 // (Do runs joinURL before deciding to dry-run, so we never have to
 // re-derive or risk swallowing an invalid-URL error here).
 //
-// The headers come from buildRequest — the same composition the real
-// request uses — and then through redactHeaders, the same rule the
-// debug line uses. Composing them a second time by hand is what this
-// replaced, and that copy had drifted: it omitted Accept, and it
-// redacted by writing the sentinel into two Set calls, so a
-// caller-supplied header would have been recorded in full.
+// The headers come from buildRequest, the composition the real request
+// uses, and then through redactHeaders, the rule the debug line uses,
+// so the record carries every header the wire would and hides the same
+// ones.
 func (c *Client) buildDryRunRecord(ctx context.Context, method, fullURL string, body []byte, extra http.Header) *DryRunRecord {
 	hdr := http.Header{}
 	// The request is built and never sent; it exists so that the
@@ -646,13 +650,12 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 // logRequest emits a redacted slog.Debug line for one attempt.
 //
 // Both halves of the URL are stripped of the values that name a
-// resource, because Favro addresses everything by id and puts those ids
-// in both halves: the query carries cardCommonId, widgetCommonId and
-// sequentialId, and the path carries /cards/{cardId} for every
-// get-one endpoint. Logging either whole reconstructs exactly which
-// cards a session touched, which is what standard §4 forbids. What is
-// left — the shape of the path and the names of the filters — is the
-// part a debug line is actually for, and it identifies nobody.
+// resource, because Favro puts ids in both: the query carries
+// cardCommonId, widgetCommonId and sequentialId, and every get-one path
+// carries the id. Logging either whole reconstructs which cards a
+// session touched, so the line keeps the path's shape and the query's
+// parameter names only (D-46).
+// https://favro.com/developer/#get-all-cards
 func (c *Client) logRequest(req *http.Request, attempt int) {
 	if !slog.Default().Enabled(req.Context(), slog.LevelDebug) {
 		return
@@ -681,6 +684,7 @@ func (c *Client) logRequest(req *http.Request, attempt int) {
 // this client itself interpolates and those are 24-hex. Anything the
 // rule does not recognize — uppercase, punctuation, anything long —
 // becomes {id} rather than being printed.
+// https://favro.com/developer/#get-a-card
 func redactPathIDs(path string) string {
 	segments := strings.Split(path, "/")
 	for i, seg := range segments {
@@ -753,12 +757,8 @@ func redactHeaders(h http.Header) map[string]string {
 // included defensively even though Favro doesn't use them.
 //
 // organizationId is here because it names the tenant, and Token.Apply
-// sets it on every single request — so the header map was reprinting
-// the organization id on every debug line, which is the same leak §9
-// records for the startup line and one it did not know about. Found by
-// TestDebugLogNeverCarriesTheSubject on its first run, which is the
-// argument for asserting over the whole captured output rather than
-// over the line under suspicion.
+// sets it on every request, so without it every debug line and every
+// dry-run record would carry the organization id.
 func isSensitiveHeader(name string) bool {
 	switch http.CanonicalHeaderKey(name) {
 	case "Authorization", "Cookie", "Set-Cookie", "Proxy-Authorization",

@@ -158,10 +158,11 @@ func TestMCP_GetOrganization_HappyPath(t *testing.T) {
 	}
 }
 
-// The tool must not take an organization_id. Hard rule 8 says no tool
-// does, and this one did — required, and inert, because Favro routes by
-// header. `gates rule8` holds the whole surface; this holds the one tool
-// the rule was actually broken by.
+// The tool must not take an organization_id. No tool does, because the
+// server binds one organization, and here an id in the path would read
+// as a choice Favro ignores, since it routes by header. `gates
+// one-organization` holds the whole surface; this holds the one tool
+// whose endpoint takes an organization id.
 func TestMCP_GetOrganization_TakesNoOrganizationID(t *testing.T) {
 	t.Parallel()
 
