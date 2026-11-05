@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/mmedum/favro-mcp/v4/internal/livecover"
 )
 
 // caller sends one tools/call. A *session is one; the tests use a fake.
@@ -23,6 +25,8 @@ type probeKind struct {
 	delete  string
 	idArg   string // the delete's id argument, and the read's
 	read    string // the read that fetches it by id
+
+	deleted, gone livecover.Check // the checks deleteAndReadBack makes
 }
 
 // probeKinds are the only creates the -writes run may send. Each says
@@ -33,11 +37,13 @@ var probeKinds = map[string]probeKind{
 		noun: "tag", idKey: "tagId",
 		resolve: "favro_resolve_tag", found: "tag_id",
 		delete: "favro_delete_tag", idArg: "tag_id", read: "favro_get_tag",
+		deleted: livecover.CheckTagDeleteWithConfirm, gone: livecover.CheckTagGone,
 	},
 	"favro_create_collection": {
 		noun: "collection", idKey: "collectionId",
 		resolve: "favro_resolve_collection", found: "collection_id",
 		delete: "favro_delete_collection", idArg: "collection_id", read: "favro_get_collection",
+		deleted: livecover.CheckCollectionDeleteWithConfirm, gone: livecover.CheckCollectionGone,
 	},
 }
 

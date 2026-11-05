@@ -28,8 +28,8 @@ builds:
       - linux
       - darwin
       - windows
-    # Six archives: darwin, linux and windows, each on amd64 and arm64,
-    # as across the family. `gates mcpb` holds this list to them.
+    # Six archives: darwin, linux and windows, each on amd64 and arm64.
+    # `gates mcpb` holds this list to releaseMatrix in scripts/gates.
     goarch:
       - amd64
       - arm64
@@ -76,6 +76,7 @@ checksum:
   # is what puts it in checksums.txt, and checksums.txt is the file
   # cosign signs, so this is what makes the bundle verifiable at all.
   # Without it the bundle ships unsigned while looking no different.
+  # https://goreleaser.com/customization/checksum/
   extra_files:
     - glob: ./dist/*.mcpb
 
@@ -108,10 +109,10 @@ snapshot:
   version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
 
 # github-native hands changelog generation to GitHub's release-notes API,
-# which ignores goreleaser's `sort` and `filters` — they were configured here
-# for a while and silently did nothing. The human-readable summary comes from
-# CHANGELOG.md via --release-header in .github/workflows/release.yml; this
-# generated PR list sits underneath it for provenance.
+# which ignores goreleaser's `sort` and `filters`, so neither is set. The
+# human-readable summary comes from CHANGELOG.md via --release-header in
+# .github/workflows/release.yml; this generated PR list sits underneath it
+# for provenance.
 changelog:
   use: github-native
 

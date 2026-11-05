@@ -56,8 +56,8 @@ func start(bin string, env ...string) (*session, error) {
 
 // stop closes the WRITE end of the server's stdin, which is what it
 // needs to see EOF and exit. cmd.Stdin is the read end; closing that
-// leaves the server running and Wait blocking for ever, which is the
-// bug the live driver shipped with for a phase.
+// leaves the server running and Wait blocking for ever.
+// https://pkg.go.dev/os/exec#Cmd.StdinPipe
 func (s *session) stop() {
 	_ = s.stdin.Flush()
 	_ = s.in.Close()

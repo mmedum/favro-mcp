@@ -47,8 +47,8 @@ func TestForbiddenError_MessageVariants(t *testing.T) {
 	if !strings.Contains(msg, "403") {
 		t.Errorf("msg does not contain %q", "403")
 	}
-	// Must NOT direct the caller at the auth env-vars — that's the
-	// misleading message we replaced (Phase 3.10 follow-up).
+	// Must NOT direct the caller at the auth env-vars: a 403 is not a
+	// credential problem.
 	if strings.Contains(msg, "FAVRO_USER_EMAIL") {
 		t.Errorf("msg unexpectedly contains %q", "FAVRO_USER_EMAIL")
 	}
@@ -162,12 +162,10 @@ func TestAPIError_FallbackForUnknownStatus(t *testing.T) {
 // TestEveryErrorTypeNamesItsClass reads this file for the error types
 // it declares and requires each to name its class.
 //
-// The class used to be read off these types from outside, by a switch
-// in internal/render, and the failure mode was silent: an eighth type
-// added here fell through to the ClassInvalid fallback with nothing to
-// fail. The types name their own class now, and this is what stops the
-// next one being added without one. The list is parsed rather than
-// typed out, so it cannot drift from the file it describes.
+// A type without an ErrorClass method would fall through to
+// render.Classify's ClassInvalid fallback with nothing to fail, so this
+// stops one being added without its class. The list is parsed rather
+// than typed out, so it cannot drift from the file it describes.
 func TestEveryErrorTypeNamesItsClass(t *testing.T) {
 	t.Parallel()
 

@@ -42,10 +42,9 @@ var errAttachmentOutsideDir = render.Sentinel(render.ClassInvalid,
 var errAttachmentMissing = render.Sentinel(render.ClassNotFound,
 	"favro: there is no file at file_path inside "+config.EnvUploadDir)
 
-// uploadAttachmentInput is the input for favro_upload_attachment.
-// v0.1 supports local file paths only — the tool reads from disk
-// and uploads raw bytes. Base64-inline body is deferred per plan
-// §1's attachment-input scope decision.
+// uploadAttachmentInput is the input for favro_upload_attachment. It
+// takes a file path only: the tool reads the file and uploads its raw
+// bytes, and there is no inline base64 body.
 type uploadAttachmentInput struct {
 	dryRunInput
 	CardID   string `json:"card_id" jsonschema:"the per-widget cardId to attach the file to"`
@@ -85,8 +84,8 @@ func registerUploadAttachment(reg *registry, r *service.Resolver) {
 			"`Content-Type: application/octet-stream` and the filename in the query string. " +
 			"`filename` defaults to the file's basename if omitted. Cap is 8 MiB per upload — " +
 			"larger files surface a typed error before any HTTP work. Returns the created " +
-			"attachment object `{name, fileURL}` (Favro echoes the attachment, NOT the updated " +
-			"Card — verified live). Successful live writes invalidate the search-cards cache " +
+			"attachment object `{name, fileURL}` (Favro answers with the attachment, NOT the " +
+			"updated Card). Successful live writes invalidate the search-cards cache " +
 			"(cached card payloads carry stale attachment lists otherwise). Pass `dry_run: true` " +
 			"to preview without contacting Favro. Use favro_remove_attachment to detach a file.",
 		Annotations: adding("Upload Favro attachment"),
@@ -137,6 +136,12 @@ func prepareUpload(dir, filePath, filename string) ([]byte, string, error) {
 // dir, slash-separated. The upload cap is checked before anything is
 // read, and only a regular file is opened: stat first, since opening a
 // named pipe would wait for a writer.
+// TestMCP_UploadAttachment_ReadsOnlyTheUploadDir holds every way out, a
+// link included. Checked by the live steps
+// "uploading a path outside the upload directory is [invalid]",
+// "a comment upload with .. out of the upload directory is [invalid]" and
+// "uploading a folder is [invalid]".
+// https://pkg.go.dev/os#Root
 //
 // Errors name file_path, not the path itself: the path is what a
 // card's text may have suggested, and the error goes back to the model.

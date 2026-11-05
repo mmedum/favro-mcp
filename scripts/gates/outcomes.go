@@ -13,16 +13,11 @@ import (
 	"strings"
 )
 
-// outcomes holds hard rule 2 — a 200 from Favro is not confirmation — to
-// the one shape of it a machine can check.
-//
-// Adopted from google-drive-mcp, which is the only sibling that has it,
-// and which wrote it after a live run found three tools asserting things
-// the response never carried. This repository shipped its own instance
-// the week this gate arrived: `favro_move_card` returned success because
-// the request had been accepted, never because the response confirmed a
-// move, and it did that for every release from 1.0.0 to 2.0.1. The fix
-// was to consult the response before speaking. This is that, as a check.
+// outcomes holds that no tool states an outcome the response did not
+// carry (D-25), in the one shape of it a machine can check. A 200 from
+// Favro says the request was accepted, not that it took effect, so a
+// tool consults the response before it says what happened. The gate
+// follows google-drive-mcp's.
 //
 // The checkable shape is: a branch tests a boolean field of the REQUEST
 // and then states, in prose, what is now true. The response is never
@@ -223,9 +218,9 @@ func boolInputFields(files []outcomeFile) map[string]bool {
 //
 // Per-file rather than per-function on purpose. A state-diff closure
 // takes no parameters and reads the handler's `in` from the enclosing
-// scope, so a per-function walk — which is what the sibling does, where
-// handlers are top-level — would not see the one branch in this
-// repository that words two different sentences.
+// scope, so a per-function walk, which suits a repository whose handlers
+// are top-level, would not see the one branch in this repository that
+// words two different sentences.
 func requestNames(file *ast.File) map[string]bool {
 	out := map[string]bool{}
 	collect := func(params *ast.FieldList) {

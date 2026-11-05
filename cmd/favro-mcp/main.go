@@ -133,8 +133,7 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 	if *dryRun {
 		// Wired through Client.ForceDryRun below — every POST/PUT/
 		// DELETE/PATCH issued via the Favro client short-circuits and
-		// returns a *favroapi.DryRunRecord. Phase 5 adds the high-level
-		// mutating tools that exercise this gate.
+		// returns a *favroapi.DryRunRecord.
 		slog.Info("--dry-run set; all mutating Favro requests will short-circuit and return a DryRunRecord")
 	}
 
@@ -154,12 +153,11 @@ func runServer(args []string, cfg config.Config, stdout io.Writer, stderr io.Wri
 			"error", err)
 		return err
 	}
-	// The organization id is deliberately absent. It used to be here,
-	// which named the tenant in the first line of every session at the
-	// default log level — the kind of thing only a live run shows, and
-	// it showed it during A1's live check. favro_ping still returns it,
-	// because a tool result goes to the caller who asked; a log goes to
-	// whoever ends up holding the file.
+	// The organization id is deliberately absent: here it would name the
+	// tenant in the first line of every session at the default log
+	// level. favro_ping still returns it, because a tool result goes to
+	// the caller who asked; a log goes to whoever ends up holding the
+	// file.
 	slog.Info("favro-mcp starting",
 		"version", version.String(),
 		"credential_source", rt.Source,
@@ -244,12 +242,13 @@ func dumpSchemaSurface(ctx context.Context, stdout io.Writer) error {
 // reason: the context was canceled, or the client went away.
 //
 // errors.Is(err, io.EOF) does not catch a client going away. The SDK
-// reports a closed connection as JSON-RPC -32004 with the EOF only as
-// message text, so an unmatched error made this process exit 1 every
-// time a host closed the pipe — which every host logs as a crash. The
-// code is matched, not the text: `jsonrpc.Error` is a public alias of
-// the SDK's wire type, so errors.As reaches it without sniffing a
-// string that is free to change.
+// reports a closed connection as JSON-RPC -32004 (ErrServerClosing),
+// with the EOF only as message text, and an unmatched error exits 1,
+// which every host logs as a crash. The code is matched, not the text:
+// `jsonrpc.Error` is a public alias of the SDK's wire type, so
+// errors.As reaches it without sniffing a string that is free to
+// change. The smoke gate closes stdin to hold this.
+// https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/internal/jsonrpc2/wire.go#L33-L36
 func cleanDisconnect(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 		return true

@@ -14,7 +14,7 @@ const (
 	getWidgetToolName   = "favro_get_widget"
 )
 
-// listWidgetsInput extends the standard pagination shape with an
+// listWidgetsInput extends the shared pagination shape with an
 // optional collection filter. listInput is embedded so the Page /
 // RequestID field tags are defined in one place; the MCP SDK's
 // jsonschema-go reflection flattens embedded struct fields by

@@ -19,34 +19,37 @@ func extraSteps() []Step {
 		// path: a cross-widget id, the integer people paste from a
 		// reference, and a search over a scoped corpus.
 		{
+			Name: "read a card in full by common id",
 			Tool: "favro_get_card_full",
 			Args: map[string]any{"card_common_id": AnyCardCommonID},
 			Why:  "the cross-widget identity, which Favro's own GET /cards/{id} answers 403 for",
 		},
 		{
+			Name: "read a card in full by sequential id",
 			Tool: "favro_get_card_full",
 			Args: map[string]any{"sequential_id": AnySequentialID},
 			Why:  "the integer inside a human card reference",
 		},
 		{
+			Name: "add a comment to a card by common id, dry run",
 			Tool: "favro_add_comment_to_card",
 			Args: map[string]any{
 				"card_common_id": AnyCardCommonID,
 				"comment":        "livefavro probe",
 				"dry_run":        true,
 			},
-			Why: "dry-run: addressing the card by its cross-widget id",
 		},
 		{
+			Name: "add a comment to a card by sequential id, dry run",
 			Tool: "favro_add_comment_to_card",
 			Args: map[string]any{
 				"sequential_id": AnySequentialID,
 				"comment":       "livefavro probe",
 				"dry_run":       true,
 			},
-			Why: "dry-run: addressing the card by its sequential id",
 		},
 		{
+			Name: "add a comment to a card found by search in a widget, dry run",
 			Tool: "favro_add_comment_to_card",
 			Args: map[string]any{
 				"search_query":     "a",
@@ -54,9 +57,9 @@ func extraSteps() []Step {
 				"comment":          "livefavro probe",
 				"dry_run":          true,
 			},
-			Why: "dry-run: finding the card by search, scoped to a widget",
 		},
 		{
+			Name: "add a comment to a card found by search in a collection, dry run",
 			Tool: "favro_add_comment_to_card",
 			Args: map[string]any{
 				"search_query":  "a",
@@ -64,57 +67,84 @@ func extraSteps() []Step {
 				"comment":       "livefavro probe",
 				"dry_run":       true,
 			},
-			Why: "dry-run: the same, scoped to a collection",
 		},
 
 		// The card listing's other filters.
 		{
+			Name: "list cards by common id",
 			Tool: "favro_list_cards",
 			Args: map[string]any{"card_common_id": AnyCardCommonID},
 			Why:  "the cross-widget filter, which is the only way to fetch a card by common id",
 		},
 		{
+			Name: "list cards by sequential id",
 			Tool: "favro_list_cards",
 			Args: map[string]any{"sequential_id": AnySequentialID},
-			Why:  "the sequential-id filter",
 		},
 		{
+			Name: "list the cards in one column of a widget",
 			Tool: "favro_list_cards",
 			Args: map[string]any{
 				"widget_common_id": AnyWidgetCommonID,
 				"column_id":        AnyColumnID,
 			},
-			Why: "narrowed to one column of one widget",
 		},
 		{
+			Name: "list the signed-in account's todo cards",
 			Tool: "favro_list_cards",
 			Args: map[string]any{"todo_list": true},
-			Why:  "the caller's personal todo list, which is scoped by the token rather than by a widget",
+			Why:  "the todo list is scoped by the token rather than by a widget",
+		},
+
+		// The archived flag on the three listings that take it. The seeds
+		// list with the default, which sends archived=false; the flag sends
+		// no archived parameter, which Favro answers with both kinds.
+		{
+			Name: "list a widget's cards, archived ones included",
+			Tool: "favro_list_cards",
+			Args: map[string]any{"widget_common_id": AnyWidgetCommonID, "archived": true},
+			Why:  "archived=true would return archived cards only",
 		},
 		{
+			Name: "list collections, archived ones included",
+			Tool: "favro_list_collections",
+			Args: map[string]any{"archived": true},
+			Why:  "archived=true would return archived collections only",
+		},
+		{
+			Name: "list widgets, archived ones included",
+			Tool: "favro_list_widgets",
+			Args: map[string]any{"archived": true},
+			Why:  "archived=true would return archived widgets only",
+		},
+		{
+			Name: "list tags by a name no tag has",
 			Tool: "favro_list_tags",
 			Args: map[string]any{"name": "livefavro-probe-no-such-tag"},
-			Why:  "the name filter, which returns an empty page rather than an error",
+			Why:  "the name filter answers an empty page rather than an error",
 		},
 		{
+			Name: "create a collection shared with the signed-in account, dry run",
 			Tool: "favro_create_collection",
 			Args: map[string]any{
 				"name":           "livefavro probe",
 				"share_to_users": []any{map[string]any{"userId": OwnUserID, "role": "guest"}},
 				"dry_run":        true,
 			},
-			Why: "dry-run: the write-side sharing key, which §7.4 records Favro spelling differently from the read",
+			Why: "the write-side sharing key, which Favro spells differently from the read",
 		},
 		{
+			Name: "create a group with the signed-in account as a member, dry run",
 			Tool: "favro_create_group",
 			Args: map[string]any{
 				"name":    "livefavro probe",
 				"members": []any{map[string]any{"userId": OwnUserID, "role": "member"}},
 				"dry_run": true,
 			},
-			Why: "dry-run: a group created with its membership in one call, after the user is read as a member of the organization",
+			Why: "the membership goes in the same call, after the user is read as a member of the organization",
 		},
 		{
+			Name: "create a task list with its tasks, dry run",
 			Tool: "favro_create_tasklist",
 			Args: map[string]any{
 				"card_common_id": AnyCardCommonID,
@@ -122,22 +152,22 @@ func extraSteps() []Step {
 				"tasks":          []any{map[string]any{"name": "first"}, map[string]any{"name": "second", "completed": false}},
 				"dry_run":        true,
 			},
-			Why: "dry-run: seeding a checklist with its items in the same request",
 		},
 		{
+			Name: "search a collection's cards",
 			Tool: "favro_search_cards",
 			Args: map[string]any{"query": "a", "collection_id": AnyCollectionID, "limit": 5},
-			Why:  "search scoped to a collection rather than a widget",
 		},
 		{
+			Name: "list a card's activities until a date",
 			Tool: "favro_list_card_activities",
 			Args: map[string]any{"card_id": AnyCardID, "until": "2030-01-01T00:00:00Z"},
-			Why:  "the upper bound of the history window",
 		},
 
 		// The optional fields a write can carry. Dry-run builds the
 		// body, so this is the shape of the request being checked.
 		{
+			Name: "create a card with a lane, a parent, tags and assignees, dry run",
 			Tool: "favro_create_card",
 			Args: map[string]any{
 				"name":             "livefavro probe",
@@ -151,9 +181,10 @@ func extraSteps() []Step {
 				"sheet_position":   1,
 				"dry_run":          true,
 			},
-			Why: "dry-run: every optional field a new card can carry",
+			Why: "every optional field a new card can carry",
 		},
 		{
+			Name: "update every field of a card at once, dry run",
 			Tool: "favro_update_card",
 			Args: map[string]any{
 				"card_id":               AnyCardID,
@@ -173,9 +204,9 @@ func extraSteps() []Step {
 				"sheet_position":        1,
 				"dry_run":               true,
 			},
-			Why: "dry-run: every field an update can set at once",
 		},
 		{
+			Name: "detach a card from its parent, dry run",
 			Tool: "favro_update_card",
 			Args: map[string]any{
 				"card_id":          AnyCardID,
@@ -183,9 +214,10 @@ func extraSteps() []Step {
 				"clear_parent":     true,
 				"dry_run":          true,
 			},
-			Why: "dry-run: the structural write that detaches on purpose — the one path where the tool does not read the card's current parent first",
+			Why: "the one structural write that does not read the card's current parent first",
 		},
 		{
+			Name: "update a card structurally without naming its parent, dry run",
 			Tool: "favro_update_card",
 			Args: map[string]any{
 				"card_id":          AnyCardID,
@@ -193,9 +225,10 @@ func extraSteps() []Step {
 				"name":             "livefavro-probe-structural-rename",
 				"dry_run":          true,
 			},
-			Why: "dry-run: the structural write that names no parent — the path that reads the card's current parent and carries it through, which every other update step short-circuits past",
+			Why: "the path that reads the card's current parent and carries it through, which every other update step short-circuits past",
 		},
 		{
+			Name: "move a card naming its own parent, dry run",
 			Tool: "favro_move_card",
 			Args: map[string]any{
 				"card_id":          AnyCardID,
@@ -204,9 +237,10 @@ func extraSteps() []Step {
 				"parent_card_id":   AnyCardID,
 				"dry_run":          true,
 			},
-			Why: "dry-run: a move that names its own parent, so the read is skipped",
+			Why: "a named parent skips the read of the current one",
 		},
 		{
+			Name: "move a card and detach it from its parent, dry run",
 			Tool: "favro_move_card",
 			Args: map[string]any{
 				"card_id":          AnyCardID,
@@ -215,9 +249,10 @@ func extraSteps() []Step {
 				"clear_parent":     true,
 				"dry_run":          true,
 			},
-			Why: "dry-run: a move that detaches on purpose — the one move path that does not read the card's current parent first",
+			Why: "the one move path that does not read the card's current parent first",
 		},
 		{
+			Name: "update a card's placement with the read-back off, dry run",
 			Tool: "favro_update_card",
 			Args: map[string]any{
 				"card_id":          AnyCardID,
@@ -227,9 +262,9 @@ func extraSteps() []Step {
 				"skip_verify":      true,
 				"dry_run":          true,
 			},
-			Why: "dry-run: the placement write with the read-back turned off",
 		},
 		{
+			Name: "move a card across widgets with every positioning option, dry run",
 			Tool: "favro_move_card",
 			Args: map[string]any{
 				"card_id":          AnyCardID,
@@ -242,9 +277,9 @@ func extraSteps() []Step {
 				"drag_mode":        "commit",
 				"dry_run":          true,
 			},
-			Why: "dry-run: a move across widgets, with every positioning knob",
 		},
 		{
+			Name: "update a collection's sharing under both keys, dry run",
 			Tool: "favro_update_collection",
 			Args: map[string]any{
 				"collection_id":  AnyCollectionID,
@@ -252,18 +287,20 @@ func extraSteps() []Step {
 				"members":        []any{map[string]any{"userId": OwnUserID, "role": "guest"}},
 				"dry_run":        true,
 			},
-			Why: "dry-run: the sharing keys, where §7.4 records Favro reading one name and writing another",
+			Why: "Favro reads one sharing key and writes another",
 		},
 		{
+			Name: "replace a group's members, dry run",
 			Tool: "favro_update_group",
 			Args: map[string]any{
 				"group_id": AnyGroupID,
 				"members":  []any{map[string]any{"userId": OwnUserID, "role": "member"}},
 				"dry_run":  true,
 			},
-			Why: "dry-run: whole-list membership, which §7.4 records the docs disagreeing about, read against who the group holds",
+			Why: "whole-list membership, which Favro's reference describes as a delta, read against who the group holds",
 		},
 		{
+			Name: "remove an attachment from a comment by URL, dry run",
 			Tool: "favro_update_comment",
 			Args: map[string]any{
 				"comment_id":         AnyCommentID,
@@ -271,9 +308,9 @@ func extraSteps() []Step {
 				"remove_attachments": []any{"https://example.invalid/not-attached.txt"},
 				"dry_run":            true,
 			},
-			Why: "dry-run: attachment removal, matched by URL rather than by name",
 		},
 		{
+			Name: "upload a file to a card with a name and type, dry run",
 			Tool: "favro_upload_attachment",
 			Args: map[string]any{
 				"card_id":   AnyCardID,
@@ -282,9 +319,10 @@ func extraSteps() []Step {
 				"mime_type": "text/plain",
 				"dry_run":   true,
 			},
-			Why: "dry-run: a file inside " + config.EnvUploadDir + " is read, with the name and type overrides set",
+			Why: "a file inside " + config.EnvUploadDir + " is read",
 		},
 		{
+			Name: "upload a file to a comment with a name and type, dry run",
 			Tool: "favro_upload_comment_attachment",
 			Args: map[string]any{
 				"comment_id": AnyCommentID,
@@ -293,7 +331,6 @@ func extraSteps() []Step {
 				"mime_type":  "text/plain",
 				"dry_run":    true,
 			},
-			Why: "the same on the comment path",
 		},
 
 		// What the ordinary writes refuse, so the refusal is seen
@@ -301,80 +338,86 @@ func extraSteps() []Step {
 		// the refusal comes first either way, and if it ever did not,
 		// nothing is written.
 		{
+			Name:        "creating a public collection is [blocked]",
 			Tool:        "favro_create_collection",
 			Args:        map[string]any{"name": "livefavro probe", "public_sharing": "public", "dry_run": true},
 			Why:         "a public collection is its own tool's, never this one's",
 			ExpectError: "blocked",
 		},
 		{
+			Name:        "opening a collection to the organization on an update is [blocked]",
 			Tool:        "favro_update_collection",
 			Args:        map[string]any{"collection_id": AnyCollectionID, "public_sharing": "organization", "dry_run": true},
-			Why:         "nor the whole organization, on an update",
 			ExpectError: "blocked",
 		},
 		{
+			Name: "sharing a new collection by email is [blocked]",
 			Tool: "favro_create_collection",
 			Args: map[string]any{
 				"name":           "livefavro probe",
 				"share_to_users": []any{map[string]any{"email": "livefavro-probe@example.invalid", "role": "view"}},
 				"dry_run":        true,
 			},
-			Why:         "an invitation by email, which may reach outside the organization",
+			Why:         "an email may reach outside the organization",
 			ExpectError: "blocked",
 		},
 		{
+			Name: "sharing a new collection with a user outside the organization is [blocked]",
 			Tool: "favro_create_collection",
 			Args: map[string]any{
 				"name":           "livefavro probe",
 				"share_to_users": []any{map[string]any{"userId": OutsideUserID, "role": "guest"}},
 				"dry_run":        true,
 			},
-			Why:         "a userId the organization does not list, refused after reading who the organization holds",
+			Why:         "refused after reading who the organization holds",
 			ExpectError: "blocked",
 		},
 		{
+			Name: "a new group with a member outside the organization is [blocked]",
 			Tool: "favro_create_group",
 			Args: map[string]any{
 				"name":    "livefavro probe",
 				"members": []any{map[string]any{"userId": OutsideUserID, "role": "member"}},
 				"dry_run": true,
 			},
-			Why:         "the same for a new group's members",
 			ExpectError: "blocked",
 		},
 		{
+			Name: "sharing a collection with a user outside the organization is [blocked]",
 			Tool: "favro_update_collection",
 			Args: map[string]any{
 				"collection_id":  AnyCollectionID,
 				"share_to_users": []any{map[string]any{"userId": OutsideUserID, "role": "guest"}},
 				"dry_run":        true,
 			},
-			Why:         "the same on an update, after reading who the collection is shared with",
+			Why:         "refused after reading who the collection is shared with",
 			ExpectError: "blocked",
 		},
 		{
+			Name: "adding a user outside the organization to a group is [blocked]",
 			Tool: "favro_update_group",
 			Args: map[string]any{
 				"group_id": AnyGroupID,
 				"members":  []any{map[string]any{"userId": OutsideUserID, "role": "member"}},
 				"dry_run":  true,
 			},
-			Why:         "a userId the organization does not list, refused after reading who the group and the organization hold",
+			Why:         "refused after reading who the group and the organization hold",
 			ExpectError: "blocked",
 		},
 		{
+			Name:        "a new widget owned by guests is [blocked]",
 			Tool:        "favro_create_widget",
 			Args:        map[string]any{"collection_id": AnyCollectionID, "name": "livefavro probe", "owner_role": "guests", "dry_run": true},
-			Why:         "guests made the widget's owners",
 			ExpectError: "blocked",
 		},
 		{
+			Name:        "making guests a widget's editors is [blocked]",
 			Tool:        "favro_update_widget",
 			Args:        map[string]any{"widget_common_id": AnyWidgetCommonID, "edit_role": "guests", "dry_run": true},
-			Why:         "guests made the widget's editors",
 			ExpectError: "blocked",
 		},
 		{
+			Name: "widening a collection's sharing with the wrong name is [conflict]",
 			Tool: "favro_widen_collection_sharing",
 			Args: map[string]any{
 				"collection_id":   AnyCollectionID,
@@ -383,10 +426,11 @@ func extraSteps() []Step {
 				"confirm":         true,
 				"dry_run":         true,
 			},
-			Why:         "the collection is read and its name held against the witness, which differs; -writes opens a probe collection",
+			Why:         "the collection is read and its name held against the witness; -writes opens a probe collection",
 			ExpectError: "conflict",
 		},
 		{
+			Name: "delete a widget from every collection, dry run",
 			Tool: "favro_delete_widget",
 			Args: map[string]any{
 				"widget_common_id": AnyWidgetCommonID,
@@ -394,7 +438,7 @@ func extraSteps() []Step {
 				"confirm":          true,
 				"dry_run":          true,
 			},
-			Why: "dry-run: the delete from every collection, named rather than reached by omission",
+			Why: "the delete from every collection is named rather than reached by omission",
 		},
 	}
 }

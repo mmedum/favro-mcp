@@ -247,10 +247,6 @@ func TestRepeatedKeysNameEachPathOnce(t *testing.T) {
 	}
 }
 
-// TestDeletingTheWin32OverrideIsCaught is the check the shared standard
-// names last, and the one a review found missing in a packer that had
-// every other check in this file.
-//
 // Deleting the win32 override leaves a manifest where every command
 // names a program the bundle really carries. Windows then runs the
 // default command, which is the macOS universal binary. Nothing about
@@ -350,8 +346,8 @@ func TestTheProgramsAreTheBinariesAndTheLauncher(t *testing.T) {
 	}
 }
 
-// TestUndeclaredUserConfigReferenceIsCaught, including the composed form
-// the standard singles out: checking only values that are nothing but
+// TestUndeclaredUserConfigReferenceIsCaught, including the composed form:
+// checking only values that are nothing but
 // one reference lets "${user_config.dir}/sub" through, and the server
 // starts with the variable unsubstituted.
 func TestUndeclaredUserConfigReferenceIsCaught(t *testing.T) {
@@ -798,9 +794,8 @@ func TestReleaseWiringIsHeld(t *testing.T) {
 	}
 }
 
-// The release carries the family's archives, releaseMatrix, both ways.
-// A downstream user found the windows_arm64 one missing, because
-// .goreleaser.yaml ignored the pair.
+// The release carries releaseMatrix's archives, both ways: a pair
+// .goreleaser.yaml leaves out is an archive nobody can download.
 func TestReleaseArchivesAreTheFamilys(t *testing.T) {
 	release, err := goreleaserText(repoRoot(t))
 	if err != nil {
@@ -815,7 +810,7 @@ func TestReleaseArchivesAreTheFamilys(t *testing.T) {
 	}
 	short := slices.DeleteFunc(slices.Clone(built), func(p string) bool { return p == "windows-arm64" })
 	want := []string{".goreleaser.yaml does not build windows-arm64, so the release carries no windows_arm64 " +
-		"archive; the family's releases carry darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, " +
+		"archive; the release matrix is darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, " +
 		"windows-amd64, windows-arm64"}
 	if got := releaseArchiveProblems(short); !slices.Equal(got, want) {
 		t.Errorf("a matrix without windows-arm64 gives %q, want %q", got, want)
@@ -824,8 +819,9 @@ func TestReleaseArchivesAreTheFamilys(t *testing.T) {
 		t.Errorf("an empty matrix gives %d problems, want one per pair: %q", len(got), got)
 	}
 	beyond := append(slices.Clone(built), "freebsd-amd64")
-	want = []string{".goreleaser.yaml builds freebsd-amd64, which is not one of the family's archives, " +
-		"darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, windows-amd64, windows-arm64"}
+	want = []string{".goreleaser.yaml builds freebsd-amd64, which is not in the release matrix, " +
+		"darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, windows-amd64, windows-arm64; " +
+		"add it to releaseMatrix, which both bundle gates read"}
 	if got := releaseArchiveProblems(beyond); !slices.Equal(got, want) {
 		t.Errorf("a matrix with freebsd-amd64 gives %q, want %q", got, want)
 	}

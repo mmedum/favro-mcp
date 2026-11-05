@@ -20,10 +20,9 @@ import (
 //
 // This file holds both halves deliberately. The packer writes the
 // launcher, so the launcher's binary names ARE the packer's names, and
-// the gate reads the same table — which closes the hole the shared
-// standard names last and most quietly: a manifest can pass every
-// referential check while the launcher, which no manifest mentions,
-// chooses between names nothing stages. Renaming a staged binary then
+// the gate reads the same table. That closes the quietest hole a bundle
+// has: a manifest can pass every referential check while the launcher,
+// which no manifest mentions, chooses between names nothing stages. Renaming a staged binary then
 // ships a bundle that fails for every user of that platform, with the
 // launcher's own "missing from the bundle" message.
 //
@@ -63,13 +62,19 @@ var platforms = []platform{
 	{goos: "windows", goarch: "amd64"},
 }
 
-// releaseMatrix is the family's release: every goos-goarch pair
-// .goreleaser.yaml builds, an archive each, and for a pair the bundles
-// stage no binary of its own, the pair whose binary runs there. Windows
-// on arm64 runs the amd64 binary under emulation, from the Desktop
-// bundle and the plugin alike; its archive is for someone installing
-// from the release page. Both bundle gates and their tests read this one
-// table, so they cannot disagree about a platform.
+// releaseMatrix is the release: darwin, linux and windows, each on amd64
+// and arm64, an archive each, and for a pair the bundles stage no binary
+// of its own, the pair whose binary runs there. Both bundle gates and
+// their tests read this one table, so they cannot disagree about a
+// platform.
+//
+// A bundle manifest picks its command by platform and has no key for the
+// architecture, so Windows on arm64 runs the amd64 binary, from the
+// Desktop bundle and the plugin alike; its archive is for someone
+// installing from the release page. That needs Windows 11, which
+// emulates x64: Windows 10 on Arm emulates only x86.
+// https://github.com/anthropics/mcpb/blob/v2.1.2/MANIFEST.md#L333
+// https://learn.microsoft.com/en-us/windows/arm/apps-on-arm-x86-emulation
 var releaseMatrix = []struct{ pair, runs string }{
 	{pair: "darwin-amd64"},
 	{pair: "darwin-arm64"},

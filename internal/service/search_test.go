@@ -366,14 +366,15 @@ func newSearchFixture(t *testing.T, pages [][]favro.Card) (*Resolver, *atomic.In
 			t.Errorf("test fixture asked for page %d but only %d pages defined", page, totalPages)
 			return
 		}
-		// Mirror Favro's documented server-side `archived` filter:
-		// when archived=true the response includes archived cards;
-		// when absent (or false) archived cards are filtered out.
+		// Favro answers archived=false with active cards only,
+		// archived=true with archived ones only, and no archived
+		// parameter with both; see favro.ListCardsFilter.Values.
 		entities := pages[page]
-		if r.URL.Query().Get("archived") != "true" {
+		if r.URL.Query().Has("archived") {
+			wantArchived := r.URL.Query().Get("archived") == "true"
 			filtered := entities[:0:0]
 			for _, c := range entities {
-				if !c.IsArchived {
+				if c.IsArchived == wantArchived {
 					filtered = append(filtered, c)
 				}
 			}

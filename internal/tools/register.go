@@ -19,12 +19,12 @@ type Options struct {
 	// FAVRO_ENABLE_DESTRUCTIVE, and the default — off — means those
 	// tools are not in tools/list at all.
 	//
-	// This is registration rather than a runtime guard on purpose.
-	// Standard §3: a host in an auto-approve permission mode runs an
-	// annotated tool without prompting, and the spec says clients
-	// treat tool annotations as untrusted, so `destructiveHint` is a
-	// signal a client may act on and not a control. The only tool that
-	// cannot be run unattended is one that is not there.
+	// This is registration rather than a runtime guard on purpose: a
+	// host in an auto-approve permission mode runs an annotated tool
+	// without prompting, and the MCP schema calls annotations hints, so
+	// `destructiveHint` is a signal a client may act on and not a
+	// control. The only tool that cannot be run unattended is one that
+	// is not there.
 	Destructive bool
 
 	// UploadDir is FAVRO_UPLOAD_DIR, the one directory the upload tools

@@ -19,22 +19,28 @@ import (
 // with" is the failure mode every gate here is written against.
 const (
 	classesSourcePath = "internal/render/class.go"
-	classesDocPath    = "docs/architecture.md"
-	classesDocSection = "### 6.2 Error classes"
+	classesDocPath    = "docs/TOOLS.md"
+	classesDocHeading = "Error classes"
+	classesDocSection = "## " + classesDocHeading
 )
 
-// classesFloor is the smallest vocabulary this repository can have: the
-// standard's six plus the three §6.2 argues Favro forces. A gate that
-// agreed two empty sets matched would pass forever.
+// classesDocRef is the section as a reader follows it, which is how the
+// gate names it.
+var classesDocRef = classesDocPath + "#" + docsGitHubSlug(classesDocHeading)
+
+// classesFloor sits under the size of the vocabulary
+// internal/render/class.go declares, so a parse that finds too few
+// constants fails. A gate that agreed two empty sets matched would pass
+// forever.
 const classesFloor = 9
 
 // classesDocRow matches a table row whose first cell is a backticked
-// class name — the shape §6.2's table uses, and one that prose
+// class name — the shape the error-class table uses, and one that prose
 // mentioning `invalid` in passing cannot produce.
 var classesDocRow = regexp.MustCompile("^\\|\\s*`([a-z_]+)`\\s*\\|")
 
-// classes holds the closed error vocabulary and docs/architecture.md
-// §6.2 to each other, from both sides.
+// classes holds the closed error vocabulary and the error-class table in
+// docs/TOOLS.md to each other, from both sides.
 //
 // One side is easy to see the need for: a class the code emits and the
 // document does not name leaves a caller reading a vocabulary that is
@@ -63,7 +69,7 @@ func classes(w io.Writer, _ []string) error {
 		return err
 	}
 	if len(declared) < classesFloor {
-		return fmt.Errorf("read %d class constants from %s; the vocabulary is the standard's six plus the three §6.2 adds, so it cannot be smaller than %d",
+		return fmt.Errorf("read %d class constants from %s, fewer than %d: the parse is not reading the vocabulary",
 			len(declared), classesSourcePath, classesFloor)
 	}
 
@@ -84,6 +90,19 @@ func classes(w io.Writer, _ []string) error {
 		return fmt.Errorf("walked only %d Go files looking for class references; that is not the whole module", filesRead)
 	}
 
+	if problems := classesDisagree(declared, listed, documented, emitted); len(problems) > 0 {
+		return fmt.Errorf("the error vocabulary and its documentation disagree:\n  %s", strings.Join(problems, "\n  "))
+	}
+
+	_, err = fmt.Fprintf(w, "classes: %d in the vocabulary, each declared and listed in %s, emitted somewhere in %d Go files, and named in %s\n",
+		len(declared), classesSourcePath, filesRead, classesDocRef)
+	return err
+}
+
+// classesDisagree is the rule over what the readers found: the classes
+// the source declares, the ones its Classes slice lists, the ones the
+// table documents and the ones code emits.
+func classesDisagree(declared, listed, documented, emitted []string) []string {
 	var problems []string
 	// The Classes slice is the vocabulary a caller ranges over, and
 	// nothing in Go makes it agree with the constants. Checked here
@@ -101,7 +120,7 @@ func classes(w io.Writer, _ []string) error {
 	}
 	for _, c := range declared {
 		if !slices.Contains(documented, c) {
-			problems = append(problems, fmt.Sprintf("%s declares %q, and %s §6.2 does not name it", classesSourcePath, c, classesDocPath))
+			problems = append(problems, fmt.Sprintf("%s declares %q, and %s does not name it", classesSourcePath, c, classesDocRef))
 		}
 		if !slices.Contains(emitted, c) {
 			problems = append(problems, fmt.Sprintf("%s declares %q and no code outside the declaration returns it — a class nothing emits is not part of the vocabulary", classesSourcePath, c))
@@ -109,16 +128,10 @@ func classes(w io.Writer, _ []string) error {
 	}
 	for _, c := range documented {
 		if !slices.Contains(declared, c) {
-			problems = append(problems, fmt.Sprintf("%s §6.2 documents %q, and %s declares no constant for it", classesDocPath, c, classesSourcePath))
+			problems = append(problems, fmt.Sprintf("%s documents %q, and %s declares no constant for it", classesDocRef, c, classesSourcePath))
 		}
 	}
-	if len(problems) > 0 {
-		return fmt.Errorf("the error vocabulary and its documentation disagree:\n  %s", strings.Join(problems, "\n  "))
-	}
-
-	_, err = fmt.Fprintf(w, "classes: %d in the vocabulary, each declared and listed in %s, emitted somewhere in %d Go files, and named in %s §6.2\n",
-		len(declared), classesSourcePath, filesRead, classesDocPath)
-	return err
+	return problems
 }
 
 // declaredClasses parses the class constants out of the source. The
@@ -225,25 +238,29 @@ func listedClasses(path string) ([]string, error) {
 	return slices.Compact(out), nil
 }
 
-// documentedClasses reads §6.2's table. It returns the classes and the
-// number of table rows it saw, so a section that was renamed out from
-// under it fails rather than agreeing with an empty set.
+// documentedClasses reads the error-class table. It returns the classes
+// and the number of table rows it saw, so a section that was renamed out
+// from under it fails rather than agreeing with an empty set.
 func documentedClasses(path string) ([]string, int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, 0, err
 	}
-	_, rest, ok := strings.Cut(string(data), classesDocSection)
-	if !ok {
+	// The heading is matched as a whole line, so "### Error classes"
+	// elsewhere is not taken for it, and fenced code is blanked, so an
+	// example in a fence is neither the heading nor a row.
+	lines := docsProse(string(data))
+	start := slices.Index(lines, classesDocSection)
+	if start < 0 {
 		return nil, 0, nil
 	}
 
 	var out []string
 	var rows int
-	for line := range strings.Lines(rest) {
+	for _, line := range lines[start+1:] {
 		trimmed := strings.TrimSpace(line)
-		// Stop at the next section of any depth, so a class named in
-		// §6.3 is not read as §6.2's.
+		// Stop at the next heading of any depth, so a row in another
+		// section is not read as the table's.
 		if strings.HasPrefix(trimmed, "#") {
 			break
 		}
@@ -269,10 +286,8 @@ func documentedClasses(path string) ([]string, int, error) {
 // mentions is one nothing emits.
 //
 // The declaring file is walked like any other, minus the declarations
-// themselves. Classify is in it, and Classify is where six of the nine
-// are returned from; skipping the file wholesale reported those six as
-// emitted by nothing, which was this gate's own first finding about
-// itself.
+// themselves. Classify is in it and returns most of the classes, so
+// skipping the file wholesale would report those as emitted by nothing.
 func emittedClasses(root string, declared []string) ([]string, int, error) {
 	idents := make(map[string]string, len(declared))
 	for _, c := range declared {
@@ -282,9 +297,9 @@ func emittedClasses(root string, declared []string) ([]string, int, error) {
 	// The tracked files, the way every other gate here enumerates: a
 	// tree walk would also pick up build output and whatever is in a
 	// developer's working directory, and neither is the module.
-	files, err := gitLines(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	files, err := lsFiles(root)
 	if err != nil {
-		return nil, 0, fmt.Errorf("git ls-files: %w", err)
+		return nil, 0, err
 	}
 
 	found := map[string]bool{}

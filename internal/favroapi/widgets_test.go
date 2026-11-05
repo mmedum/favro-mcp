@@ -169,9 +169,10 @@ func TestGetWidget_EmptyID_NoNetworkCall(t *testing.T) {
 	}
 }
 
-// TestListWidgets_ArchivedFilterForwarded pins that favro.ListWidgetsFilter.Archived
-// becomes ?archived=true on the wire, and that the new response
-// fields (organizationId, archived, lanes, columns summary) decode.
+// TestListWidgets_ArchivedAndNewFields pins that
+// favro.ListWidgetsFilter.Archived sends no archived parameter, since
+// archived=true returns archived widgets only, and that the response
+// fields organizationId, archived, lanes and the columns summary decode.
 func TestListWidgets_ArchivedAndNewFields(t *testing.T) {
 	t.Parallel()
 
@@ -195,8 +196,8 @@ func TestListWidgets_ArchivedAndNewFields(t *testing.T) {
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if got := h.seen()[0].Query.Get("archived"); got != "true" {
-		t.Errorf("h.seen()[0].Query.Get(\"archived\") = %v, want %v", got, "true")
+	if q := h.seen()[0].Query; q.Has("archived") {
+		t.Errorf("h.seen()[0].Query[\"archived\"] = %v, want no archived parameter", q["archived"])
 	}
 	if len(env.Entities) != 1 {
 		t.Fatalf("len(env.Entities) = %d, want 1", len(env.Entities))
@@ -306,6 +307,23 @@ func TestCreateWidget_RequiredFields(t *testing.T) {
 	}
 }
 
+// A create without a type is refused before the dry-run gate, so a
+// dry run cannot report a body Favro would refuse.
+func TestCreateWidget_NoType_RefusedBeforeTheDryRun(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(fixtureToken())
+	c.BaseURL = "https://favro.invalid"
+	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
+
+	for _, ctx := range []context.Context{context.Background(), WithDryRun(context.Background())} {
+		_, err := c.CreateWidget(ctx, favro.CreateWidgetRequest{CollectionID: "c-1", Name: "x"})
+		if !errors.Is(err, errMissingWidgetType) {
+			t.Errorf("err = %v, want errMissingWidgetType", err)
+		}
+	}
+}
+
 func TestCreateWidget_DryRun_ReturnsRecord(t *testing.T) {
 	t.Parallel()
 
@@ -313,7 +331,7 @@ func TestCreateWidget_DryRun_ReturnsRecord(t *testing.T) {
 	c.BaseURL = "https://favro.invalid"
 	c.HTTPClient = &http.Client{Transport: &failingRoundTripper{t: t}}
 
-	_, err := c.CreateWidget(WithDryRun(context.Background()), favro.CreateWidgetRequest{CollectionID: "c-1", Name: "x"})
+	_, err := c.CreateWidget(WithDryRun(context.Background()), favro.CreateWidgetRequest{CollectionID: "c-1", Name: "x", Type: "board"})
 	if !errors.Is(err, ErrDryRun) {
 		t.Fatalf("got %v, want ErrDryRun", err)
 	}

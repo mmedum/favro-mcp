@@ -2,38 +2,22 @@
 
 ## Reporting a vulnerability
 
-Report privately, never in a public issue: use
-[GitHub's private vulnerability reporting](https://github.com/mmedum/favro-mcp/security/advisories/new)
-for this repository.
+Report it privately, through GitHub's
+[security advisory form](https://github.com/mmedum/favro-mcp/security/advisories/new)
+on this repository. Do not open a public issue.
 
-Please include what an attacker can do and the smallest sequence that
-shows it. **Do not include anything from a real Favro organization** —
-no tokens, organization ids, card ids or names, or addresses. A
-description by role is enough to act on.
+Include what an attacker could do, how to reproduce it, and the version
+(`favro-mcp --version`, a release tag or a commit). Never include
+anything from a real Favro organization: no token, organization id,
+card id or name, or address. A description by role is enough.
 
-Expect an acknowledgment within a week. If a fix ships, the advisory
-and the changelog will say what was wrong and which versions carried it.
+## Supported version
 
-## Supported versions
+Only the latest release receives fixes.
 
-The latest release. This is a single-maintainer project and there are no
-backport branches.
+## Response
 
-## What this server is, in security terms
+We acknowledge a report within **7 days**.
 
-It runs on your own machine, holds one Favro API token, and talks to one
-Favro organization over HTTPS. There is no service to host and no
-multi-tenant boundary to cross.
-
-- **The token** resolves from the environment or your OS keyring, and is
-  never logged, never returned by a tool, and never printed by
-  `favro-mcp doctor` in either of its modes.
-- **Stdout carries MCP JSON-RPC frames and nothing else.** Diagnostics go
-  to stderr through `slog`, and no payload is logged.
-- **Destructive tools are not registered** unless
-  `FAVRO_ENABLE_DESTRUCTIVE=true`, and each call must pass `confirm:
-  true`. A host running in an auto-approve mode will call an annotated
-  tool without prompting, which is why this is a registration decision
-  rather than a per-call one.
-- **Every mutating tool takes `dry_run`**, gated in the HTTP client
-  rather than in each tool, so a dry run cannot reach the network.
+[`docs/security.md`](docs/security.md) is the threat model. It says what
+counts as a vulnerability here and what does not.

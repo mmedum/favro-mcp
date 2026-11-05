@@ -1219,7 +1219,7 @@
         "readOnlyHint": false,
         "title": "Create Favro card"
       },
-      "description": "Create a new Favro card. `name` is required; pass `widget_common_id` (resolve via favro_resolve_widget) to create on a board, or omit to put the card on the authenticated user's todo list. Tag attachment uses tag_ids only — add-tag-by-name with hard-fail-on-unknown is the Phase 6 favro_add_tag_to_card tool. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview the request without contacting Favro.",
+      "description": "Create a new Favro card. `name` is required; pass `widget_common_id` (resolve via favro_resolve_widget) to create on a board, or omit to put the card on the authenticated user's todo list. Tag attachment uses tag_ids only — to add a tag by name, use favro_add_tag_to_card, which hard-fails on an unknown name. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview the request without contacting Favro.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1280,7 +1280,7 @@
             "type": "string"
           },
           "tag_ids": {
-            "description": "existing tagIds to apply on creation. Resolve via favro_resolve_tag — adding tags by name is intentionally not exposed here (use the Phase 6 favro_add_tag_to_card tool, which hard-fails on unknown names).",
+            "description": "existing tagIds to apply on creation. Resolve via favro_resolve_tag — adding tags by name is intentionally not exposed here (use favro_add_tag_to_card, which hard-fails on unknown names).",
             "items": {
               "type": "string"
             },
@@ -2683,7 +2683,7 @@
         "readOnlyHint": false,
         "title": "Create Favro widget"
       },
-      "description": "Create a new Favro widget (board) inside a collection. `collection_id` and `name` are required. `type` defaults to Favro's choice ('backlog') when omitted; pass 'board' / 'calendar' / 'table' / 'matrix' to override. Successful live writes invalidate the widget cache. Pass `dry_run: true` to preview.",
+      "description": "Create a new Favro widget (board) inside a collection. `collection_id`, `name` and `type` ('backlog' or 'board') are required; a call without a type is refused before anything is sent. Successful live writes invalidate the widget cache. Pass `dry_run: true` to preview.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2716,7 +2716,7 @@
             "type": "string"
           },
           "type": {
-            "description": "widget type: 'backlog', 'board', 'calendar', 'table', or 'matrix'. Empty lets Favro pick its default ('backlog').",
+            "description": "widget type: 'backlog' or 'board', the types Favro's reference lists. Required: a call without one is refused [invalid] before anything is sent, dry run included.",
             "type": "string"
           }
         },
@@ -5579,7 +5579,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           },
           "since": {
@@ -5727,7 +5727,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           },
           "sequential_id": {
@@ -6090,7 +6090,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           }
         },
@@ -6220,7 +6220,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           },
           "widget_common_id": {
@@ -6330,7 +6330,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           }
         },
@@ -6450,7 +6450,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           }
         },
@@ -6628,7 +6628,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           }
         },
@@ -6740,7 +6740,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           }
         },
@@ -6859,7 +6859,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           }
         },
@@ -6945,7 +6945,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           }
         },
@@ -7039,7 +7039,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           },
           "task_list_id": {
@@ -7137,7 +7137,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           }
         },
@@ -7306,7 +7306,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "request_id from a prior page; required when page \u003e 0 (Favro routes via X-Favro-Backend-Identifier)",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
             "type": "string"
           }
         },
@@ -8036,7 +8036,7 @@
             "type": "integer"
           },
           "limit": {
-            "description": "per-organization quota Favro reported (X-RateLimit-Limit)",
+            "description": "the quota Favro reported in X-RateLimit-Limit; 0 if the header was absent",
             "type": "integer"
           },
           "remaining": {
@@ -10617,7 +10617,7 @@
         "readOnlyHint": false,
         "title": "Update Favro card"
       },
-      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; surgical markdown edits are Phase 6's append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\nA write that sets `column_id`, `lane_id` or `sheet_position`, which a structural write on a nested card sets for you, is then read back, and whether the card is where it was asked to be is reported in `notes` — the response alone cannot say, because a 200 echoing the requested column is also what an ignored write returns. That costs one request; pass `skip_verify: true` to drop it. Favro reads `parentCardId` off the body of a write carrying `widget_common_id`, so a body naming none leaves the card at top level — and the response echoes a null parent either way, so the answer cannot tell you which happened. This tool therefore reads the card first on such a write and carries its existing parent through with its place among the parent's children (`sheet_position`), saying so in `notes`. Pass `clear_parent: true` to detach the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
+      "description": "Update a Favro card by its per-widget cardId. Every body field is optional — pass at least one. For relocations prefer favro_move_card; for archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). `detailed_description` whole-body replaces; for surgical markdown edits use favro_append_card_description, favro_prepend_card_description or favro_replace_in_card_description. Tag mutations use *_tag_ids only. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\nA write that sets `column_id`, `lane_id` or `sheet_position`, which a structural write on a nested card sets for you, is then read back, and whether the card is where it was asked to be is reported in `notes` — the response alone cannot say, because a 200 echoing the requested column is also what an ignored write returns. That costs one request; pass `skip_verify: true` to drop it. Favro reads `parentCardId` off the body of a write carrying `widget_common_id`, so a body naming none leaves the card at top level — and the response echoes a null parent either way, so the answer cannot tell you which happened. This tool therefore reads the card first on such a write and carries its existing parent through with its place among the parent's children (`sheet_position`), saying so in `notes`. Pass `clear_parent: true` to detach the card on purpose, or `parent_card_id` to re-parent it. Either one also skips the read.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -10632,7 +10632,7 @@
             ]
           },
           "add_tag_ids": {
-            "description": "existing tagIds to add to the card. Resolve via favro_resolve_tag. Adding tags by name is intentionally not exposed here (Phase 6's favro_add_tag_to_card hard-fails on unknown names).",
+            "description": "existing tagIds to add to the card. Resolve via favro_resolve_tag. Adding tags by name is intentionally not exposed here (favro_add_tag_to_card hard-fails on unknown names).",
             "items": {
               "type": "string"
             },
@@ -10654,7 +10654,7 @@
             "type": "string"
           },
           "detailed_description": {
-            "description": "replacement markdown body. Phase 6's favro_append/prepend/replace_in_card_description tools provide surgical edits; this one whole-body replaces. Favro normalizes markdown when storing it; the returned card shows the stored form.",
+            "description": "replacement markdown body. favro_append_card_description, favro_prepend_card_description and favro_replace_in_card_description provide surgical edits; this one whole-body replaces. Favro normalizes markdown when storing it; the returned card shows the stored form.",
             "type": "string"
           },
           "drag_mode": {
@@ -12634,7 +12634,7 @@
         "readOnlyHint": false,
         "title": "Upload Favro attachment"
       },
-      "description": "Upload a local file as an attachment on a Favro card via raw-bytes POST. Reads `file_path` from the directory FAVRO_UPLOAD_DIR names, and from nowhere else; this tool exists only when that is set. Then POSTs to `/cards/{cardId}/attachment` with `Content-Type: application/octet-stream` and the filename in the query string. `filename` defaults to the file's basename if omitted. Cap is 8 MiB per upload — larger files surface a typed error before any HTTP work. Returns the created attachment object `{name, fileURL}` (Favro echoes the attachment, NOT the updated Card — verified live). Successful live writes invalidate the search-cards cache (cached card payloads carry stale attachment lists otherwise). Pass `dry_run: true` to preview without contacting Favro. Use favro_remove_attachment to detach a file.",
+      "description": "Upload a local file as an attachment on a Favro card via raw-bytes POST. Reads `file_path` from the directory FAVRO_UPLOAD_DIR names, and from nowhere else; this tool exists only when that is set. Then POSTs to `/cards/{cardId}/attachment` with `Content-Type: application/octet-stream` and the filename in the query string. `filename` defaults to the file's basename if omitted. Cap is 8 MiB per upload — larger files surface a typed error before any HTTP work. Returns the created attachment object `{name, fileURL}` (Favro answers with the attachment, NOT the updated Card). Successful live writes invalidate the search-cards cache (cached card payloads carry stale attachment lists otherwise). Pass `dry_run: true` to preview without contacting Favro. Use favro_remove_attachment to detach a file.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

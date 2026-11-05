@@ -14,7 +14,7 @@ const (
 	getCollectionToolName   = "favro_get_collection"
 )
 
-// listCollectionsInput extends the standard pagination shape with
+// listCollectionsInput extends the shared pagination shape with
 // the optional archived flag.
 type listCollectionsInput struct {
 	listInput

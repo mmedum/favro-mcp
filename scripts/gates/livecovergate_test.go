@@ -22,16 +22,17 @@ func TestLiveCoverAgainstThisRepository(t *testing.T) {
 }
 
 // The steps run against objects the organization already holds, so a
-// step that writes and does not carry dry_run: true writes to one.
+// step that writes and does not carry dry_run: true writes to one. The
+// message names the step by its Name.
 func TestStepsWithoutDryRunNamesEveryWriteThatLacksIt(t *testing.T) {
 	readOnly := map[string]bool{"favro_get_card": true, "favro_delete_card": false}
 	steps := []livecover.Step{
-		{Tool: "favro_get_card", Args: map[string]any{"card_id": livecover.AnyCardID}, Why: "a read needs none"},
-		{Tool: "favro_delete_card", Args: map[string]any{"confirm": true, "dry_run": true}, Why: "carries it"},
-		{Tool: "favro_delete_card", Args: map[string]any{"confirm": true}, Why: "omits it"},
-		{Tool: "favro_delete_card", Args: map[string]any{"confirm": true, "dry_run": false}, Why: "turns it off"},
-		{Tool: "favro_delete_card", Args: map[string]any{"confirm": true, "dry_run": "true"}, Why: "sends a string"},
-		{Tool: "favro_not_in_the_schema", Args: map[string]any{}, Why: "an unknown tool writes"},
+		{Name: "a read needs none", Tool: "favro_get_card", Args: map[string]any{"card_id": livecover.AnyCardID}},
+		{Name: "carries it", Tool: "favro_delete_card", Args: map[string]any{"confirm": true, "dry_run": true}},
+		{Name: "omits it", Tool: "favro_delete_card", Args: map[string]any{"confirm": true}},
+		{Name: "turns it off", Tool: "favro_delete_card", Args: map[string]any{"confirm": true, "dry_run": false}},
+		{Name: "sends a string", Tool: "favro_delete_card", Args: map[string]any{"confirm": true, "dry_run": "true"}},
+		{Name: "an unknown tool writes", Tool: "favro_not_in_the_schema", Args: map[string]any{}},
 	}
 
 	problems, writes := stepsWithoutDryRun(steps, readOnly)

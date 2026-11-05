@@ -52,20 +52,30 @@ type WidgetColumn struct {
 
 // ListWidgetsFilter bundles the documented query parameters for
 // /widgets. Both fields are optional; a zero filter requests every
-// widget the token can see in the organization.
+// active widget the token can see in the organization.
 type ListWidgetsFilter struct {
 	CollectionID string
-	Archived     bool
+	// Archived, when true, includes archived widgets beside the active
+	// ones.
+	Archived bool
 }
 
-// Values returns the filter as url.Values; empty fields are omitted.
+// Values returns the filter as url.Values; an empty CollectionID is
+// omitted.
 func (f ListWidgetsFilter) Values() url.Values {
 	q := url.Values{}
 	if f.CollectionID != "" {
 		q.Set("collectionId", f.CollectionID)
 	}
-	if f.Archived {
-		q.Set("archived", "true")
+	// Favro answers no archived parameter with active and archived
+	// widgets, archived=false with active ones only, and archived=true
+	// with archived ones only. Its reference says only "If true, return
+	// archived widgets. Optional." Checked by hand against a live
+	// organization; the live steps "list widgets" and "list widgets,
+	// archived ones included" read each form.
+	// https://favro.com/developer/#get-all-widgets
+	if !f.Archived {
+		q.Set("archived", "false")
 	}
 	return q
 }
@@ -75,7 +85,9 @@ func (f ListWidgetsFilter) Values() url.Values {
 //
 // Type is one of "backlog" / "board" / "calendar" / "table" /
 // "matrix" — left as a plain string because Favro extends the value
-// set without notice. Empty Type lets Favro pick the default.
+// set without notice. Favro refuses a widget without a type, "type is
+// expected as one of backlog, board", as its reference marks it required.
+// https://favro.com/developer/#create-a-widget
 type CreateWidgetRequest struct {
 	CollectionID          string `json:"collectionId"`
 	Name                  string `json:"name"`

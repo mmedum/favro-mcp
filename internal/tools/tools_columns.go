@@ -16,7 +16,7 @@ const (
 	getColumnToolName   = "favro_get_column"
 )
 
-// listColumnsInput extends the standard pagination shape with the
+// listColumnsInput extends the shared pagination shape with the
 // required widget filter. Unlike widgets (where `collection_id` is
 // optional), Favro's /columns endpoint rejects unfiltered listings
 // with HTTP 400, so the field is mandatory.

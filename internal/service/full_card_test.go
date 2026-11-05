@@ -855,7 +855,7 @@ func TestGetFullCard_SkipsResolversWhenCardHasNoIDs(t *testing.T) {
 func cfFloat(n float64) *float64 { return &n }
 
 // A card assigned to someone has a to-do list copy, with no widget or
-// column, and Favro lists it before the board copy (§18, 2026-10-27).
+// column, and Favro lists it before the board copy.
 var (
 	todoCopy  = favro.Card{CardID: "c-todo", CardCommonID: "cc-1", Name: "assigned", SequentialID: 7, TodoListUserID: "u-1"}
 	boardCopy = favro.Card{

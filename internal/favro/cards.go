@@ -40,8 +40,8 @@ type Card struct {
 	Position     float64 `json:"position,omitempty"`
 	ListPosition float64 `json:"listPosition,omitempty"`
 	// SheetPosition is the card's place in a sheet view. Documented on
-	// the card and previously modeled only on the write requests, so a
-	// read dropped it — found by `gates api-fields`.
+	// the card, and Favro sends it.
+	// https://favro.com/developer/#card
 	SheetPosition float64 `json:"sheetPosition,omitempty"`
 	IsArchived    bool    `json:"archived,omitempty"`
 	// IsLane signals that this "card" is the meta-row representing
@@ -70,10 +70,10 @@ type Card struct {
 	// field type; CustomFieldItemIDs / Total carry the typed flavors
 	// callers commonly need without requiring a parse.
 	//
-	// Favro's docs name this field `customFields` while this client
-	// has always decoded `customFieldsValues`. Rather than pick one,
-	// both keys decode and CustomFields() reconciles them — read
-	// through that accessor, not these fields directly.
+	// Favro's reference names this field `customFields`, and this client
+	// also decodes `customFieldsValues`. Both keys decode and
+	// CustomFields() reconciles them — read through that accessor, not
+	// these fields directly.
 	CustomFieldsValues []CardCustomFieldValue `json:"customFieldsValues,omitempty"`
 	CustomFieldsDocKey []CardCustomFieldValue `json:"customFields,omitempty"`
 	// TasksTotal / TasksDone are the on-card checklist counts. Lets
@@ -144,11 +144,11 @@ type CardTasklist struct {
 }
 
 // CustomFields returns the card's custom-field values, reconciling
-// the two wire keys Favro's docs and its payloads disagree on:
-// `customFieldsValues` (what this client has always decoded) and
-// `customFields` (what the docs describe). Whichever arrives
-// non-empty wins; the documented key is preferred on the unlikely
-// chance both are present.
+// two wire keys: `customFields`, which the reference documents and a
+// live read returns, and `customFieldsValues`, which this client also
+// accepts. Whichever arrives non-empty wins; the documented key is
+// preferred on the unlikely chance both are present.
+// https://favro.com/developer/#card
 func (c Card) CustomFields() []CardCustomFieldValue {
 	if len(c.CustomFieldsDocKey) > 0 {
 		return c.CustomFieldsDocKey
@@ -163,8 +163,10 @@ type CardAttachment struct {
 	Name    string `json:"name"`
 	FileURL string `json:"fileURL,omitempty"`
 	// ThumbnailURL is Favro's preview of the attachment, where it has
-	// one. Presigned like FileURL, so it is re-minted on every read and
-	// is not a stable identifier — see CanonicalAttachmentURL.
+	// one, and Favro sends it. Presigned like FileURL, so it is re-minted
+	// on every read and is not a stable identifier — see
+	// CanonicalAttachmentURL.
+	// https://favro.com/developer/#attachment
 	ThumbnailURL string `json:"thumbnailURL,omitempty"`
 }
 
@@ -231,9 +233,9 @@ type CardAssignment struct {
 // ListCardsFilter bundles the filter knobs Favro's /cards endpoint
 // accepts. Favro requires at least one of widgetCommonId,
 // collectionId, cardCommonId, cardSequentialId, or todoList — an
-// otherwise-empty filter returns HTTP 400 (verified live in Phase
-// 4.3). All fields are optional individually; the caller is
-// responsible for setting at least one of the five required ones.
+// otherwise-empty filter returns HTTP 400. All fields are optional
+// individually; the caller is responsible for setting at least one of
+// the five required ones.
 type ListCardsFilter struct {
 	WidgetCommonID string
 	CollectionID   string
@@ -248,9 +250,8 @@ type ListCardsFilter struct {
 	// TodoList, when true, scopes to the authenticated user's
 	// personal todo list (Favro's user-private tasklist).
 	TodoList bool
-	// Archived, when true, includes archived cards in the result;
-	// when false (default) Favro filters them server-side. Replaces
-	// Phase 4.3 search.go's client-side filter.
+	// Archived, when true, includes archived cards beside the active
+	// ones; when false (default) Favro returns active cards only.
 	Archived bool
 	// Unique requests one row per CardCommonID rather than one row
 	// per widget instance. Useful when the caller is searching by
@@ -258,9 +259,8 @@ type ListCardsFilter struct {
 	Unique bool
 	// DescriptionFormat selects DescriptionFormatPlaintext (default)
 	// or DescriptionFormatMarkdown for Card.DetailedDescription.
-	// Empty means Favro's default.
-	// Phase 4.3 search.go and Phase 6 description editors require
-	// "markdown" so the markdown stripper / surgical-edit logic
+	// Empty means Favro's default. Search and the description editors
+	// require "markdown" so the markdown stripper / surgical-edit logic
 	// sees the format it expects.
 	DescriptionFormat string
 }
@@ -273,9 +273,10 @@ const (
 	DescriptionFormatMarkdown  = "markdown"
 )
 
-// Values returns the filter as url.Values; empty fields are
-// omitted. Exported so callers that paginate via favro.Paginate
-// (e.g. internal/service/search.go) can re-use the filter encoding.
+// Values returns the filter as url.Values; every empty field but
+// Archived is omitted. Exported so callers that paginate via
+// favroapi.Paginate (e.g. internal/service/search.go) can re-use the
+// filter encoding.
 func (f ListCardsFilter) Values() url.Values {
 	q := url.Values{}
 	if f.WidgetCommonID != "" {
@@ -296,8 +297,15 @@ func (f ListCardsFilter) Values() url.Values {
 	if f.TodoList {
 		q.Set("todoList", "true")
 	}
-	if f.Archived {
-		q.Set("archived", "true")
+	// Favro answers no archived parameter with active and archived
+	// cards, archived=false with active ones only, and archived=true with
+	// archived ones only. Its reference says only "If true, return
+	// archived cards." Checked by hand against a live organization; the
+	// live steps "list a widget's cards" and "list a widget's cards,
+	// archived ones included" read each form.
+	// https://favro.com/developer/#get-all-cards
+	if !f.Archived {
+		q.Set("archived", "false")
 	}
 	if f.Unique {
 		q.Set("unique", "true")
@@ -310,20 +318,17 @@ func (f ListCardsFilter) Values() url.Values {
 
 // CreateCardRequest is the body for POST /cards. Name is the only
 // required field; widgetCommonId pins the card to a board (omit and
-// the card lands on the authenticated user's todo list). The full
-// API surface includes tasklists / customFields / dependencies /
-// favroAttachments — Phase 5.3 omits them; Phase 5.5 adds simple
-// custom fields, Phase 7 covers tasklists + attachments.
+// the card lands on the authenticated user's todo list).
 //
 // Tags and TagIDs are both accepted by Favro: Tags are tag *names*
 // (Favro auto-creates missing ones) and TagIDs are existing tagIds.
-// The MCP create_card tool exposes only tag_ids — auto-create from
-// name is the kind of typo amplifier the plan §6 design avoids; the
-// "add tag by name with hard-fail on unknown" UX lives in Phase 6's
-// favro_add_tag_to_card.
+// The MCP create_card tool exposes only tag_ids, because creating a tag
+// from a name turns a typo into a permanent org-global tag; adding a
+// tag by name, refusing an unknown one, is favro_add_tag_to_card.
+//
 // ListPosition / SheetPosition (on this and UpdateCardRequest) are
-// JSON numbers — verified live Phase 5.3: string values, even numeric
-// ones, return HTTP 400 "Unexpected value of listPosition". 0 is the
+// JSON numbers: string values, even numeric ones, return HTTP 400
+// "Unexpected value of listPosition". 0 is the
 // top of the column; a value larger than the current max bumps to
 // the bottom; a fractional value (e.g. 3.5) slots between two
 // siblings without renumbering. Pointer typing distinguishes
@@ -369,7 +374,7 @@ type CreateCardRequest struct {
 // Tag mutations come in two flavors: AddTags / RemoveTags (by name,
 // auto-create on add) and AddTagIDs / RemoveTagIDs (by tagId,
 // strict). The MCP update_card tool exposes only the *_tag_ids
-// flavors — Phase 6's favro_add_tag_to_card handles the by-name path
+// flavors — favro_add_tag_to_card handles the by-name path
 // with hard-fail-on-unknown semantics.
 //
 // DragMode is "commit" (default — Favro re-positions cards around
@@ -380,11 +385,9 @@ type CreateCardRequest struct {
 // for the wire contract. Neither is required to move a card between
 // columns; WidgetCommonID is. MoveCardRequest carries that contract.
 //
-// CustomFields carries per-card custom-field updates (Phase 5.5
-// added). The MCP `favro_set_card_custom_field` convenience tool
-// builds a single-element slice for simple-type fields; long-tail
-// types (Members, Status, Multi-select, Rating, Link) ship in
-// Phase 7. Tasklists / attachment removal stay deferred.
+// CustomFields carries per-card custom-field updates. The MCP
+// `favro_set_card_custom_field` convenience tool builds a
+// single-element slice for one field.
 type UpdateCardRequest struct {
 	Name                string                  `json:"name,omitempty"`
 	DetailedDescription string                  `json:"detailedDescription,omitempty"`
@@ -533,23 +536,25 @@ type CustomFieldTimeReport struct {
 // WidgetCommonID / ColumnID / LaneID must be set; an empty request
 // would PUT a no-op and silently succeed.
 //
-// **Wire-contract gotcha (verified live 2026-09-15):** a move that
-// sets ColumnID or LaneID must also set WidgetCommonID. Without it
-// Favro answers HTTP 200 with a stub card and leaves the card where it
-// was — favroapi.UpdateCard refuses the shape rather than sending it.
-// For a move within one board WidgetCommonID is the board the card is
-// already on.
+// **Wire-contract gotcha:** a move that sets ColumnID or LaneID must
+// also set WidgetCommonID. Without it Favro answers HTTP 200 with a stub
+// card and leaves the card where it was — favroapi.UpdateCard refuses
+// the shape rather than sending it. For a move within one board
+// WidgetCommonID is the board the card is already on.
 //
-// Phase 5.3 recorded this no-op and blamed ListPosition, which was the
-// wrong field: a column move lands without one. ListPosition still
-// chooses where in the destination the card arrives — 0 is the top, a
-// number past the column's current max sends it to the bottom, and
-// fractional values slot between siblings.
+// A column move lands without ListPosition. ListPosition chooses where
+// in the destination the card arrives — 0 is the top, a number past
+// the column's current max sends it to the bottom, and fractional
+// values slot between siblings.
 //
 // A move to a different widget is an ADD, not a relocation: the source
 // instance stays on its board and a second cardId appears on the
 // target, both under the one cardCommonId. Favro has no single call
-// that relocates a card between boards.
+// that relocates a card between boards, and its reference calls this
+// committing the card to another widget. The live step
+// "move a card across widgets with every positioning option, dry run"
+// only builds the body.
+// https://favro.com/developer/#update-a-card
 //
 // DragMode defaults to Favro's "commit" when empty (cards around
 // the destination position re-shuffle); pass "move" to leave
@@ -570,9 +575,8 @@ type MoveCardRequest struct {
 }
 
 // DeleteCardResponse is the body Favro returns from DELETE /cards/{id}:
-// a bare JSON array of the per-widget cardIds that were removed
-// (verified live in Phase 5.3 — the docs hint at `{"cardIds":[...]}`
-// but the wire shape is the bare array). With everywhere=false this
+// a bare JSON array of the per-widget cardIds that were removed, as
+// the reference shows. With everywhere=false this
 // is a single-element slice (the targeted instance); with
 // everywhere=true it carries every widget instance the cardCommonId
 // had.

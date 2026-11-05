@@ -122,11 +122,11 @@ func TestEveryToolIsAnnotated(t *testing.T) {
 	}
 }
 
-// TestContentAndStructuredContentDiffer is standard §2: a client may
-// show the model one half or the other, so both must be present and
-// they must not be the same bytes. Every tool in this repository
-// returned a nil *mcp.CallToolResult, which is exactly the state where
-// the SDK copies the marshaled output into a TextContent block.
+// TestContentAndStructuredContentDiffer holds that both halves of a
+// result are present and are not the same bytes (D-61): a client may
+// show the model one half or the other. A handler that returns a nil
+// *mcp.CallToolResult, as every handler here does, is exactly the state
+// where the SDK copies the marshaled output into a TextContent block.
 func TestContentAndStructuredContentDiffer(t *testing.T) {
 	t.Parallel()
 
@@ -175,9 +175,9 @@ func TestContentAndStructuredContentDiffer(t *testing.T) {
 }
 
 // TestListToolContentSummarizesThePage covers the shape that matters
-// most for §4.4: this server never aggregates pages, so a caller that
-// misses next_page reads a prefix of the answer and believes it is the
-// whole one. The readable half has to say so.
+// most: this server never aggregates pages, so a caller that misses
+// next_page reads a prefix of the answer and believes it is the whole
+// one. The readable half has to say so.
 func TestListToolContentSummarizesThePage(t *testing.T) {
 	t.Parallel()
 
@@ -271,7 +271,7 @@ func requireDeclaredClassPrefix(t *testing.T, text string) {
 
 	got := render.Class(text[1:end])
 	if !slices.Contains(render.Classes, got) {
-		t.Errorf("%q is not in the closed vocabulary; add it to render.Classes and docs/architecture.md §6.2, or use one that is already there", got)
+		t.Errorf("%q is not in the closed vocabulary; add it to render.Classes and to the error-class table in docs/TOOLS.md#error-classes, or use one that is already there", got)
 	}
 }
 
@@ -394,18 +394,13 @@ func TestClassedErrorsSurviveWrapping(t *testing.T) {
 // wire contract for a column move, rather than to whichever half of it
 // the author of a given struct tag remembered.
 //
-// The contract, verified live 2026-09-15: Favro requires
-// widgetCommonId whenever columnId or laneId is set, and answers 200
-// with a stub card without it. list_position has nothing to do with it.
+// The contract: Favro requires widgetCommonId whenever columnId or
+// laneId is set, and answers 200 with a stub card without it
+// (favroapi.UpdateCard). list_position has nothing to do with it.
 //
-// This test exists because the repository already got this wrong once
-// in the way rule 14 describes. v1.0.0 recorded all four fields a
-// column move sends; the wire-type comment and two struct tags then
-// narrowed that to list_position alone — the one field that does not
-// matter — and left all four optional. Prose said it, nothing held it,
-// and it decayed into the opposite of the finding. The list of tools
-// comes from the registered surface, so a card tool added later is
-// covered by having been registered.
+// A contract that only prose states decays, so this one is a test. Its
+// list of tools comes from the registered surface, so a card tool added
+// later is covered by having been registered.
 func TestColumnMoveContractIsStatedOnce(t *testing.T) {
 	t.Parallel()
 
@@ -597,7 +592,53 @@ func TestADryRunWritesNothingWhateverTheHandlerDoes(t *testing.T) {
 	}
 }
 
-// TestOnlyTheWidestWritesPrompt holds the marked set (§9.2). A tag,
+// TestEveryWriteTakesDryRunAndSendsNothing holds dry_run over the
+// registered surface (D-28): every tool not marked read-only takes
+// dry_run, and its smoke row as a dry run sends no write to Favro. A dry
+// run may still read to build its preview, as dry_run's own description
+// says, so a GET is not counted.
+func TestEveryWriteTakesDryRunAndSendsNothing(t *testing.T) {
+	t.Parallel()
+
+	var writes atomic.Int32
+	smoke := smokeFixtureHandler(t)
+	cs := connectInMemoryWith(t, favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writes.Add(1)
+		}
+		smoke.ServeHTTP(w, r)
+	})))
+	file := writeSmokeAttachment(t)
+	res, err := cs.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range res.Tools {
+		if tool.Annotations != nil && tool.Annotations.ReadOnlyHint {
+			continue
+		}
+		if _, ok := inputProperties(t, tool)["dry_run"]; !ok {
+			t.Errorf("%s is not marked read-only and takes no dry_run; embed dryRunInput in its input", tool.Name)
+			continue
+		}
+		args := substituteSmokePlaceholders(smokeToolInputs[tool.Name], file)
+		args["dry_run"] = true
+		before := writes.Load()
+		out, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tool.Name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.IsError {
+			t.Errorf("%s: its dry run failed, so nothing was checked: %s", tool.Name, serializedResponseString(t, out))
+			continue
+		}
+		if n := writes.Load() - before; n != 0 {
+			t.Errorf("%s as a dry run sent writes to Favro: got %d, want 0", tool.Name, n)
+		}
+	}
+}
+
+// TestOnlyTheWidestWritesPrompt holds the marked set (D-34). A tag,
 // group, widget or collection deleted takes with it something that
 // every card, share or board depends on, and a collection opened to the
 // organization or to anyone stays seen; Claude Code prompts on every
@@ -636,10 +677,14 @@ func TestRegistrationRefusesAMissingRule(t *testing.T) {
 		dryRunInput
 		confirmInput
 	}
+	type noDryRun struct{}
 	hn := func(context.Context, *mcp.CallToolRequest, noConfirm) (*mcp.CallToolResult, struct{}, error) {
 		return nil, struct{}{}, nil
 	}
 	hc := func(context.Context, *mcp.CallToolRequest, withConfirm) (*mcp.CallToolResult, struct{}, error) {
+		return nil, struct{}{}, nil
+	}
+	hd := func(context.Context, *mcp.CallToolRequest, noDryRun) (*mcp.CallToolResult, struct{}, error) {
 		return nil, struct{}{}, nil
 	}
 	for name, c := range map[string]struct {
@@ -658,6 +703,15 @@ func TestRegistrationRefusesAMissingRule(t *testing.T) {
 		"a marked read": {func(reg *registry) {
 			addTool(reg, &mcp.Tool{Name: "x", Annotations: readOnly("x"), Meta: promptEveryCall()}, hn)
 		}, "is not destructive"},
+		"a write that changes something without dry_run": {func(reg *registry) {
+			addTool(reg, &mcp.Tool{Name: "x", Annotations: changing("x")}, hd)
+		}, `tool "x" is not marked read-only and takes no dry_run`},
+		"a write that adds without dry_run": {func(reg *registry) {
+			addTool(reg, &mcp.Tool{Name: "x", Annotations: adding("x")}, hd)
+		}, `tool "x" is not marked read-only and takes no dry_run`},
+		"a tool with no annotations and no dry_run": {func(reg *registry) {
+			addTool(reg, &mcp.Tool{Name: "x"}, hd)
+		}, `tool "x" is not marked read-only and takes no dry_run`},
 	} {
 		func() {
 			defer func() {
@@ -669,11 +723,13 @@ func TestRegistrationRefusesAMissingRule(t *testing.T) {
 			c.add(&registry{srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), destructive: true})
 		}()
 	}
-	// And the rules' own shapes register: a marked delete, and an
-	// ordinary write that changes something without taking confirm.
+	// And the rules' own shapes register: a marked delete, an ordinary
+	// write that changes something without taking confirm, and a read
+	// that takes no dry_run.
 	reg := &registry{srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), destructive: true}
 	addTool(reg, &mcp.Tool{Name: "x", Annotations: changing("x"), Meta: promptEveryCall()}, hc)
 	addTool(reg, &mcp.Tool{Name: "y", Annotations: changing("y")}, hn)
+	addTool(reg, &mcp.Tool{Name: "z", Annotations: readOnly("z")}, hd)
 }
 
 // TestNoWriteWithoutConfirmSendsADelete backs up TestEveryWriteIsClassified
@@ -765,12 +821,12 @@ var (
 	}
 )
 
-// TestOnlyToolsThatAddSayTheyAreNotDestructive is the family rule
-// (standard §3). The MCP schema reads destructiveHint false as "the tool
-// performs only additive updates", so a write says false only when it
-// creates something new and changes nothing already there. A card's
-// tags and dependencies are changes to the card, and an append rewrites
-// the whole description.
+// TestOnlyToolsThatAddSayTheyAreNotDestructive holds that
+// destructiveHint is false only on a write that adds (D-33). The MCP
+// schema reads false as "the tool performs only additive updates", so a
+// write says false only when it creates something new and changes
+// nothing already there. A card's tags and dependencies are changes to
+// the card, and an append rewrites the whole description.
 func TestOnlyToolsThatAddSayTheyAreNotDestructive(t *testing.T) {
 	t.Parallel()
 

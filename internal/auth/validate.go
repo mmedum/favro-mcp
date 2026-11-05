@@ -26,9 +26,9 @@ var ErrAuthFailed = errors.New("authentication failed — Favro rejected the ema
 
 // Validator runs the live "is this token good?" check against Favro
 // at startup, so a bad token fails fast instead of being discovered
-// tool-call by tool-call later. The full Favro client (with retry,
-// pagination, caching, redacted debug logging) lands in Phase 2;
-// Validator is intentionally minimal — one request, no retry.
+// tool-call by tool-call later. Validator is intentionally minimal —
+// one request, no retry — because internal/favroapi, the full client,
+// imports this package.
 type Validator struct {
 	// BaseURL overrides the default Favro REST base URL. Tests point
 	// it at an httptest.Server; production leaves it empty.
@@ -56,8 +56,9 @@ func newHTTPClient() *http.Client {
 
 // Validate sends a single GET /organizations request authenticated
 // with tok. /organizations is the cheapest authenticated endpoint that
-// works on every Favro plan and doesn't require an organizationId
-// header to be valid.
+// needs no organizationId header. It is a user-level route, which Favro
+// limits to 50 calls an hour on every plan, Lite included.
+// https://favro.com/developer/#rate-limiting-and-throttling
 //
 // Errors:
 //   - An error from Token.Validate (*missingFieldError or

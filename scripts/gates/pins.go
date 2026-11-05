@@ -4,29 +4,62 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
 var (
-	usesLine    = regexp.MustCompile(`(?m)^\s*-?\s*uses:\s*([^\s#]+)`)
+	// usesLine stays on one line: a match that began on a blank line
+	// above would hand stepBlock indent 0, and the step would borrow a
+	// later step's version.
+	usesLine    = regexp.MustCompile(`(?m)^[ \t]*-?[ \t]*uses:[ \t]*([^\s#]+)`)
 	fullSHA     = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	exactSemver = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`)
 
 	// versionLine matches any input naming a tool's version, derived
 	// from the shape of the key rather than from a list of keys. A list
-	// goes stale silently: a sibling's named two keys that could never
-	// match, which read as coverage and provided none.
+	// goes stale silently: a key that can never match reads as coverage
+	// and provides none.
 	//
 	// `go-version-file` ends in `file`, so it is not matched, and it is
 	// a pin by reference anyway; a bare `go-version` would be caught,
 	// which is what we would want.
 	versionLine = regexp.MustCompile(`(?mi)^\s*([A-Za-z0-9_-]*(?:version|release)):\s*["']?([^"'\s#]+)["']?`)
 
-	// The Makefile's pinned tool invocations: `go run <module>@<version>`.
-	makeToolPin = regexp.MustCompile(`([A-Za-z0-9./_\-]+)@(v\d+\.\d+\.\d+[0-9A-Za-z.\-]*)`)
+	// A Makefile variable's value that pins a Go module: module@version,
+	// and no variable reference.
+	makePin = regexp.MustCompile(`^([^\s@$]+/[^\s@$]+)@([^\s@$]+)$`)
+	// A module a workflow runs at a version: module@version.
+	moduleAt = regexp.MustCompile(`([A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)+)@([^\s"'#]+)`)
+	// majorSuffix is a module path's major-version element, as in
+	// gitleaks/v8.
+	majorSuffix = regexp.MustCompile(`^v\d+$`)
 )
+
+// actionPins are the Makefile's modules CI installs through an action
+// rather than runs at module@version: the action, and the `with:` input
+// or `env:` variable on its step that names the version.
+var actionPins = map[string]struct {
+	action string
+	key    *regexp.Regexp
+}{
+	"github.com/golangci/golangci-lint/v2/cmd/golangci-lint": {"golangci/golangci-lint-action", stepKey("version")},
+	"github.com/zricethezav/gitleaks/v8":                     {"gitleaks/gitleaks-action", stepKey("GITLEAKS_VERSION")},
+}
+
+// stepKey matches key's value on a line of a step, under `with:` or
+// `env:` alike.
+func stepKey(key string) *regexp.Regexp {
+	return regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `:\s*["']?([^"'\s#]+)`)
+}
+
+// minMakefilePins is the fewest module pins the Makefile may hold, well
+// under what it holds: a reader that matched none would agree with CI
+// about nothing.
+const minMakefilePins = 2
 
 // workflowFile is one file under .github/workflows. code is the same
 // text with whole-line comments removed, computed once here rather than
@@ -69,19 +102,30 @@ func readWorkflows(root string) ([]workflowFile, error) {
 // pins holds every action to a full commit SHA and every tool it
 // installs to one exact version.
 //
-// GitHub's own guidance is that a full-length commit SHA is the only
-// immutable way to reference an action. The tool half matters just as
-// much and reads as complete when it is not: an action that fetches
-// `latest` is a pinned wrapper around an unpinned dependency, which is
-// how a green build stops being reproducible tomorrow.
+// GitHub's guidance is to pin each action to a full-length commit SHA,
+// so a backdoor pushed to the action's repository does not reach this
+// one. The tool half matters just as much and reads as complete when it
+// is not: an action that fetches `latest` is a pinned wrapper around an
+// unpinned dependency, which is how a green build stops being
+// reproducible tomorrow.
+// https://docs.github.com/en/actions/reference/security/secure-use#using-third-party-actions
 func pins(w io.Writer, _ []string) error {
 	root, err := moduleRoot()
 	if err != nil {
 		return err
 	}
+	return pinsAt(root, w)
+}
+
+// pinsAt runs the pins gate over the checkout at root.
+func pinsAt(root string, w io.Writer) error {
 	files, err := readWorkflows(root)
 	if err != nil {
 		return err
+	}
+	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		return fmt.Errorf("read Makefile: %w", err)
 	}
 
 	var problems []string
@@ -122,50 +166,116 @@ func pins(w io.Writer, _ []string) error {
 	if versions < 2 {
 		return fmt.Errorf("only %d tool versions found; the input names have probably changed", versions)
 	}
-	if err := scannersAgree(root, files); err != nil {
-		problems = append(problems, err.Error())
+	local := makefilePins(string(makefile))
+	if len(local) < minMakefilePins {
+		return fmt.Errorf("only %d module@version pins read from the Makefile, fewer than %d; the check is not reading them",
+			len(local), minMakefilePins)
 	}
+	problems = append(problems, makefileAgrees(code(string(makefile)), local, files)...)
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "\n"))
 	}
-	_, err = fmt.Fprintf(w, "pins ok: %d actions by SHA, %d tool versions exact, %d workflows pin the shell\n",
-		actions, versions, len(files))
+	_, err = fmt.Fprintf(w, "pins ok: %d actions by SHA, %d tool versions exact, %d workflows pin the shell, "+
+		"%d Makefile pins match the workflows\n", actions, versions, len(files), len(local))
 	return err
 }
 
-// scannersAgree keeps the local secret scan and CI's on one gitleaks.
-// Two versions means a commit can pass `make secrets` and fail the job,
-// on rules that exist in one build and not the other — and the person
-// who hits it has no way to reproduce the failure locally.
-func scannersAgree(root string, files []workflowFile) error {
-	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
-	if err != nil {
-		return fmt.Errorf("read Makefile: %w", err)
-	}
-	local := ""
-	for _, m := range makeToolPin.FindAllStringSubmatch(code(string(makefile)), -1) {
-		if strings.Contains(m[1], "gitleaks") {
-			local = m[2]
+// makefilePin is a Makefile variable set to a Go module at one version.
+type makefilePin struct{ variable, module, version string }
+
+// makefilePins is every `VAR ?= module@version` assignment, by variable,
+// at the value make gives it: the last assignment, as makeVars reads.
+func makefilePins(makefile string) []makefilePin {
+	var out []makefilePin
+	for variable, value := range makeVars(makefile) {
+		value, _, _ = strings.Cut(value, "#")
+		if m := makePin.FindStringSubmatch(strings.TrimSpace(value)); m != nil {
+			out = append(out, makefilePin{variable, m[1], m[2]})
 		}
 	}
-	if local == "" {
-		return fmt.Errorf("no pinned gitleaks module in the Makefile; the check is reading the wrong file")
-	}
-	ci := ""
-	for _, f := range files {
-		for _, m := range versionLine.FindAllStringSubmatch(f.code, -1) {
-			if strings.EqualFold(m[1], "GITLEAKS_VERSION") {
-				ci = m[2]
+	slices.SortFunc(out, func(a, b makefilePin) int { return strings.Compare(a.variable, b.variable) })
+	return out
+}
+
+// makefileAgrees holds each tool the Makefile pins to every version a
+// workflow pins it at. Two versions means `make check` passes on a tool
+// CI never runs, or fails on one it has moved past; a commit can pass
+// one and fail the other, with no way to reproduce the failure locally.
+// A pin no workflow makes is a tool only `make check` runs.
+func makefileAgrees(mk string, local []makefilePin, files []workflowFile) []string {
+	var problems []string
+	for _, p := range local {
+		tool := moduleTool(p.module)
+		if !strings.Contains(mk, "$("+p.variable+")") {
+			problems = append(problems, fmt.Sprintf("the Makefile sets %s and never runs $(%s)", p.variable, p.variable))
+		}
+		pinned := 0
+		for _, f := range files {
+			for _, v := range workflowPins(f.code, p.module) {
+				pinned++
+				if strings.TrimPrefix(v, "v") != strings.TrimPrefix(p.version, "v") {
+					problems = append(problems, fmt.Sprintf("%s is %s in the Makefile's %s and %s in %s; "+
+						"make check runs one and CI the other", tool, p.version, p.variable, v, f.name))
+				}
 			}
 		}
+		if pinned == 0 {
+			problems = append(problems, fmt.Sprintf("no workflow pins %s, which the Makefile runs at $(%s)", tool, p.variable))
+		}
 	}
-	if ci == "" {
-		return fmt.Errorf("no GITLEAKS_VERSION in any workflow; the check is reading the wrong place")
+	return problems
+}
+
+// moduleTool is the name a module's tool goes by: its last path element,
+// or the one before a major-version suffix, so gitleaks/v8 is gitleaks.
+func moduleTool(module string) string {
+	if base := path.Base(module); !majorSuffix.MatchString(base) {
+		return base
 	}
-	if strings.TrimPrefix(local, "v") != strings.TrimPrefix(ci, "v") {
-		return fmt.Errorf("gitleaks is %s in the Makefile and %s in CI; a commit can pass one and fail the other", local, ci)
+	return path.Base(path.Dir(module))
+}
+
+// workflowPins is every version a workflow pins module at: each
+// module@version it runs, and the version key of each step that
+// installs module through its action.
+func workflowPins(workflow, module string) []string {
+	var out []string
+	for _, m := range moduleAt.FindAllStringSubmatch(workflow, -1) {
+		if m[1] == module {
+			out = append(out, m[2])
+		}
 	}
-	return nil
+	via, ok := actionPins[module]
+	if !ok {
+		return out
+	}
+	for _, loc := range usesLine.FindAllStringSubmatchIndex(workflow, -1) {
+		if ref, _, _ := strings.Cut(workflow[loc[2]:loc[3]], "@"); ref != via.action {
+			continue
+		}
+		if m := via.key.FindStringSubmatch(stepBlock(workflow, loc[0])); m != nil {
+			out = append(out, m[1])
+		}
+	}
+	return out
+}
+
+// stepBlock is the step whose `uses:` line starts at start: that line and
+// every line after it indented deeper, up to the next step.
+func stepBlock(data string, start int) string {
+	lines := strings.Split(data[start:], "\n")
+	base := indentOf(lines[0])
+	var out []string
+	for i, ln := range lines {
+		if i > 0 && strings.TrimSpace(ln) != "" {
+			in := indentOf(ln)
+			if in < base || (in == base && strings.HasPrefix(strings.TrimSpace(ln), "- ")) {
+				break
+			}
+		}
+		out = append(out, ln)
+	}
+	return strings.Join(out, "\n")
 }
 
 // pinsShell reports whether a workflow sets bash as the default shell

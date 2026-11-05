@@ -18,19 +18,22 @@ import (
 var errMissingFilename = render.Sentinel(render.ClassInvalid, "favro: filename is required for attachment upload")
 
 // UploadAttachmentMaxBytes caps the in-memory size of a single
-// attachment upload. Favro's documented limit is 10 MiB; the cap
-// here is 8 MiB to leave headroom for HTTP framing and other
-// concurrent in-flight bodies. The MCP tool surfaces a typed error
-// rather than streaming a too-large file blindly.
+// attachment upload. Favro's reference gives the REST limit as
+// "10mb"; the cap here is 8 MiB, under either reading of that, to
+// leave headroom for HTTP framing and other concurrent in-flight
+// bodies. The MCP tool surfaces a typed error rather than streaming a
+// too-large file blindly.
+// https://favro.com/developer/#upload-a-file-to-card
 const UploadAttachmentMaxBytes = 8 * 1024 * 1024
 
 // UploadAttachment posts raw bytes to POST /cards/{cardId}/attachment
 // with the filename in the query string. Returns the created
-// favro.CardAttachment ({name, fileURL}) — verified live Phase 7.1 that
-// Favro echoes the *attachment object*, NOT the updated favro.Card the
-// docs hint at. Decoding into favro.Card silently fills only `Name` and
-// leaves the rest zero, which masks the contract; favro.CardAttachment
-// matches what Favro actually returns.
+// favro.CardAttachment ({name, fileURL}): Favro answers an upload with
+// the attachment object, not the card, as its reference says and as a
+// live organization answers, checked by hand. No live step uploads a
+// file. Decoding into favro.Card would fill only `Name` and leave the
+// rest zero.
+// https://favro.com/developer/#upload-a-file-to-card
 //
 // mimeType is optional; pass "" to let Favro infer the kind from the
 // filename extension. Empty cardID short-circuits with errMissingID;
@@ -98,17 +101,16 @@ func (c *Client) uploadAttachment(ctx context.Context, path, filename, mimeType 
 //
 // Favro documents removeAttachments as "the list of attachments
 // URLs". Pass favro.CardAttachment.FileURL as read — the query string is
-// stripped for you, see favro.CanonicalAttachmentURL for why that is
-// required rather than cosmetic.
+// stripped for you, see favro.CanonicalAttachmentURL for why the
+// presigned URL whole cannot match. Favro answers the display name and
+// the bare S3 object name with 200 and removes nothing.
 //
-// Two earlier attempts at this failed: Phase 7.1 passed the display
-// name and the bare S3 object name, and got HTTP 200 with no removal
-// both times; v1.1.0 passed the presigned URL whole, which cannot
-// match for the reason above.
-//
-// Verified live 2026-08-26: the stripped form does remove the
-// attachment. Favro still returns 200 whether or not anything matched,
-// so confirm by re-reading the card.
+// The stripped URL removes the attachment, checked by hand against a
+// live organization. No live step removes one: the step "remove an
+// attachment from a card by URL, dry run" only builds the body. Favro
+// returns 200 whether or not anything matched, so confirm by
+// re-reading the card.
+// https://favro.com/developer/#update-a-card
 func (c *Client) RemoveAttachment(ctx context.Context, cardID string, fileURLs ...string) (favro.Card, error) {
 	if cardID == "" {
 		return favro.Card{}, errMissingID

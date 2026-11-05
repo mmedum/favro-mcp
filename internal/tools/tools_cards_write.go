@@ -23,10 +23,11 @@ const (
 )
 
 // createCardInput is the input for favro_create_card. Tag *names*
-// are deliberately not exposed — only tag_ids — because Favro's
-// `tags: ["frontend"]` field auto-creates missing tags and is the
-// kind of typo amplifier plan §6 wants gated behind Phase 6's
-// hard-fail-on-unknown favro_add_tag_to_card.
+// are deliberately not exposed — only tag_ids — because Favro's `tags`
+// field creates any tag the organization lacks, so a typo becomes a
+// permanent organization-wide tag. Adding a tag by name is
+// favro_add_tag_to_card, which refuses an unknown name.
+// https://favro.com/developer/#create-a-card
 type createCardInput struct {
 	dryRunInput
 	Name                string   `json:"name" jsonschema:"the card name (required)"`
@@ -38,7 +39,7 @@ type createCardInput struct {
 	ListPosition        *float64 `json:"list_position,omitempty" jsonschema:"position on a kanban widget as a JSON number. 0 places the card at the top of the column; a number larger than the current max sends it to the bottom; fractional values (e.g. 3.5) slot between siblings without renumbering. (String values, even numeric, are rejected by Favro.)"`
 	SheetPosition       *float64 `json:"sheet_position,omitempty" jsonschema:"position on a sheet widget as a JSON number — same numeric vocabulary as list_position"`
 	AssignmentIDs       []string `json:"assignment_ids,omitempty" jsonschema:"userIds to assign on creation. Resolve via favro_resolve_user."`
-	TagIDs              []string `json:"tag_ids,omitempty" jsonschema:"existing tagIds to apply on creation. Resolve via favro_resolve_tag — adding tags by name is intentionally not exposed here (use the Phase 6 favro_add_tag_to_card tool, which hard-fails on unknown names)."`
+	TagIDs              []string `json:"tag_ids,omitempty" jsonschema:"existing tagIds to apply on creation. Resolve via favro_resolve_tag — adding tags by name is intentionally not exposed here (use favro_add_tag_to_card, which hard-fails on unknown names)."`
 	StartDate           string   `json:"start_date,omitempty" jsonschema:"ISO-8601 start date (e.g. 2026-05-05T00:00:00Z)"`
 	DueDate             string   `json:"due_date,omitempty" jsonschema:"ISO-8601 due date"`
 }
@@ -57,7 +58,7 @@ type updateCardInput struct {
 	verifyInput
 	CardID              string   `json:"card_id" jsonschema:"the per-widget cardId to update (NOT cardCommonId — Favro PUT /cards/{id} expects the per-widget instance id)"`
 	Name                string   `json:"name,omitempty" jsonschema:"new card name; omit to keep current"`
-	DetailedDescription string   `json:"detailed_description,omitempty" jsonschema:"replacement markdown body. Phase 6's favro_append/prepend/replace_in_card_description tools provide surgical edits; this one whole-body replaces. Favro normalizes markdown when storing it; the returned card shows the stored form."`
+	DetailedDescription string   `json:"detailed_description,omitempty" jsonschema:"replacement markdown body. favro_append_card_description, favro_prepend_card_description and favro_replace_in_card_description provide surgical edits; this one whole-body replaces. Favro normalizes markdown when storing it; the returned card shows the stored form."`
 	WidgetCommonID      string   `json:"widget_common_id,omitempty" jsonschema:"the board the card ends up on; **required whenever column_id or lane_id is set**, and for a same-board move it is the board the card is already on. For relocations prefer the dedicated favro_move_card tool"`
 	ColumnID            string   `json:"column_id,omitempty" jsonschema:"move card to a different column. Requires widget_common_id."`
 	LaneID              string   `json:"lane_id,omitempty" jsonschema:"move card to a different lane. Requires widget_common_id."`
@@ -68,7 +69,7 @@ type updateCardInput struct {
 	SheetPosition       *float64 `json:"sheet_position,omitempty" jsonschema:"position on a sheet widget as a JSON number — same numeric vocabulary as list_position"`
 	AddAssignmentIDs    []string `json:"add_assignment_ids,omitempty" jsonschema:"userIds to add to the card's assignments. Resolve via favro_resolve_user."`
 	RemoveAssignmentIDs []string `json:"remove_assignment_ids,omitempty" jsonschema:"userIds to remove from the card's assignments"`
-	AddTagIDs           []string `json:"add_tag_ids,omitempty" jsonschema:"existing tagIds to add to the card. Resolve via favro_resolve_tag. Adding tags by name is intentionally not exposed here (Phase 6's favro_add_tag_to_card hard-fails on unknown names)."`
+	AddTagIDs           []string `json:"add_tag_ids,omitempty" jsonschema:"existing tagIds to add to the card. Resolve via favro_resolve_tag. Adding tags by name is intentionally not exposed here (favro_add_tag_to_card hard-fails on unknown names)."`
 	RemoveTagIDs        []string `json:"remove_tag_ids,omitempty" jsonschema:"tagIds to remove from the card"`
 	StartDate           string   `json:"start_date,omitempty" jsonschema:"ISO-8601 start date"`
 	DueDate             string   `json:"due_date,omitempty" jsonschema:"ISO-8601 due date"`
@@ -119,8 +120,8 @@ func registerCreateCard(reg *registry, r *service.Resolver) {
 		Description: "Create a new Favro card. `name` is required; pass `widget_common_id` " +
 			"(resolve via favro_resolve_widget) to create on a board, or omit to put the " +
 			"card on the authenticated user's todo list. Tag attachment uses tag_ids only " +
-			"— add-tag-by-name with hard-fail-on-unknown is the Phase 6 favro_add_tag_to_card " +
-			"tool. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` " +
+			"— to add a tag by name, use favro_add_tag_to_card, which hard-fails on an unknown " +
+			"name. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` " +
 			"to preview the request without contacting Favro.",
 		Annotations: adding("Create Favro card"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createCardInput) (*mcp.CallToolResult, writeOutput[favro.Card], error) {
@@ -163,8 +164,9 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 		Description: "Update a Favro card by its per-widget cardId. Every body field is " +
 			"optional — pass at least one. For relocations prefer favro_move_card; for " +
 			"archiving prefer favro_archive_card / favro_unarchive_card (clearer LLM intent). " +
-			"`detailed_description` whole-body replaces; surgical markdown edits are Phase 6's " +
-			"append/prepend/replace tools. Tag mutations use *_tag_ids only. Successful live " +
+			"`detailed_description` whole-body replaces; for surgical markdown edits use " +
+			"favro_append_card_description, favro_prepend_card_description or " +
+			"favro_replace_in_card_description. Tag mutations use *_tag_ids only. Successful live " +
 			"writes invalidate the search-cards cache. Pass `dry_run: true` to preview.\n" +
 			verifyPlacementDescription +
 			"Favro reads `parentCardId` off the body of a write carrying `widget_common_id`, " +
@@ -220,9 +222,10 @@ func registerUpdateCard(reg *registry, r *service.Resolver) {
 }
 
 // errClearParentWithParent refuses the one input combination that asks
-// for two opposite things. ClassInvalid is §6.2's "two mutually
-// exclusive ones": the caller changes the arguments, and guessing which
-// half they meant is how a detach becomes a re-parent nobody asked for.
+// for two opposite things. It is ClassInvalid, the class for two
+// mutually exclusive arguments: the caller changes the arguments, and
+// guessing which half they meant is how a detach becomes a re-parent
+// nobody asked for.
 // The notes settleParent can emit. Hoisted so the guard's branches are
 // visible without reading past them, and so the detach phrase has one
 // spelling shared with the two dry-run previews.
@@ -249,25 +252,30 @@ var errClearParentWithParent = render.Sentinel(render.ClassInvalid,
 // whether or not the card was nested before — so renaming a nested
 // card, or nudging it one column along, returns 200 and quietly
 // detaches it. On a sectioned board that reads as the card having
-// disappeared, because people read sections.
+// disappeared, because people read sections. Favro's reference says
+// nothing of it.
 //
-// Only the parent is dropped. Probed live 2026-09-18 (§18): columnId
-// and listPosition survive the same write untouched, so the guard below
-// covers the whole of this rather than a third of it. laneId is not
-// testable — Favro publishes no lane endpoint — and §15 records that as
-// permanent rather than pending.
+// Only the parent is dropped: columnId and listPosition survive the
+// same write untouched, so the guard below covers the whole of this.
+// laneId cannot be probed, since Favro publishes no lane endpoint (see
+// favroapi.UpdateCard). Probed by hand on a dormant board.
 //
-// Naming the parent has a cost of its own. Probed live 2026-10-26 (§18):
-// a body naming a card's own parent re-seats it after the parent's last
-// child, sheetPosition 0 to 3 among three, unless the body names
-// sheetPosition too; naming the card's current one keeps it there, 0
-// included. So the read that finds the parent carries the card's place
-// as well, unless the caller named one.
+// Naming the parent has a cost of its own: a body naming a card's own
+// parent re-seats it after the parent's last child, sheetPosition 0 to
+// 3 among three, unless the body names sheetPosition too; naming the
+// card's current one keeps it there, 0 included. So the read that finds
+// the parent carries the card's place as well, unless the caller named
+// one. Probed by hand on a scratch collection.
+//
+// No live step sends a structural write. The live step
+// "update a card structurally without naming its parent, dry run" runs
+// the read and builds the body, and the live step
+// "move a card naming its own parent, dry run" builds one that skips it.
+// https://favro.com/developer/#update-a-card
 //
 // The notes still describe the body that was sent rather than the state
-// that resulted — hard rule 2 forbids inferring the second from a 200,
-// and the probe settled what Favro drops, not what any given write
-// stored.
+// that resulted: a 200 from Favro is not evidence of what it stored, and
+// the probes settled what Favro drops, not what any given write stored.
 //
 // The read is skipped entirely unless it can change the outcome, and it
 // runs under dry-run too, so the previewed body is the body that would

@@ -27,14 +27,14 @@ const (
 	SearchScopeCollection
 )
 
-// searchCardCacheTTL is plan §7's "card-list-by-search-scope 60s"
-// budget — short enough that mid-session card creation is visible
+// searchCardCacheTTL is how long one scope's card list serves
+// searches — short enough that mid-session card creation is visible
 // quickly, long enough that a chat with a few back-to-back search
 // queries shares one fetch.
 const searchCardCacheTTL = 60 * time.Second
 
 // searchCardCacheKeyPrefix is the namespace under which every search
-// cache key lives. Phase 5 mutating card tools will call
+// cache key lives. The card write tools call
 // InvalidateSearchCardCache, which uses InvalidatePrefix to drop
 // every entry in one call.
 const searchCardCacheKeyPrefix = "search:"
@@ -81,10 +81,11 @@ type scoredCard struct {
 	score     float64
 }
 
-// SearchCards is the entry point Phase 4.3 exposes. It runs a local
-// full-text search over the cards in scope and returns up to limit
-// hits ranked by name/body relevance. minScore (when > 0) drops
-// candidates below the threshold post-rank, pre-cap.
+// SearchCards is the search behind favro_search_cards and
+// favro_add_comment_to_card. It runs a local full-text search over the
+// cards in scope and returns up to limit hits ranked by name/body
+// relevance. minScore (when > 0) drops candidates below the threshold
+// post-rank, pre-cap.
 //
 // Empty query short-circuits to an empty result without touching
 // Favro — empty queries are not wildcards.

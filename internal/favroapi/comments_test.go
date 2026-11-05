@@ -196,8 +196,8 @@ func TestGetComment_NotFound(t *testing.T) {
 	}
 }
 
-// TestListComments_AttachmentsDecoding pins decode for the
-// Phase 4.5 addition of favro.Comment.Attachments.
+// TestListComments_AttachmentsDecoding pins decode for
+// favro.Comment.Attachments.
 func TestListComments_AttachmentsDecoding(t *testing.T) {
 	t.Parallel()
 

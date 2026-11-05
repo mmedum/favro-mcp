@@ -11,20 +11,27 @@ import (
 	"github.com/mmedum/favro-mcp/v4/internal/service"
 )
 
-// Sharing inside the organization (§9.2). A client remembers an
+// Sharing inside the organization (D-35). A client remembers an
 // approval per tool, never per argument, so a wide share carried as an
 // argument rides along unseen once the tool is always allowed. The
 // ordinary writes therefore give access only to people already in the
 // organization, named by userId, and to groups whose members all are,
-// and make nobody a new owner. Opening a collection to the whole organization or to anyone
-// with its link is favro_widen_collection_sharing, behind the
-// destructive flag. Invitations by email, admins, and guests made a
-// widget's owners or editors have no tool here at all; the person does
-// those in Favro.
+// and make nobody a new owner. Opening a collection to the whole
+// organization or to anyone with its link is
+// favro_widen_collection_sharing, behind the destructive flag.
+// Invitations by email, admins, and guests made a widget's owners or
+// editors have no tool here at all; the person does those in Favro.
 
-// insideRoles are the organization roles of the people inside it. Any
-// other role, and a role Favro adds later, is someone this server does
-// not share with: a guest, an external member, a disabled account.
+// insideRoles are the organization roles of the people inside it.
+// Favro's roles are administrator, fullMember, externalMember, guest
+// and disabled. Its user listings carry userId, email, name and
+// organizationRole, and only administrator and fullMember have been
+// seen live. Any other role, a role Favro adds later included, is
+// someone this server does not share with. Checked by the live steps
+// "list users",
+// "create a collection shared with the signed-in account, dry run" and
+// "create a group with the signed-in account as a member, dry run".
+// https://favro.com/developer/#organization-roles
 var insideRoles = map[string]bool{"administrator": true, "fullMember": true}
 
 // grant is one entry of a write that gives access: a person or group
@@ -233,7 +240,10 @@ func checkMembers(ctx context.Context, r *service.Resolver, tool string, widened
 // checkGroups refuses a grant to a group that holds anyone the
 // organization does not list as a member, read from the group: sharing
 // with the group shares with them. A group whose members cannot be read
-// is refused too, since who it would share with is not known.
+// is refused too, since who it would share with is not known. The
+// organization the live run reads holds no guest, so only unit tests
+// reach a group with one; a share with such a group is still to be
+// tried by hand.
 func checkGroups(ctx context.Context, r *service.Resolver, tool string, groups []grant) error {
 	for _, g := range groups {
 		group, err := r.Client().GetGroup(ctx, g.groupID)

@@ -24,7 +24,7 @@ type createWidgetInput struct {
 	dryRunInput
 	CollectionID          string `json:"collection_id" jsonschema:"the Favro collectionId to create the widget in (required). Resolve via favro_resolve_collection."`
 	Name                  string `json:"name" jsonschema:"the widget name (required)"`
-	Type                  string `json:"type,omitempty" jsonschema:"widget type: 'backlog', 'board', 'calendar', 'table', or 'matrix'. Empty lets Favro pick its default ('backlog')."`
+	Type                  string `json:"type,omitempty" jsonschema:"widget type: 'backlog' or 'board', the types Favro's reference lists. Required: a call without one is refused [invalid] before anything is sent, dry run included."`
 	Color                 string `json:"color,omitempty" jsonschema:"optional palette color"`
 	BreakdownCardCommonID string `json:"breakdown_card_common_id,omitempty" jsonschema:"optional breakdown cardCommonId — pins the widget to a parent card's breakdown view"`
 	OwnerRole             string `json:"owner_role,omitempty" jsonschema:"role required to act as owner ('owners' or 'fullMembers'); Favro picks a default when omitted. 'guests' is refused: it makes people outside the organization owners."`
@@ -64,10 +64,10 @@ var errDeleteWidgetScope = render.Sentinel(render.ClassInvalid,
 func registerCreateWidget(reg *registry, r *service.Resolver) {
 	addTool(reg, &mcp.Tool{
 		Name: createWidgetToolName,
-		Description: "Create a new Favro widget (board) inside a collection. `collection_id` " +
-			"and `name` are required. `type` defaults to Favro's choice ('backlog') when " +
-			"omitted; pass 'board' / 'calendar' / 'table' / 'matrix' to override. Successful " +
-			"live writes invalidate the widget cache. Pass `dry_run: true` to preview.",
+		Description: "Create a new Favro widget (board) inside a collection. `collection_id`, " +
+			"`name` and `type` ('backlog' or 'board') are required; a call without a type is " +
+			"refused before anything is sent. Successful live writes invalidate the widget " +
+			"cache. Pass `dry_run: true` to preview.",
 		Annotations: adding("Create Favro widget"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createWidgetInput) (*mcp.CallToolResult, writeOutput[favro.Widget], error) {
 		if err := checkWidgetRoles(in.OwnerRole, in.EditRole); err != nil {
@@ -90,11 +90,7 @@ func registerCreateWidget(reg *registry, r *service.Resolver) {
 				})
 			},
 			func() string {
-				kind := in.Type
-				if kind == "" {
-					kind = "default-type"
-				}
-				return fmt.Sprintf("would create a new widget %q (%s) in collection %q", in.Name, kind, in.CollectionID)
+				return fmt.Sprintf("would create a new widget %q (%s) in collection %q", in.Name, in.Type, in.CollectionID)
 			},
 		)
 		if err != nil {

@@ -52,9 +52,8 @@ func TestStampFrom(t *testing.T) {
 			wantSource: "ldflags",
 		},
 		{
-			// `go install` applies no ldflags, which is the defect the
-			// shared standard's §10 names first: without this fallback
-			// a binary installed the documented way reports
+			// The documented `go install` passes no -ldflags: without
+			// this fallback a binary installed that way reports
 			// "dev (unknown)" and no bug report from one can be tied to
 			// a build.
 			name: "go install falls back to the module version",

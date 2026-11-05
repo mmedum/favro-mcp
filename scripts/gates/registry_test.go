@@ -10,14 +10,36 @@ import (
 	"testing"
 )
 
-// "Every gate here has a test" is the first claim this program's own doc
-// comment makes, and CLAUDE.md's eleventh hard rule says the same thing
-// about every rule adopted from the standard. It was false when it was
-// written: `schema-diff` — the command that decides what counts as a
-// breaking change, and so the whole of the repository's semver promise —
-// had none.
+// The usage text keeps every column straight, whatever the longest
+// command name or argument list.
+func TestUsageAlignsEveryColumn(t *testing.T) {
+	text := usage()
+	argsAt, docAt := map[int]bool{}, map[int]bool{}
+	for name, c := range commands {
+		line := ""
+		for ln := range strings.Lines(text) {
+			if strings.HasPrefix(ln[min(4, len(ln)):], name+" ") {
+				line = ln
+			}
+		}
+		if line == "" {
+			t.Fatalf("usage has no line for %s:\n%s", name, text)
+		}
+		docAt[strings.Index(line, c.doc)] = true
+		if c.args != "" {
+			argsAt[strings.Index(line, c.args)] = true
+		}
+	}
+	if len(docAt) != 1 || len(argsAt) != 1 {
+		t.Errorf("usage starts the arguments at columns %v and the docs at %v, want one each:\n%s", argsAt, docAt, text)
+	}
+}
+
+// Every gate here has a test (D-68). A gate nothing tests can break
+// unseen, and one of them, `schema-diff`, decides what counts as a
+// breaking change, and so the whole of the repository's semver promise.
 //
-// This is that claim, held. It is the same shape as the two assertions
+// It is the same shape as the two assertions
 // the gates already run over their own exemption lists: derive the list
 // from the code, then require each entry to be backed by something.
 //

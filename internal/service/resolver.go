@@ -21,7 +21,8 @@ import (
 //
 // The resolver caches each org-global resource list in memory so
 // repeated lookups don't burn the rate-limit budget on the same
-// data. TTLs follow plan §7:
+// data, longer for what rarely changes than for what people add
+// mid-session:
 //   - 5 minutes for slow-changing org metadata: tags, users,
 //     custom fields, groups.
 //   - 60 seconds for collection-scoped lists: widgets, columns,
@@ -47,9 +48,9 @@ type Resolver struct {
 	// searchCardCache stores the pre-stripped, pre-lowercased corpus
 	// per (scope, scopeID, includeArchived) so repeated
 	// favro_search_cards queries against the same scope skip both the
-	// HTTP fetch and the per-card markdown sweep + ToLower. Plan §7's
-	// 60s scoped TTL. Keys are namespaced under "search:" so a single
-	// InvalidatePrefix call drops them all on a card mutation.
+	// HTTP fetch and the per-card markdown sweep + ToLower, for the 60s
+	// of searchCardCacheTTL. Keys are namespaced under "search:" so a
+	// single InvalidatePrefix call drops them all on a card mutation.
 	searchCardCache cache.TTL[scopedCorpus]
 }
 
@@ -162,9 +163,9 @@ const (
 	ScoreSubstring = 0.4
 )
 
-// clampLimit normalizes the resolver `limit` parameter to plan §6a
-// bounds: limit <= 0 -> default of 10; limit > 50 -> capped at 50.
-// Centralized so the bounds live in one place.
+// clampLimit normalizes the resolver `limit` parameter: limit <= 0 ->
+// default of 10; limit > 50 -> capped at 50. Centralized so the bounds
+// live in one place.
 func clampLimit(limit int) int {
 	if limit <= 0 {
 		return 10
@@ -321,7 +322,7 @@ func (r *Resolver) ListAllTags(ctx context.Context, forceRefresh bool) ([]favro.
 
 // InvalidateTagCache drops the tag cache. A write tool calls
 // this on success, or the next resolve answers from before the
-// write — which is the failure CLAUDE.md names as load-bearing.
+// write, missing what the write created and listing what it deleted.
 func (r *Resolver) InvalidateTagCache() {
 	r.tagCache.Invalidate(tagCacheKey)
 }
@@ -357,9 +358,9 @@ func (r *Resolver) listAllUsers(ctx context.Context, forceRefresh bool) ([]favro
 	return listAllCached(ctx, r.client, &r.userCache, userCacheKey, userCacheTTL, "/users", nil, forceRefresh)
 }
 
-// invalidateUserCache drops the user cache. A write tool calls
-// this on success, or the next resolve answers from before the
-// write — which is the failure CLAUDE.md names as load-bearing.
+// invalidateUserCache drops the user cache. No tool writes users, so
+// only the tests call it; a tool that does must call it on success, or
+// the next resolve answers from before the write.
 func (r *Resolver) invalidateUserCache() {
 	r.userCache.Invalidate(userCacheKey)
 }
@@ -428,13 +429,17 @@ func (r *Resolver) ResolveUser(ctx context.Context, name string, limit int, forc
 // cache when one is warm. The second return says whether it came
 // from there, so a caller that has just written can tell a stale
 // answer from a fresh one.
+//
+// Archived ones are included: a name resolves to an archived
+// collection, which favro_update_collection needs to unarchive it.
 func (r *Resolver) listAllCollections(ctx context.Context, forceRefresh bool) ([]favro.Collection, bool, error) {
-	return listAllCached(ctx, r.client, &r.collectionCache, collectionCacheKey, collectionCacheTTL, "/collections", nil, forceRefresh)
+	query := favro.ListCollectionsFilter{Archived: true}.Values()
+	return listAllCached(ctx, r.client, &r.collectionCache, collectionCacheKey, collectionCacheTTL, "/collections", query, forceRefresh)
 }
 
 // InvalidateCollectionCache drops the collection cache. A write tool calls
 // this on success, or the next resolve answers from before the
-// write — which is the failure CLAUDE.md names as load-bearing.
+// write, missing what the write created and listing what it deleted.
 func (r *Resolver) InvalidateCollectionCache() {
 	r.collectionCache.Invalidate(collectionCacheKey)
 }
@@ -464,13 +469,18 @@ func (r *Resolver) ResolveCollection(ctx context.Context, name string, limit int
 // cache when one is warm. The second return says whether it came
 // from there, so a caller that has just written can tell a stale
 // answer from a fresh one.
+//
+// Archived ones are included: a name resolves to an archived widget,
+// which favro_update_widget needs to unarchive it, and a card on an
+// archived board still gets the board's name.
 func (r *Resolver) listAllWidgets(ctx context.Context, forceRefresh bool) ([]favro.Widget, bool, error) {
-	return listAllCached(ctx, r.client, &r.widgetCache, widgetCacheKey, widgetCacheTTL, "/widgets", nil, forceRefresh)
+	query := favro.ListWidgetsFilter{Archived: true}.Values()
+	return listAllCached(ctx, r.client, &r.widgetCache, widgetCacheKey, widgetCacheTTL, "/widgets", query, forceRefresh)
 }
 
 // InvalidateWidgetCache drops the widget cache. A write tool calls
 // this on success, or the next resolve answers from before the
-// write — which is the failure CLAUDE.md names as load-bearing.
+// write, missing what the write created and listing what it deleted.
 func (r *Resolver) InvalidateWidgetCache() {
 	r.widgetCache.Invalidate(widgetCacheKey)
 }
@@ -530,7 +540,7 @@ func (r *Resolver) listColumnsForWidget(ctx context.Context, widgetCommonID stri
 
 // InvalidateColumnCache drops one widget's column cache. A write tool
 // calls this on success, or the next resolve answers from before the
-// write — which is the failure CLAUDE.md names as load-bearing. It
+// write, missing what the write created and listing what it deleted. It
 // takes the widget because the cache is per widget: column names repeat
 // across widgets, so there is no org-wide list to drop instead.
 func (r *Resolver) InvalidateColumnCache(widgetCommonID string) {
@@ -585,9 +595,10 @@ func (r *Resolver) ListAllCustomFields(ctx context.Context, forceRefresh bool) (
 	return listAllCached(ctx, r.client, &r.customFieldCache, customFieldCacheKey, customFieldCacheTTL, "/customfields", nil, forceRefresh)
 }
 
-// invalidateCustomFieldCache drops the custom-field cache. A write tool calls
-// this on success, or the next resolve answers from before the
-// write — which is the failure CLAUDE.md names as load-bearing.
+// invalidateCustomFieldCache drops the custom-field cache. No tool
+// creates or changes a custom field, so only the tests call it; a tool
+// that does must call it on success, or the next resolve answers from
+// before the write.
 func (r *Resolver) invalidateCustomFieldCache() {
 	r.customFieldCache.Invalidate(customFieldCacheKey)
 }
@@ -631,7 +642,7 @@ func (r *Resolver) listAllGroups(ctx context.Context, forceRefresh bool) ([]favr
 
 // InvalidateGroupCache drops the group cache. A write tool calls
 // this on success, or the next resolve answers from before the
-// write — which is the failure CLAUDE.md names as load-bearing.
+// write, missing what the write created and listing what it deleted.
 func (r *Resolver) InvalidateGroupCache() {
 	r.groupCache.Invalidate(groupCacheKey)
 }

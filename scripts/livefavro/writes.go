@@ -20,7 +20,7 @@ import (
 // scratch that refuses any other write, and deletes both.
 //
 // The client declares form elicitation, so a server that asked the
-// person would be heard; the run fails if it asks anything. The probe
+// person would be heard; the run fails if it asks anything (D-31). The probe
 // collection is opened to the organization, never made public, and only
 // while this run holds it.
 func runWrites(lc *lifecycle, bin string, env []string, out *printer, red *redact.Redactor) error {
@@ -49,7 +49,7 @@ func runWrites(lc *lifecycle, bin string, env []string, out *printer, red *redac
 		return err
 	}
 	qs := heard.asked()
-	c.check(len(qs) == 0, "the server asked the person nothing", strings.Join(qs, " | "))
+	c.check(len(qs) == 0, livecover.CheckNothingAsked, strings.Join(qs, " | "))
 
 	out.line("")
 	out.line("%d passed, %d failed; %d distinct values redacted", c.passed, c.failed, red.Count())
@@ -65,14 +65,15 @@ type checks struct {
 	out *printer
 }
 
-func (c *checks) check(ok bool, what, detail string) {
+// check prints and counts one check, by the name a code comment cites.
+func (c *checks) check(ok bool, what livecover.Check, detail string) {
 	if ok {
 		c.passed++
-		c.out.line("ok   %s", what)
+		c.out.line("ok   %s", what.Name())
 		return
 	}
 	c.failed++
-	c.out.line("FAIL %s: %s", what, firstLine(detail))
+	c.out.line("FAIL %s: %s", what.Name(), firstLine(detail))
 }
 
 // listener keeps any question the server puts; the session declines it.
@@ -154,30 +155,30 @@ func probeTag(sc *scratch, c *checks) error {
 	tag := map[string]any{"tag_id": id}
 
 	res, err = sc.call("favro_delete_tag", tag)
-	c.check(refused(res, err, "blocked"), "favro_delete_tag without confirm is [blocked]", detail(res, err))
+	c.check(refused(res, err, "blocked"), livecover.CheckTagDeleteWithoutConfirm, detail(res, err))
 	res, err = sc.call("favro_get_tag", tag)
-	c.check(succeeded(res, err), "the tag is still there", detail(res, err))
+	c.check(succeeded(res, err), livecover.CheckTagStillThere, detail(res, err))
 
 	deleteAndReadBack(sc, c, probeKinds["favro_create_tag"], id)
 	return nil
 }
 
 // deleteAndReadBack deletes a probe with confirm and reads it back by
-// id, which must find it gone.
+// id, which must find it gone, and checks each under the kind's names.
 //
-// Gone is the read refused as not_found or as forbidden, after a delete
-// that succeeded. Favro answered 403 for a collection this run had just
-// deleted, as it does for one the token cannot see (2026-10-23). Any
-// other answer fails, and so does either refusal after a delete that
-// failed.
+// Gone is the read refused after a delete that succeeded. The check
+// "the collection is gone" holds that the read is refused, and accepts
+// either not_found or forbidden as the refusal. Any other answer fails,
+// and so does either refusal after a delete that failed.
+// https://favro.com/developer/#get-a-collection
 func deleteAndReadBack(sc *scratch, c *checks, kind probeKind, id string) {
 	res, err := sc.call(kind.delete, map[string]any{kind.idArg: id, "confirm": true})
 	deleted := succeeded(res, err)
-	c.check(deleted, kind.delete+" with confirm deletes it", detail(res, err))
+	c.check(deleted, kind.deleted, detail(res, err))
 
 	res, err = sc.call(kind.read, map[string]any{kind.idArg: id})
 	gone := refused(res, err, "not_found") || refused(res, err, "forbidden")
-	c.check(deleted && gone, "the "+kind.noun+" is gone", detail(res, err))
+	c.check(deleted && gone, kind.gone, detail(res, err))
 }
 
 // probeCollection runs a probe collection through the sharing writes:
@@ -188,7 +189,7 @@ func probeCollection(sc *scratch, c *checks) error {
 	refusedName := probeName("public")
 	res, err := sc.create("favro_create_collection", map[string]any{"name": refusedName, "public_sharing": "public"})
 	wasRefused := refused(res, err, "blocked")
-	c.check(wasRefused, "favro_create_collection with public_sharing public is [blocked]", detail(res, err))
+	c.check(wasRefused, livecover.CheckPublicCollectionCreate, detail(res, err))
 	if !wasRefused {
 		// A create that went through opened a collection to anyone with
 		// its link: take it down before anything else.
@@ -198,7 +199,7 @@ func probeCollection(sc *scratch, c *checks) error {
 	}
 	res, err = sc.call("favro_resolve_collection", map[string]any{"name": refusedName, "force_refresh": true})
 	c.check(succeeded(res, err) && strings.Contains(string(res.StructuredContent), `"candidates":[]`),
-		"the refused collection was not created", detail(res, err))
+		livecover.CheckRefusedCollectionNotCreated, detail(res, err))
 
 	name := probeName("collection")
 	res, err = sc.create("favro_create_collection", map[string]any{"name": name})
@@ -215,21 +216,21 @@ func probeCollection(sc *scratch, c *checks) error {
 	res, err = sc.call("favro_widen_collection_sharing", map[string]any{
 		"collection_id": id, "collection_name": name + "-not-it", "public_sharing": "organization", "confirm": true,
 	})
-	c.check(refused(res, err, "conflict"), "favro_widen_collection_sharing with another name is [conflict]", detail(res, err))
-	c.check(sharing("users"), "the collection is still shared with users only", "")
+	c.check(refused(res, err, "conflict"), livecover.CheckWidenWithAnotherName, detail(res, err))
+	c.check(sharing("users"), livecover.CheckCollectionStillUsers, "")
 
 	res, err = sc.call("favro_widen_collection_sharing", map[string]any{
 		"collection_id": id, "collection_name": name, "public_sharing": "organization", "confirm": true,
 	})
 	c.check(succeeded(res, err) && strings.Contains(res.text(), `verified by reading the collection back: public_sharing is "organization"`),
-		"favro_widen_collection_sharing opens it to the organization and reads it back", detail(res, err))
-	c.check(sharing("organization"), "the collection reads back as organization", "")
+		livecover.CheckWidenOpensAndReadsBack, detail(res, err))
+	c.check(sharing("organization"), livecover.CheckCollectionReadsOrganization, "")
 
 	res, err = sc.call("favro_update_collection", map[string]any{"collection_id": id, "public_sharing": "users"})
-	c.check(succeeded(res, err) && sharing("users"), "favro_update_collection narrows it to users again", detail(res, err))
+	c.check(succeeded(res, err) && sharing("users"), livecover.CheckUpdateNarrowsToUsers, detail(res, err))
 
 	res, err = sc.call("favro_delete_collection", col)
-	c.check(refused(res, err, "blocked"), "favro_delete_collection without confirm is [blocked]", detail(res, err))
+	c.check(refused(res, err, "blocked"), livecover.CheckCollectionDeleteWithoutConfirm, detail(res, err))
 	deleteAndReadBack(sc, c, probeKinds["favro_create_collection"], id)
 	return nil
 }

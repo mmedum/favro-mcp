@@ -12,7 +12,7 @@ import (
 // list / heading contexts) silently change the rendered structure.
 const descriptionSeparator = "\n\n"
 
-// EditorResult is the shape every Phase 6 description-editor tool
+// EditorResult is the shape every description-editor tool
 // returns: the body before, the body after, and a unified diff so an
 // LLM can confirm the change is structurally what it intended (or
 // surface a surprise to the user). Old / New are full bodies — the
@@ -110,7 +110,7 @@ func literalReplaceN(old, find, replace string, count int) (string, int) {
 }
 
 // NewEditorResult bundles the (old, new, diff) projection every
-// Phase 6 editor tool returns, threading the cardID through the diff
+// editor tool returns, threading the cardID through the diff
 // header so the unified diff is human-readable on its own.
 func NewEditorResult(cardID, oldBody, newBody string) EditorResult {
 	return EditorResult{

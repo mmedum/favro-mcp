@@ -13,8 +13,10 @@ import (
 // header on every delivery — anyone holding it can forge an event to
 // whoever is consuming that webhook. The strongest way not to leak a
 // value to a model is not to parse it, so this type has no field for
-// it and no tool can surface what no type holds. Decoding is tolerant,
-// so the field is simply dropped.
+// it and no tool can surface what no type holds (D-52). Decoding is
+// tolerant, so the field is simply dropped. Only the reference's
+// example shows the field: no live read has returned a webhook.
+// https://favro.com/developer/#get-all-webhooks
 type Webhook struct {
 	WebhookID string `json:"webhookId"`
 	// WidgetCommonID is the widget whose events are posted.
@@ -29,12 +31,11 @@ type Webhook struct {
 
 // WebhookOptions narrows what a webhook fires on.
 //
-// ColumnIDs is one of the places the reference and the live API
-// disagree (§2.1): the field table documents `columnIds` as an array,
-// and every example response shows a single `columnId` string. Both are
-// accepted on read — see ColumnIDs — because a read that only handled
-// the documented shape would silently drop the one Favro actually
-// sends.
+// The reference disagrees with itself on the column scope: the field
+// table documents `columnIds` as an array, and every example response
+// shows a single `columnId` string. Both are accepted on read — see
+// ColumnIDs — and no live read has settled which one Favro sends.
+// https://favro.com/developer/#webhook-options
 type WebhookOptions struct {
 	// RawColumnIDs holds whichever of the two shapes arrived. Use
 	// ColumnIDs to read it.
@@ -55,8 +56,8 @@ func (o WebhookOptions) ColumnIDs() []string {
 		if err := json.Unmarshal(o.RawColumnIDs, &many); err == nil {
 			return many
 		}
-		// Favro has also been seen to send the plural key with a single
-		// string value; take it rather than dropping the scope.
+		// A single string under the plural key is taken too, rather than
+		// dropping the scope.
 		var one string
 		if err := json.Unmarshal(o.RawColumnIDs, &one); err == nil && one != "" {
 			return []string{one}

@@ -30,9 +30,7 @@ const (
 // exercises.
 //
 // A claim that a driver covers the surface decays every time the
-// surface grows, and silently: the standard records one repository
-// where the same assertion ran at 14 of 28 tools, and another where a
-// later phase added 67 options with no step. So the comparison is
+// surface grows, and silently. So the comparison is
 // against the binary's own published schema rather than against a
 // number somebody wrote down, and it is per option rather than per
 // tool, because a tool called once with its required arguments leaves
@@ -123,7 +121,7 @@ func stepsWithoutDryRun(steps []livecover.Step, readOnly map[string]bool) (probl
 		if dry, _ := s.Args["dry_run"].(bool); !dry {
 			problems = append(problems, fmt.Sprintf(
 				"a %s step (%q) writes without dry_run: true, against an object the run did not create",
-				s.Tool, s.Why))
+				s.Tool, s.Name))
 		}
 	}
 	return problems, writes

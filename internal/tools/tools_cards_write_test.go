@@ -826,8 +826,8 @@ func TestMCP_MoveCard_ColumnWithoutWidget(t *testing.T) {
 }
 
 // TestMCP_MoveCard_FavroIgnoredTheMove pins that a move Favro accepts
-// and does not perform reaches the caller as an error. The body is the
-// stub Favro answers with, recorded live 2026-09-15.
+// and does not perform reaches the caller as an error. The body has the
+// shape of the stub card Favro answers a move without widgetCommonId.
 func TestMCP_MoveCard_FavroIgnoredTheMove(t *testing.T) {
 	t.Parallel()
 
@@ -1213,9 +1213,8 @@ func TestMCP_CardPlacement_ReadBack(t *testing.T) {
 			readBack: onBoard("col-1", ""),
 			args:     map[string]any{"card_id": "ci-1", "widget_common_id": "w-1", "column_id": "col-2", "clear_parent": true},
 			wantGets: 1, wantNote: "column_id did not change: the card was read back after the write and reports",
-			// The column does not need list_position (verified live
-			// 2026-09-15); a note naming it would send the caller after
-			// the wrong fix.
+			// A column move does not need list_position, so a note
+			// naming it would send the caller after the wrong fix.
 			avoid: "list_position",
 		},
 		{
@@ -1430,9 +1429,9 @@ func seatFixture(t *testing.T, parent string, reseatedAt float64, put *favro.Upd
 
 // A structural write on a nested card names the card's parent, and
 // Favro re-seats a card whose body names its parent after the parent's
-// last child unless the body also names its sheet position (§18,
-// 2026-10-26). So the write carries the card's current one, and the
-// read-back says whether it held.
+// last child unless the body also names its sheet position. So the
+// write carries the card's current one, and the read-back says whether
+// it held.
 func TestMCP_StructuralWrite_KeepsTheCardsPlaceUnderItsParent(t *testing.T) {
 	t.Parallel()
 	ptr := func(f float64) *float64 { return &f }

@@ -82,6 +82,7 @@ jobs:
         # script: an expression is substituted as TEXT before bash parses
         # the line, and double quotes stop word-splitting but not command
         # substitution.
+        # https://docs.github.com/en/actions/reference/security/secure-use#good-practices-for-mitigating-script-injection-attacks
         env:
           TAG: ${{ github.ref_name }}
         run: go run ./scripts/gates release-notes "$TAG" > "$RUNNER_TEMP/release-header.md"

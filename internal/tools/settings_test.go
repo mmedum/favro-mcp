@@ -29,8 +29,8 @@ var settingWriters = map[string][]string{
 // server's own packages from everything else.
 const modulePath = "github.com/mmedum/favro-mcp/v4"
 
-// TestNoToolWritesTheServersOwnSettings holds standard §3's "the model
-// never widens its own reach": no tool turns on a flag, moves the upload
+// TestNoToolWritesTheServersOwnSettings holds that the model never
+// widens its own reach (D-39): no tool turns on a flag, moves the upload
 // directory, or rewrites the credentials, because nothing a tool can
 // reach writes any of them.
 //

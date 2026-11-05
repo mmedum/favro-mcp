@@ -39,9 +39,10 @@ linters:
       locale: US
     # The MCP stdio transport is normative: a server MUST NOT write
     # anything to stdout that is not a valid MCP message, and MAY write
-    # to stderr for logging. Hard rule 3 restates that; this enforces it,
-    # matching the destination rather than the function name — a
-    # fmt.Fprintf to os.Stdout corrupts the stream identically.
+    # to stderr for logging. This enforces it (D-45), matching the
+    # destination rather than the function name: a fmt.Fprintf to
+    # os.Stdout corrupts the stream identically.
+    # https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#stdio
     forbidigo:
       analyze-types: true
       forbid:
@@ -49,6 +50,10 @@ linters:
           msg: stdout carries only MCP JSON-RPC frames; print through the helpers in cmd/favro-mcp/io.go
         - pattern: ^os\.Stdout$
           msg: stdout carries only MCP JSON-RPC frames; take an io.Writer instead
+        # The package-level helpers send through http.DefaultClient.
+        - pattern: ^http\.(DefaultClient|Get|Head|Post|PostForm)$
+          pkg: ^net/http$
+          msg: http.DefaultClient has no timeout; pass an explicit *http.Client that sets one
 
     gocyclo:
       min-complexity: 10
@@ -72,16 +77,12 @@ linters:
 
     depguard:
       rules:
-        # The dependency direction of §5, for the part of it the
-        # compiler does not already hold.
-        #
-        # server -> tools -> service -> favroapi -> favro, with config,
-        # cache, auth and render as leaves. Most of that direction is
-        # self-enforcing: an import that runs uphill between two of
-        # those packages is an import cycle, and `go build` rejects it
-        # with a better message than depguard would. Writing those out
-        # anyway would be four rules that can never fire, which is the
-        # thing this repository's own standard argues against.
+        # Imports run server -> tools -> service -> favroapi -> favro,
+        # with config, cache, auth and render as leaves (D-05). These rules
+        # hold the part of that the compiler does not: an import that runs
+        # uphill between two of those packages is an import cycle, and
+        # `go build` rejects it with a better message than depguard would.
+        # A rule that can never fire guards nothing, so it is left out.
         #
         # What is left is the four that can fire, because none of them
         # is a cycle: a leaf reaching sideways to another leaf, and the
@@ -119,14 +120,9 @@ linters:
           list-mode: lax
           deny:
             - pkg: "github.com/stretchr/testify"
-              desc: "tests here use the stdlib: if got != want { t.Errorf(…) }. A4 removed testify; it survives in go.mod only as another module's indirect requirement"
+              desc: "tests here use the stdlib: if got != want { t.Errorf(…) }. testify survives in go.mod only as another module's indirect requirement"
             - pkg: "github.com/pmezard/go-difflib"
               desc: "internal/service/diff.go generates the unified diff, and is held to diff(1) by test"
-        no-default-http-client:
-          list-mode: lax
-          deny:
-            - pkg: "net/http.DefaultClient"
-              desc: "always pass an explicit *http.Client with a configured timeout"
 
     gosec:
       excludes:
@@ -140,10 +136,11 @@ linters:
           - gocyclo
           - gosec
       # scripts/ is maintainer tooling run at a terminal; printing is
-      # its job and none of it ships.
+      # its job and none of it ships. Its HTTP calls still need a timeout.
       - path: ^scripts/
         linters:
           - forbidigo
+        text: "stdout carries only MCP JSON-RPC frames"
       # scripts/gates is maintainer-only tooling and never ships: every
       # gate reads files under the repository root and shells out to
       # git, which is precisely what gosec's G204/G304/G306/G70x warn

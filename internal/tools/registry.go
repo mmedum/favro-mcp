@@ -20,15 +20,17 @@ import (
 // array of integers between 0 and 255 — and the SDK then validates
 // every tool result against that schema. Favro puts real JSON in those
 // fields: a custom field of type Vote, Members, Tags, Status or
-// Multiple select carries an array of ids, so `favro_get_card` and
-// `favro_list_cards` failed outright on any card using one, with a
-// protocol error rather than a result. It was invisible to every
-// fixture, because a fixture that sends what the schema claims is a
-// fixture that agrees with the bug; a live read is what found it.
+// Multiple select carries an array of ids, so under that schema
+// `favro_get_card` and `favro_list_cards` fail on any card using one,
+// with a protocol error rather than a result. A fixture that sends what
+// the schema claims agrees with the bug, so only a real card shows it,
+// and the live reads catch it only when the cards they read carry such
+// a field. Checked by the live steps "read a card as markdown" and
+// "list cards by widget and collection, page 1 with a request id".
 //
 // An empty schema accepts anything, which is the honest description:
-// the shape of a custom field's value depends on its type, and §7.4 is
-// the documentation for that.
+// the shape of a custom field's value depends on its type.
+// https://favro.com/developer/#card-custom-fields
 var schemaOptions = &jsonschema.ForOptions{
 	TypeSchemas: map[reflect.Type]*jsonschema.Schema{
 		reflect.TypeFor[json.RawMessage](): {},
@@ -66,21 +68,25 @@ func annotatedDestructive(t *mcp.Tool) bool {
 }
 
 // promptMeta is Claude Code's mark for a tool whose permission prompt is
-// itself the point: Claude Code prompts on every call of it, whatever the
-// operator's rules say, and denies the call where no prompt can be drawn.
+// itself the point. From v2.1.199 Claude Code prompts on every call of
+// it, allow rules and hooks included, with no "don't ask again" from
+// v2.1.246, and denies the call where no prompt can be drawn. No live
+// step reads _meta.
+// https://code.claude.com/docs/en/mcp
+// https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md
 const promptMeta = "anthropic/requiresUserInteraction"
 
 // promptEveryCall is the _meta of a write that cannot be undone and
 // reaches past the one thing named: a delete that takes something every
 // card or share depends on, or a collection opened to the whole
-// organization or to anyone with its link (§9.2). Only a destructive
-// tool may carry it; addTool refuses it on any other.
+// organization or to anyone with its link. Only a destructive tool may
+// carry it; addTool refuses it on any other.
 func promptEveryCall() mcp.Meta { return mcp.Meta{promptMeta: true} }
 
 // confirmInput is embedded in every destructive tool's input. It is a
 // witness that the caller meant this call, never approval: the model
 // sets it, so it stops a call made by mistake and nothing more. The
-// destructive flag is the control (§9.2).
+// destructive flag is the control.
 type confirmInput struct {
 	Confirm bool `json:"confirm,omitempty" jsonschema:"must be true for the call to go ahead: pass it only when the person asked for this call. Not needed with dry_run."`
 }
@@ -119,10 +125,14 @@ func (reg *registry) before(ctx context.Context, tool string, gated bool, in any
 	return ctx, nil
 }
 
-// requireRules panics on a tool that breaks a rule of §9.2: a
-// destructive tool not annotated destructiveHint: true, or a tool that
-// carries the mark and is not destructive.
-func requireRules(t *mcp.Tool, gated bool) {
+// requireRules panics on a tool that breaks a registration rule: a
+// write whose input takes no dry_run (D-28), a destructive tool not
+// annotated destructiveHint: true, or a tool that carries the mark and
+// is not destructive (D-34).
+func requireRules(t *mcp.Tool, gated, takesDryRun bool) {
+	if readOnly := t.Annotations != nil && t.Annotations.ReadOnlyHint; !readOnly && !takesDryRun {
+		panic(fmt.Sprintf("tool %q is not marked read-only and takes no dry_run; embed dryRunInput in its input", t.Name))
+	}
 	if gated && !annotatedDestructive(t) {
 		panic(fmt.Sprintf("tool %q takes confirm and is not annotated destructive; use changing(title)", t.Name))
 	}
@@ -131,27 +141,32 @@ func requireRules(t *mcp.Tool, gated bool) {
 	}
 }
 
-// addTool registers one tool, and is the single place five things
+// addTool registers one tool, and is the single place the things below
 // happen that would otherwise have to happen in every handler.
 //
 // **The destructive gate.** A destructive tool — a delete, a whole-list
 // replace or a collection opened wide — is one whose input embeds
-// confirmInput, and it is registered only when the flag is set. The
-// check reads the input type rather than a list of names, so a
+// confirmInput, and it is registered only when the flag is set (D-29).
+// The check reads the input type rather than a list of names, so a
 // destructive tool added later is gated by taking confirm, which it
 // needs anyway to be refused without one, instead of by somebody
 // remembering to add it somewhere else. It does not read
 // destructiveHint, which is true on every write that changes something
-// (changing) and false only on one that adds (adding). Standard §3 is blunt
-// about why this is registration and not a runtime guard: a host in an
+// (changing) and false only on one that adds (adding). This is
+// registration and not a runtime guard because a host in an
 // auto-approve permission mode runs an annotated tool without
-// prompting, and the spec says clients treat tool annotations as
-// untrusted. Assume every registered tool can run unattended.
+// prompting, and the MCP schema calls annotations hints that a client
+// should never base a decision on when the server is untrusted. Assume
+// every registered tool can run unattended.
+// https://modelcontextprotocol.io/specification/2025-11-25/schema#toolannotations
 //
 // **confirm: true.** A call of a destructive tool without it is
 // refused [blocked] unless it is a dry run, and registration panics on
 // a destructive tool not annotated destructiveHint: true. The rule
 // lives here so no delete can forget it.
+//
+// **dry_run.** Registration panics on a tool not marked read-only whose
+// input does not embed dryRunInput, so no write can leave it out (D-28).
 //
 // **The mark.** Only a destructive tool may carry promptMeta, or
 // registration panics: the mark goes on the few writes whose prompt is
@@ -160,8 +175,10 @@ func requireRules(t *mcp.Tool, gated bool) {
 // **Both halves of the result.** The SDK marshals the typed output into
 // StructuredContent and, finding Content unset, puts the identical
 // bytes in a TextContent block. Setting Content here to a rendered
-// summary is what makes the readable half readable; the SDK leaves a
-// Content that is already set alone.
+// summary is what makes the two halves differ (D-61); the SDK leaves a
+// Content that is already set alone when the output is a JSON object,
+// as every output here is.
+// https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/mcp/server.go#L468-L485
 //
 // **The error class.** Errors leave as "[class] actionable message",
 // classified from the error's own type rather than from its text.
@@ -170,7 +187,8 @@ func addTool[In, Out any](reg *registry, t *mcp.Tool, h mcp.ToolHandlerFor[In, O
 	if gated && !reg.destructive {
 		return
 	}
-	requireRules(t, gated)
+	_, takesDryRun := any(*new(In)).(dryRunner)
+	requireRules(t, gated, takesDryRun)
 
 	// The output schema is generated here rather than left to the SDK,
 	// so schemaOptions applies. Registration panics on a bad schema,

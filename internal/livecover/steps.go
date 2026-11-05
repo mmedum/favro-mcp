@@ -37,39 +37,44 @@ func Steps() []Step {
 // Two properties matter and neither survives generation. They take the
 // minimum arguments, so a seed cannot fail on an option unrelated to
 // the id it is there to fetch; and they set no filter, because a
-// generated `name` filter is what made the first run list zero tags and
-// then skip every step needing a tag id.
+// generated `name` filter can list zero tags and then skip every step
+// needing a tag id.
 func SeedSteps() []Step {
 	return []Step{
-		{Tool: "favro_ping", Args: map[string]any{}, Why: "seed: the server answers at all"},
-		{Tool: "favro_list_organizations", Args: map[string]any{}, Why: "seed: an organization id"},
-		{Tool: "favro_list_users", Args: map[string]any{}, Why: "seed: a user id"},
-		{Tool: "favro_list_collections", Args: map[string]any{}, Why: "seed: a collection id"},
-		{Tool: "favro_list_widgets", Args: map[string]any{}, Why: "seed: a widget id"},
-		{Tool: "favro_list_tags", Args: map[string]any{}, Why: "seed: a tag id"},
-		{Tool: "favro_list_custom_fields", Args: map[string]any{}, Why: "seed: a custom field id"},
-		{Tool: "favro_list_groups", Args: map[string]any{}, Why: "seed: a group id"},
+		{Name: "ping the server", Tool: "favro_ping", Args: map[string]any{}, Why: "seed: the server answers at all"},
+		{Name: "list organizations", Tool: "favro_list_organizations", Args: map[string]any{}, Why: "seed: an organization id"},
+		{Name: "list users", Tool: "favro_list_users", Args: map[string]any{}, Why: "seed: a user id"},
+		{Name: "list collections", Tool: "favro_list_collections", Args: map[string]any{}, Why: "seed: a collection id"},
+		{Name: "list widgets", Tool: "favro_list_widgets", Args: map[string]any{}, Why: "seed: a widget id"},
+		{Name: "list tags", Tool: "favro_list_tags", Args: map[string]any{}, Why: "seed: a tag id"},
+		{Name: "list custom fields", Tool: "favro_list_custom_fields", Args: map[string]any{}, Why: "seed: a custom field id"},
+		{Name: "list groups", Tool: "favro_list_groups", Args: map[string]any{}, Why: "seed: a group id"},
 		{
+			Name: "list a widget's columns",
 			Tool: "favro_list_columns",
 			Args: map[string]any{"widget_common_id": AnyWidgetCommonID},
 			Why:  "seed: a column id, which only exists per widget",
 		},
 		{
+			Name: "list a widget's cards",
 			Tool: "favro_list_cards",
 			Args: map[string]any{"widget_common_id": AnyWidgetCommonID},
 			Why:  "seed: a card id and a card common id",
 		},
 		{
+			Name: "list a card's comments",
 			Tool: "favro_list_comments",
 			Args: map[string]any{"card_common_id": AnyCardCommonID},
 			Why:  "seed: a comment id, which only exists per card",
 		},
 		{
+			Name: "list a card's task lists",
 			Tool: "favro_list_tasklists",
 			Args: map[string]any{"card_common_id": AnyCardCommonID},
 			Why:  "seed: a checklist id",
 		},
 		{
+			Name: "list a card's tasks",
 			Tool: "favro_list_tasks",
 			Args: map[string]any{"card_common_id": AnyCardCommonID},
 			Why:  "seed: a checklist item id",
@@ -85,24 +90,25 @@ func SeedSteps() []Step {
 func optionSteps() []Step {
 	return []Step{
 		{
+			Name: "add a comment to a card by id, dry run",
 			Tool: "favro_add_comment_to_card",
 			Args: map[string]any{
 				"card_id": AnyCardID,
 				"comment": "livefavro probe",
 				"dry_run": true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "add a dependency to a card, dry run",
 			Tool: "favro_add_dependencies",
 			Args: map[string]any{
 				"card_id":      AnyCardID,
 				"dependencies": []map[string]any{{"cardId": AnyCardCommonID, "isBefore": true}},
 				"dry_run":      true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "adding an unknown tag name to a card is [not_found]",
 			Tool: "favro_add_tag_to_card",
 			Args: map[string]any{
 				"card_id":  AnyCardID,
@@ -110,26 +116,27 @@ func optionSteps() []Step {
 				"dry_run":  true,
 			},
 			ExpectError: "not_found",
-			Why:         "hard rule 7, live: an unknown tag name must be refused, not created",
+			Why:         "refused rather than created: Favro's own addTags turns an unknown name into an organization-wide tag",
 		},
 		{
+			Name: "append to a card's description, dry run",
 			Tool: "favro_append_card_description",
 			Args: map[string]any{
 				"card_id": AnyCardID,
 				"dry_run": true,
 				"text":    "livefavro probe",
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "archive a card, dry run",
 			Tool: "favro_archive_card",
 			Args: map[string]any{
 				"card_id": AnyCardID,
 				"dry_run": true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "create a card, dry run",
 			Tool: "favro_create_card",
 			Args: map[string]any{
 				"column_id":            AnyColumnID,
@@ -140,9 +147,9 @@ func optionSteps() []Step {
 				"start_date":           "2026-01-01",
 				"widget_common_id":     AnyWidgetCommonID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "create a collection, dry run",
 			Tool: "favro_create_collection",
 			Args: map[string]any{
 				"background":                   "blue",
@@ -154,9 +161,9 @@ func optionSteps() []Step {
 				"public_sharing":               "users",
 				"star_page":                    false,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "create a column, dry run",
 			Tool: "favro_create_column",
 			Args: map[string]any{
 				"color":            "blue",
@@ -165,35 +172,35 @@ func optionSteps() []Step {
 				"position":         1,
 				"widget_common_id": AnyWidgetCommonID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "create a comment, dry run",
 			Tool: "favro_create_comment",
 			Args: map[string]any{
 				"card_common_id": AnyCardCommonID,
 				"comment":        "livefavro probe",
 				"dry_run":        true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "create a group, dry run",
 			Tool: "favro_create_group",
 			Args: map[string]any{
 				"dry_run": true,
 				"name":    "livefavro probe",
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "create a tag, dry run",
 			Tool: "favro_create_tag",
 			Args: map[string]any{
 				"color":   "blue",
 				"dry_run": true,
 				"name":    "livefavro probe",
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "create a task, dry run",
 			Tool: "favro_create_task",
 			Args: map[string]any{
 				"completed":    false,
@@ -202,9 +209,9 @@ func optionSteps() []Step {
 				"position":     1,
 				"task_list_id": AnyTaskListID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "create a task list, dry run",
 			Tool: "favro_create_tasklist",
 			Args: map[string]any{
 				"card_common_id": AnyCardCommonID,
@@ -212,9 +219,9 @@ func optionSteps() []Step {
 				"name":           "livefavro probe",
 				"position":       1,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "create a widget, dry run",
 			Tool: "favro_create_widget",
 			Args: map[string]any{
 				"breakdown_card_common_id": "livefavro probe",
@@ -226,18 +233,18 @@ func optionSteps() []Step {
 				"owner_role":               "livefavro probe",
 				"type":                     "livefavro probe",
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete all of a card's dependencies, dry run",
 			Tool: "favro_delete_all_dependencies",
 			Args: map[string]any{
 				"confirm": true,
 				"card_id": AnyCardID,
 				"dry_run": true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a card, dry run",
 			Tool: "favro_delete_card",
 			Args: map[string]any{
 				"confirm":    true,
@@ -245,18 +252,18 @@ func optionSteps() []Step {
 				"dry_run":    true,
 				"everywhere": false,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a collection, dry run",
 			Tool: "favro_delete_collection",
 			Args: map[string]any{
 				"confirm":       true,
 				"collection_id": AnyCollectionID,
 				"dry_run":       true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a column, dry run",
 			Tool: "favro_delete_column",
 			Args: map[string]any{
 				"confirm":          true,
@@ -264,18 +271,18 @@ func optionSteps() []Step {
 				"dry_run":          true,
 				"widget_common_id": AnyWidgetCommonID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a comment, dry run",
 			Tool: "favro_delete_comment",
 			Args: map[string]any{
 				"confirm":    true,
 				"comment_id": AnyCommentID,
 				"dry_run":    true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a dependency, dry run",
 			Tool: "favro_delete_dependency",
 			Args: map[string]any{
 				"confirm":            true,
@@ -283,54 +290,54 @@ func optionSteps() []Step {
 				"dependency_card_id": "livefavro probe",
 				"dry_run":            true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a group, dry run",
 			Tool: "favro_delete_group",
 			Args: map[string]any{
 				"confirm":  true,
 				"dry_run":  true,
 				"group_id": AnyGroupID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a tag, dry run",
 			Tool: "favro_delete_tag",
 			Args: map[string]any{
 				"confirm": true,
 				"dry_run": true,
 				"tag_id":  AnyTagID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a task, dry run",
 			Tool: "favro_delete_task",
 			Args: map[string]any{
 				"confirm": true,
 				"dry_run": true,
 				"task_id": AnyTaskID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a task list, dry run",
 			Tool: "favro_delete_tasklist",
 			Args: map[string]any{
 				"confirm":      true,
 				"dry_run":      true,
 				"task_list_id": AnyTaskListID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a webhook, dry run",
 			Tool: "favro_delete_webhook",
 			Args: map[string]any{
 				"confirm":    true,
 				"dry_run":    true,
 				"webhook_id": "wh-probe",
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "delete a widget from a collection, dry run",
 			Tool: "favro_delete_widget",
 			Args: map[string]any{
 				"confirm":          true,
@@ -338,17 +345,17 @@ func optionSteps() []Step {
 				"dry_run":          true,
 				"widget_common_id": AnyWidgetCommonID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "read a card as markdown",
 			Tool: "favro_get_card",
 			Args: map[string]any{
 				"card_id":            AnyCardID,
 				"description_format": "markdown",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read a card in full by id",
 			Tool: "favro_get_card_full",
 			Args: map[string]any{
 				"card_id":            AnyCardID,
@@ -356,93 +363,94 @@ func optionSteps() []Step {
 				"description_format": "markdown",
 				"include_comments":   false,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read a collection",
 			Tool: "favro_get_collection",
 			Args: map[string]any{
 				"collection_id": AnyCollectionID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read a column",
 			Tool: "favro_get_column",
 			Args: map[string]any{
 				"column_id": AnyColumnID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read a comment",
 			Tool: "favro_get_comment",
 			Args: map[string]any{
 				"comment_id": AnyCommentID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read a custom field",
 			Tool: "favro_get_custom_field",
 			Args: map[string]any{
 				"custom_field_id": AnyCustomFieldID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read a group",
 			Tool: "favro_get_group",
 			Args: map[string]any{
 				"group_id": AnyGroupID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read the organization",
 			Tool: "favro_get_organization",
 			Args: map[string]any{},
-			Why:  "reads",
 		},
 		{
+			Name: "read a tag",
 			Tool: "favro_get_tag",
 			Args: map[string]any{
 				"tag_id": AnyTagID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read a task",
 			Tool: "favro_get_task",
 			Args: map[string]any{
 				"task_id": AnyTaskID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read a task list",
 			Tool: "favro_get_tasklist",
 			Args: map[string]any{
 				"task_list_id": AnyTaskListID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read a user",
 			Tool: "favro_get_user",
 			Args: map[string]any{
 				"user_id": AnyUserID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "read a widget",
 			Tool: "favro_get_widget",
 			Args: map[string]any{
 				"widget_common_id": AnyWidgetCommonID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list a card's activities since a date",
 			Tool: "favro_list_card_activities",
 			Args: map[string]any{
 				"card_id": AnyCardID,
 				"page":    1,
 				"since":   "2020-01-01T00:00:00Z",
 			},
-			Why: "reads a card's history, with a since filter Favro will accept",
+			Why: "the since filter is in a form Favro accepts",
 		},
 		{
+			Name: "list cards by widget and collection, page 1 with a request id",
 			Tool: "favro_list_cards",
 			Args: map[string]any{
 				"archived":           false,
@@ -453,84 +461,84 @@ func optionSteps() []Step {
 				"unique":             true,
 				"widget_common_id":   AnyWidgetCommonID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list collections, page 1 with a request id",
 			Tool: "favro_list_collections",
 			Args: map[string]any{
 				"archived":   false,
 				"page":       1,
 				"request_id": "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list a widget's columns, page 1 with a request id",
 			Tool: "favro_list_columns",
 			Args: map[string]any{
 				"page":             1,
 				"request_id":       "livefavro probe",
 				"widget_common_id": AnyWidgetCommonID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list a card's comments, page 1 with a request id",
 			Tool: "favro_list_comments",
 			Args: map[string]any{
 				"card_common_id": AnyCardCommonID,
 				"page":           1,
 				"request_id":     "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list custom fields, page 1 with a request id",
 			Tool: "favro_list_custom_fields",
 			Args: map[string]any{
 				"page":       1,
 				"request_id": "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list a card's dependencies",
 			Tool: "favro_list_dependencies",
 			Args: map[string]any{
 				"card_id": AnyCardID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list groups, page 1 with a request id",
 			Tool: "favro_list_groups",
 			Args: map[string]any{
 				"page":       1,
 				"request_id": "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list organizations, page 1 with a request id",
 			Tool: "favro_list_organizations",
 			Args: map[string]any{
 				"page":       1,
 				"request_id": "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list tags, page 1 with a request id",
 			Tool: "favro_list_tags",
 			Args: map[string]any{
 				"page":       1,
 				"request_id": "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list a card's task lists, page 1 with a request id",
 			Tool: "favro_list_tasklists",
 			Args: map[string]any{
 				"card_common_id": AnyCardCommonID,
 				"page":           1,
 				"request_id":     "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list a task list's tasks, page 1 with a request id",
 			Tool: "favro_list_tasks",
 			Args: map[string]any{
 				"card_common_id": AnyCardCommonID,
@@ -538,24 +546,24 @@ func optionSteps() []Step {
 				"request_id":     "livefavro probe",
 				"task_list_id":   AnyTaskListID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list users, page 1 with a request id",
 			Tool: "favro_list_users",
 			Args: map[string]any{
 				"page":       1,
 				"request_id": "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list a widget's webhooks",
 			Tool: "favro_list_webhooks",
 			Args: map[string]any{
 				"widget_common_id": AnyWidgetCommonID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "list a collection's widgets, page 1 with a request id",
 			Tool: "favro_list_widgets",
 			Args: map[string]any{
 				"archived":      false,
@@ -563,9 +571,9 @@ func optionSteps() []Step {
 				"page":          1,
 				"request_id":    "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "move a card to another column, dry run",
 			Tool: "favro_move_card",
 			Args: map[string]any{
 				"card_id":          AnyCardID,
@@ -573,28 +581,29 @@ func optionSteps() []Step {
 				"column_id":        AnyColumnID,
 				"dry_run":          true,
 			},
-			Why: "dry-run: a column move, which Favro answers 200 to and ignores unless the widget rides along",
+			Why: "Favro answers 200 to a column move and ignores it unless the widget rides along",
 		},
 		{
+			Name: "ping the server after the seeds",
 			Tool: "favro_ping",
 			Args: map[string]any{},
-			Why:  "reads",
 		},
 		{
+			Name: "prepend to a card's description, dry run",
 			Tool: "favro_prepend_card_description",
 			Args: map[string]any{
 				"card_id": AnyCardID,
 				"dry_run": true,
 				"text":    "livefavro probe",
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "read the rate limit status",
 			Tool: "favro_rate_limit_status",
 			Args: map[string]any{},
-			Why:  "reads",
 		},
 		{
+			Name: "remove an attachment from a card by URL, dry run",
 			Tool: "favro_remove_attachment",
 			Args: map[string]any{
 				"confirm":   true,
@@ -602,9 +611,9 @@ func optionSteps() []Step {
 				"dry_run":   true,
 				"file_urls": []string{"https://example.invalid/not-attached.txt"},
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "removing an unknown tag name from a card is [not_found]",
 			Tool: "favro_remove_tag_from_card",
 			Args: map[string]any{
 				"card_id":  AnyCardID,
@@ -612,9 +621,9 @@ func optionSteps() []Step {
 				"dry_run":  true,
 			},
 			ExpectError: "not_found",
-			Why:         "the same refusal on the way out",
 		},
 		{
+			Name: "replace a card's dependencies, dry run",
 			Tool: "favro_replace_dependencies",
 			Args: map[string]any{
 				"confirm":      true,
@@ -622,9 +631,9 @@ func optionSteps() []Step {
 				"dependencies": []map[string]any{{"cardId": AnyCardCommonID, "isBefore": false}},
 				"dry_run":      true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "a description find that matches nothing is [not_found]",
 			Tool: "favro_replace_in_card_description",
 			Args: map[string]any{
 				"card_id":   AnyCardID,
@@ -635,18 +644,19 @@ func optionSteps() []Step {
 				"dry_run":   true,
 			},
 			ExpectError: "not_found",
-			Why:         "\u00a77.3, live: a find that matches nothing must refuse rather than PUT the body back unchanged",
+			Why:         "the tool refuses rather than PUT the description back unchanged",
 		},
 		{
+			Name: "resolve a collection by name",
 			Tool: "favro_resolve_collection",
 			Args: map[string]any{
 				"force_refresh": true,
 				"limit":         5,
 				"name":          "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "resolve a column by name",
 			Tool: "favro_resolve_column",
 			Args: map[string]any{
 				"force_refresh":    true,
@@ -654,45 +664,45 @@ func optionSteps() []Step {
 				"name":             "livefavro probe",
 				"widget_common_id": AnyWidgetCommonID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "resolve a custom field by name",
 			Tool: "favro_resolve_custom_field",
 			Args: map[string]any{
 				"force_refresh": true,
 				"limit":         5,
 				"name":          "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "resolve a group by name",
 			Tool: "favro_resolve_group",
 			Args: map[string]any{
 				"force_refresh": true,
 				"limit":         5,
 				"name":          "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "resolve a tag by name",
 			Tool: "favro_resolve_tag",
 			Args: map[string]any{
 				"force_refresh": true,
 				"limit":         5,
 				"name":          "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "resolve a user by name",
 			Tool: "favro_resolve_user",
 			Args: map[string]any{
 				"force_refresh": true,
 				"limit":         5,
 				"name":          "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "resolve a widget by name in a collection",
 			Tool: "favro_resolve_widget",
 			Args: map[string]any{
 				"collection_id": AnyCollectionID,
@@ -700,9 +710,9 @@ func optionSteps() []Step {
 				"limit":         5,
 				"name":          "livefavro probe",
 			},
-			Why: "reads",
 		},
 		{
+			Name: "search a widget's cards",
 			Tool: "favro_search_cards",
 			Args: map[string]any{
 				"force_refresh":    true,
@@ -712,9 +722,9 @@ func optionSteps() []Step {
 				"query":            "a",
 				"widget_common_id": AnyWidgetCommonID,
 			},
-			Why: "reads",
 		},
 		{
+			Name: "a custom field write with no value is [invalid]",
 			Tool: "favro_set_card_custom_field",
 			Args: map[string]any{
 				"card_id":         AnyCardID,
@@ -723,26 +733,27 @@ func optionSteps() []Step {
 				"dry_run":         true,
 			},
 			ExpectError: "invalid",
-			Why:         "\u00a77.4, live: the driver cannot know the field's type, and the refusal names every legal input for it",
+			Why:         "the driver cannot know the field's type, and the refusal names every legal input for it",
 		},
 		{
+			Name: "unarchive a card, dry run",
 			Tool: "favro_unarchive_card",
 			Args: map[string]any{
 				"card_id": AnyCardID,
 				"dry_run": true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "update a card's drag mode, dry run",
 			Tool: "favro_update_card",
 			Args: map[string]any{
 				"card_id":   AnyCardID,
 				"drag_mode": "livefavro probe",
 				"dry_run":   true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "update a collection, dry run",
 			Tool: "favro_update_collection",
 			Args: map[string]any{
 				"archive":                      false,
@@ -756,9 +767,9 @@ func optionSteps() []Step {
 				"public_sharing":               "users",
 				"star_page":                    false,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "update a column, dry run",
 			Tool: "favro_update_column",
 			Args: map[string]any{
 				"color":            "blue",
@@ -768,18 +779,18 @@ func optionSteps() []Step {
 				"position":         1,
 				"widget_common_id": AnyWidgetCommonID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "update a comment, dry run",
 			Tool: "favro_update_comment",
 			Args: map[string]any{
 				"comment":    "livefavro probe",
 				"comment_id": AnyCommentID,
 				"dry_run":    true,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "update a dependency, dry run",
 			Tool: "favro_update_dependency",
 			Args: map[string]any{
 				"card_id":            AnyCardID,
@@ -787,18 +798,18 @@ func optionSteps() []Step {
 				"dry_run":            true,
 				"is_before":          false,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "rename a group, dry run",
 			Tool: "favro_update_group",
 			Args: map[string]any{
 				"dry_run":  true,
 				"group_id": AnyGroupID,
 				"name":     "livefavro probe",
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "update a tag, dry run",
 			Tool: "favro_update_tag",
 			Args: map[string]any{
 				"color":   "blue",
@@ -806,17 +817,18 @@ func optionSteps() []Step {
 				"name":    "livefavro probe",
 				"tag_id":  AnyTagID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "update tags in bulk, dry run",
 			Tool: "favro_update_tags",
 			Args: map[string]any{
 				"updates": []map[string]any{{"tag_id": AnyTagID, "name": "livefavro probe"}},
 				"dry_run": true,
 			},
-			Why: "dry-run: the bulk path, which is a client-side fan-out rather than a Favro endpoint",
+			Why: "the bulk path is a client-side fan-out rather than a Favro endpoint",
 		},
 		{
+			Name: "update a task, dry run",
 			Tool: "favro_update_task",
 			Args: map[string]any{
 				"completed": false,
@@ -825,9 +837,9 @@ func optionSteps() []Step {
 				"position":  1,
 				"task_id":   AnyTaskID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "update a task list, dry run",
 			Tool: "favro_update_tasklist",
 			Args: map[string]any{
 				"dry_run":      true,
@@ -835,9 +847,9 @@ func optionSteps() []Step {
 				"position":     1,
 				"task_list_id": AnyTaskListID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "update a widget, dry run",
 			Tool: "favro_update_widget",
 			Args: map[string]any{
 				"archive":                  false,
@@ -851,9 +863,9 @@ func optionSteps() []Step {
 				"type":                     "livefavro probe",
 				"widget_common_id":         AnyWidgetCommonID,
 			},
-			Why: "dry-run: builds the request without sending it",
 		},
 		{
+			Name: "uploading a folder is [invalid]",
 			Tool: "favro_upload_attachment",
 			Args: map[string]any{
 				"card_id":   AnyCardID,
@@ -861,9 +873,10 @@ func optionSteps() []Step {
 				"dry_run":   true,
 			},
 			ExpectError: "invalid",
-			Why:         "the not-a-regular-file guard, live: a folder must be refused before anything is read into memory",
+			Why:         "the not-a-regular-file guard refuses it before anything is read into memory",
 		},
 		{
+			Name: "uploading a path outside the upload directory is [invalid]",
 			Tool: "favro_upload_attachment",
 			Args: map[string]any{
 				"card_id":   AnyCardID,
@@ -871,9 +884,10 @@ func optionSteps() []Step {
 				"dry_run":   true,
 			},
 			ExpectError: "invalid",
-			Why:         "the upload directory holds: a path outside " + config.EnvUploadDir + " is refused before it is opened",
+			Why:         "a path outside " + config.EnvUploadDir + " is refused before it is opened",
 		},
 		{
+			Name: "a comment upload with .. out of the upload directory is [invalid]",
 			Tool: "favro_upload_comment_attachment",
 			Args: map[string]any{
 				"comment_id": AnyCommentID,
@@ -881,7 +895,6 @@ func optionSteps() []Step {
 				"dry_run":    true,
 			},
 			ExpectError: "invalid",
-			Why:         "the upload directory holds on the comment path: a .. out of it is refused",
 		},
 	}
 }
@@ -891,7 +904,7 @@ func optionSteps() []Step {
 // real ids to work with, and carries dry_run regardless.
 func rank(s Step) int {
 	for i, seed := range SeedSteps() {
-		if seed.Tool == s.Tool && len(s.Args) == len(seed.Args) && s.Why == seed.Why {
+		if seed.Name == s.Name {
 			return i
 		}
 	}

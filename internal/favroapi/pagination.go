@@ -9,10 +9,21 @@ import (
 	"github.com/mmedum/favro-mcp/v4/internal/favro"
 )
 
-// Paginate drives Favro's two-step pagination protocol: the first
-// page is requested with no cursor; subsequent pages send the
-// requestId from the prior response back as the
-// X-Favro-Backend-Identifier header alongside ?page=N.
+// Paginate reads a listing page by page. The first page is requested
+// with no page parameter; each later one sends ?page=N and puts the
+// previous response's requestId in the X-Favro-Backend-Identifier
+// header.
+//
+// Favro serves a later page from page alone. The requestId is not the
+// backend identifier a response returns in that header, and sending it
+// there changes nothing. The reference asks for requestId as a query
+// parameter beside page, and for the header to carry the value a
+// response returned in it. A card listing's second page holds the same
+// rows in the reference's form, in the client's and with page alone.
+// Checked by hand against a live organization; no live step reads a
+// second page.
+// https://favro.com/developer/#pagination
+// https://favro.com/developer/#routing
 //
 // The visit callback runs once per response page with the parsed
 // envelope. Returning a non-nil error stops the iteration. An empty
@@ -22,8 +33,7 @@ import (
 //
 // Pagination is a top-level helper rather than an auto-collector
 // because silently iterating every page is the fastest way to burn
-// the per-organization rate-limit budget — call sites must opt in
-// explicitly.
+// the hourly rate limit — call sites must opt in explicitly.
 func Paginate[T any](
 	ctx context.Context,
 	c *Client,
@@ -66,8 +76,8 @@ func Paginate[T any](
 }
 
 // fetchOne sends one page request via GetJSON. The requestID, if
-// non-empty, rides as X-Favro-Backend-Identifier so Favro routes the
-// call to the backend that holds the cursor.
+// non-empty, is sent as the X-Favro-Backend-Identifier header, which
+// changes nothing Favro serves; see Paginate.
 func fetchOne[T any](
 	ctx context.Context,
 	c *Client,

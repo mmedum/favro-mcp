@@ -273,14 +273,18 @@ func (r *Resolver) dereferenceComments(ctx context.Context, full *FullCard, comm
 // single Card. card_id calls GET /cards/{cardId} directly; the
 // other two call ListCards with the matching filter and take the
 // card's first board copy, or its first copy when it is on no board.
-// Favro lists a card's to-do list copy, which has no widget or column,
-// before its board copy (probed live 2026-10-27, §18).
+// A card assigned to someone also has a to-do list copy, with
+// todoListUserId set and no widgetCommonId or columnId, and Favro lists
+// it before the board copy, an order its reference does not give.
+// Probed by hand on a scratch collection. No live step checks it, since
+// only an assigned card has a to-do list copy.
+// https://favro.com/developer/#get-all-cards
 //
 // Unique is left false so the response includes per-widget
 // instances (each carries widgetCommonId / columnId). Setting
-// Unique=true with cardCommonId returns a cross-widget rollup row
-// that omits widget context — observed live and breaks the
-// downstream widget/column/collection dereference. The caller must
+// Unique=true with cardCommonId keeps the to-do list copy, which
+// omits widget context and breaks the downstream
+// widget/column/collection dereference. The caller must
 // Validate the identity first; this function trusts that exactly
 // one field is set.
 //
@@ -299,7 +303,8 @@ func (r *Resolver) fetchCardAndCopies(ctx context.Context, id FullCardIdentity, 
 		return card, nil, err
 	}
 
-	filter := favro.ListCardsFilter{DescriptionFormat: descriptionFormat}
+	// Archived: an id names one card, archived or not.
+	filter := favro.ListCardsFilter{DescriptionFormat: descriptionFormat, Archived: true}
 	if id.CardCommonID != "" {
 		filter.CardCommonID = id.CardCommonID
 	}
@@ -356,7 +361,8 @@ func (r *Resolver) dereferencePlacements(ctx context.Context, full *FullCard, co
 		if full.CardCommonID == "" {
 			return nil
 		}
-		env, err := r.client.ListCards(ctx, 0, "", favro.ListCardsFilter{CardCommonID: full.CardCommonID})
+		// Archived: every copy is a placement, an archived one included.
+		env, err := r.client.ListCards(ctx, 0, "", favro.ListCardsFilter{CardCommonID: full.CardCommonID, Archived: true})
 		if err != nil {
 			return err
 		}
@@ -444,9 +450,9 @@ func (r *Resolver) columnName(ctx context.Context, w *favro.Widget, columnID str
 }
 
 // listFirstComments fetches the first page of /comments scoped to
-// cardCommonID and trims to limit. Plan §6 says list tools never
-// auto-aggregate; full-card composition is the one exception
-// because the caller asked explicitly via include_comments.
+// cardCommonID and trims it to limit. It reads that one page and never
+// follows the next, as nothing here aggregates pages; include_comments
+// is the caller asking for it.
 func (r *Resolver) listFirstComments(ctx context.Context, cardCommonID string, limit int) ([]favro.Comment, error) {
 	env, err := r.client.ListComments(ctx, 0, "", cardCommonID)
 	if err != nil {

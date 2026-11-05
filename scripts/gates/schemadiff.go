@@ -13,17 +13,15 @@ import (
 // schemaDiff holds the tool surface two ways: the committed schemas.json
 // must be what this build dumps, and the change since the last tag must
 // not break a caller — a removed tool, a removed input, or an input that
-// became required (CONTRIBUTING, Versioning). Every other change is
-// printed for a reviewer to read.
+// became required (D-64, CONTRIBUTING.md#versioning). Every other change
+// is printed for a reviewer to read.
 //
-// **It verifies rather than writes.** The first version regenerated
-// schemas.json on every run, which made the claim in the changelog —
-// that the committed dump is where a reviewer sees a wire change — true
-// only for people who ran `make check` before pushing. Everyone else got
-// a green build and a pull request whose diff showed nothing. Writing
-// also left the working tree dirty in the middle of `make check`, which
-// is its own small betrayal. `make schemas` is the writer; this is the
-// check, and it names that target when it fails.
+// **It verifies rather than writes.** The committed dump is where a
+// reviewer sees a wire change, and a gate that regenerated it would make
+// that true only for people who ran `make check` before pushing; it
+// would also leave the working tree dirty in the middle of `make check`.
+// `make schemas` is the writer; this is the check, and it names that
+// target when it fails.
 func schemaDiff(w io.Writer, bin string) error {
 	current, err := dumpSchemas(bin)
 	if err != nil {
@@ -70,7 +68,7 @@ func schemaDiff(w io.Writer, bin string) error {
 // tag yet. A tag older than --dump-schemas gives errNoDumpAtTag beside
 // its name.
 func releaseSurface(rev string) (toolSurface, string, error) {
-	tag, err := lastTagOn(rev)
+	tag, err := lastTagOn(".", rev)
 	if err != nil || tag == "" {
 		return toolSurface{}, "", err
 	}
@@ -85,16 +83,16 @@ func releaseSurface(rev string) (toolSurface, string, error) {
 	return s, tag, nil
 }
 
-// lastTagOn is the newest tag rev reaches, or "" when it reaches none: no
-// tag yet, or only tags outside its history, as a fork that fetched
-// upstream's has. Any other failure is an error: a tag that could not be
-// read is not a release that does not exist.
-func lastTagOn(rev string) (string, error) {
-	tags, err := git("tag", "--merged", rev)
+// lastTagOn is the newest tag rev reaches in the repository at root, or
+// "" when it reaches none: no tag yet, or only tags outside its history,
+// as a fork that fetched upstream's has. Any other failure is an error: a
+// tag that could not be read is not a release that does not exist.
+func lastTagOn(root, rev string) (string, error) {
+	tags, err := git("-C", root, "tag", "--merged", rev)
 	if err != nil || tags == "" {
 		return "", err
 	}
-	return git("describe", "--tags", "--abbrev=0", rev)
+	return git("-C", root, "describe", "--tags", "--abbrev=0", rev)
 }
 
 // sameSurface fails unless the committed schemas.json is the surface this

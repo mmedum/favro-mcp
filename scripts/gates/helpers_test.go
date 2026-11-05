@@ -27,3 +27,11 @@ func funcName(f func(io.Writer, []string) error) string {
 	full := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
 	return full[strings.LastIndexByte(full, '.')+1:]
 }
+
+// putAll writes each file's body to its path under root.
+func putAll(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, body := range files {
+		put(t, root, rel, body)
+	}
+}

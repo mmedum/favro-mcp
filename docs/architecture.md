@@ -1,1450 +1,2493 @@
-# Architecture — favro-mcp
+# Architecture
 
-**Status, 2026-11-01.** Released: v4.4.0, in which every write that changes or removes something says `destructiveHint: true` and only the twelve that add say false, and the destructive gate reads the `confirm` input rather than the hint, so the same fifteen tools stay behind `FAVRO_ENABLE_DESTRUCTIVE` and the default surface is unchanged (§8, §9.2, §18), after `/simplify`, `/code-review medium` and `/security-review` over the change and a dry-run live run of 120 steps passed, 0 failed, 19 skipped. v4.3.0, in which `favro_get_card_full` returns a card's board copy rather than its to-do list copy and lists every copy in `placements`, and `favro_list_cards` with `unique` by `card_common_id` or `sequential_id` keeps the board copy, probed live on a scratch collection (§18), after `/simplify` and `/security-review` over the change and a dry-run live run of 120 steps passed, 0 failed, 19 skipped. v4.2.1 kept a nested card's place among its parent's children on a move or a structural update, probed live on a scratch collection (§18), after `/simplify` and `/security-review` over the fix and a dry-run live run of 120 steps passed, 0 failed, 19 skipped. v4.2.0 added the windows_arm64 archive, reads every variable through `config.Lookup` (so `FAVRO_ENABLE_DESTRUCTIVE` and `FAVRO_MCP_SKIP_VALIDATE` drop the spaces around their value, and `FAVRO_MCP_SKIP_VALIDATE=false` no longer skips the credential check), and holds the bundle gate to the family's rules, after `/simplify`, `/code-review medium` and `/security-review` over v4.0.0..HEAD and a dry-run live run of 120 steps passed, 0 failed, 19 skipped (§18). v4.1.0 gave the Claude Desktop bundle the shape the sibling servers' bundles share: every setting another client sets, each off or empty by default as the server is, a blank upload folder reaching the server empty rather than as `${user_config.upload_dir}`, the shared file names, Claude Desktop 0.10.0 or later and Favro's privacy policy; the server is unchanged. v4.0.0, in which the server asks nobody and per-call approval is the client's (§9.2, B2); every destructive call takes `confirm: true`; five tools carry the mark; widening a collection's sharing is its own tool, and the ordinary writes share only inside the organization; built with Go 1.27.3. Run live the same day: `make live` passed 120 steps, failed none and skipped 19, and `livefavro -writes` passed 15 checks, failed none and left no probe. Owed (§15): what Favro does with an invitation by email, and a share with a group that holds a guest, tried by hand. v3.2.0 marked the ten writes that asked the person with Claude Code's `requiresUserInteraction` for a client that could not ask. The server's own feature phases
-(0–9) are complete and shipped, and **every phase of the alignment
-program in §16 is done**, A6's evals included — the note that said they
-needed a model API key was wrong, since the siblings drive the model
-through the `claude` CLI. **B1 shipped in 3.0.0**: the server asked the
-person before ten writes, which B2 removes (§9.2), and uploads read one
-configured directory (§9.1). Where a sentence below describes something that
-does not exist, it says so and names the phase that builds it.
+How `favro-mcp` is put together, and the decisions a contributor should
+not undo without a better reason than the one that put them here. Read
+the decision before changing the tool surface, the error vocabulary, the
+write path or the package layout. Part 1 is the overview. Part 2, from
+[Decisions](#decisions), is one entry per decision, cited elsewhere by
+its D-ID. What was verified about Favro lives in the comment at the code
+that depends on it, with Favro's reference linked and, for a
+load-bearing quirk, the live step that checks it named.
 
-This document is the design, the decided constraints, the evidence and
-the phase plan. Read it before changing the tool surface, the error
-vocabulary, the write path, or the package layout.
+## Context
 
-It is written against the shared standard for our Go MCP servers
-(`~/.claude/mcp-server-standard.md`, adopted here 2026-09-13), which was
-written out of google-docs-mcp and is run by four sibling servers:
-google-chat-mcp, google-docs-mcp, google-drive-mcp and google-sheets-mcp.
-Section numbering mirrors theirs so the five are cross-referenceable.
-Where this server deviates, §17b names the deviation and why.
+`favro-mcp` is a Model Context Protocol server for Favro. One Go binary
+runs as a subprocess of an MCP client and speaks MCP over stdio. It
+holds one person's Favro address, API token and organization id, and
+calls Favro's REST API over HTTP Basic with wire types of its own (D-01,
+D-04, D-54). Nothing is hosted.
 
-**Every rule here is written as though stating it were enough. None of
-them is.** The standard's preamble is the load-bearing paragraph of this
-whole document: for every rule adopted, make it a test, derive the list
-from the code rather than typing it out, and have the checker assert a
-floor on how much it read — zero findings and zero inputs otherwise print
-the same sentence. This repository has already produced its own instance
-of that failure: CLAUDE.md has said "every registered tool needs a row in
-`smokeToolInputs` or the smoke test fails" since Phase 3, and that one IS
-held by a test — while "never put tenant data in commits, PRs, docs or
-tool descriptions", the loudest rule in the repository, is held by
-nothing at all.
+It is more than a wrapper around the REST API, because that API is
+shaped by ids a model cannot navigate. A card has a per-widget `cardId`,
+a cross-widget `cardCommonId` and a sequential number. Columns repeat
+their names across boards. Tags and custom fields belong to the whole
+organization and have no name index, and there is no full-text search.
+So the surface adds what the API lacks: names resolved to ids, a
+client-side search, and a card read with every id dereferenced (D-07,
+D-08, D-13, D-11).
 
-## 1. Mission and scope
+A few facts about Favro shape everything else. It answers 200 to a
+request body it ignores, and its reference disagrees with the live API
+in places, so a 200 is not confirmation (D-73, D-15, D-24). A later page
+of a listing is served from its page number alone (D-16). Calls
+are counted per user per hour, at a rate the organization's plan sets
+(D-42). A card delete reaches one widget's copy unless told otherwise
+(D-37).
 
-A Go MCP server exposing Favro's REST API to a model over stdio, as 85
-typed tools (measured 2026-09-14; the staleness gate re-measures it
-against the binary on every `make check`, so this sentence cannot drift
-without failing).
+The parties around the server:
 
-It is not a thin REST wrapper. Favro's API is id-shaped in a way a model
-cannot navigate: a card is addressed by `cardId` in one widget and by
-`cardCommonId` across widgets, columns repeat their names across boards,
-tags and custom fields are org-global with no name index, and there is no
-full-text search at all. A wrapper that exposed those endpoints one to
-one would spend a conversation's entire rate-limit budget turning names
-into ids. So the surface carries three layers the API does not have:
-`favro_resolve_*` (name → ranked id candidates, cached), `favro_search_cards`
-(client-side full-text over a scoped corpus), and `favro_get_card_full`
-(one card with every id dereferenced, saving 4–7 round-trips).
+- **The person** issues the API token, ideally from a least-privileged
+  Favro user, and every call acts in their one organization (D-02, D-55,
+  D-56).
+- **The deployer** sets the switches the client passes at start: the
+  destructive tools, the upload directory, the log level and
+  process-wide dry run (D-29, D-38, D-28, D-57). The deployer is usually
+  the person.
+- **The client** approves each call by its own rules and draws its
+  prompt from the tool annotations. The server asks the person nothing
+  (D-31, D-33, D-34).
+- **The model** chooses the calls and their arguments, sets `confirm`,
+  and reads card text other people wrote. It can be wrong, so no tool
+  lets it widen its own reach (D-30, D-35, D-39). The threats this
+  leaves open are in [security.md](security.md).
+- **Favro** is the only network peer. There is no telemetry and no
+  update check (D-53).
 
-### Non-goals
+It is not a multi-organization server (D-02), a SCIM or
+organization-administration client (D-03), a webhook receiver (D-67), or
+a guard on what the token may do in Favro itself (D-56).
 
-- **Multi-org.** The server binds one `FAVRO_ORGANIZATION_ID` at startup
-  and no tool takes an `organization_id`. Favro's rate limit is per
-  organization; a server that could switch orgs mid-session would make
-  the budget unattributable, and the id is a deployment fact rather than
-  a per-call one.
-- **SCIM provisioning.** `/scim/v1` and `/scim/v2` are user and group
-  lifecycle for an IdP, authenticated differently and used by directory
-  software rather than by a person asking about a card. Out by category,
-  recorded as one row rather than twenty-two (§16, phase A5).
-- **Creating organizations.** `POST /organizations` and
-  `PUT /organizations/{id}` exist; a card-work server that can create an
-  organization is a capability nobody asked for and a blast radius
-  nobody wants.
-- **Auto-aggregating pagination.** List tools surface `next_page` and
-  require an explicit follow-up, so a model can stop early rather than
-  discovering the budget is gone.
+## Quality goals
 
-## 2. Hard constraints from the platform
+In priority order:
 
-These are properties of Favro, not choices, and every one of them has
-cost this repository something already.
+1. **Nothing is lost or exposed by a call nobody meant.** The
+   destructive tools exist only when the deployer enables them, each
+   needs `confirm`, and the widest carry a prompt on every call. The
+   ordinary writes share only inside the organization, uploads read one
+   directory, and a mistyped tag never becomes a tag (D-29, D-30, D-34,
+   D-35, D-38, D-21).
+2. **A result says what Favro did, not what was asked.** A write Favro
+   may accept and drop is read back. A write that may have landed is
+   `[ambiguous_outcome]` and is never sent again. No tool states an
+   outcome its response did not carry (D-24, D-41, D-25, D-22, D-23).
+   The unit tests run against fakes written from what Favro is believed
+   to do, and only a live read-back tests that belief (D-73, D-74).
+3. **The hourly budget is spent on purpose.** One call is one page,
+   names resolve through one cache, and a full card is one call rather
+   than several (D-16, D-08, D-11, D-42).
+4. **Nothing about a tenant leaves where it belongs.** Stdout carries
+   frames only, logs carry no subject, the token is never printed,
+   transcripts are redacted and never committed, and the repository
+   holds nothing real (D-45, D-46, D-47, D-51, D-49).
+5. **Every rule is a check, and the surface is a contract.** A rule
+   adopted is a test that derives its list from the code, and a released
+   tool or input keeps working (D-68, D-64, D-65, D-69).
 
-1. **Favro returns HTTP 200 for a request body it ignores.** A wrong
-   field name looks exactly like success. This is the single most
-   important fact about the platform and it is why the standard's §7 — "verify against
-   the discovery document" — does not transfer: there is no discovery
-   document, and the reference page has been observed to disagree with
-   the live API. A 200 is not confirmation; a read-back is.
-2. **The REST documentation and the live API disagree in places.** Reads
-   are therefore tolerant — accept the documented shape *and* any shape
-   previously observed live, preferring the documented one
-   (`Card.CustomFields()`, `Tasklist.Title()`, `Activity.CommonID()`
-   exist for exactly this). Writes send the documented shape and say in
-   the tool description when it is unverified.
-3. **A missing endpoint answers with the SPA fallback page, not a 404.**
-   `decodeJSONLenient` reports status, content-type and a body prefix so
-   one round-trip is enough to diagnose it.
-4. **Rate limits are per organization and tier-based** (Lite ~100/hr,
-   Standard ~1000/hr, Enterprise ~10000/hr). Favro stalls responses
-   before it rejects them: a non-zero `X-RateLimit-Delay` is the early
-   warning, and 429 arrives once the needed stall would exceed 10s. One
-   misbehaving agent exhausts the quota for every human in the org.
-5. **Pagination is backend-affine.** A paginated read must carry
-   `X-Favro-Backend-Identifier` from the first response, which is why
-   every list tool returns a `request_id` the caller has to pass back.
-6. **Two ids per card.** `cardId` is per-widget; `cardCommonId` is
-   cross-widget. `GET /cards/{id}` 403s on a common id. Different
-   endpoints require different ones — `/comments` and `/tasklists` want
-   the common id, `/cards/{id}/activities` wants the per-widget id — and
-   getting it wrong is a 403 rather than a helpful error.
-7. **Custom fields are org-global but per-widget enabled.** A write to a
-   field the widget has not enabled is accepted and ignored (see 1).
-8. **Some deletes are not deletes.** `DELETE /cards/{id}` removes one
-   widget's instance unless `everywhere` is set; `DELETE` on a
-   collection does not cascade to widgets, which are left orphaned.
+## Codemap
 
-## 3. Requirements distilled from the siblings' failures
+Dependencies run one way: `server` to `tools` to `service` to `favroapi`
+to `favro`, with `config`, `cache`, `auth` and `render` as leaves
+(D-05).
 
-The four sibling servers paid for these; this one should not pay again.
+- `cmd/favro-mcp` is the program. With no subcommand it serves.
+  `--dry-run`, `--dump-schemas`, `--version`, `auth login`,
+  `auth status`, `auth logout`, `auth which`, `doctor` and
+  `doctor --show-ids` are the rest. It reads the settings once, refuses
+  a removed setting still turned on, resolves and checks the
+  credentials, and exits non-zero when they fail (D-32, D-55, D-58). It
+  is the one place that names stdout (D-45).
+- `internal/config` holds every `FAVRO_*` setting, the removed ones
+  included, as `config.Vars`. Each is read once through `config.Lookup`,
+  with the spaces around a value dropped. `CredentialsFrom` reads the
+  three credentials for the callers to hand to `auth` (D-57).
+- `internal/auth` says where credentials come from, the environment and
+  then the OS keyring, and what they are: `Token`, which sets HTTP Basic
+  and the organization header. It holds the startup validator with its
+  own timeout, and `KeyringSource`, the only writer of the keyring
+  (D-54, D-55, D-39, D-43).
+- `internal/favro` is Favro's wire vocabulary, one file per resource. It
+  imports nothing from this module. The accessors that accept two
+  observed shapes live here (D-04, D-05, D-15).
+- `internal/favroapi` is the REST client, one method per endpoint. It
+  holds the retry policy, the rate-limit snapshot, pagination, the
+  dry-run gate, the redaction of paths and headers for the debug line,
+  and typed errors that name their own class. It imports no MCP (D-28,
+  D-41, D-42, D-46, D-40).
+- `internal/favroapi/favroapitest` is the one client fixture the test
+  packages above the client share, with an invented credential triple
+  (D-49).
+- `internal/cache` is the goroutine-safe TTL cache that the resolver and
+  search run on (D-08).
+- `internal/service` is the orchestration, in plain Go values with no
+  MCP: the resolver and its caches, client-side search, the full-card
+  fan-out, and the description editors with their Myers diff (D-08,
+  D-09, D-13, D-11, D-18, D-19, D-20). The editors' golden corpus sits
+  in its testdata directory.
+- `internal/render` writes the readable half of every result and
+  declares the closed error vocabulary. It imports nothing from this
+  module, which is what lets the client's errors name their class (D-61,
+  D-40, D-05).
+- `internal/tools` is the MCP surface, one file per area of Favro.
+  `register.go` is the one list of what registers. `registry.go` holds
+  `addTool`, which applies the destructive gate, `confirm`, the mark,
+  the dry-run context, both result halves and the error class (D-60,
+  D-29, D-30, D-34, D-61). `sharing.go` holds the
+  inside-the-organization checks and `verify.go` the read-backs (D-35,
+  D-24).
+- `internal/server` builds the MCP server and dumps the schemas through
+  an in-memory client session (D-66).
+- `internal/redact` is the one redactor that the live driver, the evals
+  and `doctor` print through. It matches shapes, and takes known values
+  registered by kind (D-51, D-48).
+- `internal/livecover` holds the live driver's named steps and
+  placeholders, so the driver and the `live-cover` gate read one list
+  (D-74).
+- `internal/version` holds the build stamp, and falls back to what Go
+  embeds for a `go install` build (D-86).
 
-- A gate that runs is worth more than a rule that is written. Five rules
-  in the standard were true on paper and false in the code at the same
-  time, and none was caught by reading.
-- A completeness claim decays the moment the surface grows. Anything
-  claiming to cover "every tool" — a smoke test, a live driver, a leak
-  scan — must derive its list from the code and assert a floor on how
-  much it read.
-- A leak gate cannot be patterns alone when the payload is ordinary
-  words. A card name has no shape a scanner can match. Fixtures are
-  generated, never recorded, and a live driver reads only what it wrote.
-- A manual gate nobody runs is a gate that never fires. Keep the fetch
-  manual, commit what it fetched, and let `check` read the file.
-- What `make check` runs and what CI runs are two lists in two files,
-  and you only ever edit one of them. Assert they agree.
-- A number in prose is a claim about the list beside it.
-- Documentation that a person must copy into a system's configuration is
-  an input, not a description.
+Beside the packages, `scripts/gates` is every check the repository runs
+on itself, one Go program behind a registry; `go run ./scripts/gates`
+lists them (D-06, D-68). `scripts/livefavro` is the live driver that
+`make live` runs (D-74, D-75). `scripts/evals` holds the agent evals,
+behind the `evals` build tag and run by `make evals` (D-76, D-77).
+`testdata` holds the API surface snapshot, the per-endpoint and
+per-field verdicts, the live-cover waivers and the outcome-claim
+allowances (D-72, D-74, D-25). `packaging/mcpb` holds the Claude Desktop
+bundle's manifest, `packaging/registry` the MCP registry entry, and
+`plugin-template` the plugin's manifest (D-88, D-89, D-92).
+`schemas.json` is the committed schema dump that `schema-diff` compares
+against (D-64).
 
-## 4. Core design bets
+## Request flow
 
-These are the decisions the existing code already runs on. They are
-recorded because they are not re-derivable from reading it, and because
-§17b has to be able to point at them.
+### Startup
 
-### 4.1 Names in, ids out, cached in between
+`cmd/favro-mcp` reads every setting through `config.Lookup`. With
+`--dump-schemas` it prints the surface and exits before it reads a
+credential (D-66). A removed setting still turned on refuses the start
+(D-32). Credentials come from the environment, else the keyring, and a
+partial set in the environment is an error (D-55). One request validates
+them against Favro under a short timeout, unless
+`FAVRO_MCP_SKIP_VALIDATE` is on. Any failure logs its reason to stderr
+and exits non-zero (D-58, D-43).
 
-The model speaks names; Favro speaks ids. `internal/service/resolver.go`
-is the one place that bridges the two, with per-resource TTLs — 5 minutes
-for slow-changing org metadata (tags, users, custom fields, groups), 60
-seconds for things people add mid-session (collections, widgets,
-columns). Every write tool invalidates the cache its write invalidated.
-One resolver per process: per-tool resolvers would each cold-start their
-own cache and burn the budget in parallel.
+`tools.Register` adds every tool through `addTool`. The destructive
+tools register only with `FAVRO_ENABLE_DESTRUCTIVE`, and the upload
+tools only with a valid `FAVRO_UPLOAD_DIR` (D-29, D-38). The server then
+serves stdio, and a host closing the pipe is a clean exit (D-44).
 
-### 4.2 Every mutating tool takes `dry_run`, and the binary can force it
+### A read
 
-`dry_run: true` returns the would-be request — method, URL, redacted
-headers, body — plus a predicted state change, without contacting Favro.
-`--dry-run` on the binary forces it process-wide for sandboxed use. The
-gate lives in the client (`shouldDryRun`), not in each tool, so a tool
-cannot forget it; every mutating tool has a test proving dry-run never
-reaches `RoundTrip`.
+A client calls `favro_get_card_full` with a sequential id. The handler
+passes the identity to `internal/service`, which lists the cards
+carrying that number and takes the first board copy. Every copy is
+listed in `placements` (D-10, D-12). Tags, assignees, the widget and its
+column, the collections and the custom fields are resolved in parallel
+through the resolver's caches. A custom-field type the server does not
+know passes through undereferenced (D-11, D-08).
 
-### 4.3 Tag tools hard-fail on unknown names
+`internal/favroapi` sends each request with the credentials, records the
+rate-limit headers, and retries a read's 5xx with backoff (D-41, D-42).
+`addTool` returns the structured result and a readable summary that
+differs from it (D-61).
 
-`favro_add_tag_to_card` refuses a name it cannot match rather than
-creating the tag. Favro's own `addTags` takes names and creates unknown
-ones, which turns a typo into a permanent org-global tag. Creating one is
-`favro_create_tag`, explicitly.
+### A write
 
-### 4.4 Pagination is never auto-aggregated
+A client calls `favro_move_card` to move a card to another column.
+`addTool` puts a requested dry run on the context (D-28). The handler
+reads the card's current parent and `sheetPosition` and carries them in
+the body, so the move does not detach the card (D-23). The client
+refuses a column move without `widgetCommonId`, and checks the column in
+Favro's answer (D-22). Under dry run it returns the redacted request
+instead of sending it.
 
-One tool call is one page. §2.5's backend affinity makes a hidden
-aggregation loop expensive and unattributable, and the model stopping
-early is the common case.
+The PUT goes once. A 5xx, or a connection lost after the request went
+out, is `[ambiguous_outcome]` (D-41). After a real write the tool reads
+the card back and reports the verdict in `notes`, and the caches the
+write changed are invalidated (D-24, D-09).
 
-### 4.5 Reads are tolerant, writes are documented
+A destructive call adds three steps. `favro_delete_collection` exists
+only because the deployer enabled the destructive tools. `addTool`
+refuses it `[blocked]` without `confirm: true`, unless it is a dry run.
+Claude Code prompts on every call of it, because the tool carries the
+mark (D-29, D-30, D-34).
 
-§2.2, as code. The accessors that accept two shapes are the tolerance;
-the tool description that says "not verified against a live tenant" is
-the honesty about the other direction.
+## Invariants
 
-### 4.6 Own wire types, raw REST
+- Stdout carries only MCP JSON-RPC frames (D-45).
+- A log line carries no payload and no value that identifies the subject
+  (D-46).
+- The token is never printed (D-47).
+- No tool takes an organization id (D-02).
+- Every write takes `dry_run`, and the gate is in the HTTP client
+  (D-28).
+- A tool is destructive when its input takes `confirm`, and it registers
+  only with the destructive flag (D-29).
+- A destructive call without `confirm: true` is refused unless it is a
+  dry run (D-30).
+- The server asks the person nothing (D-31).
+- No tool writes the server's own settings (D-39).
+- The ordinary writes share only inside the organization (D-35).
+- A write is sent once, and one that may have landed is
+  `[ambiguous_outcome]` (D-41).
+- Every tool error is `[class] message` from one closed vocabulary
+  (D-40).
+- `content` and `structuredContent` are never the same bytes (D-61).
+- Every tool registers through `addTool` (D-60) and has a smoke row
+  (D-62).
+- Nothing from a real tenant enters the repository (D-49), and a
+  transcript is never committed (D-51).
+- A released tool or input keeps working (D-64), and a pull request
+  names each change to the surface (D-65).
+- `make check` and CI run the same set (D-69).
 
-`internal/favro` hand-writes the request and response structs. There is
-no generated Favro client to import and there will not be one.
+## Cross-cutting concerns
 
-### 4.7 A 200 is not confirmation (the rule that outranks the others)
+**Errors.** Every tool error is a tool result of the form
+`[class] message`, and the class tells the caller what to do next. The
+vocabulary is closed and declared in `internal/render/class.go`, and
+[TOOLS.md](TOOLS.md#error-classes) documents each class for a reader.
+The `classes` gate holds the two to each other from both sides. A class
+is read from the error's type, never its text, and an error that names
+none is `invalid` (D-40).
 
-Verification is a read-back, live, against a real organization. This is
-why §15 exists and why phase A6 builds a live driver rather than
-treating unit tests as the end of the argument.
+**Caching and the budget.** One resolver per process caches the
+organization's lists, longer for what rarely changes than for what
+people add mid-session. A write invalidates what it changed, and every
+list and resolve tool takes `force_refresh` (D-08, D-09). Search caches
+its corpus per scope (D-13). Nothing pages on the caller's behalf, and
+`favro_rate_limit_status` reports the last rate-limit headers without a
+call (D-16, D-42). The TTLs are the code's, in
+`internal/service/resolver.go`.
 
-## 5. Module layout
+**Dry run.** Every write takes `dry_run`, and `--dry-run` forces it for
+the process. The gate is in the HTTP client, so no tool can forget it,
+and a dry run returns the request it would have sent with the
+credentials redacted (D-28).
 
-Current, and the target the alignment phases move it to. The target
-mirrors the siblings; the names are Favro's.
+**Confidentiality.** A debug line carries the method, the path's shape,
+the query's parameter names, the attempt and the outcome (D-46). The
+live driver, the evals and `doctor` print through one redactor, which
+cannot catch a name, so a transcript is never committed (D-48, D-51).
+The `leaks` gate scans the tree, and its history scan runs by hand
+(D-49, D-50). The threat model is in [security.md](security.md).
 
-```
-cmd/favro-mcp/            main: server default, auth subcommands, --version,
-                          --dry-run, --dump-schemas, doctor (A7)
-internal/config/          every FAVRO_* setting, resolved once at startup
-internal/auth/            credential resolution: env → OS keyring; Token.Apply
-internal/favro/           wire types only: Card, Widget, Column, …. No deps
-internal/favroapi/        the REST client: retry, rate-limit observation,
-                          dry-run gate, pagination, redacted logging, errors.
-                          No MCP imports
-internal/favroapi/favroapitest/
-                          the one client fixture the test packages above
-                          it share, so hard rule 1's "belongs to nobody"
-                          triple has a single spelling
-internal/cache/           the TTL cache the resolver runs on
-internal/service/         orchestration: resolution, search, full-card
-                          fan-out, description editing. No MCP imports
-internal/render/          the readable half of every result, never the same
-                          bytes as the structured half; and the closed
-                          error vocabulary. Imports nothing
-internal/tools/           the MCP surface, one file per area
-internal/server/          SDK wiring; schema dump through an in-memory session
-internal/redact/          the one redactor the live driver prints through
-internal/livecover/       what "the driver covers the surface" means, so the
-                          gate and the driver cannot disagree
-internal/version/         the build stamp
-scripts/gates/            this repository's own checks, as Go
-scripts/livefavro/        drives the built binary against a real org
-scripts/evals/            drives a model through the tools and scores it (A6)
-testdata/                 synthetic fixtures, goldens, the API snapshot
-docs/
-```
+**Approval.** The server asks the person nothing, and what holds on
+every client is in the server. The destructive tools register only with
+the flag, and each needs `confirm` (D-29, D-30). The ordinary writes
+share only inside the organization, and widening a collection is a tool
+of its own (D-35, D-36). The wider delete is named in the arguments
+(D-37). The annotations say which tools change something, and the widest
+carry Claude Code's mark (D-33, D-34).
 
-Dependency direction runs one way: `server` → `tools` → `service` →
-`favroapi` → `favro`, with `config`, `cache`, `auth` and `render` as
-leaves. `config` reads the credentials too, through `CredentialsFrom`,
-and the callers hand them to `auth`, so `config.Vars` lists every
-variable the server reads and `auth` stays a leaf. Nothing under
-`internal/service` or `internal/favroapi` imports MCP; `internal/favro`,
-`internal/render` and `internal/auth` import nothing from this module
-at all.
+**Verification.** Unit tests use Go's own `testing` package against
+`httptest` fakes (D-70). The MCP surface is exercised in memory, and the
+`smoke` gate drives the built binary over stdio (D-62, D-44). The live
+driver drives every tool and option through the binary against a real
+organization with `dry_run`, and its write mode checks real writes on
+probes it creates (D-74, D-75). The agent evals score whether a model
+can do a task through the tools at all (D-76). A fake agrees with
+whatever it was written from, so only the live run tests the belief
+behind it (D-73). How to run the live driver is in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-live-run).
 
-**depguard holds it**, one rule per package naming what that package may
-not reach, so an import that runs uphill fails `make check` rather than
-review. The rules were checked by breaking them: an `mcp` import added
-to `internal/service` fails with the sentence the rule carries.
+**Gates.** `go run ./scripts/gates` lists every gate, and `make check`
+runs the set CI runs (D-68, D-69). The docs gate holds every D-ID
+citation to an entry, every Held by cell to something that exists, the
+codemap to the tree and every live step a comment names to the driver.
+The staleness gate holds the README, [TOOLS.md](TOOLS.md),
+[configuration.md](configuration.md) and the CHANGELOG to the code
+(D-78).
 
-`internal/render` being a leaf is what lets `internal/favroapi`'s typed
-errors name their own class (§6.2). The vocabulary has to live below the
-package that raises the errors, or the classification has to be done
-from outside — which is what A2 shipped and A3 removed.
+**Distribution.** A release is built from a tag and signed and attested
+(D-83, D-84). It carries the platform archives, the `.plugin` and a
+Claude Desktop `.mcpb` whose settings derive from `config.Vars`, every
+switch off by default (D-88, D-89, D-90, D-91). Releasing is in
+[release.md](release.md), and fixing a symptom in
+[troubleshooting.md](troubleshooting.md).
 
-**One language.** Everything the repository runs on itself is Go. The two
-shell scripts that used to live in `scripts/` are gone (A1): a shell
-script is held to no gofmt, vet, lint or test, `make check` runs on the
-Windows runner where bash is a dependency rather than a given, and a
+## Decisions
+
+| ID | Decision | Status | Held by |
+| --- | --- | --- | --- |
+| D-01 | One Go binary serves one person's Favro account over stdio; nothing is hosted | accepted | smoke, review |
+| D-02 | The server binds one organization at startup, and no tool takes an organization id | accepted | one-organization, TestOneOrganizationAgainstThisRepository, TestMCP_GetOrganization_TakesNoOrganizationID |
+| D-03 | SCIM provisioning and creating or changing an organization are out of scope | accepted | api-coverage, TestAPICoverageAgainstThisRepository |
+| D-04 | Own wire types over raw REST; there is no generated Favro client | accepted | review |
+| D-05 | Dependencies run server → tools → service → favroapi → favro; favro, render and auth import nothing from the module, and nothing below tools imports MCP | accepted | depguard, review |
+| D-06 | Everything the repository runs on itself is Go; the one shell file is the git hook that runs it | accepted | review |
+| D-07 | The surface adds what Favro's API lacks: name resolution, client-side search and a dereferenced card read | accepted | review |
+| D-08 | One resolver per process turns names into ranked id candidates, cached longer for org metadata than for what people add mid-session | accepted | TestResolveTag_RankingScoreScale, TestTTL_Invalidate |
+| D-09 | A write invalidates the caches it changed, and every list and resolve tool takes force_refresh | accepted | TestInvalidateCacheHooks, TestMCP_CreateTag_InvalidatesCacheOnSuccess, TestMCP_CreateCard_InvalidatesSearchCacheOnSuccess |
+| D-10 | The model addresses by name through a resolver or by Favro's own ids; a card by exactly one of three ids, and each tool says which it takes | accepted | TestGetFullCard_IdentityValidation, review |
+| D-11 | favro_get_card_full dereferences every id in parallel in internal/service, and passes an unrecognized custom-field type through undereferenced | accepted | TestGetFullCard_HappyPath_ByCardID, TestGetFullCard_SkipsResolversWhenCardHasNoIDs, TestFormatCustomFieldValue |
+| D-12 | A card looked up by common or sequential id is its board copy, every copy is listed in placements, and unique keeps the board copy | accepted | TestGetFullCard_PrefersTheBoardCopyAndListsEveryPlacement, TestGetFullCard_ByCardIDListsThePlacementsToo, TestMCP_ListCards_UniqueKeepsTheBoardCopy |
+| D-13 | Search is client-side full text over one widget or one collection, scored name before body, and cached per scope | accepted | TestScoreCard_ScoreScale, TestScoreCard_NameBeatsBodyOnly, TestMCP_SearchCards_ScopeConflict, TestMCP_SearchCards_MissingScope |
+| D-14 | Descriptions are read and returned in Favro's stored markdown, and matching is never loosened to its normalization | accepted | TestMCP_GetCard_DescriptionFormatForwarded, TestSearchCards_ForcesMarkdownDescriptionFormat |
+| D-15 | A read accepts the documented and every observed shape; a write sends the documented one and says when it is unverified | accepted | TestCard_CustomFields_ReconcilesBothWireKeys, TestWebhookColumnIDsAcceptsBothSpellings, review |
+| D-16 | One call is one page: list tools return next_page and request_id, and nothing aggregates | accepted | TestPaginate_MultiplePages_EchoesRequestID, TestMCP_ListOrganizations_ForwardsRequestIDOnPage2, review |
+| D-17 | Page numbers are 1-indexed on the surface and converted to Favro's 0-indexed pages in the tool layer | accepted | TestListToolPageNumberingIsOneIndexed |
+| D-18 | A description is edited in place by append, prepend or replace-in, each returning the old text, the new and a unified diff | accepted | TestDescriptionEditors_GoldenCorpus, TestMCP_AppendCardDescription_HappyPath, TestMCP_PrependCardDescription_HappyPath |
+| D-19 | replace-in changes one occurrence by default, and sends nothing when find matches nothing | accepted | TestReplaceInDescription_LiteralDefaultCount, TestMCP_ReplaceInCardDescription_NoMatch_RefusesPUT |
+| D-20 | The unified diff is the repository's own Myers diff, held byte for byte to diff -u | accepted | TestUnifiedDiffMatchesGNUDiff, TestUnifiedDiffBoundsTheSearch, TestUnifiedDiffScalesWithChangeNotSize |
+| D-21 | Tag tools refuse an unknown tag name; creating a tag is favro_create_tag | accepted | TestMCP_AddTagToCard_HardFailUnknown, TestMCP_AddTagToCard_AmbiguousNames |
+| D-22 | A card move names its widget: the client refuses a column or lane move without it, and checks the column Favro returns | accepted | TestUpdateCard_ColumnMoveWithoutWidget_NoNetworkCall, TestMoveCard_ColumnMoveWithoutWidget, TestUpdateCard_MoveIgnored, TestColumnMoveContractIsStatedOnce |
+| D-23 | A structural card write carries the card's current parent and sheetPosition, and clear_parent detaches on purpose | accepted | TestMCP_StructuralWrite_ParentGuard, TestMCP_StructuralWrite_KeepsTheCardsPlaceUnderItsParent, TestStructuralCardWrites_RunTheParentGuard, live |
+| D-24 | A write Favro may accept and drop is read back, and its verdict is a note on a successful result | accepted | TestMCP_CardPlacement_ReadBack, TestMCP_CardPlacement_ReadBackFails_ReportsUnconfirmed, TestMCP_SetCardCustomField_NotOnCard_Reports, TestMCP_SetCardCustomField_OnCard_ReportsValue, live |
+| D-25 | No tool states an outcome the response did not carry | accepted | outcomes, TestOutcomesCatchesAnAssertedOutcome, TestOutcomesAgainstThisRepository |
+| D-26 | Moving a card to another widget adds an instance there, and the tool says so; no move is assembled from an add and a delete | accepted | review |
+| D-27 | A group update sends the whole intended member list | accepted | TestMCP_UpdateGroup_HappyPath, review |
+| D-28 | Every write takes dry_run, enforced in the HTTP client, and --dry-run forces it for the process | accepted | TestEveryWriteTakesDryRunAndSendsNothing, TestDryRun_WriteHelpers_NoRoundTrip, TestADryRunWritesNothingWhateverTheHandlerDoes, TestRunServer_DryRunFlag_AnnouncedAtStartup, live-cover |
+| D-29 | The destructive tools register only with FAVRO_ENABLE_DESTRUCTIVE=true, and a tool is destructive when its input takes confirm | accepted | TestDestructiveToolsAreOptIn, TestEveryWriteIsClassified, TestLoadDestructive, staleness |
+| D-30 | A destructive call needs confirm: true unless it is a dry run | accepted | TestEveryDestructiveCallNeedsConfirm, TestNoWriteWithoutConfirmSendsADelete, live |
+| D-31 | The server asks the person nothing; per-call approval is the client's | accepted | TestMCP_AllTools_SmokeCallable, live |
+| D-32 | FAVRO_REQUIRE_PROMPT refuses start unless false, and FAVRO_INTERACTION_HINT is ignored with a warning | accepted | TestARemovedSettingIsRefusedUnlessOff, TestARemovedHintIsWarnedWhenOff, TestRunServer_ARemovedSettingRefusesToStart, TestDoctorFailsOnARemovedSetting |
+| D-33 | readOnlyHint is on the reads alone, and destructiveHint is false only on a write that adds | accepted | TestOnlyToolsThatAddSayTheyAreNotDestructive, TestEveryToolIsAnnotated, TestEveryWriteIsClassified |
+| D-34 | Five tools carry Claude Code's requiresUserInteraction, and only a destructive tool may | accepted | TestOnlyTheWidestWritesPrompt |
+| D-35 | The ordinary writes share only inside the organization, and refuse every widening as [blocked] | accepted | TestOrdinaryWritesShareOnlyInsideTheOrganization, TestCollectionWritesRefuseWideSharing, TestEverySharingArgumentRefusesItsWidestValue, TestAGroupIsSharedOnlyWhenEveryoneInItIsAMember, TestOrganizationRoles |
+| D-36 | Opening a collection to the organization or to anyone with its link is favro_widen_collection_sharing, witnessed by the collection's name and read back | accepted | TestWidenCollectionSharing, live |
+| D-37 | The wider delete is an argument of the same delete tool, and favro_delete_widget refuses a call that names no scope | accepted | TestDeleteWidgetNamesItsScope, TestMCP_DeleteCard_Everywhere |
+| D-38 | The upload tools read only inside FAVRO_UPLOAD_DIR, through os.Root, and are not registered without it | accepted | TestMCP_UploadAttachment_ReadsOnlyTheUploadDir, TestUploadToolsNeedAnUploadDir, TestLoadUploadDir, TestUploadAttachment_ExactlyAtCapIsAllowed |
+| D-39 | No tool writes the server's own settings: the environment, a file or the keyring | accepted | TestNoToolWritesTheServersOwnSettings |
+| D-40 | Every tool error is `[class] message` from one closed vocabulary, classified by the error's type and never its text, with invalid as the fallback | accepted | classes, TestClassesAgainstThisRepository, TestClassify, TestEverySentinelIsClassified, TestEveryErrorTypeNamesItsClass |
+| D-41 | A 429 is retried once when it says to wait 30 seconds or less, and a read's 5xx up to three attempts; a write is sent once, and a 5xx or a failure after the dial is ambiguous_outcome | accepted | TestDo_429WithinCap_RetriesOnce, TestDo_429AboveCap_ReturnsRateLimitError, TestDo_5xx_RetriesUpToBudgetThenTransientError, TestDo_WriteIsNotRepeatedAfter5xx, TestDo_WriteCutOffAfterSendIsAmbiguous |
+| D-42 | Every response's rate-limit headers are recorded, and favro_rate_limit_status reports the last snapshot without a call | accepted | TestDo_RecordsRateLimitSnapshot, TestMCP_RateLimitStatus_AfterObservation |
+| D-43 | Every HTTP call has a timeout, the startup check and doctor's live half included | accepted | TestDefaultValidator_HasReasonableDefaults, review |
+| D-44 | A host closing the pipe is a clean exit, matched by the SDK's error code | accepted | TestCleanDisconnect, smoke |
+| D-45 | Stdout carries only MCP JSON-RPC frames, and logs go to stderr through slog | accepted | forbidigo, TestForbidigoGuardsStdout, smoke |
+| D-46 | A log line carries the method, the path's shape, the query's parameter names, the attempt and the outcome, never a payload or a value that identifies the subject | accepted | TestDebugLogNeverCarriesTheSubject, TestRedactPathIDs, TestRedactHeaders_Authorization, TestStartupLineNamesNoTenant |
+| D-47 | The token is never printed: not in a result, a log, a dry-run record, auth status or doctor | accepted | TestAuthStatus_ReportsSourceAndOrgButNeverTheToken, TestAuthLogin_StoresInKeyringWithoutEchoingTheToken, TestDoctorShowIDsPrintsIDsButNeverTheToken, TestMCP_FavroPing_OutputContainsNoSecrets, TestSecretsScrubsTheTokenAndLeavesIdentifiers |
+| D-48 | doctor's report is written to be pasted in public: the values it hides are registered with the redactor by kind, and --show-ids prints them for the person's own screen | accepted | TestDoctorRedactsCredentials, TestLiteralRedactsWhatNoPatternMatches, TestCountReportsWhatItRedacted, TestDoctorShowIDsPrintsIDsButNeverTheToken |
+| D-49 | Nothing from a real tenant enters the repository: fixtures are synthetic and name resources by role, and leaks scans the tree | accepted | leaks, TestFindLeaksCatchesEachShape, TestFindLeaksLeavesTheRepositoryAlone, TestLeaksReadsTheRepository |
+| D-50 | The history scan runs by hand and the history is not rewritten; each known finding is accepted in its own commit by hash, rule and count | accepted | TestKnownFindingIsPinnedToItsCommit, TestEveryKnownFindingIsInTheHistory, TestHistoryReadsATagFromItsMessage |
+| D-51 | The live driver and the evals print only through internal/redact, and a transcript is never committed | accepted | transcript, TestTranscriptAgainstThisRepository, TestTranscriptSkipsOnlyTheDisabledStub |
+| D-52 | The webhook signing secret has no field, so no result can carry it | accepted | TestWebhookSecretIsNeverDecoded |
+| D-53 | Favro is the only network peer; there is no telemetry, crash reporting or update check | accepted | review |
+| D-54 | Favro is authenticated by HTTP Basic, an address and an API token; there is no OAuth flow | accepted | TestValidator_AuthorizationHeaderIsBasic |
+| D-55 | Credentials resolve from the environment, then the OS keyring; the first complete triple wins, and a partial one is an error | accepted | TestDefaultSources_OrderIsEnvThenKeyring, TestAuthWhich_EnvWinsOverKeyring, TestAuthWhich_FallsBackToKeyring, TestRunServer_PartialEnvCredentials_Errors, TestKeyringSource_Load_CorruptPayload_Errors |
+| D-56 | Read-only use is the destructive flag left off plus --dry-run, and the token comes from a least-privileged user | accepted | review |
+| D-57 | Configuration is the environment: every variable is in config.Vars and read through config.Lookup, with the spaces around it dropped | accepted | TestEveryVariableTheCodeNamesIsInEnvVars, TestServerVariablesAreSpelledOnce, TestASettingOfSpacesIsUnset, TestLookup, TestVarsDescribeWhatLoadDoes, staleness |
+| D-58 | The server refuses to start without a credential Favro accepts, and FAVRO_MCP_SKIP_VALIDATE skips the live check | accepted | TestMain_ExitsNonZeroOnStartupFailure, TestRunServer_NoCredentials_ErrorsBeforeContactingFavro, TestLoadSkipValidate, TestRejectedCredentialsNameTheVariables |
+| D-59 | doctor reports the build and its version source, the credential source, whether Favro accepts the credentials and whether the organization binding is right | accepted | TestDoctorFailsOnWrongOrganizationBinding, TestDoctorReportsUnreachableAPI, TestDoctorWithoutCredentialsSkipsTheNetwork |
+| D-60 | Every tool registers through addTool, the one place for the destructive gate, confirm, the mark, both result halves and the error class | accepted | review |
+| D-61 | content and structuredContent are never the same bytes: addTool fills the readable half from internal/render | accepted | TestContentAndStructuredContentDiffer, TestSummaryPrefersSummarizer, TestListToolContentSummarizesThePage |
+| D-62 | Every registered tool has a smokeToolInputs row | accepted | TestMCP_AllTools_SmokeCallable |
+| D-63 | Where two tools overlap, each description names the other and says when to choose it | accepted | review |
+| D-64 | The released tool surface is a contract: a removed tool, a removed input or a newly required one is a break that schema-diff names | accepted | schema-diff, TestCompareSurfacesNamesEveryBreakingChange, TestSameSurfaceIgnoresTheBuildStamp, TestABreakIsABreakOfARelease |
+| D-65 | A pull request names each changed item of the tool surface in a commit footer | accepted | schema-ack, TestSchemaAckNeedsEveryItemNamed, TestSchemaAckTellsARefusalFromAFailure, TestParityHoldsThisRepositorysPullRequestGates |
+| D-66 | --dump-schemas lists the whole surface, whatever the flags, as an in-memory client session sees it | accepted | TestDumpSchemasListsEverythingAClientIsTold, TestDumpSchemasNeedsNoCredentials |
+| D-67 | Webhooks are listed and deleted, never registered | accepted | api-coverage, TestDeleteWebhookIsGatedAndDryRunnable, TestListWebhooksDecodesABareArray |
+| D-68 | Every rule adopted is a test that derives its list from the code and asserts a floor on how much it read | accepted | TestEveryCommandHasATest, review |
+| D-69 | make check and CI run the same set, matched by what each recipe runs | accepted | parity, TestParityCatchesEachDivergence, TestParityAgainstThisRepository, TestParityRefusesToCompareNothing |
+| D-70 | Unit tests use only Go's standard library, against httptest fakes, with the race detector | accepted | depguard, review |
+| D-71 | Every package holds an 80% statement floor of its own | accepted | cover, TestEveryExemptionNamesARealPackage, TestReadProfileRefusesAnEmptyRun |
+| D-72 | Every endpoint Favro documents and every field of a modeled type has a verdict, held offline to a snapshot refetched by hand | accepted | api-coverage, api-fields, TestAPICoverageAgainstThisRepository, TestCheckCoverageReportsAnUndecidedEndpoint, TestCheckFieldsReportsAStaleWaiver |
+| D-73 | A wire contract is verified live, by reading the resource back; the reference page is not proof | accepted | live |
+| D-74 | The live driver drives every tool and option through the built binary with dry_run, from the steps internal/livecover holds | accepted | live-cover, TestStepsWithoutDryRunNamesEveryWriteThatLacksIt, TestMeasureCountsWhatItSays, TestTheStepsRunThroughAServerStartedWithDryRun, live |
+| D-75 | The live driver's write mode writes only to probes it created, and deletes them however the run ends | accepted | TestScratchWritesOnlyToObjectsTheRunCreated, TestSweepFailsOnAProbeThatIsStillThere, TestEachInterruptRunsTheCleanups, live |
+| D-76 | Agent evals score each task by the end state read back and by the trace, in a sandbox the run makes and removes | accepted | TestEveryTaskIsScorableAndExplained, live |
+| D-77 | The eval session reaches this server's tools and nothing else, and none that deletes | accepted | review |
+| D-78 | The documentation is held to the code: tool names, counts, settings, gates, the package map and paths | accepted | staleness, TestStalenessAgainstThisRepository, TestToolsDocumentedReadsBothDirections, TestDestructiveCountMatchesTheBinary, TestEveryEnvNameReachesBothDocuments, TestTheChangelogRule |
+| D-79 | The toolchain is the one go.mod names, everywhere; there is no N-1 matrix entry | accepted | review |
+| D-80 | Every action is pinned to a full SHA, every tool to one exact version, and every workflow pins its shell | accepted | pins, TestPinsReadsTheWorkflows, TestExactSemverRejectsWhatCanMoveUnderYou, TestPinsShellReadsDepth, TestPinsHoldTheMakefileToCI |
+| D-81 | make check scans for vulnerabilities in source mode, licenses against an allowlist and secrets with gitleaks, as CI does | accepted | vuln, licenses, secrets, parity |
+| D-82 | CI runs on Linux, macOS and Windows | accepted | review |
+| D-83 | A tag is the whole release, and its notes are that version's CHANGELOG section | accepted | release-notes, TestChangelogSectionTakesOneVersion, TestReleaseNotesRefusesATagThatIsNotAVersion |
+| D-84 | A release is signed and attested: the checksums cover every artifact the .mcpb included, under keyless cosign and build provenance, with an SBOM per archive and byte-identical rebuilds | accepted | mcpb, TestReleaseWiringIsHeld |
+| D-85 | A tag name reaches no shell: it travels through the environment, and the trigger admits only alphanumeric suffixes | accepted | TestReleaseNotesRefusesATagThatIsNotAVersion, TestReleaseNotesAcceptsRealVersionShapes, review |
+| D-86 | A go install build reports the module version Go embeds | accepted | TestSourceAndModuleAlwaysAnswer, TestStampFrom |
+| D-87 | Changes reach main through a pull request with eight required checks and no bypass actors | accepted | review |
+| D-88 | Both bundles ship: the .plugin, which is how people install this server, and the .mcpb beside it | accepted | plugin, mcpb, TestPluginGateAgainstThisRepository, TestCommittedManifestPasses |
+| D-89 | The .mcpb asks for every setting the server reads, derived from config.Vars, each defaulting to the server's own default, and is the whole setup | accepted | mcpb, TestBundleVarsAreDerivedFromTheSettings, TestTheConfigDiffNamesTheFieldsThatDiffer, TestAManifestThatConfiguresNothingIsCaught |
+| D-90 | A bundle's commands start with ${__dirname}/ and name a staged binary or the launcher, and no platform override sets env or args | accepted | mcpb, TestManifestProblemsRunsEveryCheck, TestLauncherNamesWhatThePackerStages, TestTheCommittedManifestMeetsTheFloor |
+| D-91 | One release matrix names the six archives, and both bundles run the Windows amd64 binary on arm64 | accepted | TestTheReleaseMatrixIsTheFamilysSix, TestGoreleaserMatrixIsTheOneTheBundleClaims, TestReleaseArchivesAreTheFamilys |
+| D-92 | The MCP registry entry obeys the rules the registry enforces in code | accepted | registry, TestMCPRegistryCatchesWhatTheRegistryRefuses, TestMCPRegistryAgainstThisRepository |
+| D-93 | A write whose 200 is not trusted carries an `unverified` error class | rejected | — |
+| D-94 | The server confirms its riskiest writes with the person, through MCP form elicitation | superseded by D-31 | — |
+
+### D-01 One Go binary serves one person's Favro account over stdio; nothing is hosted
+
+The server is one Go binary that an MCP client starts as a subprocess
+and talks to over stdio. It holds one person's Favro address, API token
+and organization id, and every call acts as that person. Nothing is
+hosted, and there is no shared deployment.
+
+The reason is reach. A Favro API token carries everything its user can
+do in the organization (D-56). A server per person keeps every call
+inside that person's own access, with the token in their own keyring
+(D-55). A stdio process also has no port to expose and no session of its
+own to authenticate. The binary ships as release archives and in two
+bundles a client installs (D-88).
+
+Rejected: a hosted, multi-tenant server, which would hold many people's
+tokens in one place; an HTTP transport, which needs authentication of
+its own and a process that outlives the client.
+Cost: each person installs the binary and supplies their own three
+values. Anything that needs a URL Favro can call, such as receiving a
+webhook, cannot exist here (D-67).
+
+### D-02 The server binds one organization at startup, and no tool takes an organization id
+
+The server binds one organization at startup, from
+`FAVRO_ORGANIZATION_ID`, and no tool takes an organization id.
+`favro_get_organization` takes no input and returns the bound
+organization.
+
+Favro routes every request by the `organizationId` header
+([routing](https://favro.com/developer/#routing)). Its reference
+documents the id in the path of
+[get an organization](https://favro.com/developer/#get-an-organization)
+as required, and the live API ignores it and answers with the
+organization the header names. A required input that cannot change the
+result reads as a choice and is not one: a model asking for one
+organization would be handed another with a 200. The organization is a
+deployment fact rather than a per-call one, and the plan that sets the
+rate limit is the organization's (D-42). The `one-organization` gate
+fails on any tool input that takes an organization id.
+
+Rejected: a server that switches organization mid-session, which would
+spend two plans' budgets in one session with nothing to say whose; a
+required organization id input, which Favro ignores.
+Cost: a person who works in two organizations runs two server processes,
+one bound to each.
+
+### D-03 SCIM provisioning and creating or changing an organization are out of scope
+
+SCIM provisioning, in both versions, and the organization writes, `POST`
+and `PUT` on `/organizations`, are out of scope.
+`testdata/api-coverage.tsv` records each as `out` with its reason, and
+the `api-coverage` gate holds every documented endpoint to a verdict
+(D-72).
+
+SCIM is an identity provider syncing users and groups on a schedule,
+with an authentication model other than the API token this server holds
+([SCIM](https://favro.com/developer/#scim-v1-1-provisioning)). Nothing a
+model doing work inside Favro reaches for it. Creating an organization
+mints a tenant the bound one has no part in (D-02). Updating one renames
+it and rewrites its membership and roles, a write whose blast radius is
+every user of the organization rather than one widget or card
+([update an organization](https://favro.com/developer/#update-an-organization)).
+
+Rejected: SCIM tools, which directory software uses rather than a person
+asking about a card; creating or changing an organization, a blast
+radius nobody wants.
+Cost: membership, roles and the organization itself are changed in Favro
+or through an identity provider, never through this server.
+
+### D-04 Own wire types over raw REST; there is no generated Favro client
+
+`internal/favro` hand-writes every request and response type, and
+`internal/favroapi` calls Favro's REST API with `net/http`. Favro
+publishes a reference page and no machine-readable description of its
+API ([introduction](https://favro.com/developer/#introduction)), so
+there is no client to generate.
+
+Hand-written types do what a generated client would not. A read accepts
+the shapes the live API is seen to send beside the documented one
+(D-15), and a write sends exactly the documented shape. Every field
+Favro documents for a modeled type has a verdict, so a type that drops a
+field is caught offline rather than by a silent gap in a result (D-72).
+`internal/favro` imports nothing from this module, so the client, the
+service and the tools share it without depending on each other (D-05).
+
+Rejected: a generated Favro client, which does not exist and has no
+specification to be generated from.
+Cost: every endpoint and field is typed by hand. A field Favro adds
+stays invisible until `make api-diff` refetches the reference and
+`api-fields` names it.
+
+### D-05 Dependencies run server → tools → service → favroapi → favro; favro, render and auth import nothing from the module, and nothing below tools imports MCP
+
+Imports run one way: `server` to `tools` to `service` to `favroapi` to
+`favro`. `favro`, `render` and `auth` import nothing from the module,
+and nothing below `tools` imports MCP.
+
+An import that runs uphill between two of these packages is an import
+cycle, which `go build` already refuses with a better message.
+`depguard` holds what a cycle cannot catch, in four rules:
+`favro-imports-nothing`, `render-is-a-leaf`, `auth-is-a-leaf` and
+`no-mcp-below-the-tool-layer`. Keeping MCP out of `internal/favroapi`
+and `internal/service` is what lets both be tested without a protocol
+session. `render` being a leaf is what lets the client's typed errors
+name their own class: the vocabulary sits below the package that raises
+them (D-40). `auth` stays a leaf because its callers read the
+credentials through `config.CredentialsFrom` and hand them over.
+
+Rejected: rules for the directions an import cycle already refuses,
+which can never fire; classifying the client's errors from outside by a
+switch, which lets an added error type fall through unclassified.
+Cost: `config` and `cache` are leaves by convention only, since no rule
+names them.
+
+### D-06 Everything the repository runs on itself is Go; the one shell file is the git hook that runs it
+
+Everything the repository runs on itself is Go: the gates, the live
+driver, the evals and the plugin and bundle packers. The one shell file
+is `.githooks/pre-commit`, which does nothing but exec
+`go run ./scripts/gates precommit`.
+
+A shell script is held to no gofmt, vet, lint or test. `make check` runs
+on the Windows runner, where bash is a dependency rather than a given. A
 script that parses JSON with `sed` is how a quote ends up inside a
-string. The plugin packer was the clearest case — it read two JSON
-documents with `jq` and wrote a third — and porting it moved the
-launcher's platform table into the same Go file the gate reads, which is
-what closed the hole §12 describes. The one shell file left is
-`.githooks/pre-commit`: three lines of git plumbing that exec a Go
-program.
+string. In Go, a packer and the gate that checks its output read the
+same table: the plugin's launcher is generated from the platform table
+the `plugin` gate reads, so the two cannot disagree (D-90).
 
-Dependencies, all pinned, and after A4 the whole direct list:
-`modelcontextprotocol/go-sdk` v1.7.0 (with `google/jsonschema-go`),
-`zalando/go-keyring` v0.2.8, `golang.org/x/sync`, `golang.org/x/term`.
-`pmezard/go-difflib` is gone entirely; `stretchr/testify` survives in
-`go.mod` only as another module's indirect requirement, and depguard
-denies importing either.
+Rejected: shell scripts, held to no gofmt, vet, lint or test, with bash
+a dependency on the Windows runner.
+Cost: the git hook stays a shell file, because git runs hooks as
+programs, and it only hands over to Go.
 
-Toolchain: Go 1.27.3 (`go.mod` is the single source of truth — every CI job
-resolves via `go-version-file: go.mod`, and there is no N-1 matrix entry).
+### D-07 The surface adds what Favro's API lacks: name resolution, client-side search and a dereferenced card read
 
-## 6. Addressing and error classes
+Beside Favro's endpoints, the surface carries three layers its API does
+not have. The `favro_resolve_*` tools turn a name into ranked id
+candidates (D-08). `favro_search_cards` is full-text search over one
+scope (D-13). `favro_get_card_full` returns a card with a name beside
+every id (D-11).
 
-### 6.1 How the model addresses things
+Favro addresses everything by id. A card has a per-widget id, a
+cross-widget id and a sequential number, and tags and custom fields are
+organization-wide ids with no name index
+([card](https://favro.com/developer/#card)). Columns repeat their names
+across boards. A wrapper that exposed the endpoints one to one would
+make the model list a resource to find each id it needs. That spends the
+hourly budget on lookups rather than on work (D-42).
 
-By name through `favro_resolve_*`, or by an id Favro gave it. The server
-hands out no handles of its own and does no index arithmetic, so the
-standard's "the model never sees internal indices" is satisfied by the
-shape of the API rather than by anything this server does.
+Rejected: a one-to-one REST wrapper, which would spend a conversation's
+rate-limit budget turning names into ids.
+Cost: the three layers are this server's own code, with ranking, caching
+and scoring to keep right. A name can match the wrong thing, so a
+resolver returns ranked candidates rather than one id.
 
-The one place the distinction bites is §2.6's two card ids. Every tool
-that takes one says in its description which it wants and why, because a
-wrong choice is a 403 rather than a validation error.
+### D-08 One resolver per process turns names into ranked id candidates, cached longer for org metadata than for what people add mid-session
 
-### 6.2 Error classes
+One resolver per process turns a name into id candidates, ranked by how
+closely each matches, and every tool shares it. It caches each list it
+reads. The lists people seldom change, tags, users, custom fields and
+groups, are kept longer than collections, widgets and columns, which
+people add during a session. The TTLs are in
+`internal/service/resolver.go`.
 
-Every error a tool returns is rendered `[class] actionable message`,
-from a closed vocabulary. The class is derived from the error's own
-type — `Classify`, in `internal/render`, walks the chain with
-`errors.As` — and never from matching on its text.
+One resolver means one cold start. The first resolution of a tag fills
+the tag list, and every later one in the session reads it, whichever
+tool asks. `TestResolveTag_RankingScoreScale` holds the ranking to one
+scale, so an exact name outranks a partial one. Checked by the live
+steps "resolve a tag by name", "resolve a user by name" and "resolve a
+column by name".
 
-The `classes` gate holds this table and `internal/render/class.go` to
-each other from both sides. A class the code declares and this table
-does not name fails. A class this table names and no code returns fails
-too, and that is the side that actually rots: to somebody deciding how
-to handle an error, a documented class nothing emits is
-indistinguishable from one that simply has not happened yet.
+Rejected: a resolver per tool, each cold-starting its own cache and
+spending the budget in parallel.
+Cost: a write must invalidate the right cache or the next read is stale
+(D-09). A change someone else makes in Favro stays invisible until the
+TTL runs out.
 
-| Class | When | What the caller does about it |
-|---|---|---|
-| `invalid` | the request as given cannot be served: a missing argument, two mutually exclusive ones, a value out of range. Also Favro's 400 and 422 | change the arguments |
-| `not_found` | a resource, or a name, that is not there — Favro's 404, a tag name no tag carries, a `find` that matched nothing | stop looking, or resolve a name first |
-| `auth` | Favro's 401: the credentials themselves | nothing; a human has to fix it |
-| `conflict` | a state collision — the resource moved under the caller | re-read, then retry |
-| `unavailable` | Favro, or the network to it, failing: 5xx after the retry budget, a transport error, a canceled context | retry later; the arguments are not the problem |
-| `unsupported` | something this server will not do, as opposed to something that failed — a custom-field type `favro_set_card_custom_field` cannot write, Favro's 405 and 501 | do not try this again |
-| `forbidden` | Favro's 403, which it uses both for "no permission" and for "exists but not visible to this token" (§2.6). Collapsing it into `not_found` would tell a model to stop looking for something that is there | try a different route to the resource, or ask for access |
-| `rate_limited` | 429, carrying `retry_after_seconds` in the message. Distinct from `unavailable` because the correct response is to wait a named duration rather than to retry | wait the named number of seconds |
-| `ambiguous` | a name matching several candidates | choose one; do not retry the name |
-| `blocked` | a write this server refuses as asked: a destructive call without `confirm: true`, or an ordinary write that would widen access — a public or organization-wide collection, an invitation by email, a new admin, someone outside the organization, guests as a widget's owners or editors (§9.2). Nothing was changed | do not make the call again unless the person asks for it |
-| `ambiguous_outcome` | a write that may have happened and whose result never came back: Favro answered 5xx, or the connection was lost after the request went out (§11) | read the resource to see; never repeat the write to find out |
+### D-09 A write invalidates the caches it changed, and every list and resolve tool takes force_refresh
 
-The fallback for an error that names no class is `invalid`, and that is
-measured rather than neutral: every error this server's own layer
-raises without a sentinel is an argument the caller got wrong — "pass
-exactly one of", "is required", "must be between". A server bug
-arriving there would be mislabeled, which is the trade.
+A write invalidates the caches it changed, after it succeeds. Creating a
+tag drops the cached tag list, and creating a card drops the search
+corpus of its scope. Every list and resolve tool takes `force_refresh`,
+which reads Favro and refills the cache.
 
-Two tests hold the edges of that fallback, and it is worth being exact
-about which edges, because neither covers the third.
-`TestEverySentinelIsClassified` parses `internal/server` for
-package-level sentinels and requires each to name its class.
-`TestEveryErrorTypeNamesItsClass`, in `internal/favroapi`, reads the
-types its own `errors.go` declares and requires each to name a class,
-so an eighth typed error cannot land on the fallback in silence.
-What neither covers is an inline `fmt.Errorf` in a handler: those are
-the dozen or so argument errors above, they are all genuinely
-`invalid`, and nothing would fail if a future one were not. Making a
-new error a sentinel is what buys the check.
+A cache that outlives a write answers the next resolution with the world
+before it. A model that has just created a tag would be told it does not
+exist, and would create it again. Invalidation is wired at each write
+rather than left to expiry. `TestInvalidateCacheHooks` holds that after
+each hook the next resolution reads Favro again.
+`TestMCP_CreateTag_InvalidatesCacheOnSuccess` and
+`TestMCP_CreateCard_InvalidatesSearchCacheOnSuccess` hold two writes to
+it through the tool.
 
-Both halves name their own class. That was not true when the
-vocabulary was written: `Class` lived in `internal/render`, which
-imported the client package and so could not be imported by it, and the
-client's typed errors had their class read off them from outside by a
-switch. A3 made `internal/render` a leaf, and each error in
-`internal/favroapi` carries an `ErrorClass()` — so `Classify` is one
-`errors.As` plus a transport fallback, and an eighth error type cannot
-be added without naming its class.
+Rejected: expiry alone, which leaves a write's own result invisible
+until the TTL runs out.
+Cost: a change someone else makes in Favro is not seen until the TTL
+runs out. `force_refresh` is the escape hatch, on every list and resolve
+tool.
 
-**`unverified` was proposed and rejected.** §17's first open decision
-asked whether the state §2.1 describes — a write whose 200 this server
-does not trust — earns a class, and said to decide it by trying to
-write the message. The message is
-`[unverified] Favro returned 200 and the write was not read back`, and
-writing it settles it two ways.
+### D-10 The model addresses by name through a resolver or by Favro's own ids; a card by exactly one of three ids, and each tool says which it takes
 
-It is rendered on an error result, which sets `IsError`. That tells the
-caller the call failed, when the write may well have landed; a caller
-that retries on `IsError` posts the comment twice or creates the card
-twice. The class would cause the damage it was meant to warn about.
+The model addresses a thing by name through a `favro_resolve_*` tool, or
+by an id Favro gave it. The server hands out no handles of its own and
+does no index arithmetic. A card is addressed by exactly one of
+`card_id`, the per-widget id, `card_common_id`, the cross-widget id, or
+`sequential_id`, the number in the reference people paste from Favro. A
+call naming two is refused `[invalid]`.
 
-And it carries nothing per call. This server does not read back, so the
-flag would be constant for a given tool — and a constant per tool is a
-tool description, which is where it already lives (§7.4 names the three
-writes that have this property, and each tool says so). If read-back
-ever lands, the honest signal is a field on a *successful* result, not
-a class on a failed one.
+Favro's endpoints disagree on which card id they take. `GET /cards/{id}`
+answers 403 for a common id, which its reference does not say
+([get a card](https://favro.com/developer/#get-a-card)). `/comments` and
+`/tasklists` filter by the common id, and a card's activities take the
+per-widget id. So `favro_list_cards` with `card_common_id` is the path
+for that form. Checked by the live steps "read a card in full by common
+id" and "list cards by common id".
 
-## 7. Reading and writing
+Rejected: handles or index arithmetic of the server's own, which an API
+addressed by ids does not need.
+Cost: a wrong id is a 403 rather than a validation error, so each tool's
+description names the id it takes and why.
 
-### 7.1 Reading a card
+### D-11 favro_get_card_full dereferences every id in parallel in internal/service, and passes an unrecognized custom-field type through undereferenced
 
-Three ways in, and a tool that takes one of them takes exactly one:
-`card_id` (per-widget), `card_common_id` (cross-widget), or
-`sequential_id` (the integer inside a human reference like the ones
-people paste from the UI). `GET /cards/{id}` answers 403 for a common id
-rather than redirecting, so `favro_list_cards` with the
-`card_common_id` filter is the path for that form.
+`favro_get_card_full` fetches one card and dereferences its ids in
+parallel: tags, assignees, the widget and its column, the collections,
+the custom fields and the placement of every copy. It runs in
+`internal/service`, under `errgroup`, against the resolver's caches, and
+returns names beside the ids.
 
-`favro_get_card_full` is the one read worth describing. A raw card is a
-bag of ids — tags, assignees, widget, column, parent collections, custom
-fields — and a model that gets one spends four to seven calls turning it
-into something it can talk about. The tool fans those lookups out in
-parallel through the resolver's caches and returns names beside the ids,
-including per-type display values for every custom-field type Favro
-publishes. An unrecognized type passes through with
-`dereferenced: false` rather than being dropped or guessed at: a new
-Favro field type should degrade to "here is the raw value", not to a
-wrong rendering.
+A raw card is a bag of ids, and a model given one spends several calls
+turning it into something it can talk about. The fan-out lives in
+`internal/service` because it is the repository's one concurrent
+orchestration, and concurrency owned by a protocol handler can be tested
+only through a protocol session. Every custom-field type Favro publishes
+gets a display value
+([custom field types](https://favro.com/developer/#custom-field-types)).
+A type the server does not know passes through with
+`dereferenced: false` and its raw value, so a type Favro adds later
+reads as "here is the raw value" rather than as a wrong rendering.
 
-The description editors read with `descriptionFormat=markdown`, so what
-comes back is what an edit has to be written against. Favro normalizes
-markdown on storing it (`- ` bullets become `* `, list items gain a blank
-line between them), so the stored form is not what the caller sent:
+Rejected: the fan-out in `internal/tools`, which only a protocol session
+could test; dropping or guessing an unrecognized field type.
+Cost: on a cold cache, a full read lists every resource it dereferences
+at once, and the first full read of a session is the expensive one.
+
+### D-12 A card looked up by common or sequential id is its board copy, every copy is listed in placements, and unique keeps the board copy
+
+A card looked up by common id or sequential id resolves to its board
+copy, the first copy that sits on a widget. Every copy is listed in
+`placements`, and `favro_list_cards` with `unique` keeps the board copy
+too.
+
+Assigning a card to someone gives it a second copy on their to-do list,
+with `todoListUserId` set and no widget or column. A listing by
+`cardCommonId` or by `cardSequentialId` puts that copy first, an order
+Favro's reference does not give
+([get all cards](https://favro.com/developer/#get-all-cards)). With
+`unique=true`, Favro keeps the to-do copy by `cardCommonId` and the
+board copy by `cardSequentialId`, so its own `unique` is not one rule. A
+first-row lookup answers with a card that has no board and no column,
+which is not the card a person means. This was probed by hand on a
+scratch collection. No live step checks it, since only an assigned card
+has a to-do list copy.
+
+Rejected: the first row a listing returns, which is the to-do list copy;
+Favro's own `unique`, which keeps the to-do copy by `cardCommonId`.
+Cost: a card that sits on no board resolves to its first copy, which has
+no column to report.
+
+### D-13 Search is client-side full text over one widget or one collection, scored name before body, and cached per scope
+
+`favro_search_cards` fetches one scope's cards, strips the markdown,
+lowercases, and scores the name and the body separately, a name match
+above a body match. Exactly one of `widget_common_id` or `collection_id`
+is required, and the prepared corpus is cached per scope.
+
+Favro has no full-text search, and `/cards` refuses a listing that names
+no widget, collection or card
+([get all cards](https://favro.com/developer/#get-all-cards)). So there
+is no organization-wide corpus to offer, and the scope is a platform
+constraint rather than a design choice. The tool says so in its
+description and points at the resolvers, because a model that cannot see
+why it was refused retries the same call.
+`TestScoreCard_NameBeatsBodyOnly` holds the ordering. Checked by the
+live steps "search a widget's cards" and "search a collection's cards".
+
+Rejected: an organization-wide search, which `/cards` cannot serve.
+Cost: a search on a cold scope lists every card in it before it scores
+one. A card outside the scope given is never found, however well it
+matches.
+
+### D-14 Descriptions are read and returned in Favro's stored markdown, and matching is never loosened to its normalization
+
+A description is read in the markdown Favro stores, and returned as
+stored. The description editors and search read with
+`descriptionFormat=markdown`
+([get a card](https://favro.com/developer/#get-a-card)).
 `favro_get_card` and `favro_get_card_full` take `description_format` to
 show it, and every card write asks for it on the card it returns.
-Matching is not loosened to paper over the difference — guessing Favro's
-serializer is worse than showing its output.
 
-### 7.2 Search
+Favro normalizes markdown when it stores it: a `- ` bullet becomes `* `,
+and list items gain a blank line between them. Its reference does not
+say so. The stored form is what an edit has to be written against, so
+`find` in `favro_replace_in_card_description` matches the stored text
+exactly. Matching is never loosened to paper over the difference. A
+guess at Favro's serializer that went wrong would edit text the caller
+did not quote. Checked by the live step "read a card as markdown".
 
-Favro has no full-text search, so `favro_search_cards` builds one:
-fetch a scoped corpus, strip markdown, lowercase, score name and body
-separately (name phrase +1.0, name token overlap up to +0.6, body phrase
-+0.5, body token overlap up to +0.5), cache the prepared corpus for 60
-seconds per scope.
+Rejected: loosening matching to Favro's normalization, since guessing
+its serializer is worse than showing its output.
+Cost: the stored form is not what the caller sent. A caller quoting its
+own earlier text can miss, and has to read the card first.
 
-Exactly one of `widget_common_id` or `collection_id` is required, and
-that is a platform constraint rather than a design choice: `/cards`
-rejects an unfiltered listing, so there is no org-wide search to offer.
-The tool says so in its description and points at the resolvers, because
-a model that cannot see why it is being refused will retry the same call.
+### D-15 A read accepts the documented and every observed shape; a write sends the documented one and says when it is unverified
 
-### 7.3 Editing a description without replacing it
+A read accepts the documented shape and every shape the live API has
+been seen to send, preferring the documented one. A write sends the
+documented shape, and a tool whose write shape has not been seen to land
+says so in its description.
 
-`PUT /cards/{id}` takes a whole description, so the naive tool is
-"replace the body" and the naive failure is a model rewriting a card it
-only meant to add a line to. Three tools edit in place instead —
-`favro_append_card_description`, `favro_prepend_card_description`,
-`favro_replace_in_card_description` — each returning `{old, new,
-unified_diff}` so the change is auditable in the transcript.
+Favro's reference disagrees with the live API in places, and with
+itself. Its field table gives a webhook's column scope as `columnIds`,
+an array, and every example shows `columnId`, a string
+([webhook options](https://favro.com/developer/#webhook-options)).
+`Card.CustomFields`, `Tasklist.Title` and `Activity.CommonID` accept
+both shapes, and `TestCard_CustomFields_ReconcilesBothWireKeys` holds
+one of them. A read that refused an observed shape would fail on real
+data. A write has nothing better to send than the documented shape, and
+Favro answers 200 to a body it ignores, so the honest move is to say
+what is unconfirmed (D-73).
 
-Two guards matter. `replace_in` defaults to `count: 1`, so a common
-substring does not silently rewrite every occurrence; and it refuses to
-PUT at all when `find` matches nothing, because a no-op write that
-returns 200 is indistinguishable from a successful one (§2.1).
+Rejected: reads held to the documented shape alone, which fail on what
+the live API sends.
+Cost: a write's unverified shape is admitted in its description rather
+than fixed. Issue #118 asks to confirm each custom field type's write
+shape against Favro, since only a Text field has been seen to take a
+write.
 
-### 7.4 Writes that are not what they appear to be
+### D-16 One call is one page: list tools return next_page and request_id, and nothing aggregates
 
-Each of these is a place where Favro's answer and Favro's behavior come
-apart, and each is why a tool description carries a warning:
+Every list tool returns one page, with `next_page` and `request_id`, and
+nothing pages on the caller's behalf. The caller passes `next_page`
+back, and `request_id` with it.
 
-- **Custom fields** are org-global but enabled per widget. Writing to a
-  field the widget has not enabled is accepted and ignored.
-- **Attachment removal** has no endpoint. It rides on `removeAttachments`
-  in `PUT /cards/{id}`, matched by file URL rather than display name, and
-  returns 200 whether or not anything matched. Worse, Favro re-mints
-  `fileURL` on every read with a fresh presigned signature, so the value a
-  caller just read back never equals the one Favro stored; v1.1.1 strips
-  the presigned query before sending. Two releases got this wrong before
-  the read-back explained why.
-- **A write carrying `widgetCommonId` drops the card's parent.** Favro
-  reads `parentCardId` off the body on such a write, so a body naming
-  none leaves the card at top level. The response echoes a null parent
-  whether or not the card was nested before, so the answer cannot tell a
-  caller which happened. A rename is enough to trigger it, and since
-  `errMoveNeedsWidget` every column move carries `widgetCommonId`, so
-  `favro_move_card` is affected on its ordinary path and not only on a
-  cross-widget add. Both tools read the card's current parent first and
-  carry it through, reporting it in `notes`; `clear_parent` detaches on
-  purpose. **Only the parent is dropped** — `columnId` and
-  `listPosition` survive the same write (probed live 2026-09-18, §18).
-  Earlier wording here said the write "re-seats the card from the body
-  alone", which was broader than anything observed. Naming the parent
-  has its own cost: Favro re-seats a card whose body names its parent
-  after the parent's last child, unless the body names `sheetPosition`
-  too. So the same read carries the card's current `sheetPosition`,
-  unless the caller named one, and the read-back checks it (probed live
-  2026-10-26, §18).
-- **Group membership**: the docs describe add/remove deltas with a
-  per-entry `delete` flag; a live test observed whole-list replacement.
-  The client sends the full intended list, which is correct under either
-  reading.
-- **Collection sharing** reads under `sharedToUsers` and writes under
-  `shareToUsers`. Posting the read-shaped key is accepted and drops the
-  invitations.
-- **Deletes are scoped.** A card delete removes one widget's instance
-  unless `everywhere` is set; a collection delete does not cascade, and
-  can orphan widgets; a column delete is refused with 400 while cards
-  remain on it.
+A loop that read every page would spend the hourly budget on rows the
+model may never read, and hide where it went (D-42). A model that stops
+early is the common case. Inside the server, the resolver and search do
+read whole lists, and each is cached so that it is read once (D-08,
+D-13).
 
-### 7.5 Uploads
+`requestId` is a field of the response body. Favro's reference asks for
+it as a query parameter beside `page`, and for the
+`X-Favro-Backend-Identifier` header to carry the value a response
+returned in that header
+([pagination](https://favro.com/developer/#pagination),
+[routing](https://favro.com/developer/#routing)). The client sends the
+request id in that header and no `requestId` parameter. Favro serves a
+later page from `page` alone, and the request id in the header is not
+the backend identifier and changes nothing. This is checked by hand
+against a live organization; no live step reads a second page, and
+issue #127 asks for one.
 
-Attachments are a raw-bytes POST to `/cards/{id}/attachments` or
-`/comments/{id}/attachments`, from a file inside `FAVRO_UPLOAD_DIR`
-(§9.1), capped locally at 8 MiB. Favro echoes the created attachment
-rather than the updated card — verified live, and worth stating because
-the obvious assumption is the other one.
+Rejected: a hidden aggregation loop in the list tools, expensive and
+unattributable.
+Cost: a caller passes `next_page` back by hand for every page it wants.
 
+### D-17 Page numbers are 1-indexed on the surface and converted to Favro's 0-indexed pages in the tool layer
 
-## 8. Tool surface
+Page numbers on this surface start at 1, and the tool layer converts
+them to Favro's pages, which start at 0. `favroPage` does it at the
+boundary, and `internal/favroapi` stays a faithful client of an API
+whose first page is 0
+([pagination](https://favro.com/developer/#pagination)).
 
-86 tools (2026-10-23). The full reference is `docs/TOOLS.md`; the README
-keeps only the five worth reaching for first. Conventions that hold
-across all of them:
+The schema says 1-indexed because that is what a model and a person
+assume. Passing the number through under that schema serves page 1 as
+Favro's second page. The caller then never sees the first page, and
+nothing in the result says so: it is a valid page of real results with
+rows silently missing. The conversion lives in the MCP layer because the
+off-by-one is a promise the surface makes, not a property of Favro.
+`TestListToolPageNumberingIsOneIndexed` holds every list tool to it.
 
-- Every mutating tool takes `dry_run` and has a test proving dry-run
-  never reaches `RoundTrip`.
-- Every registered tool has a row in `smokeToolInputs`
-  (`internal/tools/smoke_test.go`) or the smoke test fails. This is the
-  repository's one existing instance of the standard's "derive the list
-  from the code" rule, and it predates the standard.
-- List tools surface `next_page` and never aggregate. Page numbers on
-  this surface are 1-indexed; Favro's are 0-indexed, and `favroPage`
-  converts at the boundary. The two used to be the same number while the
-  schema said "1-indexed", so a caller that believed the schema and
-  asked for page 1 was served the second page and never saw the first —
-  a valid page of real results with rows silently missing, which is why
-  no test caught it. The conversion lives in the MCP layer because
-  `internal/favro` is a faithful client of an API whose page is
-  0-indexed.
-- Where two tools overlap, each description names the other and says
-  when to choose it (`favro_update_card` vs `favro_move_card` /
-  `favro_archive_card`; `favro_add_tag_to_card` vs `favro_update_card`
-  with `add_tag_ids`).
-- **Destructive tools are registered only when `FAVRO_ENABLE_DESTRUCTIVE=true`.**
-  `dry_run` used to be the only guard, which the standard rejects for a
-  reason it verified live: a host in an auto-approve permission mode runs
-  an annotated tool without prompting, and the spec says clients treat
-  tool annotations as untrusted. Client-side approval is not a safety
-  layer; the tool that cannot run unattended is the one that is not
-  registered. This removes tools from the default surface, so it is a
-  breaking change and the changelog says so.
+Rejected: Favro's page number passed through, under which page 1 served
+the second page.
+Cost: there are two numbering schemes in the code, and the conversion
+has to stay in the one place, the tool layer.
 
-  Which tools those are is read from whether the tool's input takes
-  `confirm`, at the moment of registration, in `addTool` — there is no
-  second list of destructive tool names, because the tool that would be
-  missing from it is the one added by somebody who did not know it
-  existed. `TestDestructiveToolsAreOptIn` derives the same set from the
-  `confirm` input on the live surface and requires the default surface
-  to differ from the full one by exactly it.
-  `TestEveryWriteIsClassified` holds the other side: every write is
-  named as one that adds, changes or destroys, and only the last takes
-  `confirm`, so a delete written without it fails the build;
-  `TestNoWriteWithoutConfirmSendsADelete` backs it with what each write
-  previews. The count is deliberately not
-  written here: this section said "twelve" while the code annotated
-  thirteen, which is the §7b failure in miniature.
+### D-18 A description is edited in place by append, prepend or replace-in, each returning the old text, the new and a unified diff
 
-## 9. Confidentiality, security, safety
+A description is edited in place by `favro_append_card_description`,
+`favro_prepend_card_description` or `favro_replace_in_card_description`.
+Each returns the old text, the new and a unified diff, so the change is
+auditable in the transcript.
 
-**What may never enter the repository:** organization names or ids, card
-names, ids or sequential ids, user names or email addresses, tokens, and
-any content from a real Favro tenant — in code, fixtures, tests, tool
-descriptions, commit messages, PR bodies, the changelog or the docs. Test
-resources are referred to by role. Fixtures are generated, never
-recorded.
+`PUT /cards/{id}` takes a whole description
+([update a card](https://favro.com/developer/#update-a-card)). So the
+obvious tool replaces the body, and its obvious failure is a model
+rewriting a card it meant to add a line to, losing what other people
+wrote. Each editor reads the stored markdown first (D-14), builds the
+new text from it, and sends the whole description back. The golden
+corpus in `internal/service/testdata/markdown` holds the editors to
+their output, through `TestDescriptionEditors_GoldenCorpus`. Checked by
+the live steps "append to a card's description, dry run" and "prepend to
+a card's description, dry run".
 
-This rule is older than this document and was stated in CLAUDE.md from
-Phase 3 with **nothing holding it**. A1 added the `leaks` gate over the
-working tree and `leaks history` over every blob and commit message; A6
-added the `transcript` gate, so the live driver cannot print except
-through the one redactor.
+Rejected: a replace-the-body tool as the way to edit, with which a model
+rewrites a card it meant to add a line to.
+Cost: `favro_update_card` still replaces a description whole and is
+registered by default. An edit someone makes between an editor's read
+and its write is lost.
 
-**What the redactor cannot do, measured rather than assumed.** Every
-shape it catches is anchored on something a tenant's data is and this
-server's values are not — a 24-hex run, an address, a link, a signed
-attachment URL. A card's *name* is none of those, and a pattern that
-caught it would catch the sentence around it. A verbose run against a
-real organization produced 56 KB with zero ids, zero addresses and zero
-links in it — and 54 names. That is right for a maintainer's terminal,
-showing them an organization they already hold a token for, and wrong
-in a file: the leak gate cannot catch a name either, because a name is
-words. A transcript is not committed. Per the standard, the gate cannot be patterns alone —
-an organization name is ordinary words — so it anchors on shapes the
-server's own values cannot take: an `@` with a dot-suffixed domain, a
-24-hex id of the length Favro mints, a literal keyword immediately before
-an id, a link into the app. Its exemption lists are asserted rather than
-trusted, and that assertion deleted five of them on the day it was
-written (§18).
+### D-19 replace-in changes one occurrence by default, and sends nothing when find matches nothing
 
-**What the history already holds.** `gates leaks history` was run for
-the first time in A1, over every blob and commit message. It reports
-three classes, none of them tenant data. Two remain, and the third turned
-out not to need a history rewrite at all:
+`favro_replace_in_card_description` changes one occurrence of `find`
+unless `count` asks for more. When `find` matches nothing, it sends
+nothing and answers `[not_found]`.
 
-- ~~Session transcripts under `.entire/` (three blobs, ~725 KB), left by
-  a session-recording tool removed in the commit before this program
-  began.~~ **Gone, 2026-09-15, and the sentence above was wrong about
-  them.** They were never in `main` and never in a tag — a tree scan of
-  `origin/main`, `v1.0.0` and `v2.0.1` returns zero `.entire/` paths.
-  They lived in two *local* orphan root commits left by the same tool,
-  on branches with no upstream that were never pushed; deleting those
-  removed all three, and `gates leaks history` reports none now.
-  "Not fixable without rewriting a public history" was inferred from a
-  scan that reads `--all` — which includes local branches — rather than
-  checked against what the published history holds. The scan was right;
-  the conclusion drawn from it was not. `.entire/` is in `.gitignore`
-  now, so the tool cannot stage one again.
-- The old test fixture's address at a registrable domain, in blobs
-  predating A1's fix. Allowed since 2026-10-25 by the whole address, in
-  the history scan only and only in `internal/auth/*_test.go` blobs; the
-  tree scan still refuses them.
-- `SHA-256` in older changelog entries, which is the card-reference
-  rule's known false-positive class rather than a finding — and the
-  clearest illustration of why that rule needs a list at all. `SHA` is an
-  allowed prefix since 2026-10-25.
+A common substring otherwise rewrites every place it occurs, most of
+them not the one meant, and the diff only shows it afterwards. A write
+that changes nothing still answers 200, indistinguishable from one that
+worked (D-73). So the no-match case is refused before any request, and
+the model learns that its quote did not match the stored text (D-14).
+`TestMCP_ReplaceInCardDescription_NoMatch_RefusesPUT` holds it. Checked
+by the live step "a description find that matches nothing is
+[not_found]".
 
-**Findings left in the history (maintainer, 2026-10-25).** The history
-stays as it is, because removing them means rewriting a public history
-with released tags on it. Two commit messages carry real findings:
+Rejected: rewriting every occurrence of a common substring by default; a
+no-op PUT that answers 200.
+Cost: a caller who means every occurrence has to say so with `count`. A
+quote that misses costs a read and a second call.
 
-- `af7cecf1fe538390910d0417a1d9827d6b4c652f`: a `Co-Authored-By` trailer
-  with an address at the organization's domain.
-- `f0baecd5fdcc6557f794b1661ef412b4cd5ceff1`: a real collection id,
-  quoted from a live test of `favro_list_widgets`.
+### D-20 The unified diff is the repository's own Myers diff, held byte for byte to diff -u
 
-`knownFindings` in `scripts/gates/leaks.go` accepts each one in its own
-commit, by hash, rule and count, and never writes the value down. The
-same value in any other commit, blob or file is still a finding.
+The `unified_diff` every description editor returns comes from
+`internal/service/diff.go`, a Myers diff of the repository's own.
+`TestUnifiedDiffMatchesGNUDiff` holds it byte for byte to `diff -u` run
+on the same inputs.
 
-Since 2026-10-25 both scans allow two public trailer addresses, each as
-the whole address: Claude's `Co-Authored-By` and Dependabot's
-`Signed-off-by`. The history scan reads an annotated tag from its
-message down: the tagger header is the maintainer's own git identity,
-which every tag publishes, as every commit publishes its author.
+The diff is output a model and a person read, so it has to read the way
+`diff -u` does. go-difflib printed a stray context line at the end of a
+hunk and dropped `\ No newline at end of file`, the one thing a diff
+cannot recover from its lines. The common prefix and suffix are trimmed
+first, which makes append and prepend almost free. The search is capped
+on edit distance, which also bounds its memory.
+`TestUnifiedDiffScalesWithChangeNotSize` holds that two long bodies
+differing at each end get a small diff.
 
-The working-tree scan is the one in `make check`; the history scan stays
-manual, because its findings are facts about the past rather than things
-a commit can fix. What it is for is knowing.
+Rejected: go-difflib, which printed a stray context line and dropped the
+no-newline marker; a cap on the size of the trimmed middle, which handed
+a model a whole-body diff for a four-line edit to two long bodies.
+Cost: an edit past the edit-distance cap falls back to a diff that
+deletes and re-inserts the whole body.
 
-**Logging.** Method, endpoint shape, query parameter *names*, attempt
-and outcome at debug; never a payload, and never a value that
-identifies the subject. The Authorization header is redacted at the one
-place headers are rendered, shared by the debug line and the dry-run
-record, and so is `organizationId`.
+### D-21 Tag tools refuse an unknown tag name; creating a tag is favro_create_tag
 
-§9 knew about two breaches of that rule when A2 started. It found two
-more while fixing them, and the way each of the last two surfaced is
-the useful part.
+The tag tools refuse a tag name they cannot match, `[not_found]`, and
+never create a tag. Creating one is `favro_create_tag`, explicitly. A
+name that matches several tags is `[ambiguous]`, and the caller picks
+one by id.
 
-The two known ones. The debug line logged `req.URL.RawQuery`, and
+Favro's own `addTags` takes names and creates any it does not know
+([update a card](https://favro.com/developer/#update-a-card)). A typo
+would then become a permanent tag, visible to the whole organization,
+from a call meant to label one card. A tag is organization-wide, so the
+cost of the typo falls on everyone who filters by tags afterwards.
+`TestMCP_AddTagToCard_HardFailUnknown` holds the refusal. Checked by the
+live steps "adding an unknown tag name to a card is [not_found]" and
+"removing an unknown tag name from a card is [not_found]".
+
+Rejected: Favro's `addTags`, which creates unknown names and turns a
+typo into a permanent organization-wide tag.
+Cost: creating a tag is an explicit second call. A model that meant to
+create one is refused first and has to say so.
+
+### D-22 A card move names its widget: the client refuses a column or lane move without it, and checks the column Favro returns
+
+A card move names its widget. The client refuses a column or lane move
+that lacks `widgetCommonId` before anything is sent, and checks the
+column in Favro's answer.
+
+Favro answers a column move without `widgetCommonId` with a 200 and a
+stub card that has no column, and the card stays where it was
+([update a card](https://favro.com/developer/#update-a-card)). Its
+reference does not say the field is required. `UpdateCard` compares the
+returned `columnId` with the one asked for and raises
+`WriteIgnoredError` when they differ. The read-back then checks what
+Favro stored (D-24). The lane is not compared, because a card on a board
+without lanes comes back with no `laneId`, and checking it would invent
+a failure. `TestColumnMoveContractIsStatedOnce` holds the tools'
+descriptions to one statement of the rule. Checked by the live step
+"move a card to another column, dry run".
+
+Rejected: `listPosition` as the required field, which has nothing to do
+with it; checking `laneId`, which a board without lanes leaves empty.
+Cost: Favro publishes no lane endpoint, so a lane move cannot be set up
+to probe, and the requirement rests on the column's evidence. A move
+echoed in the answer but not stored has not been seen.
+
+### D-23 A structural card write carries the card's current parent and sheetPosition, and clear_parent detaches on purpose
+
+A structural card write carries the card's current parent and
+`sheetPosition`, read first. `clear_parent` detaches a card on purpose.
+
+Favro reads `parentCardId` off the body of any write that carries
+`widgetCommonId`, so a body naming no parent leaves a nested card at top
+level. Its answer shows a null parent either way
+([update a card](https://favro.com/developer/#update-a-card)). A rename
+is enough, and every column move carries `widgetCommonId` (D-22). Only
+the parent is dropped: `columnId` and `listPosition` survive the same
+write. Naming the parent has a cost of its own. Favro re-seats a card
+whose body names its parent after the parent's last child, unless the
+body names `sheetPosition` too. So `favro_update_card` and
+`favro_move_card` carry both, report them in `notes`, and read the card
+back. This was probed by hand. Checked by the live steps "update a card
+structurally without naming its parent, dry run" and "move a card naming
+its own parent, dry run".
+
+Rejected: sending the caller's body as given, which detaches a nested
+card on a rename; re-sending the card's whole placement, which answers a
+broader loss than Favro shows.
+Cost: every structural write reads the card first, one more request, and
+a dry run reads it too.
+
+### D-24 A write Favro may accept and drop is read back, and its verdict is a note on a successful result
+
+`favro_move_card` and `favro_update_card` read the card back after a
+column or lane write, and `favro_set_card_custom_field` after a field
+write. The verdict is a note on a successful result.
+
+A 200 from Favro is not confirmation (D-73). A write to a custom field
+the card's widget has not enabled answers 200 with the full card and the
+field absent
+([card custom fields](https://favro.com/developer/#card-custom-fields)).
+A move's own answer comes from the request handling that may have
+ignored the body, so only a later read is evidence. The comparison stays
+per path, since "is my column the returned column" and "is my field
+there" are different questions. It is a note rather than an error
+because the write was accepted, and because clearing a field leaves it
+absent too. `skip_verify` skips the read for a caller about to read the
+card anyway.
+
+Rejected: one shared confirm helper, a shape nothing fits;
+`WriteIgnoredError` on a custom field, since only a Text field has been
+seen to take a write; a pre-check on `CustomField.widgetCommonId`, which
+would refuse writes that land.
+Cost: a read-back is one more request. No live step removes an
+attachment, and Favro answers 200 whether or not the URL matched.
+Issue #119 asks for a `-writes` check that removes one.
+
+### D-25 No tool states an outcome the response did not carry
+
+No tool states an outcome its response did not carry. A result reports
+what Favro answered, and a sentence about what is true after the call
+needs the response, or a read-back, behind it.
+
+Favro answers 200 to a body it ignores (D-73), so success text written
+from the request asserts what nothing confirmed, and a model passes it
+on to the person as fact. The `outcomes` gate holds the one shape of
+this a machine can check: a branch that tests a boolean field of the
+request and then states what is true afterwards. A branch that consults
+Favro, refuses, or words its sentence as "would" is honest, and the gate
+recognizes all three by structure.
+`TestOutcomesCatchesAnAssertedOutcome` holds the gate to a planted case.
+
+Rejected: success text written from the request, which states what the
+caller asked for as what happened.
+Cost: the gate cannot judge words, so a flagged branch that is right
+anyway takes a row in `testdata/outcome-claims.tsv` with its reason.
+
+### D-26 Moving a card to another widget adds an instance there, and the tool says so; no move is assembled from an add and a delete
+
+`favro_move_card` with another widget adds an instance of the card
+there, and its description says so: the source instance stays where it
+is.
+
+Favro's model is one card common to several widgets, with an instance on
+each under one `cardCommonId`. A PUT that names another widget adds an
+instance, and there is no call that relocates a card
+([update a card](https://favro.com/developer/#update-a-card)). Removing
+the source is a separate `favro_delete_card` on that widget's instance
+(D-37). This server does not assemble a move from the two. A half-failed
+pair leaves a duplicate or a lost card, and the caller could not tell
+which from one result. Checked by the live step "move a card across
+widgets with every positioning option, dry run".
+
+Rejected: an add then a delete, this server inventing a transaction
+Favro does not offer, whose half-failure leaves a duplicate.
+Cost: a caller who means "move" deletes the source instance as a second
+call, which is destructive and needs `FAVRO_ENABLE_DESTRUCTIVE`.
+
+### D-27 A group update sends the whole intended member list
+
+`favro_update_group` sends the whole intended member list.
+
+Favro's reference describes a group update as add and remove deltas,
+each entry with a `delete` flag
+([update a group](https://favro.com/developer/#update-a-group)). A live
+test observed the whole list being replaced. Sending the full list is
+correct under either reading, since a change that names every member is
+the list. Before it sends, the tool reads the group's members, so a
+member re-sent as they are widens nothing, and only someone who has
+access can be removed (D-35). Checked by the live steps "replace a
+group's members, dry run" and "adding a user outside the organization to
+a group is [blocked]".
+
+Rejected: deltas with a per-entry `delete` flag, as the reference
+describes, which would leave a group holding only the change if Favro
+replaces.
+Cost: leaving someone out of the list removes them. Issue #121 asks
+whether `PUT /groups` replaces a group's members or applies a change; if
+it replaces, the tool takes members as add and remove lists.
+
+### D-28 Every write takes dry_run, enforced in the HTTP client, and --dry-run forces it for the process
+
+Every write takes `dry_run`, and `--dry-run` forces it for the whole
+process. A dry run returns the request it would have sent, method, URL,
+headers with the credentials redacted, and body, and sends no write.
+
+The gate is in the HTTP client: `shouldDryRun` reads the per-call flag
+from the context `addTool` puts it on, and the process flag from the
+client. A tool cannot forget a gate it never holds.
+`TestEveryWriteTakesDryRunAndSendsNothing` holds that every tool without
+`readOnlyHint` takes `dry_run` and that its dry run sends no write. A
+dry run still reads: a structural write reads the card, so the previewed
+body is the one that would be sent (D-23). The live driver sends every
+write step with `dry_run` (D-74).
+
+Rejected: the gate in each tool, which a tool could forget.
+Cost: `dry_run` is not a second guard against an unattended call. The
+model sets it, and a client that runs with nobody watching runs the real
+write (D-29).
+
+### D-29 The destructive tools register only with FAVRO_ENABLE_DESTRUCTIVE=true, and a tool is destructive when its input takes confirm
+
+A tool is destructive when its input takes `confirm`, and the
+destructive tools register only with `FAVRO_ENABLE_DESTRUCTIVE=true`.
+`addTool` reads the input at registration, so there is no second list of
+names.
+
+A host in an auto-approve mode runs an annotated tool without prompting,
+and the MCP specification tells clients to treat annotations as
+untrusted
+([tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)).
+The tool that cannot run unattended is the one not registered. A list of
+destructive names would miss exactly the tool added by somebody who did
+not know the list existed. `TestDestructiveToolsAreOptIn` derives the
+set from the `confirm` input on the live surface.
+`TestEveryWriteIsClassified` names every write as one that adds, changes
+or destroys, and only the last takes `confirm`, so a delete written
+without it fails the build.
+
+Rejected: `dry_run` as the only guard; a list of destructive tool names;
+`destructiveHint` as the gate, which is true on every write that changes
+something, most of which lose little.
+Cost: the destructive tools are off the default surface, and a deployer
+who wants one of them enables all of them.
+
+### D-30 A destructive call needs confirm: true unless it is a dry run
+
+A destructive call needs `confirm: true`. `addTool` refuses one without
+it `[blocked]`, unless it is a dry run, which writes nothing.
+
+`confirm` is a witness that the caller meant the call, never approval:
+the model sets it. What it buys is that a destructive call is one the
+model has to name, and the refusal tells it why. Registration panics on
+a tool that takes `confirm` without `destructiveHint`, or carries the
+mark without `confirm` (D-34). `TestNoWriteWithoutConfirmSendsADelete`
+backs it with what each write previews: no write without `confirm` may
+preview an HTTP DELETE. Checked by the live steps "favro_delete_tag
+without confirm is [blocked]" and "favro_delete_collection without
+confirm is [blocked]".
+
+Rejected: registration as the only guard, under which every registered
+destructive tool runs on any call with nothing said about meaning it.
+Cost: the model sets `confirm`, so it is a witness and never approval. A
+client running with nobody watching passes it as readily as anything
+else (D-31).
+
+### D-31 The server asks the person nothing; per-call approval is the client's
+
+The server puts no question to the person, and per-call approval is the
+client's.
+
+The MCP specification gives consent to each tool call to the host, and
+lets a client answer an elicitation "from the user or other sources"
+([elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation)).
+Clients answer such a question with nobody there, never draw it, or
+leave it hanging, and no client's allow and ask rules match it. A
+question on every call is answered without reading. So what holds on
+every client is in the server: registration, `confirm`, the sharing
+refusals, the witnesses and `dry_run` (D-29, D-30, D-35, D-36, D-28).
+The in-memory harness's client declares form elicitation and fails any
+test whose call puts a question to it. Checked by the live step "the
+server asked the person nothing".
+
+Rejected: the server's own question to the person through form
+elicitation (D-94).
+Cost: a client that runs with nobody watching gets whatever is
+registered, so `FAVRO_ENABLE_DESTRUCTIVE` stays off for one.
+
+### D-32 FAVRO_REQUIRE_PROMPT refuses start unless false, and FAVRO_INTERACTION_HINT is ignored with a warning
+
+`FAVRO_REQUIRE_PROMPT` set to anything but `false` refuses the start,
+and `doctor` reports it as a failed check. `FAVRO_INTERACTION_HINT` set
+to `false` is ignored with a startup warning that `doctor` repeats.
+`config.Vars` lists both as removed settings.
+
+Both configured the server's question to the person, which it does not
+put (D-31, D-94). `FAVRO_REQUIRE_PROMPT` refused the asking writes on a
+client that could not ask. Ignoring it would quietly allow what its
+owner set the server to stop, so the server refuses to start instead.
+`FAVRO_INTERACTION_HINT=false` withheld Claude Code's mark. Ignoring it
+only makes the server stricter, so a warning is enough, and the warning
+says why Claude Code prompts for the marked tools (D-34).
+`TestRunServer_ARemovedSettingRefusesToStart` holds the refusal.
+
+Rejected: quietly allowing what the owner set the server to stop.
+Cost: a headless deployment that relied on
+`FAVRO_INTERACTION_HINT=false` finds Claude Code refusing the marked
+tools.
+
+### D-33 readOnlyHint is on the reads alone, and destructiveHint is false only on a write that adds
+
+`readOnlyHint` is true on the reads and on nothing else.
+`destructiveHint` is true on every write that changes or removes
+something. It is false only on a write that creates something and
+changes nothing already there: a card, collection, column, comment,
+group, tag, task, task list, widget or attachment.
+
+The MCP schema reads false as "the tool performs only additive updates"
+([ToolAnnotations](https://modelcontextprotocol.io/specification/2025-11-25/schema#toolannotations)).
+Clients prompt by these hints: claude.ai and Codex by `destructiveHint`,
+and VS Code on every tool without `readOnlyHint`. A false hint on an
+update would let a client skip the prompt on a write that overwrites a
+description. The hint is not the destructive gate, which reads `confirm`
+(D-29), so the updates stay registered by default.
+`TestOnlyToolsThatAddSayTheyAreNotDestructive` names each write that
+adds, and `TestEveryToolIsAnnotated` keeps `readOnlyHint` off every
+write.
+
+Rejected: false on a write that loses little; true on the destructive
+tools alone.
+Cost: a client that prompts by `destructiveHint` prompts on every
+update, move and edit. How Claude Desktop reads the hints has not been
+tried, which #124 covers.
+
+### D-34 Five tools carry Claude Code's requiresUserInteraction, and only a destructive tool may
+
+Claude Code's `anthropic/requiresUserInteraction` mark sits on
+`favro_delete_tag`, `favro_delete_group`, `favro_delete_collection`,
+`favro_delete_widget` and `favro_widen_collection_sharing`. Only a
+destructive tool may carry it, and `addTool` refuses the mark on any
+other.
+
+Each of these reaches past one item. A tag comes off every card that
+carries it, and a group off every share, assignment and custom field
+that names it. A widget takes its cards with it, and a collection leaves
+widgets that lived only in it where nobody finds them. A widening opens
+a collection to the organization or to anyone with its link. Claude Code
+from v2.1.199 prompts on every call of a marked tool in every
+interactive mode, and denies it where no prompt can be drawn
+([Claude Code MCP](https://code.claude.com/docs/en/mcp)).
+`TestOnlyTheWidestWritesPrompt` holds the set.
+
+Rejected: the mark only for a client that cannot ask; the mark on every
+delete, since a delete made many times in a row brings back a prompt
+nobody reads.
+Cost: Claude Code denies a marked tool where no prompt can be drawn, as
+in `dontAsk` mode or `-p` without a permission host. For every other
+write, the operator decides with Claude Code's `permissions.ask`.
+
+### D-35 The ordinary writes share only inside the organization, and refuse every widening as [blocked]
+
+The ordinary writes share only inside the organization, and refuse every
+widening `[blocked]`. They refuse `public_sharing` of `organization` or
+`public` on a collection, and a share or member entry that names someone
+by email or by `type: 'organization'`. They refuse a userId the
+organization does not list, or whose `organizationRole` is not
+`administrator` or `fullMember`
+([organization roles](https://favro.com/developer/#organization-roles)).
+They refuse a new collection admin or group administrator, guests as a
+widget's owners or editors, and a group holding anyone outside those two
+roles.
+
+A client remembers an approval per tool, never per argument. A wide
+share carried as an argument therefore rides along unseen once the tool
+is always allowed. An entry that gives someone no more than they hold
+widens nothing and goes through, since an update reads the existing
+shares first. Checked by the live steps "sharing a new collection by
+email is [blocked]" and "opening a collection to the organization on an
+update is [blocked]".
+
+Rejected: widening as an argument of an ordinary write, which a client's
+per-tool approval carries unseen.
+Cost: an invitation by email, a new admin and guests as a widget's
+owners or editors have no tool, and an unknown role refuses a member
+rather than admitting a guest. Issues #122 and #123 ask what Favro does
+with an email it does not know, and whether a share with a group that
+holds a guest is refused, which the live run's organization cannot try.
+
+### D-36 Opening a collection to the organization or to anyone with its link is favro_widen_collection_sharing, witnessed by the collection's name and read back
+
+Opening a collection to the organization, or to anyone with its link, is
+`favro_widen_collection_sharing`. It is destructive, so it registers
+only with the flag, needs `confirm: true` and carries the mark (D-29,
+D-30, D-34).
+
+It also takes `collection_name`, which must match the name Favro holds,
+and a call naming another is refused `[conflict]`. A client's prompt
+shows the arguments, so the name in the prompt is the collection being
+opened. After the write the tool reads the collection back and says in
+`notes` whether the mode took
+([update a collection](https://favro.com/developer/#update-a-collection)).
+`organization` counts as a widening, as a domain-wide share does in
+google-drive-mcp. Checked by the live steps
+"favro_widen_collection_sharing with another name is [conflict]" and
+"favro_widen_collection_sharing opens it to the organization and reads
+it back".
+
+Rejected: `public_sharing` on the ordinary collection writes, which a
+client's standing approval of those tools would carry unseen (D-35).
+Cost: an organization-visible collection needs
+`FAVRO_ENABLE_DESTRUCTIVE`. A public share is never tried live, since
+making a real collection public is the act it would test.
+
+### D-37 The wider delete is an argument of the same delete tool, and favro_delete_widget refuses a call that names no scope
+
+`favro_delete_card` and `favro_delete_widget` take `everywhere: true`
+for the delete from every widget or every collection.
+`favro_delete_widget` refuses a call that names neither `collection_id`
+nor `everywhere`.
+
+Favro's deletes are scoped. A card delete removes one widget's instance
+unless `everywhere` is set
+([delete a card](https://favro.com/developer/#delete-a-card)), and a
+widget belongs to several collections
+([delete a widget](https://favro.com/developer/#delete-a-widget)). Both
+variants are deletes, behind the same flag and `confirm: true`, so a
+client that always allows the tool has already allowed a delete. The
+wider one is named in the arguments a client's prompt shows. A widget
+delete that named nothing would get the wider delete by omission, so it
+is refused. Checked by the live steps "delete a widget from every
+collection, dry run" and "delete a widget from a collection, dry run".
+
+Rejected: the wider delete as a tool of its own, as google-chat-mcp
+makes every risky variant.
+Cost: a client that always allows the tool has already allowed the wider
+delete. A collection delete does not cascade and can leave widgets that
+lived only in it unreachable.
+
+### D-38 The upload tools read only inside FAVRO_UPLOAD_DIR, through os.Root, and are not registered without it
+
+The upload tools read only inside `FAVRO_UPLOAD_DIR`, and are not
+registered without it. The value must be an absolute path to a directory
+that exists; anything else is logged at start and leaves the upload
+tools off.
+
+A card's text can suggest a path to a model, and Favro is a network
+peer, so a tool that reads any file the account can read is an
+exfiltration channel. `file_path` is relative to the directory or
+absolute within it, and the read goes through `os.Root`, which refuses a
+`..` or a link that leaves it ([os.Root](https://pkg.go.dev/os#Root)).
+The size cap and the regular-file check come before any byte is read,
+and the file is opened only after a stat says it is regular, since
+opening a named pipe waits for a writer. A refusal names `file_path`,
+not the path. The cap sits below Favro's documented limit
+([upload a file to card](https://favro.com/developer/#upload-a-file-to-card)).
+Checked by the live steps "uploading a path outside the upload directory
+is [invalid]" and "uploading a folder is [invalid]".
+
+Rejected: reading any file the account can read, an exfiltration
+channel.
+Cost: anything in the directory can be sent on the model's word, so the
+directory holds only what may leave.
+
+### D-39 No tool writes the server's own settings: the environment, a file or the keyring
+
+No tool writes the server's own settings: the environment, a file or the
+keyring.
+
+The model reads card text other people wrote. A tool that could change a
+setting would let that text widen the model's reach: turn on the
+destructive tools, move the upload directory or swap the credentials.
+`TestNoToolWritesTheServersOwnSettings` follows every package the tools
+import. It refuses a call that sets the environment, writes a file or
+reaches the keyring outside `auth.KeyringSource`, which none of those
+packages may name. It also refuses an assignment to the registry's flags
+after `Register`. Settings change when the deployer restarts the server
+with other ones, and only `favro-mcp auth`, at a terminal, writes the
+keyring (D-55).
+
+Rejected: a tool that changes a setting for the session, such as
+enabling the destructive tools on request, which the model could be
+talked into calling.
+Cost: only `auth.KeyringSource` writes the keyring, and only
+`favro-mcp auth` uses it, so any change of settings means restarting the
+server.
+
+### D-40 Every tool error is `[class] message` from one closed vocabulary, classified by the error's type and never its text, with invalid as the fallback
+
+Every tool error is a result of the form `[class] message`, from one
+closed vocabulary declared in `internal/render/class.go`. The class
+tells the caller what to do next, so a caller can switch on it, and
+[TOOLS.md](TOOLS.md#error-classes) says what each class asks.
+
+`render.Classify` reads the class from the error's type with
+`errors.As`, never from its text. Each typed error in
+`internal/favroapi` names its own class, and a sentinel is built with
+`render.Sentinel`. An error that names no class falls back to `invalid`.
+That is measured rather than neutral: every error the server's own layer
+raises without a sentinel is an argument the caller got wrong.
+`TestEveryErrorTypeNamesItsClass` reads the client's error types, and
+`TestEverySentinelIsClassified` reads `internal/tools`,
+`internal/service` and `internal/favroapi`. The `classes` gate holds the
+vocabulary and its documentation to each other from both sides.
+
+Rejected: matching on an error's text; an `unverified` class (D-93).
+Cost: a server bug reaching the fallback is mislabeled, and an inline
+`fmt.Errorf` in a handler is checked by nothing. Issue #126 asks whether
+`WriteIgnoredError` needs a class of its own, since `[unavailable]`
+tells a model to retry a write Favro will ignore again.
+
+### D-41 A 429 is retried once when it says to wait 30 seconds or less, and a read's 5xx up to three attempts; a write is sent once, and a 5xx or a failure after the dial is ambiguous_outcome
+
+A 429 is retried once, and only when it carries a `Retry-After` of 30
+seconds or less. Favro's reference documents no `Retry-After`, so a 429
+without one is returned at once as `[rate_limited]`
+([throttling](https://favro.com/developer/#throttling)). A read's 5xx
+gets up to three attempts, with the waits in `transientBackoffSchedule`
+between them. A network failure is not retried.
+
+A write is sent once. Its 5xx, or a connection lost after the request
+went out, is `[ambiguous_outcome]`. A dial that failed sent nothing and
+stays `[unavailable]`. Favro does not deduplicate writes: a repeated
+POST creates a second card, and a repeated DELETE answers 404 for the
+card the first one removed. The HTTP timeout applies to each attempt, so
+a retried read can take longer in all (D-43).
+
+Rejected: retrying every method on a 5xx, which created twice and
+retried a DELETE into its own 404.
+Cost: a write that may have landed is reported and never repeated. The
+caller reads the resource to see what happened.
+
+### D-42 Every response's rate-limit headers are recorded, and favro_rate_limit_status reports the last snapshot without a call
+
+Every response's rate-limit headers are recorded, and
+`favro_rate_limit_status` reports the last snapshot without a call. The
+snapshot holds the limit, what remains, when the window resets, and
+`X-RateLimit-Delay`
+([response headers](https://favro.com/developer/#response-headers)).
+
+Favro counts calls per user per hour: 50 on the user-level routes, and
+on every other route a number the organization's plan sets, Trial 100,
+Lite 0, Standard 1000 and Enterprise 10000
+([rate limiting](https://favro.com/developer/#rate-limiting-and-throttling)).
+Its table labels those per user, and its text ties them to the plan. It
+delays a response before it refuses one, and answers 429 once the needed
+delay would pass 10 seconds. A non-zero delay is the warning that comes
+first, and a model that can see it can slow down. The reference's table
+spells the first header `X-RateLimit-Limt`, and the client reads
+`X-RateLimit-Limit`. The live step "read the rate limit status" reads
+the snapshot and asserts nothing about it.
+
+Rejected: a status tool that spends a call to read the headers, which
+costs a call from the budget it reports.
+Cost: the snapshot is as old as the last call, and is empty before the
+session's first one.
+
+### D-43 Every HTTP call has a timeout, the startup check and doctor's live half included
+
+Every HTTP call has a timeout. The client sets one on each attempt, the
+startup check runs under a shorter one of its own, and `doctor`'s live
+half has one across all its requests.
+
+`forbidigo` refuses `http.DefaultClient`, and the package-level
+`http.Get`, `http.Head`, `http.Post` and `http.PostForm` that send
+through it, because it has no timeout. A host that never answers would
+otherwise hold a tool call until the client gives up. At start it would
+hold the server, and a client waits on the startup check before it shows
+any tool. `TestDefaultValidator_HasReasonableDefaults` holds the
+validator's timeout.
+
+Rejected: `net/http.DefaultClient`, which has no timeout.
+Cost: the timeout is per attempt, not per call. A read retried after a
+5xx can run past it, bounded only by the caller's context (D-41).
+
+### D-44 A host closing the pipe is a clean exit, matched by the SDK's error code
+
+A host closing the pipe is a clean exit, and `cleanDisconnect`
+recognizes it by the SDK's error code.
+
+The SDK reports a closed connection as JSON-RPC -32004, with the EOF
+only in the message text
+([wire.go](https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/internal/jsonrpc2/wire.go#L33-L36)).
+`errors.Is(err, io.EOF)` cannot match it, and an unmatched error exits
+1, which every host logs as a crash. `jsonrpc.Error` is a public alias
+of the SDK's wire type, so `errors.As` reaches the code without reading
+a string that is free to change. The `smoke` gate closes stdin the
+moment the last message is written, because a run that waits first never
+sees the bug. `TestCleanDisconnect` holds the match.
+
+Rejected: `errors.Is(err, io.EOF)`, which cannot match the SDK's
+closed-connection error.
+Cost: the match rests on the SDK's code for a closed connection. An SDK
+that changed it would turn every disconnect into a crash, which the
+`smoke` gate would catch.
+
+### D-45 Stdout carries only MCP JSON-RPC frames, and logs go to stderr through slog
+
+Stdout carries only MCP JSON-RPC frames, and every log line goes to
+stderr through `slog`.
+
+The stdio transport says a server must not write anything to stdout that
+is not a valid MCP message
+([stdio](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#stdio)).
+A client reads each line of stdout as a frame, so one stray print breaks
+the session, often with no message a person can read. `main` is the one
+place that names the process's streams, and everything below it takes an
+`io.Writer`. `forbidigo` refuses `fmt.Print*` and `os.Stdout`, matching
+the destination rather than the function's name, since an `fmt.Fprintf`
+to stdout corrupts the stream identically. `TestForbidigoGuardsStdout`
+fails if the rule leaves the linter's settings, and the `smoke` gate
+drives the built binary over stdio.
+
+Rejected: logs or diagnostics on stdout, which a client reads as a
+broken frame.
+Cost: every package below `main` takes its writer as a parameter.
+`scripts/` is outside the `forbidigo` rule, since it is maintainer
+tooling run at a terminal.
+
+### D-46 A log line carries the method, the path's shape, the query's parameter names, the attempt and the outcome, never a payload or a value that identifies the subject
+
+A log line carries the method, the path's shape, the query's parameter
+names, the attempt and the outcome. It never carries a payload or a
+value that identifies the subject.
+
 Favro's query strings carry `cardCommonId`, `widgetCommonId` and
-`sequentialId`, so a debug log reconstructed which cards a session
-touched; it logs the parameter names now. The startup line logged
-`organization_id` in full at INFO, naming the tenant in the first line
-of every session — found by running the server against a real
-organization during A1's live check, which is the kind of thing only a
-live run shows.
-
-**The third was found by the test, not by reading.** `organizationId` is
-a header, `Token.Apply` sets it on every request, and `redactHeaders`
-redacted only `Authorization`, so the header map reprinted the
-organization id on every debug line. An existing test asserted it passed
-through unredacted: the behavior was not an oversight, it was pinned.
-That is the argument for `TestDebugLogNeverCarriesTheSubject` asserting
-over everything captured rather than over the line under suspicion, and
-for capturing at `LevelDebug`, since a capture at the default level
-passes against the broken code.
-
-**The fourth was found by the security review, and the test had a hole
-that let it through.** `req.URL.Path` was still logged whole, and every
-get-one endpoint is `/cards/{cardId}` — the same leak as the query
-string, in the other half of the same URL. The test missed it because it
-drove a list endpoint, where the ids are all in the query. It now drives
-a get-one call as well, and the path is logged as its shape:
-`redactPathIDs` keeps a segment only if it reads as part of an endpoint
-— lowercase alphanumeric, shorter than the 24 characters every Favro id
-has — and anything else becomes `{id}` rather than being printed.
-
-Its first version was stricter, rejecting any digit, and a live run
-caught what the unit test could not: the production path is
-`/api/v1/cards/{id}`, so `v1` was being redacted as an identifier. The
-test talks to an `httptest` server whose base URL has no version
-segment, so it was asserting against a path shape that does not occur.
-There is now a row for the real one.
-
-The lesson §9 records is not about any of the four. It is that "no
-forbidden value reaches a log" is a claim about every call site and
-every level, and a test that exercises one call site proves it for one
-call site.
-
-**Safety.** §8's destructive-tool gate; §4.2's dry-run; §4.3's hard-fail
-on unknown tag names; the upload directory (§9.1); `confirm: true`, the
-sharing refusals and the mark (§9.2). Reads are budgeted only by
-pagination.
-
-### 9.1 Uploads read one directory
-
-Until 3.0.0 the upload tools read any file the account running the
-server could read, and were registered by default. A card's text can
-suggest a path to a model, and Favro is a network peer, so that was an
-exfiltration channel with nothing but the account's own permissions
-around it.
-
-Now they read inside `FAVRO_UPLOAD_DIR` and nowhere else, and are **not
-registered** unless it is set. The value must be an absolute path to a
-directory that exists; anything else is logged at startup and leaves
-uploads off. `file_path` is relative to the directory, or absolute
-within it, and the read goes through `os.Root`, which refuses a `..` or
-a symbolic link that leaves it. The size cap and the regular-file check
-come before any byte is read, and the file is opened only after a stat
-says it is regular, since opening a named pipe would wait for a writer.
-A refusal names `file_path`, not the path, because the path may be what
-a card's text suggested.
-
-### 9.2 Per-call approval is the client's
-
-From 4.0.0 the server asks the person nothing. From 3.0.0 to 3.2.0 it
-put a form with no fields to the person, through MCP form elicitation,
-before ten writes. The maintainer removed it on 2026-10-23, for every
-server of theirs, on the evidence of §18 (2026-10-23):
-
-- The specification puts consent to each tool call on the host. It lets
-  a server ask through elicitation but never makes the answer consent:
-  the client gathers it "from the user or other sources".
-- Most widely used servers confirm nothing themselves: 83 of the 91 with
-  risky writes among the 110 most used. The 8 that ask each pick their
-  own scope.
-- Clients answered the question with nobody there (a Claude Code
-  `Elicitation` hook once installed, Codex with full access), did not
-  draw it, or left it hanging, and no client's allow and ask rules match
-  it.
-- A question on every call is answered without reading.
-
-What stays is what holds on every client:
-
-1. **Registration.** A destructive tool exists only with
-   `FAVRO_ENABLE_DESTRUCTIVE=true` (§8); the upload tools only with
-   `FAVRO_UPLOAD_DIR` (§9.1). A client that runs with nobody watching
-   gets neither.
-2. **`confirm: true`** on every destructive call. `addTool` refuses
-   `[blocked]` a destructive call without it, unless it is a dry run, and
-   registration panics on a destructive tool whose input does not embed
-   it, so no delete can forget it. It is a witness that the caller meant
-   the call, never approval: the model sets it.
-3. **Sharing stays inside the organization.** A client remembers an
-   approval per tool, never per argument, so a wide share carried as an
-   argument rides along unseen once the tool is always allowed. The
-   ordinary writes therefore refuse `[blocked]`:
-   - `public_sharing: 'organization'` or `'public'` in
-     `favro_create_collection` and `favro_update_collection`;
-   - a share or member entry that names someone by email, which may send
-     an invitation outside the organization, or by `type: 'organization'`;
-   - a userId the organization does not list, or whose
-     `organizationRole` is not `administrator` or `fullMember` (a guest,
-     an external member, a disabled account, or a role Favro adds later);
-   - a new collection `admin` or group `administrator`, who can change who
-     else has access;
-   - `owner_role: 'guests'` or `edit_role: 'guests'` on a widget, which
-     makes people outside the organization its owners or editors;
-   - an entry flagged `delete: true` that names someone with no access.
-     The entry goes to Favro as given, and Favro may ignore the flag on a
-     create, on `shareToUsers` and on a group's whole-list update (§7.4),
-     so a removal's shape is checked like any entry's and only someone
-     who has access can be removed;
-   - a group that holds anyone whose `organizationRole` is not
-     `administrator` or `fullMember`, read from the group's members, or a
-     group whose members cannot be read: sharing with the group shares
-     with everyone in it. The refusal names
-     `favro_widen_collection_sharing` (maintainer, 2026-10-23, the rule
-     chat uses for groups in spaces that admit outsiders).
-
-   An entry that gives someone no more than they already hold widens
-   nothing and goes through: an update reads the collection's shares or
-   the group's members first. That matters for `favro_update_group`,
-   whose list replaces the whole one, so a group's administrator and its
-   guests are re-sent as they are. Raising someone above the role they
-   hold is a new grant, and is refused unless they are a member of the
-   organization. Opening a collection to the organization or to
-   anyone with its link is `favro_widen_collection_sharing`: destructive,
-   so registered only with the flag, `confirm: true`, and a
-   `collection_name` witness that must match Favro's, so the client's
-   prompt shows which collection it opens. It reads the collection back
-   and says in `notes` whether the mode took. Invitations by email,
-   admins and guests as a widget's owners or editors have no tool yet; a
-   widening tool for them waits on a live check of what Favro does with
-   an unknown address.
-4. **Witnesses and guards.** `favro_delete_widget` names its scope:
-   `collection_id`, or `everywhere: true`, never the wider delete by
-   omission. §4.3's tag guard and §4.7's read-backs are unchanged.
-5. **`dry_run`** on every write.
-6. **Annotations.** `readOnlyHint` is set only on the reads.
-   `destructiveHint` is true on every write that changes or removes
-   something (`changing`). It is false only on a write that creates something new and changes
-   nothing already there: a card, collection, column, comment, group,
-   tag, task, tasklist, widget or attachment (`adding`, each named in
-   `TestOnlyToolsThatAddSayTheyAreNotDestructive`). The MCP schema reads
-   false as "only additive updates" (§18, 2026-11-01). claude.ai and
-   Codex prompt by `destructiveHint`; VS Code ignores it and prompts on
-   every tool without `readOnlyHint`.
-7. **The mark.** Five tools carry Claude Code's
-   `anthropic/requiresUserInteraction`: `favro_delete_tag`,
-   `favro_delete_group`, `favro_delete_collection` and
-   `favro_delete_widget`, whose loss reaches past the one item: a tag
-   comes off every card that carries it, a group off every share,
-   assignment and custom field that names it, a widget takes its cards
-   with it, and a collection leaves widgets that lived only in it where
-   nobody finds them. And
-   `favro_widen_collection_sharing`, a domain-wide or public share. Claude
-   Code (v2.1.199 or later) prompts on every call of them in every
-   interactive mode and denies the call where no prompt can be drawn.
-   `addTool` refuses the mark on anything but a destructive tool. No other
-   tool carries it: a delete made many times in a row would bring back a
-   prompt nobody reads. For the rest, the operator decides with Claude
-   Code's `permissions.ask`; the README gives rules for the writes that
-   publish, share, send or delete.
-
-`FAVRO_REQUIRE_PROMPT`, which refused the asking writes on a client that
-could not ask, went with the question. Set to anything but `false`, the
-server refuses to start rather than quietly allow what its owner set it
-to stop, and `doctor` reports it as a failed check. Leave
-`FAVRO_ENABLE_DESTRUCTIVE` off for a client that runs with nobody
-watching. `FAVRO_INTERACTION_HINT` went too. Set to `false`, it is
-ignored with a startup warning that `doctor` repeats: ignoring it only
-makes the server stricter, but a headless deployment that relied on it
-learns why Claude Code now refuses the marked tools.
-
-Two tests hold the rest. The test harness's client declares form
-elicitation and fails any test whose call puts a question to it, so every
-tool is held to asking nobody. `TestNoToolWritesTheServersOwnSettings`
-follows every package the tools import and refuses a call that writes
-the environment, a file or the keyring outside `auth.KeyringSource`,
-which no such package may name, and any assignment to the registry's
-flags after `Register` (standard §3: the model never widens its own
-reach).
-
-## 10. Auth, config, process model
-
-Favro authenticates with **HTTP Basic: user email + API token**. There is
-no OAuth for its REST API, so the standard's §3b — loopback IP literal,
-PKCE, no OOB flow — describes a flow this platform does not offer. §17b
-records it as a deviation with that reason rather than leaving a reader
-to wonder.
-
-What does carry over is the rest of the credential handling: the token
-lives in the OS keyring (macOS Keychain, Windows Credential Manager,
-Linux Secret Service) with an environment-variable override, resolved
-first-complete-triple-wins, and `favro-mcp auth which` says which source
-won. The token is never printed, never logged, and never reaches a
-dry-run record.
-
-API tokens are user-scoped, so a team install should generate one from a
-dedicated service-style Favro user with minimum permissions rather than
-from a person's account. That sentence belongs in the README, and does.
-
-Config is read from `FAVRO_USER_EMAIL`, `FAVRO_API_TOKEN`,
-`FAVRO_ORGANIZATION_ID`, `FAVRO_LOG_LEVEL` and
-`FAVRO_MCP_SKIP_VALIDATE` and `FAVRO_ENABLE_DESTRUCTIVE`. A3 moves the
-reading and validating into `internal/config` with flags bound to the
-same names, as the siblings do.
-
-Stdout carries JSON-RPC frames only; logs go to stderr through `slog`.
-
-## 11. Reliability
-
-- **Retry**: 429 once, honoring `Retry-After` capped at 30s; a read's
-  5xx three attempts on a 250ms / 1s / 4s schedule. A write is sent
-  once: a 5xx, or a transport failure after the dial, is
-  `ambiguous_outcome`, because Favro does not deduplicate writes. A
-  failed dial sent nothing and stays `unavailable`. A single request is
-  capped at 30s including retries.
-- **Rate-limit observation**: every response's `X-RateLimit-*` headers
-  are recorded, and `favro_rate_limit_status` reports the most recent
-  snapshot without spending a call.
-- **The SDK's disconnect trap** (standard §11), which this server had:
-  `errors.Is(err, io.EOF)` does not catch the end of a stdio session. The
-  SDK reports a closed connection as JSON-RPC −32004 with the EOF only as
-  message text, so until A1 this binary exited 1 every time a host closed
-  the pipe — which every host logs as a crash. `cleanDisconnect` now
-  matches the code rather than the text, and the smoke gate closes stdin
-  the moment the last message is written, because a run that sleeps first
-  will never see the bug.
-
-## 12. Distribution
-
-Today: six platform archives, darwin, linux and windows on amd64 and
-arm64 each, plus a `favro-mcp.plugin` bundle (a Cowork /
-Claude Code plugin: multi-arch binaries and a launcher, with a
-`.mcp.json` pointing at `${CLAUDE_PLUGIN_ROOT}`), built by goreleaser and
-a shell script, published from a tag.
-
-What the standard asks for and A7 adds: a `.mcpb` Claude Desktop bundle
-packed **in Go** in the universal binary's post hook, named in
-`checksum.extra_files` and `release.extra_files` so it is hashed and
-signed rather than merely uploaded; an SBOM per archive; a keyless cosign
-signature over the checksums; `actions/attest-build-provenance`; and
-`mod_timestamp: {{ .CommitTimestamp }}` so a rebuild is byte-identical.
-The `.plugin` bundle stays — it is how this server is actually installed
-— and the manifest gate validates both against the staged tree, because
-the failures that matter are referential: an `entry_point` nothing
-stages, a `platform_overrides` entry no declared platform can reach, a
-launcher choosing between binary names no manifest mentions. The `.mcpb`
-manifest is held to a vendored copy of its published schema too, with
-its digest recorded. Both bundles stage the Windows amd64 binary alone,
-which Windows on arm64 runs under emulation; the windows_arm64 archive is
-for an install from the release page.
-
-The bundle asks for what a person sets in another client's
-configuration: the three credentials, `enable_destructive` and
-`upload_dir`, each under its variable's name without `FAVRO_`,
-lowercased. The switch defaults to the server's own default, which is
-off, and the folder to `""`, which `internal/config` reads as unset.
-Claude Desktop approves each tool and a person can always allow one, so
-a switch left off is the guard a bundle install keeps. `gates mcpb`
-derives what the bundle asks for from `config.Vars`, the registry of
-every variable the server reads, the removed ones and the three
-credentials `config.CredentialsFrom` reads included: each is asked for
-or left out with a reason, and a reason for a variable the server does
-not read is refused. A switch is never required, since it has the
-server's default and a required key with no default would leave its
-variable out of the defaults check; the API token, which `config.Vars`
-marks secret, is asked as sensitive; and no default holds a `${...}`
-reference, which the host would expand and the defaults check does not. `mcp_config.args` is `[]` and no platform override sets
-`env` or `args`, since the host takes an override's in place of the
-base's. Every command starts with `${__dirname}/` and names a binary or
-the launcher, never `LICENSE`, `NOTICE` or `README.md`, and
-`entry_point` is the file the default command runs. The defaults start
-`config.LoadFrom` as an empty environment does, the differing fields
-named (§18, 2026-10-24), and every set of the switches is started, each
-switch turned from its default, with the ones the server refuses held to
-a declared list, which is empty: `config.LoadFrom` refuses only a removed
-setting still on. The gate and the packer start from one function,
-reading the manifest, `go.mod`, `LICENSE` and `.goreleaser.yaml` once
-from one root and generating the launcher, whose install hint names
-`go.mod`'s module; a key repeated in the manifest is refused, two that
-differ only in case included, since Go's decode matches a field's key in
-any case; a LICENSE the gate cannot name is refused; and the manifest
-the packer stamps is validated again. One table, `releaseMatrix`, names
-the six pairs the release builds and the one a bundle runs another's
-binary on, and the `mcpb` and `plugin` gates both read it. Every
-variable is read through `config.Lookup`, which drops the spaces around
-a value, so spaces alone are unset, and outside `internal/config` each
-is named by config's constant rather than typed. `config.Vars` records
-what each reader reads from an empty environment, so a variable read
-only when another is set would escape it; none is, and the test that
-scans the code for `FAVRO_` names is the backstop. The staged files take the family's names:
-`server/favro-mcp-darwin`, `server/favro-mcp.exe`,
-`server/favro-mcp-linux-amd64`, `server/favro-mcp-linux-arm64` and
-`server/launch-linux.sh`.
-
-`go install` applies no ldflags, so the version falls back to
-`debug.ReadBuildInfo()` rather than reporting `dev` (A7 verifies this;
-the standard lists it as a thing that bites).
-
-## 13. Testing
-
-- Unit tests with the race detector, against `httptest` fakes. A
-  per-package coverage floor of 80% (A1 — today coverage is measured and
-  uploaded but nothing fails below a floor).
-- The MCP surface is exercised in-memory over the SDK's transport
-  (`TestMCP*`), and over real stdio by the `smoke` gate (A1).
-- `stretchr/testify` today; stdlib `testing` after A4, matching the
-  siblings and removing two dependencies.
-- **Live verification before every phase commit.** Build, reconnect the
-  MCP server, exercise the new tools against a real organization, fix
-  what the wire contract actually is, then commit. Unit tests cannot
-  catch what §2.1 describes.
-- Agent evals (A6) score whether a model can complete a task through the
-  tools at all — the failure a unit test cannot see is a tool the model
-  never finds.
-
-## 14. Confirmed decisions and their consequences
-
-| Decision | Consequence |
-|---|---|
-| Single organization, bound at startup | No tool takes `organization_id`; rate-limit budget is attributable; multi-org needs a second process |
-| Resolution caches are process-wide | A write must invalidate the right cache or the next read is stale; `force_refresh` exists on every list and resolve tool as the escape hatch |
-| Pagination never auto-aggregates | Every list tool returns `next_page` + `request_id`, and callers must pass both back |
-| Dry-run gate lives in the client | A tool cannot forget it; the test proving it is per-tool |
-| Tag tools hard-fail unknown names | A typo cannot create an org-global tag; creating one is explicit |
-| Destructive tools behind an env flag | The delete-style tools leave the default surface; breaking change; changelog says why. Which ones is read from the `confirm` input, never from a list |
-| Stdlib tests (A4) | Two dependencies gone; thousands of assertion lines rewritten once |
-| The server asks nobody; per-call approval is the client's (maintainer, 2026-10-23, for every server of theirs) | No form elicitation, no `FAVRO_REQUIRE_PROMPT` (set, it refuses to start). Registration, `confirm: true`, the sharing refusals, the witnesses and `dry_run` stay. Five tools carry `requiresUserInteraction`, unconditionally (§9.2) |
-| Widening a collection's sharing is its own tool; `organization` counts as domain-wide (maintainer, 2026-10-23) | `favro_widen_collection_sharing` is destructive, so organization-visible collections need `FAVRO_ENABLE_DESTRUCTIVE`. The ordinary writes take only members of the organization by userId and groups whose members all are, and make no new admin, and no guest a widget's owner or editor |
-| API surface snapshot committed (A5) | CI holds the completeness claim offline; the fetch stays manual and is named in the release checklist |
-
-## 15. What must be verified live
-
-Not yet verified against a real organization, and each one is a place
-§2.1 can be hiding.
-
-1. Every per-type custom-field write shape in `favro_set_card_custom_field`
-   — the README already says these are documented-but-unconfirmed.
-2. `favro_remove_attachment` — see §7.4. The presigned-query strip
-   shipped in v1.1.1 is the third attempt at this write and the first
-   that can be right in principle; nothing has yet confirmed a removal
-   live.
-3. **The shape of a webhook row, and it needs somebody to register a
-   webhook first.** A5 called `GET /webhooks` live, which is what found
-   that it answers with a bare array rather than the paginated envelope
-   — but the organization has none configured, so the call has only
-   ever returned `[]`. Three things therefore rest on fixtures:
-   - that Favro's `secret` never reaches a result. The type has no field
-     for it, so this is true by construction and a test asserts it, but
-     it has not met a real payload carrying one.
-   - which spelling Favro sends for a webhook's column scope. The
-     reference's field table says `columnIds` (array) and every example
-     shows `columnId` (string); `WebhookOptions.ColumnIDs` accepts both
-     precisely because the reference disagrees with itself, and nothing
-     has resolved which is real.
-   - `favro_delete_webhook` against a live webhook. Only the dry-run
-     path has run. This one cannot be closed by being more diligent:
-     there is deliberately no tool to create a webhook, so there is no
-     disposable one to delete.
-4. Whether `PUT /groups/{id}` replaces the member list or applies a
-   delta. The docs say delta with a per-entry `delete` flag; a live test
-   observed whole-list replacement. The client sends the full list, which
-   is correct under either reading, but the disagreement is unresolved.
-6. Whether Favro's PUT response reflects stored state or echoes the
-   request. `UpdateCard` raises `MoveIgnoredError` when the returned
-   `columnId` is not the requested one, which is the whole guard against
-   a move Favro accepts and drops — and it assumes the returned
-   `columnId` is read back rather than echoed. The assumption held for
-   the case that found the bug, where Favro answered with a stub card
-   carrying no column at all. It has not been tested against a move
-   Favro rejects for some other reason. **Partly closed 2026-09-30:**
-   `favro_update_card` and `favro_move_card` now read the card back after
-   a column or lane write and report the verdict in `notes` (§18), so the
-   read-back is no longer the caller's job. What stays open is whether
-   the echo-but-don't-store case happens at all: every move probed live
-   so far landed.
-7. Two of 4.0.0's sharing checks, which the 2026-10-23 live run could
-   not reach (§9.2):
-   - **What Favro does with an email it does not know**, in
-     `shareToUsers` or a group's `members` (§18, open). The ordinary
-     writes refuse an email whatever the answer. A widening tool for
-     invitations by email, admins and guest owners or editors waits on
-     it.
-   - **A share with a group that holds a guest.** The organization the
-     run reads lists only `administrator` and `fullMember` (§18), so
-     the refusal of such a group is held by tests alone. It needs a
-     group with a guest in it, tried by hand: sharing a collection with
-     that group must be refused `[blocked]` and name
-     `favro_widen_collection_sharing`.
-
-**Not verifiable, recorded so it stops being carried as pending:**
-whether a **lane** move carries the `widgetCommonId` requirement the
-column move turned out to have. Favro publishes no lane endpoint — 88
-endpoints in `testdata/api-surface.json`, not one of them lanes, and
-`laneId` / `isLane` appear only as card fields — so lanes are created
-and arranged in the UI and there is no API call that would set one up
-to probe. Waiting for a board with lanes is waiting on someone else's
-UI habits, not on a test. What follows is permanent rather than
-pending: the client requires the widget for both moves, which is safe
-under either answer, and the returned card is checked against
-`columnId` only, because a card on a board without lanes legitimately
-comes back with no `laneId` and checking it would invent a failure.
-
-**Closed 2026-09-18, recorded because the closing is the evidence:** a
-write carrying `widgetCommonId` drops `parentCardId` and nothing else.
-Probed on a dormant board: a card nested under a parent, in a
-non-default column, at an explicit `listPosition`, then PUT with
-`{widgetCommonId, name}` and read back. The parent was gone; the column
-and the list position were untouched. `laneId` is not testable at all —
-Favro publishes no lane endpoint — which is also why `UpdateCard`'s
-ignored-write check covers the column only.
-
-**Closed by A5, recorded because the closing is the evidence:**
-`CustomField.widgetCommonId` arrives on every row (100 of 100);
-`Card.sheetPosition` and `CardAttachment.thumbnailURL` both arrive
-(15 attachments across 200 cards); and 200 cards now read without a
-schema-validation error, where any card carrying a Vote, Members, Tags,
-Status or Multiple-select custom field previously returned a protocol
-error instead of a result.
-
-## 16. Delivery phases
-
-The server's own phases 0–9 are done and shipped (v1.1.2). What follows
-is the alignment program. Each is a branch, a PR and green CI; each
-ends with the working tree modified and waits for an explicit "start
-phase An" before the next begins.
-
-- **A0 — this document**, plus CLAUDE.md rewritten to the sibling shape.
-  Docs only.
-- **A1 — gates and supply chain. Done.** `scripts/gates` as one Go binary
-  with a registry; `--dump-schemas` and a committed `schemas.json`; the
-  coverage floor (80%, per package), `leaks` (+ `history`), `pins`,
-  `parity`, `plugin`, `schema-diff`, `smoke` and `staleness`; both shell
-  scripts ported to Go; every action pinned to a SHA with the version in
-  a trailing comment; gitleaks, go-licenses and CodeQL in CI; tool
-  versions pinned; `make check` and `ci.yml` asserted to run the same
-  set. **Merging it needs one repository setting changed by hand:** the
-  ruleset on `main` requires eight status checks by name — `lint`,
-  `build`, `coverage`, `test-mcp`, `vulncheck` and three `test-unit (os)`
-  — and this phase renames the jobs that produce them to `test (os)`,
-  `gates`, `cover`, `static`, `secrets` and `coverage`. Seven of the
-  eight required names will never appear again, so a pull request would
-  wait for them forever. Update the required list to the new names as
-  part of merging, not after. It found defects in the repository and in
-  itself while it was being built — an ordinary disconnect exiting non-zero, a fixture
-  address at a registrable domain, two environment variables the README
-  never documented, and three claims that nothing held — all fixed here
-  and recorded in §18.
-
-- **A2 — error classes and the result shape. Done.** The closed
-  vocabulary of §6.2, with the `classes` gate holding it and the document
-  to each other from both sides; `internal/render` so `content` and
-  `structuredContent` stop being the same bytes, wired in at `addTool`
-  rather than across 83 handlers; `FAVRO_ENABLE_DESTRUCTIVE`, gated from
-  the annotation so there is no second list; and the logging leaks in §9
-  removed with the test that would have caught them — which found a
-  third one nobody had recorded, the `organizationId` header, pinned by
-  an existing assertion. §17's first open decision is settled in §6.2:
-  `unverified` was written out as a message and rejected.
-- **A3 — layout. Done.** `internal/server` split into `internal/tools`
-  (the MCP surface), `internal/service` (orchestration) and
-  `internal/server` (SDK wiring, two files); `internal/favro` split into
-  the wire types and `internal/favroapi`; `internal/config` added;
-  depguard holds the direction, with each rule checked by breaking it.
-  `internal/render` became a leaf on the way, which let the client's
-  typed errors name their own class and closed the gap A2 recorded.
-- **A4 — stdlib tests. Done.** testify and go-difflib gone; 2,173
-  assertions rewritten to `if got != want { t.Errorf(…) }`, package by
-  package, the 80% floor unchanged.
-
-  The conversion was scripted, and the script edits by byte offset
-  rather than reprinting the AST, so every comment and blank line
-  survived and the diff shows only assertions. Three things it could not
-  decide were left to the compiler, which is a complete checker for
-  each: `require.Equal` on a slice does not compile as `!=` and became
-  `reflect.DeepEqual`; `require.Contains` on a slice or map does not
-  compile as `strings.Contains`; and a composite literal in an `if`
-  header does not parse without parentheses. Forty-seven assertions the
-  script declined are hand-written, most of them `JSONEq`, which is now
-  one helper in `internal/favroapi` that compares decoded values.
-
-  **go-difflib was not only a test dependency.** It generated the
-  `unified_diff` every description-editor tool returns, so replacing it
-  changed output a model reads. `internal/service/diff.go` is a Myers
-  diff with the common prefix and suffix trimmed first — which makes
-  append and prepend, two of the three callers, almost free — and
-  `TestUnifiedDiffMatchesGNUDiff` holds it to `diff -u` itself rather
-  than to a golden somebody typed. That comparison is what showed
-  go-difflib had been wrong in two ways for the life of this server:
-  it appended a synthetic empty line, which printed as a stray context
-  line at the end of a hunk, and it dropped the
-  `\ No newline at end of file` marker, which is the one thing a diff
-  cannot recover from the lines alone.
-- **A5 — API compliance. Done.** `gates api-diff` fetches
-  favro.com/developer and writes `testdata/api-surface.json` — 88
-  endpoints and 15 resource field tables, machine-owned, network, never
-  in `check`. `testdata/api-coverage.tsv` carries one verdict per
-  endpoint by hand and `testdata/api-fields-waived.tsv` one per
-  unmodeled field; `api-coverage` and `api-fields` hold both to the
-  snapshot offline in every `check`, from both directions.
-
-  Webhooks came back as the split verdict §17.4 expected: `GET` and
-  `DELETE` are implemented, `POST` is not, because it registers an
-  *outgoing* webhook — Favro's own section title — pointing at a URL
-  that has to outlive this process. The signing secret Favro returns on
-  every read is deliberately not modeled: the strongest way not to
-  leak a value to a model is to have no field for it.
-
-  The gates found four things nothing else had. §18 has them; the two
-  worth naming here are `CustomField.widgetCommonId`, which is the
-  missing half of §7.4's custom-field footgun and arrives on every row,
-  and a schema defect that made `favro_get_card` and `favro_list_cards`
-  fail outright against real data.
-
-- **A6 — live driver. Done, except the evals.** `scripts/livefavro`
-  drives the built binary against a real organization through
-  `internal/redact`; `internal/livecover` holds the steps, so the
-  `live-cover` gate and the driver read the same list; the `transcript`
-  gate holds the redaction. 122 steps, 104 passing against a real
-  organization and 18 skipped for ids it does not have.
-
-  **`scripts/evals` is built and has been run.** The note here used to
-  say it needed a model API key. That was wrong: the siblings drive the
-  model through the `claude` CLI, which is on PATH and already
-  authenticated, so the blocker never existed. 6 tasks, behind a
-  `evals` build tag, with the task table outside the tag so `go test`
-  walks every prompt without credentials, a network or a model.
-
-  Each task is scored twice — the end state read back through this
-  server, because a model's account of what it did is the least
-  reliable thing in the run, and the trace, because a task can be
-  passed by a model that guessed and was lucky. The run creates its own
-  collection and board and deletes them, so nothing a transcript
-  carries is the organization's own data.
-
-  It found `favro_move_card` on its first full pass. §18.
-
-- **A7 — distribution. Done.** The `.mcpb` bundle packed in Go by
-  `gates mcpb-pack`, with `gates mcpb` holding the committed manifest
-  against the names the packer stages; a macOS universal binary kept out
-  of the ordinary archives by `ids`; SBOM per archive, keyless cosign
-  over `checksums.txt`, `attest-build-provenance` over everything;
-  `mod_timestamp` so a rebuild is byte-identical; `favro-mcp doctor`;
-  issue forms; and `SECURITY.md`, which A8 owns and which the bug form
-  needed a commit early rather than pointing at a file that did not
-  exist.
-
-  **The bundle is packed in the universal binary's post hook and named
-  in `checksum.extra_files` and `release.extra_files` both.** The hook is
-  what MAKES it possible for the bundle to be in `checksums.txt` — every
-  binary exists and the file is unwritten — and it is not what puts it
-  there: goreleaser hashes the artifacts *it* built. Rehearsed with
-  `goreleaser release --snapshot`, and the bundle is in the checksum file
-  and agrees about its version in all five places §10b lists.
-
-  The manifest gate carries three checks the standard names and the
-  sibling implementation does not have, because a review found them
-  after it shipped. The sharpest is that a claimed platform must spawn
-  the file staged *for* it: deleting the `win32` override leaves every
-  command naming a file the bundle really carries, and Windows then runs
-  the macOS universal binary. The launcher is generated from the same
-  table the packer stages from, as `plugin.go` already does, so the one
-  thing no manifest mentions cannot drift from the one thing it runs.
-
-  Six defects, in §18. `doctor` found one by being run against a real
-  organization on its first build; a test fixture chosen not to match a
-  regex found another; and the pre-commit reviews found three that
-  nothing else could have — a count that counted registrations instead
-  of replacements, four lines of release configuration whose deletion
-  every gate would have called green, and a tag name reaching a shell in
-  the job this phase gives a signing identity to.
-- **A8 — documentation. Done.** `docs/configuration.md`,
-  `docs/development.md`, `docs/security.md` and `CODE_OF_CONDUCT.md`;
-  `SECURITY.md` came a phase early in A7, because the bug-report form
-  points at it. README gains a table of them and a "Verifying a
-  download" section.
-
-  The gate is the point rather than the prose. `staleness` now reads ten
-  documents instead of six, and three rules were added, each deriving
-  its expected set from the code: every gate in the registry is named in
-  `docs/development.md`, every `FAVRO_*` the source reads is documented
-  in `docs/configuration.md` as well as the README, and any prose count
-  of the delete-style tools is held against the number the binary
-  annotates. Each was confirmed by breaking it.
-
-  The last of those found the defect this phase exists to prevent, on
-  its first run: A2 corrected §8's hand-typed "twelve" to thirteen, A5
-  then added a fourteenth delete tool, and the changelog sentence stayed
-  at thirteen. §7b in miniature, for the third time in this repository.
-  §18 has it.
-
-- **B1 — asking the person, and uploads from one directory (3.0.0).**
-  §9.1 and §9.2 as they stood. The module path moves to `/v3`, because removing the
-  upload tools from the default surface is breaking. The questions, the
-  signed state and `quoted()` are ported from the sibling that last
-  fixed them, including links broken in any script and refusals before
-  the retry reads.
-
-- **B2 — the client decides (4.0.0).** §9.2. The question and
-  `FAVRO_REQUIRE_PROMPT` go, and the setting refuses to start; `confirm:
-  true` on every destructive call; the mark on five tools;
-  `favro_widen_collection_sharing`; the ordinary writes share only inside
-  the organization; `favro_delete_widget` names its scope. The module
-  path moves to `/v4`. Run live on 2026-10-23: `make live` passed 120
-  steps, failed none and skipped 19; `livefavro -writes` passed 15
-  checks, failed none, and its sweep found no probe left. Each run
-  failed first on the driver, not the server (§18). Two checks wait on a
-  person (§15). Follow-up, not in B2: `favro_update_group`'s
-  members as add and remove lists, so leaving someone out stops removing
-  them; and a widening tool for invitations by email, admins and guest
-  owners, after a live check of what Favro does with an unknown address.
-
-### Closing a phase
-
-`make check` green, tests for the new behavior, `/simplify` and
-`/security-review` over the pending diff with findings resolved or
-explained, a look at the schema diff for breaking changes, live
-verification where the phase touched the wire, and the changelog entry
-under `[Unreleased]`. Tags are cut by the maintainer, never proposed.
-
-## 17. Open decisions
-
-1. ~~**Does `unverified` (§6.2) earn its place as an error class?**~~
-   **Decided in A2: no.** Writing the message settled it. An error class
-   renders on a result with `IsError` set, which says the call failed —
-   and a caller that retries on that repeats a write that may already
-   have landed, so the class would cause the damage it warned about.
-   It also carries nothing per call, because this server does not read
-   back. §6.2 has the reasoning and what to do instead.
-2. **Does the `.plugin` bundle stay once `.mcpb` exists?** Two bundles is
-   two manifests to keep honest. Answer in A7; the current lean is yes,
-   because the plugin is how this server is actually installed.
-3. ~~**How much of `favro_get_card_full`'s fan-out belongs in `service`
-   versus `tools`?**~~ **Decided in A3: all of it.** `FullCard`,
-   `FullCardIdentity` and every `dereference*` step live in
-   `internal/service`; the tool is a schema, one call and a return. The
-   fan-out is the only genuinely concurrent orchestration in the
-   repository, and concurrency owned by a protocol handler is
-   concurrency nothing can test without a protocol session.
-4. ~~**Do webhooks come back?**~~ **Decided in A5: two of the three.**
-   `GET /webhooks` and `DELETE /webhooks/{id}` are implemented —
-   listing and removing what somebody else registered needs no
-   receiver. `POST` is not: Favro calls them *outgoing* webhooks, and
-   it would point Favro at a URL that has to outlive a stdio process a
-   host starts and stops. The split is a row apiece in
-   `testdata/api-coverage.tsv`, which is the kind of distinction a
-   per-endpoint record holds and a prose paragraph cannot — the
-   argument for the record, made by using it.
-5. **Should "Favro accepted it and did nothing" be its own error
-   class?** `MoveIgnoredError` (2026-09-15) is the first error raised
-   from an observation rather than a status, and it is classed
-   `unavailable`, which §6.2 defines as "retry later; the arguments are
-   not the problem". Half of that is right — the arguments passed every
-   check and Favro raised no complaint — and half is wrong, because the
-   result is deterministic and retrying produces it forever. None of the
-   nine says "this will never work; report it". This also weakens the
-   second half of decision 1 above: `unverified` was rejected partly
-   because "this server does not read back, so the flag would be
-   constant for a given tool", and this path does check one field of the
-   write's own response per call. It is not a read-back (§15 item 6) and
-   one path is not a pattern, so the class stays `unavailable` until
-   there is a second instance to generalize from. **Maintainer's call.**
-6. **Does the ignored-write check become a mechanism?** Three other
-   paths have the same shape on record and no guard: a custom-field
-   write to a field the card's widget has not enabled (§2.7), the
-   collection `shareToUsers` / `sharedToUsers` key, and `UpdateTags`'
-   unresolved delta-versus-whole-list question (§15 item 4).
-
-   **The second instance is now confirmed**, which is what this was
-   waiting for: a custom-field write to a field the card's widget has
-   not enabled returns HTTP 200 with the FULL card and the field simply
-   absent from `customFields` — probed live 2026-09-15 against a field
-   belonging to another widget. So the error is
-   `WriteIgnoredError{Field, Want, Got}` rather than a move-shaped one,
-   and what generalizes is the discipline — compare what was asked for
-   against what came back, in the write's own response. The comparison
-   itself stays per path: "is my column the returned column" and "is my
-   field present at all" are different questions, and a shared
-   `confirm()` that answered both would be a shape nothing fits.
-
-   **The custom-field guard is still not built, and it is blocked on one
-   thing only a person can do.** The negative case is confirmed; the
-   positive one is not, because no board reachable this session has a
-   custom field enabled on it and there is no API to enable one. A
-   presence check written without having seen a *successful* write's
-   response would turn every working write into an error the moment
-   Favro omits the array — a guard written against an assumed response
-   shape, which is the failure this repository keeps recording. §15
-   item 1 already asks for the same setup: enable a custom field on a
-   board in the Favro UI, and the per-type write shapes and this guard
-   can both be settled in one pass.
-
-   **Built 2026-09-30, as a note rather than an error.** A dormant board
-   with Text fields in use settled the positive case (§18): a successful
-   Text write reads back as `{customFieldId, value}` in `customFields`.
-   `favro_set_card_custom_field` reads the card back and reports whether
-   the field is on it and what it carries. A note rather than
-   `WriteIgnoredError`, because only the Text shape has been seen
-   succeed, and a write that clears a field legitimately leaves it
-   absent. A pre-check on `CustomField.widgetCommonId` was ruled out by
-   the same probe: cards carry values for fields whose `widgetCommonId`
-   is another board, so it would refuse writes that land.
-
-## 17b. Deviations from the shared Go MCP server standard
-
-Adopted 2026-09-13. Where this server differs, the difference is a
-decision rather than drift.
-
-| The standard says | Here | Why |
-|---|---|---|
-| §3b Login: loopback IP literal, random port, PKCE S256, no OOB flow | HTTP Basic with a user email and an API token, stored in the OS keyring with an env override | Favro's REST API offers no OAuth flow at all. Everything in §3b that can carry over does: keyring with file fallback, an env override, a subcommand that says which source won, and a token that is never printed |
-| §7 Verify against the discovery document or specification, never the reference page's prose | There is no discovery document; verification is a live read-back | Favro publishes a reference page that has been observed to disagree with the live API, and returns 200 for a body it ignores (§2.1). The stronger rule replaces the weaker one rather than excusing it: §4.7 |
-| §1 An API-coverage gate where the server speaks to a documented API surface | The surface snapshot is scraped from the reference page rather than fetched as a machine-readable document | Same cause. The snapshot is still machine-owned and rewritten only by `gates api-diff`; the hand-written file carries verdicts only (A5) |
-| §3 A read-only mode registers only read tools and requests read-only scopes | Read-only mode is the absence of `FAVRO_ENABLE_DESTRUCTIVE` plus `--dry-run`; there are no scopes to request | Favro's API tokens carry the user's own permissions and cannot be scoped down at issue time. The honest mitigation is the README's advice to issue the token from a least-privileged service user |
-| §3 Every risky variant is its own tool, never an argument | `favro_delete_card` and `favro_delete_widget` take `everywhere: true` for the delete from every widget or collection | Both variants are deletes, behind the same flag and `confirm: true`, so a client that always allows the tool has already allowed a delete; the wider one is named in the arguments a client's prompt shows, and `favro_delete_widget` refuses the call that names neither (maintainer, 2026-10-23) |
-| §10b Every server ships a `.mcpb` | Ships both, since A7 | The `.plugin` is the install path this server actually has users on. Dropping it to satisfy the letter of the rule would break them, so the `.mcpb` was added beside it rather than instead of it |
-| §10b "Say in the manifest that the bundle does not log you in" | The manifest says the opposite: this bundle *is* the whole setup | The siblings cannot log a user in because they need an OAuth Desktop client and a terminal `login` first. Favro is a token, so `user_config` collects all three values the server needs and the install is complete. The rule's purpose — do not ship an install that appears to work and then fails on the first call — is met by saying which three values, and where in Favro to find them |
-
-Everything else is adopted as written, including the preamble's three
-obligations for any rule adopted — make it a test, derive the list from
-the code, assert a floor on how much the checker read.
-
-**Checked against the siblings rather than against this table,
-2026-09-15.** Reading the four repositories' gate registries and `check`
-targets found two gates google-drive-mcp had and this one did not, and
-both are now here: `outcomes` (§18) and `registry`. Two entries that
-looked like gaps — `tool-names` and `config-vars` — are utility commands
-in the siblings, in no `check` target, so there is nothing to adopt.
-This server is ahead of chat and docs on evals, and of chat, docs and
-drive on `secrets` and `tidy` in `check`. The table above is the whole
-of the difference now, and it is six decisions rather than a backlog.
-
-## 18. Evidence log: conventions checked, changed, or rejected
-
-Sources: the shared standard (read in full, 2026-09-13), the four sibling
-repositories' Makefiles, gate registries, CI workflows and architecture
-documents, the MCP Go SDK v1.7.0 source in the module cache, Favro's
-published REST reference at favro.com/developer, and this repository's
-own code and history. Rows are dated where they were checked.
-
-Three tiers, and the row says which: **verified here** against a primary
-source or by running something; **adopted** from a sibling that verified
-it; **asserted**, meaning believed and not yet held by anything.
-
-| Date | Claim | How checked | Verdict |
-|---|---|---|---|
-| 2026-11-02 | A commit footer's value is one line, and a paragraph holding a line that is not `Token: value` is not a footer block | Conventional Commits 1.0.0, item 8: "Each footer MUST consist of a word token, followed by either a `:<space>` or `<space>#` separator"; item 10: "A footer's value MAY contain spaces and newlines, and parsing MUST terminate when the next valid footer token/separator pair is observed" | **Refuted.** `schema-ack` reads a footer paragraph as one whose first line starts a footer, with either separator. Inside it, a line that starts a footer ends the value before it, and any other line continues that value, so a wrapped value counts, and a `Closes #12` footer beside it does not drop it. A `Token #value` footer counts toward the block but acknowledges nothing: item 12 writes `BREAKING CHANGE` with a colon and a space. A wrapped line that itself reads `word: ` starts a new footer, as item 10 says |
-| 2026-11-01 | A commit footer's token is matched exactly, so `SCHEMA-CHANGE:` must be written in capitals | Conventional Commits 1.0.0, item 15: "The units of information that make up Conventional Commits MUST NOT be treated as case-sensitive by implementors, with the exception of BREAKING CHANGE which MUST be uppercase"; item 16: "BREAKING-CHANGE MUST be synonymous with BREAKING CHANGE" | **Refuted.** `schema-ack` reads `SCHEMA-CHANGE:` in any case, and `BREAKING CHANGE:` and `BREAKING-CHANGE:` only in capitals |
-| 2026-11-01 | A write that changes something may say `destructiveHint: false` when it loses little | The MCP schema 2025-11-25, `ToolAnnotations.destructiveHint`: "If true, the tool may perform destructive updates to its environment. If false, the tool performs only additive updates", default true. The shared standard §3, decided 2026-11-01 from the reference filesystem server (`create_directory` false, `write_file` and `edit_file` true) and GitHub's server (issue creation and reactions false, its other writes unset, which reads as true) | **Refuted (adopted).** 21 writes said false and change what is there: the updates, the move, archive and unarchive, the three description edits, a card's custom field, tags and dependencies, and the bulk tag update. They say true now and stay registered by default, with no `confirm`: the gate reads the `confirm` input rather than the hint, so the default surface is unchanged. Only the twelve writes that add say false, each named in `TestOnlyToolsThatAddSayTheyAreNotDestructive`. An append stays true, since it writes the whole description back; adding a tag or a dependency changes the card, as the family's link tools do. `TestEveryWriteIsClassified` names every write as adding, changing or destroying, so a delete written without `confirm` fails the build. The release note says Claude Desktop "may" ask, on the review criteria's "determine auto-permissions in Claude" (row 2026-10-24); Desktop itself is not probed, so the docs name only claude.ai and Codex |
-| 2026-10-24 | The family-rules branch holds the rules it adopts | `/code-review medium` over `v4.0.0..family-rules` | **Verified here — false in six places, each fixed with a test that fails on the old code.** Nothing held `api_token` to `sensitive`: `config.Var` has a `Secret` flag now, and a secret's field must be sensitive, with a floor. `FAVRO_MCP_SKIP_VALIDATE` skipped the credential check for any value, `false` included; it is a switch. The archive check typed the six pairs beside the plugin's tables; one `releaseMatrix` holds them and the emulated pair for both gates. An unrecognized LICENSE passed silently; `.goreleaser.yaml` was read twice; the README's plugin section named no Windows binary, which `staleness` now holds. Kept: Windows 10 on ARM has no x64 emulation, which Windows 11 has, so a bundle install there fails; every server stages amd64 for win32, and a native arm64 choice is a family change, deferred. And `config.Vars` records only what each reader reads from an empty environment (§12) |
-| 2026-10-24 | The bundle gate and config are no more complex than the rules need | `/simplify` over the same range, one agent reading reuse, simplification, efficiency and altitude | **Verified here — false in five places, fixed.** `defaultJSON` marshaled a string only compared with "nothing", the same test as `defaultValue() == nil`, and is gone. The launcher typed its module path and four helpers checked it against `go.mod`; it is generated from `go.mod` through the one `modulePath`. The archive matrix was stated twice (row above). `auth.Env*` aliased `config.Env*`, with callers split; config's names are the only ones. `auth`, a leaf by §5, imported `config`: its callers read the credentials through `config.CredentialsFrom` and hand them in, and depguard's `auth-is-a-leaf` holds it. `Load` wrapped `LoadFrom` for two callers passing `os.Getenv`, and is folded into it |
-| 2026-10-24 | The branch opens no hole | `/security-review` over the same range | **Verified here — nothing at confidence 8 or above.** One note acted on: a switch marked required with no default passed the defaults check, because the host's environment leaves such a key out, so a required switch is refused. The family's second-round fixes went in with these: `fieldDiff` reports an unexported difference whatever else differs, and compares a pointer by what it points at; a repeated key is found under case folding, named with quotes when it holds a dot or a bracket, and a walk that errors refuses; the `FAVRO_` scan reads a run another operand completes as a prefix; a default holding `${...}` is refused; one `modulePath` parses `go.mod`, a trailing comment included; the docs check matches a name whole on both sides and skips a `*` pattern; and a server variable is spelled once, in `internal/config`. The registry gate reads no bundle manifest, so the fix routing it through `committedManifest` does not apply |
-| 2026-10-24 | A platform override may carry its own `env` or `args`, and a command may be relative to the bundle | `~/.claude/mcpb-bundle-evidence.md` §E: anthropics/mcpb v2.1.2 `src/shared/config.ts` L114-124 takes `platformConfig.env \|\| result.env`, and an override's `args` replace the base's; MANIFEST.md shows a relative command once and never says what it resolves against, while L530 fixes `${__dirname}` to the extension's directory. Claude Desktop not probed | **Adopted — false.** An override's `env`, an empty one included, drops every base variable on that platform, and an argument such as `--dry-run` would configure the server past every check on `env`. `gates mcpb` refuses an override's `env` or `args`, a missing, null or non-empty `mcp_config.args`, and a command that does not start with `${__dirname}/` or names anything but a binary or the launcher |
-| 2026-10-24 | Windows on arm64 needs its own binary in the bundle | A manifest names one command per platform and has no key for the architecture (`~/.claude/mcp-server-standard.md` §10b); Windows on arm64 runs amd64 programs under emulation | **Adopted.** Both bundles keep the Windows amd64 binary. The release adds a `windows_arm64` archive, for someone installing from the release page; `gates mcpb` holds the matrix to the six archives and `gates plugin` names the arm64 build as emulated |
-| 2026-10-24 | The bundle's defaults start the server as an unconfigured one does | The bundle `goreleaser release --snapshot` packed, its Linux launcher started over stdio with placeholder credentials and `FAVRO_MCP_SKIP_VALIDATE=1`, once with the environment the reference host builds from the defaults (`FAVRO_ENABLE_DESTRUCTIVE=false`, `FAVRO_UPLOAD_DIR=` empty) and once with neither set; `mcpb validate` 2.1.2 on its manifest | **Verified here.** 69 tools both ways, the same names; 84 with `enable_destructive`, 71 with an upload folder, 86 with both. With the 4.0.0 placeholder as the folder, 69 tools and the not-absolute warning. The manifest passes `mcpb validate` |
-| 2026-10-24 | A blank optional field in the bundle reaches the server empty | `~/.claude/mcpb-bundle-evidence.md` §A: anthropics/mcpb v2.1.2 `src/shared/config.ts`, the code its README says Claude for macOS and Windows loads bundles with, builds the environment from each key's `default` and leaves `${user_config.x}` as written when there is none ("should handle undefined variables by keeping them as-is"). Whether Claude Desktop stores `""` or omits the key is not documented | **Adopted — false on the reference host.** The 4.0.0 bundle's `upload_dir` had no default, so a blank folder could reach the server as that text, which it logs as not an absolute path and leaves uploads off. It defaults to `""` now, and `internal/config` reads `""` as unset for `FAVRO_UPLOAD_DIR` and `FAVRO_ENABLE_DESTRUCTIVE` (`TestLoadUploadDir`, `TestLoadDestructive`). `gates mcpb` refuses an optional key with no default or with `multiple`, and a bundle whose substituted defaults load otherwise than an empty environment |
-| 2026-10-24 | A bundle install has a second approval behind the server, as Claude Code's ask rules are | The same evidence file, §C: claude.com/docs/connectors/getting-started, "Select Allow once to continue, or Always allow to skip the prompt for that tool from now on"; claude.com/docs/connectors/building/review-criteria, readOnlyHint and destructiveHint "determine auto-permissions in Claude"; anthropics/mcpb `70fe3b34`, `tools` declared for display and read only by `init`. No page names desktop extensions; Claude Desktop not probed | **Adopted — false.** Claude Desktop approves per tool and a person can always allow one, so `enable_destructive` defaults to off, the server's own default, and `gates mcpb` reads that default through `config.LoadFrom` with an empty environment and refuses any other, compared as JSON. The manifest has no `tools` list: the switch and the upload folder change what registers |
-| 2026-10-24 | `privacy_policies` is optional for a bundle | anthropics/mcpb `70fe3b34` MANIFEST.md L254: "Required when the extension connects to external services (first- or third-party) that process user data", unenforced by the schema and by `mcpb validate`. Favro's homepage links its privacy policy at help.favro.com; that URL answered 200 on 2026-10-24, and www.favro.com/privacy-policy redirects to it | **Adopted — false.** The manifest names Favro's privacy policy and `gates mcpb` refuses an empty list |
-| 2026-10-23 | `make live`'s share steps refused as `[blocked]` because the members check refuses a real member | `make live` with temporary driver output, redacted: which result resolved `{own_user_id}`, the keys and roles of each users-listing entry, and the arguments each share step sent | **Verified here — false.** The driver found the signed-in account's entry in the users listing, and `favro_resolve_user` and `favro_get_user` returned the same `userId` with `organizationRole: fullMember`. The driver then sent the literal `"{own_user_id}"`: it resolved a placeholder at the top level and inside a list, not inside a map inside a list, which is every share entry's shape. The server refused that string correctly, and the earlier failure naming `AnyUserID` was the same. The driver now resolves a placeholder at any depth, and `TestEveryPlaceholderAStepNamesIsResolvedOrSkipsTheStep` holds every step |
-| 2026-10-23 | Reading a collection back after deleting it answers 404 | `livefavro -writes`: a probe collection deleted with `confirm: true`, then `favro_get_collection`; the sweep found nothing left by name | **Verified here — false.** Favro answered 403, as for a collection the token cannot see. The driver counts `[not_found]` or `[forbidden]` on that read-back as gone, and only after the delete succeeded |
-| 2026-10-23 | A server should confirm its riskiest writes with the person itself, through MCP form elicitation | `~/.claude/mcp-approval-evidence.md`, every quote re-read at its source on 2026-10-23: the MCP specification (`server/tools`, `client/elicitation`: the client may gather an answer "from the user or other sources"); 110 servers, the top 100 by public usage signals and ten first-party ones; Claude Code's hooks and the open reports of an elicitation declined undrawn, left hanging or cut to three lines; Codex accepting a form with no fields under full access; Anthropic's figures on approved prompts (93–97%) and planted commands caught (13.6%) | **Refuted (adopted: documents and source, not probed live here).** The specification gives per-call consent to the client and never makes the answer a consent control. 83 of the 91 servers with risky writes never ask; the 8 that do pick their own scope. No client's permission rules match a question, and several answer or drop it with nobody looking. So from 4.0.0 the server asks nobody (§9.2), and the rows below dated 2026-09-30 and 2026-10-10 describe the question this replaces |
-| 2026-10-23 | claude.ai, Codex and VS Code prompt by `destructiveHint` | The same evidence file, its check S10: Codex's source in its default `auto` tool mode, claude.ai's documentation, VS Code's source | **Corrected (adopted).** Codex and claude.ai prompt by `destructiveHint`. VS Code never reads it and prompts on every tool without `readOnlyHint: true`. `TestEveryToolIsAnnotated` keeps `readOnlyHint` off every tool that writes, and `destructiveHint` is true on the fifteen destructive tools. **Superseded 2026-11-01**: it is true on every write that changes something, and false only on the writes that add |
-| 2026-10-23 | Claude Code's `requiresUserInteraction` prompts on every call under any allow rule, and refuses a marked tool headless | The same evidence file, check S15: code.claude.com/docs/en/mcp and the Claude Code changelog | **Refined (adopted).** From v2.1.199 Claude Code prompts on every call in every interactive mode, allow rules and hooks included, with no "don't ask again" from v2.1.246; where no prompt can be drawn (dontAsk, `-p` without a permission host) it denies the call, and an Agent SDK host's `canUseTool` can approve it. Anthropic documents it for "tools whose permission prompt is itself the point". It now sits unconditionally on five tools (§9.2), held by `TestOnlyTheWidestWritesPrompt`; the 2026-10-10 row's middleware is gone |
-| 2026-10-23 | Widening access may be an argument of an ordinary write | The same evidence file, checks S11 and S13: claude.ai, Codex, VS Code and Copilot remember "always allow" per tool; Claude Code matches an MCP argument only in a command-line deny rule; Notion, Slack, Canva, Figma, Asana and Airtable offer no sharing tool, and Box ships its sharing tools off | **Refuted for this server (adopted).** A client's standing approval of `favro_update_collection` would carry `public_sharing: 'public'`, an invitation by email or a new admin unseen. They are refused there, and opening a collection is `favro_widen_collection_sharing` behind the destructive flag (§9.2), held by `TestOrdinaryWritesShareOnlyInsideTheOrganization` and `TestCollectionWritesRefuseWideSharing` |
-| 2026-10-23 | Favro's members are the users whose `organizationRole` is `administrator` or `fullMember`; `guest`, `externalMember` and `disabled` are not | Favro's REST reference, the organization roles it lists for a user; `make live` on 2026-10-23, the keys and roles of every entry `GET /users` returned | **Verified here in part.** Every entry carried `userId`, `email`, `name` and `organizationRole`, spelled so, as non-empty strings, and the only roles returned were `administrator` and `fullMember`. The signed-in account, a `fullMember`, passes the members check in the share steps. `guest`, `externalMember` and `disabled` were not seen and rest on the reference. The ordinary writes share only with those two roles and refuse every other value, a new one included, so a wrong vocabulary refuses a member rather than admitting a guest |
-| 2026-10-23 | What Favro does with an email it does not know, in `shareToUsers` or a group's `members` | Nothing yet | **Open.** The ordinary writes refuse an email whatever the answer. A widening tool for invitations, admins and guest widget owners or editors waits on a live probe of this |
-| 2026-10-10 | A tool the server asks about should also carry Claude Code's `requiresUserInteraction` mark | code.claude.com/docs/en/mcp, "Require approval for a specific tool" and "Respond to MCP elicitation requests", and /docs/en/hooks, "Elicitation output", as read for gitlab-mcp and google-chat-mcp on 2026-10-09 and 2026-10-10; MCP Go SDK v1.8.0 `ClientCapabilities`, which reads the request's `_meta` before the session's; `TestTheMarkIsOnlyForAClientThatCannotAsk` on three protocols as three kinds of client, which fails when the middleware edits the server's own tool | **Adopted, and held here by the test.** Claude Code prompts for a marked tool on every call, which no allow rule skips, and refuses one headless. With the server's question as well, a delete asked twice in google-docs-mcp. So only a client that cannot ask gets the mark, on exactly the ten tools that ask (§9.2). A client may declare form elicitation to `tools/list` and none to `tools/call`, and get neither the mark nor a question; it gains nothing, since a client that declares form elicitation can accept the question itself, and `FAVRO_REQUIRE_PROMPT=true` refuses such a call. One prompt in Claude Code not yet seen live. **Superseded 2026-10-23**: the server asks nobody, and the mark is on five tools for every client |
-| 2026-10-01 | A write retried after a 5xx or a lost connection is safe | Read `execute`; tests drove each write method against a server answering 500 and 503, then 404, and against one that closes the connection after reading the request | **Verified here — false.** Every method was retried on 5xx, so a POST created twice and a DELETE retried into the 404 its own first attempt caused, reported as `not_found`. A transport error after send was `unavailable`, which says retry. Writes now go once and fail as `ambiguous_outcome`; the `*url.Error` text also carried the query, an upload's filename included, and is stripped |
-| 2026-09-30 | Post-write read-back of card placement and custom fields (#77) | On a dormant board: a probe card created, a Text field used by no card on the board set, a Text field from another board set, moved to a second column with `favro_move_card`, moved back with `favro_update_card`, moved with `skip_verify`, then deleted and read back as gone. A second probe card set the Text field most cards on the board carry. Also read which fields the board's cards carry against each field's `widgetCommonId` | **Verified here.** Both moves read back verified; `skip_verify` added no note. Both unused fields came back absent from `customFields` after a 200, and the tool said so. The used field read back present with the value written, as `{customFieldId, value}`. The board's cards carry values for fields whose `widgetCommonId` is another board, so `widgetCommonId` does not say where a field is enabled. Not probed: a move Favro echoes but does not store (none seen), a cross-board write (it would add a card to a second board), and lanes (§15) |
-| 2026-09-30 | Asking the person works against a real organization | `livefavro -asks` on a build of this branch: a probe tag it created, deleted with a decline (still there) and then an accept (gone); both card upload and a public collection asked with names read from Favro and declined, and the collection read back as not created | **Verified here**, on protocol 2025-11-25, where the SDK asks inside the call. 2026-07-28 is stateless in go-sdk v1.8.0 (`server/discover` and per-request `_meta`), which the raw-JSON-RPC driver does not speak, so its round trip is held by the in-memory tests only. The comment upload was skipped: the organization has no comment to attach to. **Superseded 2026-10-23**: the question is gone, and `livefavro -writes` drives `confirm: true` and the sharing writes instead |
-| 2026-09-30 | The SDK sends no `structuredContent` for a result that asks | Read `mcp/server.go:438–446` of go-sdk v1.8.0 in the module cache: when the handler's result has `InputRequests`, the output is not marshaled | **Verified here.** `addTool` must not fill `Content` for such a result either, since content and input requests are exclusive on the wire; it checks `InputRequests` before rendering a summary. **Superseded 2026-10-23**: no tool returns input requests any more, and the check went with the question |
-| 2026-09-30 | `os.Root` keeps an upload inside `FAVRO_UPLOAD_DIR` | `TestMCP_UploadAttachment_ReadsOnlyTheUploadDir`: a relative path, an absolute one inside, a `..` that stays inside, a `..` out, an absolute path elsewhere, and a symbolic link out, each through the real tool | **Verified here.** Every way out is refused before a byte is read or a request sent, and the refusal does not repeat the path |
-| 2026-09-30 | An empty form is a valid elicitation, and a client that cannot ask declares nothing | The sibling that built this first checked the MCP specification's schema (properties is an open map with no minimum) and the SDK's capability handling | **Adopted.** The same two known client limits apply: one client auto-accepts an empty form under its most permissive policy, and one reports a skipped question as an accept. **Superseded 2026-10-23**: the server puts no form |
-| 2026-09-30 | `public_sharing: 'public'` opens a collection to anyone with the link | This repository's own schema text, written from Favro's reference | **Asserted.** Not probed live: making a real collection public to test it is the act it would test. `livefavro -writes` opens a probe collection to the organization only, and reads it back |
-| 2026-09-18 | A card write carrying `widgetCommonId` detaches a nested card | Reported with a live repro against a real organization, then re-run against the released v2.0.1 binary as a control: five behaviors, the control failing on exactly the orphaning row and matching everywhere else | **Verified by the reporter — the claim is true.** A rename is enough, and the 200 is byte-identical to a write that changed nothing structural, so nothing in the answer says the card moved. The control run is what makes it evidence rather than a demonstration. Guarded in `settleParent`, wired into `favro_update_card` **and** `favro_move_card` — the first patch covered only the former, and since `errMoveNeedsWidget` every column move carries `widgetCommonId`, which made the unguarded tool the one the other's description recommends. The breadth is settled by the row below rather than by this one |
-| 2026-09-18 | How far a write carrying `widgetCommonId` re-seats a card | Probed live on a dormant board: a card nested under a parent, in a non-default column, at an explicit `listPosition`; PUT `{widgetCommonId, name}` and read back, diffing `parentCardId`, `columnId`, `laneId`, `listPosition`, `sheetPosition` | **Verified here — the earlier wording was too broad.** Only `parentCardId` is dropped. `columnId` and `listPosition` came back unchanged, and `sheetPosition` was assigned rather than reset. So "re-seats the card from the body alone" overstated it, and §7.4 now says the narrower thing the evidence supports: the guard covers the whole bug rather than a third of it. The write's own response omitted `parentCardId` while the card still had one moments earlier, which is the §2.1 shape — the answer is identical whether or not anything was lost. `laneId` untested: no board reached live has lanes |
-| 2026-10-26 | A structural write naming a nested card's own parent moves it to the end of the parent's children | Reported from use: a column-only `favro_move_card` on a nested card moved it to the bottom of its parent. Probed live on a scratch collection made for the probe and deleted after it: a parent with three children at `sheetPosition` 0, 1 and 2; a column move through the released tool, then column moves naming `sheetPosition` 1 and 0 | **Verified here — the report is true, and `sheetPosition` is the field.** The released tool's move took the first child from 0 to 3, after its last sibling: Favro treats a body naming the parent as re-nesting the card. A move naming the card's current `sheetPosition` kept it, 1 stayed 1 and 0 stayed 0, and an untouched sibling kept its 2. `listPosition` moved to the end of the destination column, which is what a column move does and not this bug. The September row's "`sheetPosition` was assigned rather than reset" was this, unread. `settleParent` now carries the card's `sheetPosition` with its parent, and the read-back compares it |
-| 2026-10-27 | A card's to-do list copy, and which copy `unique` keeps | Reported from use: `favro_get_card_full` by `sequential_id` returned the card's to-do list copy, with no board or column. Probed live on a scratch collection made for the probe and deleted after: a card on a board, assigned to the signed-in member; `GET /cards` by `cardCommonId` and by `cardSequentialId`, with and without `unique` | **Verified here — the report is true, and Favro's `unique` is not one rule.** Assigning the card gave it a second copy with `todoListUserId` set and no `widgetCommonId` or `columnId`, and both listings put that copy first, which is what the first-row lookup took. With `unique=true`, Favro kept the to-do copy by `cardCommonId` and the board copy by `cardSequentialId`. So the lookup now takes the first board copy and lists every copy in `placements`, and `favro_list_cards` with `unique` by either of those two filters lists every copy and keeps the board copy itself. The other filters cannot match a to-do copy, so their `unique` stays Favro's own. Deleting the card `everywhere` removed both copies |
-| 2026-09-13 | The SDK writes the same bytes into `content` and `structuredContent` when a tool declares an output schema | Read `mcp/server.go:398–435` in the module cache: the marshaled output becomes `StructuredContent`, and when `res.Content` is nil the same serialized JSON is added as a `TextContent` block | **Verified here.** Every tool in this repository returns a typed output and a nil result, so every one of them is in that state. Standard §2 forbids it: the two halves must both be present and must not be the same bytes. Fixed in A2 at `addTool`, so the fix is one function rather than 83 handlers that each have to remember |
-| 2026-09-13 | The debug request log cannot reconstruct its subject | Read the request logger in the client package
-(`internal/favroapi/client.go`; it was under `internal/favro` until A3
-split the wire types out): it logs `req.URL.RawQuery`, and Favro's query strings carry `cardCommonId`, `widgetCommonId` and `sequentialId` | **Verified here — the claim is false.** Standard §4's rule is that a log must not identify or reconstruct the subject; an id in a query string does both. A2 logs the parameter names instead, which is the part a debug line is for |
-| 2026-09-13 | "Never put tenant data in commits, PRs, docs or tool descriptions" is enforced | Searched the repository for a gate, a test or a CI step holding it. There is none; gitleaks is not configured either | **Verified here — unheld.** The loudest rule in CLAUDE.md is the one nothing can fail. A1 |
-| 2026-09-14 | A live driver that runs clean is a live driver that covered something | Ran the first version: 75 of 98 steps passed and it reported a tidy result | **Verified here — the claim was false.** The steps ran in alphabetical order, so every write was attempted before the reads that would have supplied it an id, and 15 were skipped for want of one. A driver can report a clean run having exercised the eight tools that take no arguments. The seed sequence is hand-written now, because the dependencies are Favro's: columns are per widget, comments per card, and a card listing needs a widget to scope it |
-| 2026-09-14 | The transcript gate catches prints that do not redact | Wrote it to look for writes to os.Stdout, and its own floor failed: one write found in the whole driver | **Verified here — the claim was false.** The driver wraps the terminal in a `bufio.Writer` once and every print goes through the field, which a syntactic rule cannot follow. The rule that works needs no dataflow: check who may *name* os.Stdout or os.Stderr. Three functions may; everything else has to go through the printer, and the printer redacts. The floor is what caught it — a gate finding one write would otherwise have passed |
-| 2026-09-14 | A defect fixed once stays fixed | The live driver wrote invalid UTF-8 into its own transcript | **Verified here — the claim was false, by me, in the same week.** `clip` truncated at a byte offset and split a rune, which is exactly the defect A4 had already found and fixed in `internal/render` — reintroduced by writing the obvious three lines again in a new file. Neither the tests nor the gates caught it; decoding the transcript did |
-| 2026-09-14 | The live driver covers the tool surface | Built `live-cover` and ran it | **Verified here — 74 of 332 options had no step**, across every tool with more than its required arguments. Covering the alternatives brought it to 309, and the 23 that remain are waived with a reason: 22 are `favro_set_card_custom_field`'s per-type value inputs, where the legal one depends on a field type the driver cannot know. The number is the gate's output now, so the claim cannot decay silently as the surface grows |
-| 2026-09-14 | Favro's documented endpoint surface: 22 unimplemented, being `/webhooks` ×3, `/organizations` write ×2, SCIM v1.1 ×10 and v2.0 ×12 | A5 fetched the page itself and parsed it per section rather than through a summarizing reader | **Verified here — the claim was false twice over.** SCIM v1.1 has 11 endpoints, not 10, so the real total was 28 and not 22; and the sentence's own breakdown summed to 27, so it disagreed with itself. 88 endpoints in all. The count is `gates api-diff`'s output now, not a sentence anybody can mistype |
-| 2026-09-14 | An endpoint-level coverage record is enough | Built `api-coverage`, then built `api-fields` beside it because the first cannot see inside a response | **Verified here — it is not.** An endpoint can be implemented while the type behind it silently drops half of what Favro sends: `encoding/json` ignores what it does not recognize, which is what makes reads tolerant and also what makes the gap invisible. Of 124 documented fields, four were unmodeled. One was `CustomField.widgetCommonId`, the field that says which widget a field is enabled on — the missing half of §7.4's sharpest footgun, and present on all 100 rows the live organization returns |
-| 2026-09-14 | `GET /webhooks` paginates like every other Favro collection | Wired it through the shared paginated helper, wrote a fixture in the envelope shape, and the unit tests passed. Then called it live | **Verified here — the claim was false.** It answers with a bare JSON array; an organization with none returns `[]`. The reference says so plainly — "The response will be an array of configured webhooks" — and the fixture written to match the assumption agreed with the assumption. §2.1 again, and the clearest small example of it in this repository |
-| 2026-09-14 | Tool output schemas describe what the tools return | A live read of a card carrying a Members custom field returned a protocol error, not a result | **Verified here — the claim was false, and had been since custom fields shipped.** `json.RawMessage` is `[]byte`, so schema inference described `value`, `link`, `timeline` and `reports` as arrays of integers 0–255, and the SDK validates every result against that. Any card with a Vote, Members, Tags, Status or Multiple-select value failed outright. No fixture could catch it: a fixture that sends what the schema claims agrees with the bug. Fixed in `addTool`, the one registration point, and the regression test sends the shape Favro actually sends |
-| 2026-09-14 | A binary installed the documented way reports its version | Ran `go install` semantics against `internal/version`: `Tag` and `Commit` are `-ldflags` variables, and `go install` applies no ldflags | **Verified here — the claim was false.** Every `go install` build reported `dev (unknown)`, so no bug report from one could be attributed to a build. Standard §10 names this first among the distribution details that bite. It falls back to the module version and VCS revision Go embeds itself, and `doctor` prints which of the three sources answered, because "dev (unknown)" and a real version are the same sentence to a user trying to say what they are running |
-| 2026-09-14 | `doctor`'s redaction keeps its report both safe and readable | Built it, ran it against a real organization on the first build | **Verified here — the claim was false.** Passing the address and the organization id to `redact.New` as literal secrets flattened all three values, the token included, to one `{credential}`, so the line that exists to say "the id you are bound to is not one the token can see" said `{credential} is not {credential}`. It also reported "0 values redacted" while redacting three, which is the failure this document's preamble describes, committed by the report whose job is to be readable. The address and the id are registered with a kind now and read as `{user 1}` and `{id 1}` |
-| 2026-09-14 | `internal/redact` covers the tenant values a caller hands it | Wrote the `doctor` test with an organization id deliberately not 24 hex characters | **Verified here — the claim was false.** Every pattern in that package is anchored on a shape a tenant's data takes, so a value that *is* tenant data and takes some other shape passed straight through — and the ids `doctor` prints arrive from the API rather than from configuration, into a report written to be pasted into a public issue. `Redactor.Literal` registers a known value under a kind, so the guarantee is structural rather than a hope that a regex agrees. A fixture that had matched the pattern would have passed whether the fix existed or not |
-| 2026-09-14 | The leak gate reads what a release actually ships | Wrote the bug-report form, which tells people not to paste a card reference, using one as the example | **Verified here — the gate caught its own author.** `.github/ISSUE_TEMPLATE/bug_report.yml` failed the scan on the illustration. Weakening the gate with an allowed prefix was the wrong fix and describing the shape in words was the right one; the row is here because the alternative was available and looked reasonable |
-| 2026-09-14 | The `.mcpb` is hashed and signed with the archives | The pre-commit review asked which check would fail if `checksum.extra_files` were deleted | **Verified here — none would.** The post hook is what makes it *possible* for the bundle to be in checksums.txt, and it is not what puts it there: goreleaser hashes the artifacts it built, and a file a hook dropped into dist/ is not one of them. Delete that glob and the release succeeds, `make check` passes, the manifest gate reports ok, and the bundle ships outside the signature while README goes on telling people to verify it. `gates mcpb` now holds eight such lines, and each was confirmed by deleting it and watching the gate fail |
-| 2026-09-14 | `Redactor.Count` says how much was redacted | The pre-commit review read `Literal` against `Count`, which is `len(seen)` | **Verified here — the claim was false, in the code written to fix the same class of defect.** `Literal` assigned a placeholder at registration, so a value registered and never printed still counted. A `doctor` report could say "2 values redacted" having redacted nothing — the exact inversion of the failure the row above it in this phase celebrates catching. Placeholders are assigned on the substitution that actually fires now, and the case is a test in `internal/redact` |
-| 2026-09-14 | Adding `id-token: write` to the release job is safe because only a maintainer can push a tag | The security review traced `${{ github.ref_name }}` into the `run:` line at release.yml's release-notes step, and the trigger pattern that reaches it | **Verified here — the claim does not hold.** An Actions expression is substituted as text before bash parses the line, and double quotes stop word-splitting but not command substitution. The trigger's `v[0-9]+.[0-9]+.[0-9]+-*` admits any suffix, and git accepts `$`, `` ` ``, `;` and `{}` in a ref name — confirmed by creating the tags — with `${IFS}` supplying the space git forbids. The sink predates this phase and was survivable while the job only uploaded assets; A7 adds the OIDC identity that signs `checksums.txt`, so the same tag becomes a way to have a tampered artifact signed and attested, passing every verification step README documents. Fixed in three places, and the innermost is a gate with a test, because the other two are one workflow edit from being undone |
-| 2026-09-14 | The count of delete-style tools, having been corrected once, is right | A8 built `destructiveCountMatches`, which reads the annotation out of `--dump-schemas` and holds every prose count against it | **Verified here — the claim was false again.** A2 found §8 saying "twelve" while thirteen were annotated and fixed the sentence; A5 then added `favro_delete_webhook`, and `CHANGELOG.md` went on saying thirteen. Correcting a hand-typed number does not stop it being hand-typed, which is the whole of §7b — the fix is the checker, and it caught this on the run that introduced it |
-| 2026-09-14 | The worst a model with these tools can do is bounded by what the token can do in Favro | A8 wrote that sentence into `docs/security.md`, and the security review asked which tool reads a path | **Verified here — the claim was false.** `favro_upload_attachment` and `favro_upload_comment_attachment` take a `file_path` and read any regular file under the size cap, with no root confinement; both are registered by default, because they destroy nothing and so sit outside `FAVRO_ENABLE_DESTRUCTIVE`. A poisoned card description and an exfiltration channel are therefore the same sentence, and the containment is the account the server runs under rather than the token. The document says so now. Narrowing the code — an optional root the reads are confined to — is a behavior change and belongs to a phase of its own |
-| 2026-09-14 | The pre-commit hook catches a committed secret | A8 wrote "gitleaks in the pre-commit hook" into `docs/security.md`; the security review read `precommitSteps` | **Verified here — the claim was false.** The hook runs gofmt, vet and `gates leaks`, which is the tenant-data scan. gitleaks runs in `make check` and in CI, so the earliest catch for a credential is after the commit object exists — which is the precise failure the hook's own comment describes. Corrected in the document rather than in the hook: the hook is deliberately the fast subset |
-| 2026-09-14 | The live driver runs cleanly end to end | Ran `make live` and watched the process rather than the output | **Verified here — the claim was false, and had been since A6.** The 122 steps take eight seconds; the driver then hung indefinitely, holding its server open, and `make live` never returned. `stop` closed `cmd.Stdin`, which `StdinPipe` sets to the READ end of the pipe while returning the write end — the type assertion to a Closer succeeds on either, so nothing failed and nothing said so. The server never saw EOF, so it never exited, so `Wait` never returned; Go's own documentation is where this is easy to get wrong, since it says Wait closes the pipe once the command exits, which for stdin is circular. It was survivable only because the summary prints first, and it is why 6bac268 describes "a verbose run that hit my own timeout partway". Two tests now drive `stop` against a child that exits on EOF and one that does not, and the first fails against the old code |
-| 2026-09-14 | Hard rule 8, "no tool takes an `organization_id`" | Reconnected the MCP server to the built binary and called `favro_get_organization` with an id of all zeros, then with `not-a-valid-id` | **Verified here — the rule was false, and the tool was worse than non-compliant.** Both calls returned the bound organization in full. Favro's reference documents the path parameter as "the id of the organization to be retrieved. Required." and the live API ignores it, routing by the `organizationId` header it separately documents as required "to ensure the request is routed to the correct server" — §2.1 once more, on the endpoint whose whole purpose is selection. A required input that cannot affect the result reads as a choice and is not one, and a model asking for one organization was handed another with a 200. The input is gone, the tool returns the bound organization, and `gates rule8` derives the rule from the schema dump so it is held by the binary rather than by a sentence. Nothing else could have found it: the live driver passed the bound id, so the call looked correct, and `live-cover` counts options exercised rather than answers checked |
-| 2026-09-14 | `make check` green on one machine means green in CI | Pushed the branch and watched the first run; this branch had never had CI on it | **Verified here — the claim was false three ways, and every one passed on Linux.** `\s` and `\b` are GNU extensions that POSIX ERE does not have, so two gates and a test handed git patterns that matched nothing on macOS; git exited 1 for "no matches" and the checkers read that as a broken repository. The fix is to grep a fixed substring and apply the pattern in Go, where the engine is the same everywhere. On Windows the `.mcpb` fixture staged a shell script named `favro-mcp.exe` and the packer tried to execute it, because the packer asks the host binary for its version — the fixture builds a real one now. And `gitleaks-action` prepends `v` to `GITLEAKS_VERSION`, so `v8.30.1` fetched `vv8.30.1` and 404ed. The standard's line about a three-OS matrix finding Linux-only assumptions the first time it runs is exactly what happened |
-| 2026-09-15 | `favro_move_card` moves a card | A6's evals gave a model the task "move this card into the Done column" and read the board back | **Verified here — the claim is false.** The model resolved the widget, the card and the column correctly, then tried nine variations — `drag_mode=move`, `favro_update_card` with `column_id`, `sheet_position`, `drag_mode=commit`, `list_position=1000`. Every call returned success and the card never moved; it reported that honestly rather than claiming completion. Reproducible across two full runs. §2.1 in its purest form, on a card-management server that cannot move a card. **Nothing caught it because the live driver calls this tool with `dry_run: true`** — every mutating step there does, by design, so it validates a request and never observes a result. That is the blind spot evals exist to cover, and the first full run found it. **Answered 2026-09-15 and fixed:** Favro requires `widgetCommonId` on a column move and answers 200 with a stub card — `cardId`, `cardCommonId`, `name`, `timeOnBoard`, no `columnId` — without it. `listPosition` has nothing to do with it: a column move lands without one. The sharpest part is that Phase 5.3 got this right — the v1.0.0 changelog says a column move sends `widgetCommonId` + `columnId` + `listPosition` + `dragMode` *together* — and then the wire-type comment and the tool schema narrowed a four-field finding to the one field that did not matter, leaving all four optional in the schema. A finding that is recorded in prose and not in a test decays into whichever half somebody remembered. `UpdateCard` now refuses the shape before it is sent, so `favro_update_card` is covered too, and checks the returned `columnId` against the requested one |
-| 2026-09-15 | favro-mcp is aligned with the four sibling servers | Read all four gate registries and `check` targets directly, rather than §17b's account of itself | **Verified here — the claim was false, by two gates.** google-drive-mcp had `outcomes` and `registry`; this server had neither. `outcomes` is the one that stings: it holds "never assert an outcome the response did not carry", which is hard rule 2, and this repository shipped a violation of it in `favro_move_card` for six releases while the rule sat in CLAUDE.md held by nothing. Both are adopted now. Worth recording that two apparent gaps were not: `tool-names` and `config-vars` are utility commands in the siblings and sit in no `check` target, which a gate-registry diff alone would have called a finding |
-| 2026-09-15 | The `.entire/` transcripts cannot be removed without rewriting a public history that has released tags on it (§9) | Pruning stale local branches; then tree-scanned `origin/main`, `v1.0.0` and `v2.0.1` for the path, and re-ran `gates leaks history` | **Verified here — the claim was false, and cost nothing to fix.** Zero `.entire/` paths in `main` or any tag. The blobs lived in two local orphan root commits from the same tool, on branches with no upstream that were never pushed; deleting them removed all three, and the history scan now reports two classes rather than three. Theclaim came from reading a `--all` scan — which includes local branches — as a statement about the published history. A gate that reports what it found is not the same as a gate that reports where it found it |
-| 2026-09-15 | §2.7's "a custom field not enabled on the widget is accepted and discarded" | Set a Text field belonging to another widget on a sandbox card, then read the card back | **Verified here — the claim is true, and the shape it fails in is worth recording.** Favro answers HTTP 200 with the **full** card, not the stub a move gets, and the field is simply absent from `customFields`. So "did the write land" is a different question per path — missing value here, missing response there — which is what decided §17 decision 6 against a shared `confirm()` helper. The guard is not built: no board reachable has a custom field enabled on it, there is no API to enable one, and a presence check that has never seen a successful write's response would fail every working write if Favro ever omits the array |
-| 2026-09-15 | `favro_move_card` moves a card to a different board | The tool has said "move to a different widget" since Phase 5; moved a card between two boards live and listed both | **Verified here — the claim is false.** The source instance stays where it is and a second `cardId` appears on the target, both under the one `cardCommonId`. Favro's model is that a card common to several widgets has an instance on each, and a PUT that names another widget adds one; there is no single call that relocates. The tool description says add, not move, now. Not a code change: adding-then-deleting would be this server inventing a transaction Favro does not offer, and a half-failed one leaves a duplicate |
-| 2026-09-15 | The `transcript` gate holds this repository's live output to the redactor | Ran the security review over the eval commit; read the gate | **Verified here — the claim was false, and had been since the evals landed.** `transcriptDriverDir` was one hard-coded `const`, `scripts/livefavro`. `scripts/evals` drives the same live organization and printed raw: a failing task prints the model's whole trace, and every argument in it is an id resolved from live data, plus the collection id on a teardown failure. Nothing failed, because the gate read the other directory. A rule scoped to one path is a rule about that path — the gate takes a list now, both drivers print through `internal/redact`, and its own test names both and holds the one build-tag exemption to its shape |
-| 2026-09-15 | The eval harness confines a model that reads attacker-reachable text | The security review traced what the driven session could reach | **Verified here — the claim was false, and this one is a security boundary rather than a scoring one.** The run reads a real organization, so card text written by anyone with access to it reaches the model, and the process tree holds a live Favro credential. Any built-in that runs a command is then an exfiltration path for injected card content, and the confinement was a denylist with holes in it. Fixed with the two flags above. Worth keeping: the first version of this was written as a *scoring* control — "an eval that lets a model reach for Bash is scoring Bash" — which is true, and reading it only that way is what left it failing open |
-| 2026-09-15 | An eval that names the tools it allows has confined the model | Read the first eval trace | **Verified here — the claim was false.** `--allowed-tools mcp__favro__*` does not exclude the host's own built-ins, and the disallow list named six. The model used `Grep` and `Glob` to read the maintainer's notes about Favro's quirks mid-task, which is not a surface this server exposes — an eval that lets a model reach outside the tools is scoring something else. **Naming every built-in was the wrong repair, and the security review found it the same day:** a denylist of a surface somebody else ships fails open, needs re-auditing on each CLI release, and is the typed-out list hard rule 14 exists to forbid. `Monitor` was still missing, which runs a shell command under a name that is not `Bash`. It is `--tools ""` now — the CLI's own switch for "no built-ins" — plus `--setting-sources ""`, because the maintainer's permission rules, hooks and skills decided what a built-in could do. The six tasks still pass, and for less |
-| 2026-09-13 | The sibling gate set | Read all four `Makefile`s and both gate registries (`scripts/gates`) | **Adopted.** 14 gates plus `transcript` and `live-cover` where a live driver exists. Note the standard's own warning: reading a `check:` target list is not an audit of what runs, since several siblings run gates as ordinary Go tests |
-| 2026-09-13 | Actions are pinned | Read `.github/workflows/*.yml`: every action is a floating major tag (`actions/checkout@v7`, …) and `govulncheck` installs `@latest` | **Verified here — unpinned.** GitHub's own guidance is that a full-length commit SHA is the only immutable reference. A1 |
-| 2026-09-13 | 83 tools | Counted registered tool-name constants; the README and `docs/TOOLS.md` both say 83 | **Verified here, today.** The standard's §7b: re-measure at each release or date it. A1's staleness gate takes the count over from this sentence |
-| 2026-09-13 | govulncheck must run in binary mode | Existing repository decision, recorded in the Makefile: x/vuln v1.7.0's source analysis tops out at go1.26 and errors on the go1.27 stdlib | **Adopted, temporary.** Revert to `./...` when x/vuln ships an x/tools that understands 1.27. The siblings run source mode because they are not yet on a toolchain that breaks it |
-| 2026-09-13 | This binary exits 0 when a host closes the pipe | Drove the built binary over stdio and closed stdin: it exited **1**, logging `server is closing: EOF`. The SDK's `jsonrpc2.ErrServerClosing` is `NewError(-32004, ...)`, and `errors.Is(err, io.EOF)` cannot match it | **Verified here — the claim was false.** Every host logs a non-zero exit on an ordinary disconnect as a crash, and this happened on every disconnect this server has ever had. Fixed in A1 by matching the code through the public `jsonrpc.Error` alias; the smoke gate closes stdin with nothing in flight, which is the only way to see it |
-| 2026-09-13 | govulncheck must run in binary mode on Go 1.27 | Ran `govulncheck@v1.8.0 ./...` against this module: "No vulnerabilities found". v1.7.0's source analysis errored on the 1.27 stdlib, which is why the workaround existed | **Verified here — no longer true.** x/vuln v1.8.0 (2026-09-08) understands the 1.27 stdlib. Source mode is back in A1, and it analyzes call paths rather than a symbol table, which is the stronger check. **2026-10-09:** that run used Arch's `go1.27.0-X:nodwarf5`, whose version govulncheck cannot read, so it skipped the standard library; under the official go1.27.0 it reports ten advisories, all fixed in 1.27.2 |
-| 2026-09-13 | Every dependency carries a license the allowlist names | `go-licenses check` failed on `github.com/segmentio/asm`, reporting an empty license name. Read the module's LICENSE: it relicensed from MIT to **MIT No Attribution (MIT-0)** in v1.2.1 | **Verified here.** MIT-0 is OSI-approved and strictly more permissive than the MIT it replaced, and go-licenses v1.6.0's classifier (2023) predates it, so no `--allowed_licenses` value can satisfy the check. Ignored by path with the reason written where the flag is, in both the Makefile and CI |
-| 2026-09-13 | An exemption list can be trusted to describe reality | Wrote the leak gate's allowlist of citation prefixes from what such a list usually holds — RFC, CVE, SEP, HTTP, G — then asserted that each one occurs in this repository. **Five of eight did not.** | **Verified here.** Every one of those five read as a considered exemption and exempted nothing; each was a hole somebody would have had to find by accident. The assertion deleted them, and the three that remained (plus two the first real run found: an SPDX identifier, and ISO-8601) are the whole list. This is the standard's rule — derive the list from the code — applied to a list that looked too small to need it |
-| 2026-09-13 | A gate that writes what it checks is checking anything | `schema-diff` regenerated `schemas.json` on every run, and the changelog claimed the committed file is where a reviewer sees a wire change | **Verified here — the claim was false.** It was true only for people who ran `make check` before pushing; everyone else got a green build and a diff showing nothing, and the gate left the working tree dirty mid-`check`. Split into `make schemas` (writes) and the gate (verifies, and names that target when it fails). The comparison is by tool surface, not bytes: the dump carries the version stamp, which differs between a local build and CI's |
-| 2026-09-13 | `make check` is "everything CI runs" | The parity gate compared the gate registry with the workflow, which covered 8 of `check`'s 15 prerequisites; `vet`, `lint`, `vuln`, `licenses`, `secrets`, `tidy` and `fmt-check` were unheld | **Verified here — the claim was false.** Deleting the vulnerability scan from CI left the gate green while the Makefile went on calling `check` everything CI runs. It now reads the `check:` line itself and derives each prerequisite's signature from its recipe, so the third hand-maintained list a target-name map would have needed does not exist. Its own test caught the next layer of the same bug: `gitleaks/v8@v8.30.1` reduced to `v8`, which matched CI inside the version string it was meant to be checking |
-| 2026-09-13 | Every gate here has a test | Walked the command registry against the test sources: `schema-diff` had none — the command that decides what a breaking change is, and so the whole semver promise — and neither did `precommit` or `plugin-pack` | **Verified here — the claim was false**, in the doc comment that makes it and in CLAUDE.md's eleventh rule. Now held by `TestEveryCommandHasATest`, which reads the registry, parses the package's call graph, and requires each command or something it delegates to be exercised in code rather than named in a comment |
-| 2026-09-13 | `BSC-123`, the example card reference in tool descriptions and fixtures, is invented | The leak gate flags anything shaped like a card reference, and this prefix is exempted by name — which is only safe if the prefix is not a real board's. Nothing in the repository could answer that, so the maintainer was asked | **Verified with the maintainer.** It belongs to no board of theirs. Recorded beside the exemption, because an exemption whose premise lives only in a conversation is the kind that gets "cleaned up" later by somebody who cannot check it |
-| 2026-09-13 | The public history carries nothing about a tenant | Ran `gates leaks history` over every blob and commit message — the first time this repository's history has been scanned. Three session transcripts survive from a removed recording tool; counted the Favro shapes in them directly: zero ids, zero app links, zero credentials | **Verified here.** The rule holds, with the caveat in §9: the transcripts carry the maintainer's address, which git authorship publishes anyway, and the history cannot be rewritten without breaking released tags |
-| 2026-09-13 | A leak gate's first run is mostly false positives | Ran it: 4 findings, then 17 from the staleness gate. Three leak findings were real (a fixture address at a registrable domain, a build artifact left in the tree, and this gate's own binary), one was a Go identifier read as a value; of the staleness findings, three were real and fourteen were the extractor's | **Verified here, and consistent with the standard's warning.** The tuning is written into both gates as comments naming what each narrowing is for, because a path check that has not been tuned tells you about your regexp rather than your documentation |
-| 2026-09-13 | The debug line's remaining leak was the query string | Wrote the test §9 asked for — capture every record at `LevelDebug`, drive a request whose token and filters are all markers, assert no marker appears anywhere — and ran it against the fixed code | **Verified here — the claim was false.** It failed on the first run, on the `organizationId` *header*: `Token.Apply` sets it on every request and `redactHeaders` redacted only `Authorization`. A test in the repository asserted it passed through unredacted, so the behavior was not an oversight, it was pinned. Redacted now, and the pinned assertion reads the other way |
-| 2026-09-13 | The query string was the whole of the URL leak | Ran `/security-review` over A2's diff. It reported no exploitable finding, and noted below its own bar that `req.URL.Path` was still logged whole | **Verified here — the claim was false.** Every get-one endpoint is `/cards/{cardId}`, so the path carried the same ids the query did. `TestDebugLogNeverCarriesTheSubject` had passed throughout, because it drove a list endpoint where the ids are all in the query — the test proved the rule for one call site and the sentence claimed it for all of them. Fixed, and the test drives a get-one call now |
-| 2026-09-13 | A unit test against `httptest` exercises the path the server really sends | The first `redactPathIDs` rejected any digit in a segment. Unit tests passed; the live check printed `path=/api/{id}/cards/{id}` | **Verified here — the claim was false.** `httptest`'s base URL has no version segment, so the test asserted against a shape production never produces and `v1` was being redacted as an identifier. The rule takes lowercase alphanumerics now, and the test has a row for the real path. Nothing leaked — this one cost only the usefulness of the log — but it is the same blind spot as the row above, found the same day, in the fix for it |
-| 2026-09-13 | A package split is a mechanical change | Split `internal/favro` into wire types and a client with a line-based script first. It detached every doc comment from its declaration and misclassified declarations | **Verified here — the claim was false, at the first attempt.** Rewritten against `go/ast`, where a declaration carries its own `Doc`, and the classification became one rule — a `*Client` receiver — with five named exceptions rather than a regexp. The lesson is the standard's own: the tool that understands the language is the one to parse it with |
-| 2026-09-14 | go-difflib is a test dependency | §5 listed it beside testify as "test dependencies the siblings do not have". Read the callers before removing it: `unifiedDiff` is called by `NewEditorResult`, which every description-editor tool returns | **Verified here — the claim was false.** It generated the `unified_diff` a model reads, so removing it changed tool output rather than test code. Replaced with a Myers diff and held to `diff -u` by test |
-| 2026-09-14 | go-difflib produces a unified diff | Compared the replacement against `diff -u` on fourteen shapes, including an empty side and a body with no trailing newline | **Verified here — the claim was false, for the life of this server.** go-difflib's `SplitLines` appends a synthetic empty line, which printed as a stray context line at the end of the last hunk, and it omits `\ No newline at end of file` entirely. Thirty-three captured goldens showed 22 differences, every one of them difflib's. The replacement is byte-identical to `diff -u` |
-| 2026-09-14 | The new diff's search cap does what its comment says | Reviewed the Myers implementation against an independent DP LCS oracle and against `diff -u`, on ~676,000 generated cases | **Verified here — the implementation was right and the cap was wrong.** The comment said the cap fires when two bodies have almost nothing in common; the code tested `n+m`, the *size* of the trimmed middle. Two 3,000-line bodies differing by one line at each end — edit distance four — exceeded it and fell to the wholesale fallback: 75 KB of diff deleting every line and re-inserting it, handed to a model. It caps on edit distance now, which also bounds the trace's memory, and the fallback is reachable rather than dead. Prefix/suffix trimming hides this for append and prepend, so only an edit at both ends reaches it |
-| 2026-09-14 | A mechanical test conversion preserves what the tests assert | Converted 2,173 assertions by script, then mutated one behavior per package and checked the tests still failed | **Verified here, with one real defect found.** Binding the expression under test to a variable named `got` shadowed an outer `got` in one test, turning `require.Equal(t, got, got2)` into `reflect.DeepEqual(got, got)` — an assertion that cannot fail. gocritic's `dupArg` caught it; a search for the same shape across every converted file found no others. The mutation checks are what make "the tests still pass" mean anything after a change of that size |
-| 2026-09-14 | A scripted rename touches only identifiers | A3 qualified references across the split with a word-boundary regexp. The security review, diffing each moved file against its old copy, found `req.Header.Set("favro.User-Agent", ua)` | **Verified here — the claim was false.** `User` is a wire type, and the regexp matched it inside a string literal, so every request went out with Go's default agent and a junk header. No test asserted the header, so the suite stayed green through the whole refactor. Fixed, and every string literal in the module was then parsed with `go/ast` and checked for a package qualifier — that one was the only real hit in ten |
-| 2026-09-13 | `unverified` earns a place in the error vocabulary | §17's instruction: decide by writing the message. Wrote it — `[unverified] Favro returned 200 and the write was not read back` — and followed what a caller does with it | **Verified here — rejected.** An error class renders with `IsError` set, which says the call failed; a caller that retries on that posts the comment twice. It also carries nothing per call, because this server never reads back, so the flag is constant per tool — and a constant per tool is a tool description, which is where it already is. §6.2 records the reasoning |
-| 2026-09-13 | Twelve tools are destructive | Counted the tools annotated `DestructiveHint: true` while building the registration gate | **Verified here — the claim was false; there are thirteen.** §8 had carried the hand-typed count since it was written. The gate now reads the annotation at registration and the test derives the same set from the live surface, so neither a count nor a list of names is written down anywhere |
-| 2026-09-13 | A gate that skips the file it guards is checking the right thing | Ran the new `classes` gate: it reported six of the nine classes as emitted by nothing | **Verified here — the claim was false, and it was this gate's own first finding about itself.** It skipped `class.go` wholesale to avoid counting the declarations, and `Classify` — where six of the nine are returned from — is in that file. It now skips the const block and the `Classes` slice and walks everything else |
-| 2026-09-13 | Favro has no OAuth for its REST API | Reference page documents HTTP Basic with email + API token only; no authorization endpoint is published | **Verified here.** §17b row 1 |
-| 2026-09-17 | The bundle manifest's own declaration is right, or at least checked | Fetched the published mcpb schemas: `mcpb-manifest-v0.2`, `v0.3` and `v0.4` are served and `v0.5` is not. **Refuted twice.** `bundleManifest` did not decode `$schema`, `manifest_version` or `support` at all, so nothing here could hold them — and `$schema` named `main`, a branch upstream can amend under a document that claims to conform to it: the path pins the FORMAT, the ref pins the BYTES. The copy at tag `v2.1.2` is byte-identical to `main` today, which is the argument for the tag rather than against it. 0.4 is not adopted: its only difference from 0.3 is a `uv` value in the `server.type` enum, and this bundle's type is `binary` | `checkBundleManifest` holds the declaration beside the staged tree: upstream's path at a full release tag or a commit SHA (an allow-list, because refusing branch NAMES passes a partial tag like `v2.1`), the version agreeing with that URL, a floor under it, and a support URL. The floor is the claim the others cannot make — 0.2 beside a 0.2 schema is self-consistent |
+`sequentialId`, and every get-one path is `/cards/{cardId}`, so a logged
+URL reconstructs which cards a session touched. `redactPathIDs` keeps a
+segment only if it reads as part of an endpoint, lowercase alphanumeric
+and shorter than a Favro id, and prints `{id}` for anything else. The
+`Authorization` and `organizationId` headers are redacted where headers
+are rendered, for the debug line and the dry-run record alike. The
+startup line names the version and the credential source, never the
+organization. `TestDebugLogNeverCarriesTheSubject` captures every record
+at `LevelDebug`, over a list call and a get-one call, and fails on any
+marker anywhere.
+
+Rejected: logging the query string or the path whole; a test over one
+call site or at the default level, which passes against a leak at
+another.
+Cost: there is no response log, not even a status code or an elapsed
+time, so a failure is diagnosed from its error.
+
+### D-47 The token is never printed: not in a result, a log, a dry-run record, auth status or doctor
+
+The token is never printed: not in a result, a log, a dry-run record,
+`auth status` or `doctor`.
+
+The token is the whole credential, and a printed line ends up in a log
+file, an issue or a transcript. The `Authorization` header is redacted
+at the one place headers are rendered, which the debug line and the
+dry-run record share (D-46). `auth status` reports the source and the
+organization. `doctor --show-ids` prints ids and addresses in full and
+still not the token (D-48). Each output has a test:
+`TestAuthStatus_ReportsSourceAndOrgButNeverTheToken`,
+`TestAuthLogin_StoresInKeyringWithoutEchoingTheToken`,
+`TestMCP_FavroPing_OutputContainsNoSecrets` and
+`TestDoctorShowIDsPrintsIDsButNeverTheToken`.
+
+Rejected: printing a prefix of the token to identify it, since a prefix
+of a secret is part of a secret.
+Cost: nothing the server prints tells two tokens apart, so a person
+checks which token is in use by its source, through
+`favro-mcp auth which`.
+
+### D-48 doctor's report is written to be pasted in public: the values it hides are registered with the redactor by kind, and --show-ids prints them for the person's own screen
+
+`doctor`'s report is written to be pasted into a public issue, which is
+what the bug form asks for. Every line goes through `internal/redact`,
+and the values `doctor` knows, the address and the ids, are registered
+with the redactor by kind. `--show-ids` prints the same report
+unredacted, for the person's own screen.
+
+Registered by kind, an address and an id print as different
+placeholders, stable within a run. So a report still shows whether the
+bound organization is one of the ids the token can see, which is the
+whole diagnosis. Patterns alone pass a value of another shape, and the
+ids `doctor` prints arrive from Favro rather than from configuration.
+The count of redactions counts substitutions that fired, not
+registrations. `TestLiteralRedactsWhatNoPatternMatches` and
+`TestCountReportsWhatItRedacted` hold both.
+
+Rejected: the address and the id passed as literal secrets, which
+flattened three values to one placeholder; patterns alone, which pass a
+value of another shape; counting a registration as a redaction.
+Cost: `--show-ids` prints ids and addresses in full, so its output
+belongs on the person's own screen and never in an issue.
+
+### D-49 Nothing from a real tenant enters the repository: fixtures are synthetic and name resources by role, and leaks scans the tree
+
+Nothing from a real tenant enters the repository: organization names or
+ids, card names, ids or sequential ids, user names or addresses, tokens,
+or any content from a real Favro organization. That holds in code,
+fixtures, tool descriptions, commit messages, pull requests, the
+CHANGELOG and the docs.
+
+The repository is public, and a pushed commit cannot be taken back.
+Fixtures are synthetic and name resources by their role, and
+`internal/favroapi/favroapitest` holds the one invented credential
+triple. The `leaks` gate scans the working tree, and the pre-commit hook
+runs it. It anchors on shapes the server's own values cannot take: an
+address at a domain, a 24-hex id, a keyword right before an id, a link
+into the app. Its exemption lists are asserted to occur, so an exemption
+that exempts nothing fails. `TestFindLeaksCatchesEachShape` plants each
+shape.
+
+Rejected: a scanner as the whole guard, since a card name is ordinary
+words no pattern matches; an allowed prefix to quiet a true finding; an
+exemption list trusted rather than asserted.
+Cost: the scan cannot catch a name, so the rule rests on synthetic
+fixtures and review as much as on the gate.
+
+### D-50 The history scan runs by hand and the history is not rewritten; each known finding is accepted in its own commit by hash, rule and count
+
+`make leaks-history` scans every blob and commit message in the history,
+by hand, and the history is not rewritten.
+
+Rewriting a public history with released tags on it breaks every tag and
+every install pinned to one. Commit messages that carry real findings
+keep them. `knownFindings` in `scripts/gates/leaks.go` accepts each such
+finding in its own commit, by hash, rule and count, and never writes the
+value down. The same value in any other commit, blob or file is still a
+finding. Both scans allow the public trailer addresses of Claude's
+`Co-Authored-By` and Dependabot's `Signed-off-by`, each as the whole
+address. The history scan reads an annotated tag from its message down,
+since the tagger header is the maintainer's own identity, published as
+every commit's author is. `TestKnownFindingIsPinnedToItsCommit` holds
+the pinning.
+
+Rejected: rewriting a public history with released tags on it.
+Cost: the findings stay in the history for good. The history scan is
+outside `make check`, because its findings are facts about the past
+rather than something a commit can fix.
+
+### D-51 The live driver and the evals print only through internal/redact, and a transcript is never committed
+
+The live driver and the evals print only through `internal/redact`, and
+a transcript is never committed.
+
+The `transcript` gate holds both drivers, `scripts/livefavro` and
+`scripts/evals`, to one rule: only the printer may name `os.Stdout` or
+`os.Stderr`, and the printer redacts. A rule over writes to `os.Stdout`
+misses a driver that wraps the terminal in a buffered writer once and
+prints through it. The redactor catches what has a shape: a 24-hex id,
+an address, a link, a signed attachment URL. A card's name is ordinary
+words, and a pattern that caught it would catch the sentence around it.
+A verbose run therefore shows real names. That is right in a
+maintainer's terminal, showing them an organization they hold a token
+for, and wrong in a file.
+
+Rejected: a rule over writes to `os.Stdout`, which a buffered writer
+hides; one hard-coded driver directory, which leaves another driver
+printing raw.
+Cost: names pass the redactor, so a transcript is never committed, and
+the `leaks` gate cannot catch one that is.
+
+### D-52 The webhook signing secret has no field, so no result can carry it
+
+The webhook type has no field for its signing secret, so no result can
+carry it.
+
+Favro returns the secret that signs the `X-Favro-Webhook` header on
+every read of a webhook
+([webhook signatures](https://favro.com/developer/#webhook-signatures)).
+Anyone holding it can forge an event to whoever consumes that webhook.
+`encoding/json` drops a field the type does not declare, so the secret
+never reaches a value a tool could return. Having nowhere to put a value
+is the strongest way not to leak it to a model.
+`testdata/api-fields-waived.tsv` records the field as unmodeled with
+this reason, and `TestWebhookSecretIsNeverDecoded` holds it.
+
+Rejected: modeling the secret and redacting it in results, which leaves
+it one forgotten redaction away from a result.
+Cost: that no secret reaches a result rests on the type, never on a real
+payload, since the organization the live run reads has no webhook. The
+webhook issue, #120, belongs to D-67.
+
+### D-53 Favro is the only network peer; there is no telemetry, crash reporting or update check
+
+Favro is the only network peer. There is no telemetry, no crash
+reporting and no update check.
+
+The server holds a credential and reads card text that is often
+confidential. A second destination would be a second place for both to
+leak, and one the person did not choose. The client calls
+`https://favro.com/api/v1` and nothing else, and every request carries
+the person's own credential to Favro alone. A person learns of a release
+from the repository's releases, not from the server. The threat model in
+[security.md](security.md) rests on this.
+
+Rejected: telemetry, crash reporting and an update check.
+Cost: the maintainer learns of a failure only from the issues people
+file, which is why `doctor`'s report is written to be pasted into one
+(D-48).
+
+### D-54 Favro is authenticated by HTTP Basic, an address and an API token; there is no OAuth flow
+
+Favro is authenticated by HTTP Basic, with the user's address and an API
+token, and every request carries the `organizationId` header
+([authentication](https://favro.com/developer/#authentication)). There
+is no OAuth flow.
+
+Favro publishes no authorization endpoint for its REST API, so the
+loopback sign-in that the Google servers run has nothing to talk to.
+What carries over from their credential handling does. The token lives
+in the OS keyring with an environment override (D-55).
+`favro-mcp auth login` stores it, `auth logout` deletes it, and
+`auth which` says which source won. The token is never printed (D-47).
+`Token` in `internal/auth` sets the header and the organization on every
+request, and `TestValidator_AuthorizationHeaderIsBasic` holds the
+header.
+
+Rejected: the loopback OAuth flow with PKCE that google-docs-mcp uses,
+which Favro does not offer.
+Cost: the token carries its user's own permissions with nothing narrower
+to ask for (D-56), and a person creates it in Favro by hand
+([tokens](https://favro.com/developer/#tokens)).
+
+### D-55 Credentials resolve from the environment, then the OS keyring; the first complete triple wins, and a partial one is an error
+
+Credentials resolve from the environment, then the OS keyring: macOS
+Keychain, Windows Credential Manager or the Linux Secret Service. The
+first complete triple of address, token and organization id wins, and a
+partial one in the environment is an error.
+
+Falling through a partial environment to the keyring would run with the
+keyring's token under another address or organization, a mix nobody
+configured. An error says which variable is missing, while a fallthrough
+would only look like the wrong account. `favro-mcp auth which` says
+which source won. A keyring entry that cannot be decoded is an error
+too, rather than a reason to look elsewhere.
+`TestDefaultSources_OrderIsEnvThenKeyring` and
+`TestRunServer_PartialEnvCredentials_Errors` hold the order and the
+refusal.
+
+Rejected: falling through a partial environment to the keyring, which
+would run with the keyring's token under another address.
+Cost: `auth which` says only "(no credentials configured)" when neither
+source holds a complete triple, so it does not say which part is
+missing.
+
+### D-56 Read-only use is the destructive flag left off plus --dry-run, and the token comes from a least-privileged user
+
+Read-only use is the destructive flag left off plus `--dry-run`. The
+token comes from a dedicated Favro user with the least access the work
+needs.
+
+A Favro API token carries the issuing user's own permissions, and cannot
+be narrowed when it is issued
+([tokens](https://favro.com/developer/#tokens)). So there is no
+read-only scope to request. With `FAVRO_ENABLE_DESTRUCTIVE` off the
+deletes are not registered (D-29), and `--dry-run` turns every remaining
+write into a preview (D-28). The token's reach is the user's reach, so
+the mitigation is choosing that user, which the README and
+[security.md](security.md) advise. The server is not a guard on what the
+token may do in Favro.
+
+Rejected: read-only scopes, which a Favro token cannot carry.
+Cost: the token carries the issuing user's own permissions. Whatever
+that user can do in Favro, a leaked token can do too.
+
+### D-57 Configuration is the environment: every variable is in config.Vars and read through config.Lookup, with the spaces around it dropped
+
+Configuration is the environment. `config.Vars` lists every variable the
+server reads, the removed ones and the three credentials included, and
+every read goes through `config.Lookup`.
+
+`config.Lookup` drops the spaces around a value, so a value of spaces
+alone is unset. Outside `internal/config` a variable is named by
+config's constant, never typed. One registry gives "what does this
+variable do" a single answer, and lets the `staleness` and `mcpb` gates
+derive their lists from it (D-78, D-89). `config.LoadFrom` reads every
+setting once at start. The binary binds `--dry-run` and `--dump-schemas`
+and no other flag, so no flag mirrors a variable.
+`TestEveryVariableTheCodeNamesIsInEnvVars` scans the source for `FAVRO_`
+names, and `TestVarsDescribeWhatLoadDoes` holds each entry to what
+`config.LoadFrom` does with it.
+
+Rejected: a variable's name typed outside `internal/config`.
+Cost: `config.Vars` records what each reader reads from an empty
+environment, so a variable read only when another is set would escape
+it. The source scan is the backstop.
+
+### D-58 The server refuses to start without a credential Favro accepts, and FAVRO_MCP_SKIP_VALIDATE skips the live check
+
+The server refuses to start without a credential Favro accepts. One
+request validates the triple at start, under a short timeout of its own
+(D-43). A missing credential, a rejection or an unreachable Favro logs
+its reason to stderr, naming the variables to check, and exits non-zero.
+`FAVRO_MCP_SKIP_VALIDATE` skips the live check.
+
+Credentials are a deployment fact, and the person who can fix them is
+the one reading the host's log at start. A server that started anyway
+would answer every call with `[auth]`, and the model would relay a
+stream of failures to a person who cannot act on them in the
+conversation. This differs from google-docs-mcp, which starts without a
+working credential and answers `[auth]`.
+`TestMain_ExitsNonZeroOnStartupFailure` and
+`TestRejectedCredentialsNameTheVariables` hold the exit and its message.
+
+Rejected: starting anyway and failing on each call with `[auth]`, as
+google-docs-mcp does.
+Cost: a host shows "failed to connect", and the reason is on stderr, in
+a log the person has to find. `doctor` says the same thing at a terminal
+(D-59).
+
+### D-59 doctor reports the build and its version source, the credential source, whether Favro accepts the credentials and whether the organization binding is right
+
+`favro-mcp doctor` reports the build and where its version came from,
+where the credentials came from, whether Favro accepts them, and whether
+the bound organization is one the token can see. It exits non-zero when
+a check fails, so it can gate a script.
+
+Most first-run problems are a missing credential or a binding that names
+an organization the token cannot see. Neither produces an error a person
+can act on, since the server logs the rejection and exits (D-58).
+`doctor` names which of these is wrong. Without credentials it skips the
+network, and its live half runs under one timeout (D-43). A removed
+setting still turned on is a failed check (D-32). Its output is redacted
+for a public issue (D-48). `TestDoctorFailsOnWrongOrganizationBinding`
+and `TestDoctorReportsUnreachableAPI` hold two of its verdicts.
+
+Rejected: the startup log as the only diagnosis, which says the
+credentials were rejected but not which value is wrong.
+Cost: `doctor` reads the environment of the shell it runs in. A host
+that starts the server with other settings can fail where `doctor`
+passes.
+
+### D-60 Every tool registers through addTool, the one place for the destructive gate, confirm, the mark, both result halves and the error class
+
+Every tool registers through `addTool` in `internal/tools/registry.go`,
+and `internal/tools/register.go` is the one list of what registers.
+`addTool` is the one place for the destructive gate, `confirm`, the
+mark, the dry-run context, both result halves and the error class (D-29,
+D-30, D-34, D-28, D-61, D-40).
+
+A rule applied in each handler is a rule each handler can forget, and a
+fix to one lands in one function rather than in every tool. `addTool`
+also corrects the schema of a raw JSON value, which schema inference
+describes as an array of bytes. A card with a Members or Tags field then
+passes the SDK's output validation
+(`TestCardCustomFieldValuesPassOutputValidation`). At registration it
+panics on a tool that breaks the pairing of `confirm`, the hint and the
+mark.
+
+Rejected: the fix in each of the handlers.
+Cost: a mistake in `addTool` reaches every tool at once.
+`TestMCP_AllTools_SmokeCallable`, which calls every tool through it, is
+what catches one (D-62).
+
+### D-61 content and structuredContent are never the same bytes: addTool fills the readable half from internal/render
+
+`content` and `structuredContent` are never the same bytes. `addTool`
+fills the readable half from `internal/render`, and the structured half
+follows the output schema.
+
+When a handler returns a typed output and a nil result, the SDK marshals
+the output into `structuredContent` and, seeing `content` unset, puts
+the same JSON in a text block
+([server.go](https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/mcp/server.go)).
+A client that shows one half then shows JSON either way, and a model
+reads the same data twice. `render` writes a summary instead. A list
+page's summary says when more pages follow, because this server never
+aggregates pages and a caller that misses `next_page` would take a
+prefix for the whole (D-16). `TestContentAndStructuredContentDiffer`
+holds every tool, and `TestListToolContentSummarizesThePage` the list
+tools.
+
+Rejected: a nil `content`, which the SDK fills with the same bytes.
+Cost: a shape that needs a better summary than the default implements
+`render.Summarizer`.
+
+### D-62 Every registered tool has a smokeToolInputs row
+
+Every registered tool has a row in `smokeToolInputs`, in
+`internal/tools/smoke_test.go`, and `TestMCP_AllTools_SmokeCallable`
+fails on a registered tool without one.
+
+The test calls every tool through the in-memory MCP session with its
+row's arguments. A tool that panics, refuses its own minimal input or
+fails output validation fails the build. The list comes from the
+registry rather than from a list typed beside it, so a tool added
+without a row is caught by having been registered (D-68). The harness's
+client also fails any call that puts a question to the person (D-31).
+
+Rejected: a hand-typed list of tools to smoke-test, which misses the
+tool added after it was written.
+Cost: every tool needs a row of minimal arguments, and a row exercises
+only the tool's simplest path. The live driver covers every option
+(D-74).
+
+### D-63 Where two tools overlap, each description names the other and says when to choose it
+
+Where two tools overlap, each description names the other and says when
+to choose it.
+
+`favro_update_card` can move and archive a card, and so can
+`favro_move_card` and `favro_archive_card`. `favro_add_tag_to_card`
+overlaps `favro_update_card` with `add_tag_ids`. A model picks a tool
+from its description alone. Two descriptions that each claim the same
+job leave the choice to chance, and a description that names its twin
+turns the choice into a rule the model can follow. The overlap stays
+because each tool is the natural one for some calls: a single update
+that also moves, and a move with nothing else.
+
+Rejected: descriptions that describe each tool alone, which leave a
+model to guess between two that both fit.
+Cost: nothing but review holds the cross-references, so a renamed or
+narrowed tool can leave its twin's description pointing at the wrong
+thing.
+
+### D-64 The released tool surface is a contract: a removed tool, a removed input or a newly required one is a break that schema-diff names
+
+The released tool surface is a contract. A removed tool, a removed input
+or an input newly required is a break, and `schema-diff` names each one.
+
+`make schemas` writes `schemas.json`, and the gate only reads. It builds
+the binary at the last tag, dumps that build's schemas, and compares
+them with the working tree's. The comparison is by tool surface, not by
+bytes, because the dump carries the version stamp, which differs between
+builds. A break needs a `BREAKING CHANGE:` footer, and
+`TestABreakIsABreakOfARelease` holds that a break is measured against
+the release rather than against an unreleased change. Adding a tool or
+an optional input breaks nothing.
+
+Rejected: a gate that rewrites `schemas.json`, green for everyone who
+did not run it; a byte comparison, which the build stamp defeats.
+Cost: a break shipped in a minor release needs a CHANGELOG line saying
+why, and a caller pinned to the old surface still breaks.
+
+### D-65 A pull request names each changed item of the tool surface in a commit footer
+
+A pull request that changes the tool surface names each changed item in
+a commit footer. `SCHEMA-CHANGE:` names a change and `BREAKING CHANGE:`
+a break of the released surface. The `schema-ack` gate runs on every
+pull request and fails when an item is missing.
+
+The schema diff says what changed, and the footer says the author meant
+it. Annotations count, since a flipped `destructiveHint` changes whether
+a client asks the person (D-33). Both sides are built from commits, the
+merge-base and the head, never from the checkout, which in CI is the
+merge commit. Footers are read as Conventional Commits defines them
+([specification](https://www.conventionalcommits.org/en/v1.0.0/#specification)).
+A token is matched in any case, except `BREAKING CHANGE`, which is upper
+case, and a value may wrap onto further lines. A gate that could not run
+says so, apart from a refusal.
+`TestParityHoldsThisRepositorysPullRequestGates` holds CI to running it.
+
+Rejected: a case-sensitive footer token; a footer value read as one
+line, which drops a wrapped value.
+Cost: a refusal is fixed by adding the footer in an empty commit, never
+by an amend, so a branch carries a commit that changes nothing.
+
+### D-66 --dump-schemas lists the whole surface, whatever the flags, as an in-memory client session sees it
+
+`--dump-schemas` prints the whole tool surface as an in-memory client
+session lists it, whatever the switches, and exits. It reads no
+credentials.
+
+`internal/server` starts a server with every tool registered, the
+destructive and upload tools included, connects an in-memory client to
+it, and prints what `tools/list` returns. What a client is told, after
+the SDK has applied its defaults and schema inference, is the surface. A
+dump built from the server's own structs would miss what the SDK adds.
+It runs before credentials are read because the surface does not depend
+on who calls. The `schema-diff` gate builds the binary at an old tag and
+asks it for its schemas, and that build has no keyring or environment to
+read (D-64). `TestDumpSchemasListsEverythingAClientIsTold` and
+`TestDumpSchemasNeedsNoCredentials` hold both.
+
+Rejected: a dump of the registered structs, which misses what the SDK
+adds before a client sees it.
+Cost: the dump shows tools a deployment without the switches never
+registers, so it describes the full surface, not any one install.
+
+### D-67 Webhooks are listed and deleted, never registered
+
+Webhooks are listed and deleted, never registered. `favro_list_webhooks`
+and `favro_delete_webhook` exist, and `POST /webhooks` has an `out`
+verdict in `testdata/api-coverage.tsv`.
+
+Favro calls them outgoing webhooks: registering one points Favro at a
+URL that receives card events
+([create a webhook](https://favro.com/developer/#create-a-webhook)).
+This server is a stdio process a host starts and stops, so it can never
+be that URL. A tool that points Favro at somebody else's endpoint
+configures a system this server has no part in. Listing and removing
+what somebody else registered needs no receiver. `GET /webhooks` answers
+with a bare array rather than the paginated envelope, as its reference
+says
+([get all webhooks](https://favro.com/developer/#get-all-webhooks)), and
+`TestListWebhooksDecodesABareArray` holds it. Checked by the live steps
+"list a widget's webhooks" and "delete a webhook, dry run".
+
+Rejected: `POST /webhooks`, which points Favro at a URL that must
+outlive a stdio process.
+Cost: there is no disposable webhook, so `favro_delete_webhook` has run
+only as a dry run. Issue #120 asks to check a real webhook: its signing
+secret, the spelling of its column scope, and a delete.
+
+### D-68 Every rule adopted is a test that derives its list from the code and asserts a floor on how much it read
+
+Every rule the repository adopts is a test or a gate. It derives its
+list from the code rather than from a list typed beside it, and asserts
+a floor on how much it read.
+
+A rule stated in a document is true on paper and false in the code at
+the same time, and nothing says so. A completeness claim decays the
+moment the surface grows, so a check that covers "every tool" reads the
+tools from the registry. A checker that read nothing and a checker that
+found nothing print the same sentence, so each asserts a floor and fails
+below it. An exemption list is asserted to occur, since an exemption
+that exempts nothing reads as considered and is not (D-49, D-71). A gate
+is trusted only after it has been watched fail on a planted break.
+`TestEveryCommandHasATest` reads the gate registry and requires each
+command to be exercised in code.
+
+Rejected: a rule stated only in a document; a gate nobody has watched
+fail.
+Cost: each rule costs a test and a floor, and a rule nobody can derive
+from the code, such as one about prose, rests on review (D-63).
+
+### D-69 make check and CI run the same set, matched by what each recipe runs
+
+`make check` and CI run the same set of checks. The `parity` gate reads
+the `check:` line in `Makefile` and derives each prerequisite's
+signature from its recipe, then finds each in the workflow.
+
+They are two lists in two files, and an edit reaches one of them.
+Deleting a scan from CI would leave `make check` calling itself
+everything CI runs while CI ran less. Matching by what each recipe runs,
+rather than by target names, means no third list maps names to jobs.
+Pinned tools are compared by their full module path and version, so a
+version prefix cannot match a different tool.
+`TestParityRefusesToCompareNothing` holds the floor, and
+`TestParityAgainstThisRepository` runs the gate on the tree.
+
+Rejected: a map from target names to jobs, the third hand-maintained
+list.
+Cost: adding a gate means adding it in both places, the `check` target
+and the workflow, in the same change.
+
+### D-70 Unit tests use only Go's standard library, against httptest fakes, with the race detector
+
+Unit tests use Go's own `testing` package,
+`if got != want { t.Errorf(…) }`, against `httptest` fakes, and run with
+the race detector.
+
+A fake that answers as Favro is believed to answer keeps the unit suite
+offline, fast and repeatable on every platform CI runs. Go's `testing`
+package is enough for the assertions, and an assertion library is a
+dependency the tree does not need. `depguard`'s `no-assertion-library`
+rule refuses testify and go-difflib in any file. The race detector runs
+because the full-card fan-out and the caches are concurrent (D-11,
+D-08). The MCP layer is tested in memory over the SDK's transport, and
+the built binary over stdio by the `smoke` gate (D-62).
+
+Rejected: testify and go-difflib, two dependencies for what Go's
+`testing` package does.
+Cost: every fake is written from what Favro is believed to do, so a
+green suite proves only that belief. The live run is what tests it
+(D-73).
+
+### D-71 Every package holds an 80% statement floor of its own
+
+Every package under `internal/` holds an 80% statement floor of its own.
+The `coverage` gate reads the package list from
+`go list ./internal/...`, so a package is under the floor from its first
+commit.
+
+A floor on the average hides a package at 20% behind four at 95%, so the
+floor is per package. An exemption has to be written in
+`exemptFromFloor` in `scripts/gates/coverage.go` with its reason, where
+a reviewer sees it. `TestEveryExemptionNamesARealPackage` refuses an
+entry that names no package, since it would exempt nothing while reading
+as a decision. `TestReadProfileRefusesAnEmptyRun` refuses a profile that
+measured nothing. `make cover` runs it after the tests.
+
+Rejected: a floor on the average, which hides a package at 20% behind
+four at 95%.
+Cost: `cmd/favro-mcp` is outside the floor, since the list is read from
+`internal/`. Coverage measures what ran, not what was asserted.
+
+### D-72 Every endpoint Favro documents and every field of a modeled type has a verdict, held offline to a snapshot refetched by hand
+
+Every endpoint Favro documents, and every field of a type this server
+models, has a written verdict, held offline to a snapshot refetched by
+hand.
+
+`make api-diff` fetches Favro's reference
+([developer](https://favro.com/developer/)) and writes
+`testdata/api-surface.json`, which nothing else writes.
+`testdata/api-coverage.tsv` holds one verdict per endpoint, and
+`testdata/api-fields-waived.tsv` one per unmodeled field, both by hand.
+The `api-coverage` and `api-fields` gates hold both to the snapshot in
+every `make check`, from both directions. An endpoint record alone
+cannot see a type that drops half of what Favro sends, because
+`encoding/json` ignores what it does not recognize. A count of endpoints
+in prose is a claim nothing checks. `TestCheckFieldsReportsAStaleWaiver`
+refuses a waiver for a field the reference does not have.
+
+Rejected: an endpoint record alone, which cannot see a dropped field; a
+prose count of endpoints.
+Cost: Favro publishes no machine-readable surface, so the snapshot is
+scraped from its reference page. The fetch is by hand, a release step in
+[release.md](release.md).
+
+### D-73 A wire contract is verified live, by reading the resource back; the reference page is not proof
+
+A wire contract is verified live, by reading the resource back. Favro's
+reference page is a source, not proof.
+
+Favro answers 200 to a request body it ignores, so a wrong field name
+looks exactly like success
+([update a card](https://favro.com/developer/#update-a-card)). Its
+reference has been wrong against the live API in places, and Favro
+publishes no discovery document or specification to check a type
+against. A fixture written to an assumption agrees with the assumption.
+`GET /webhooks` answers with a bare array, as the reference says, and a
+fixture in the paginated shape passed the unit tests anyway. So every
+belief about Favro that the code depends on is stated at that code, with
+the reference linked and the live step that checks it named. A change
+that touches the wire runs `make live` before it merges (D-74).
+
+Rejected: the reference page as proof, which disagrees with the live
+API; a fixture written to an assumption.
+Cost: live verification needs a real organization and a person to run
+it, and a belief no live step reaches rests on a probe made by hand.
+
+### D-74 The live driver drives every tool and option through the built binary with dry_run, from the steps internal/livecover holds
+
+The live driver, `scripts/livefavro`, drives every tool and option
+through the built binary over stdio against a real organization, with
+`dry_run` on every write. Its steps live in `internal/livecover`, each
+with a unique `Name`, and `make live` runs it.
+
+A driver covers the surface on the day it is written and stops the
+moment the surface grows. So the `live-cover` gate measures the steps
+against the binary's own published schema, per option, and fails on any
+tool or option no step exercises. A waiver in
+`testdata/live-cover-waived.tsv` needs its reason. Holding the steps in
+a package the gate imports means the driver and the gate read one list.
+The seed steps run first in a written order, because a write needs the
+ids the reads supply. A comment that depends on Favro's behavior cites a
+step by its `Name` (D-73). How to run it is in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-live-run).
+
+Rejected: steps in alphabetical order, which ran writes before the reads
+that supply their ids; a gate that parses the driver's source.
+Cost: a dry-run step never observes a result. No live step reads a
+second page; issue #127 asks for one.
+
+### D-75 The live driver's write mode writes only to probes it created, and deletes them however the run ends
+
+`go run ./scripts/livefavro -writes` writes only to probes it created: a
+probe tag and a probe collection, named so the sweep can find them. It
+deletes them however the run ends.
+
+The real writes the dry-run steps cannot observe are checked here:
+`confirm` and the widening guards on real objects, a real delete, a real
+widening read back (D-30, D-35, D-36). Writing to anything else would
+change someone's organization to test a server. Each probe's cleanup is
+registered when it is created, and an interrupt runs every cleanup. The
+sweep then fails on any probe still there. A deleted collection reads
+back as 403, as one the token cannot see, so the check counts
+`[not_found]` or `[forbidden]` as gone, and only after the delete
+succeeded. Checked by the live steps "the tag is gone" and "the
+collection is gone". `TestScratchWritesOnlyToObjectsTheRunCreated` holds
+the first rule.
+
+Rejected: probing a public collection, which is the act it would test.
+Cost: the probe collection is opened to the organization for a moment,
+so everyone in it can see an empty probe until the sweep deletes it.
+
+### D-76 Agent evals score each task by the end state read back and by the trace, in a sandbox the run makes and removes
+
+Agent evals score whether a model can do a task through the tools, by
+the end state read back and by the trace. Each run makes a collection
+and a board in the live organization, works there, and deletes them.
+
+A unit test cannot see a tool the model never finds, or a description
+that sends it the wrong way. A model's account of what it did is the
+least reliable thing in the run, so the end state is read back through
+this server. A model can also pass by guessing, so the trace is scored
+too. The evals live in `scripts/evals` behind the `evals` build tag and
+run by `make evals`, through the `claude` CLI. The task table sits
+outside the tag, so `go test` walks every prompt without credentials, a
+network or a model. `TestEveryTaskIsScorableAndExplained` holds each
+task to a scorer and a reason.
+
+Rejected: a model API key of the evals' own, where the `claude` CLI is
+already installed and signed in.
+Cost: the evals run by hand, against a real organization, and each run
+spends money on the model, capped per run.
+
+### D-77 The eval session reaches this server's tools and nothing else, and none that deletes
+
+The eval session reaches this server's tools and nothing else, and none
+that deletes. The model's server starts without
+`FAVRO_ENABLE_DESTRUCTIVE`, and cleanup runs on the harness's own
+session.
+
+The run reads a real organization, so card text written by anyone with
+access reaches the model. The process tree holds a live Favro
+credential. Any built-in that runs a command would be a path for
+injected text to send it somewhere. So the session runs with
+`--strict-mcp-config`, `--allowed-tools mcp__favro__*`, `--tools ""`,
+the CLI's own switch for no built-ins, and `--setting-sources ""`, so
+the maintainer's own permission rules, hooks and skills play no part.
+The flags are in `scripts/evals/run.go`.
+
+Rejected: `--allowed-tools` alone, which leaves the host's built-ins; a
+denylist of built-in names, which fails open on the next built-in the
+CLI adds.
+Cost: no test asserts the flags, so review holds them, and a CLI release
+that changes a switch's meaning goes unseen.
+
+### D-78 The documentation is held to the code: tool names, counts, settings, gates, the package map and paths
+
+The documentation is held to the code. The `staleness` gate holds the
+tool rows in [TOOLS.md](TOOLS.md) and the README to the registry both
+ways, and any prose count of the destructive tools to the binary. It
+holds every `FAVRO_*` variable the source reads to
+[configuration.md](configuration.md) and the README, and the CHANGELOG
+to its rules.
+
+A document a person copies into a client's configuration is an input,
+and a number in prose is a claim about a list beside it. Correcting a
+stale count by hand does not stop it being typed by hand, so each rule
+derives its expected set from the code. The docs gate holds the rest of
+the references: every D-ID citation, every Held by cell, the codemap
+against the tree, every path a doc names and every live step a comment
+names. `TestToolsDocumentedReadsBothDirections` and
+`TestEveryEnvNameReachesBothDocuments` hold two of the rules.
+
+Rejected: correcting a hand-typed number by hand.
+Cost: the gate's scope is itself a list of documents in
+`scripts/gates/staleness.go`, so a document left off it is held by
+nothing.
+
+### D-79 The toolchain is the one go.mod names, everywhere; there is no N-1 matrix entry
+
+The toolchain is the one `go.mod` names, everywhere. Every CI job reads
+it with `go-version-file: go.mod`, and there is no N-1 matrix entry.
+
+One line is the single source of truth, so a toolchain change is one
+edit that CI, the release and a contributor's `go` command all follow. A
+binary is built and tested on one Go, and the release ships what CI
+tested. An N-1 entry would test a build nobody ships, for users who
+install a binary rather than a library. The README's install command
+builds with the same toolchain, which `go` downloads when the local one
+is older.
+
+Rejected: an N-1 matrix entry, which tests a toolchain no release is
+built with.
+Cost: a contributor's Go must be at least the version `go.mod` names, or
+`go` downloads it, and a toolchain bump lands for everyone at once.
+
+### D-80 Every action is pinned to a full SHA, every tool to one exact version, and every workflow pins its shell
+
+Every action in a workflow is pinned to a full commit SHA, with its
+version in a trailing comment. Every tool a recipe or a workflow
+installs is pinned to one exact version, and every workflow pins the
+shell its `run` steps use.
+
+A tag or a branch can be moved under a release, and a full-length commit
+SHA is the only immutable reference to an action
+([security hardening](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions)).
+A floating version or `@latest` runs whatever was published last, in the
+job that signs the release. A shell left to the runner differs between
+Windows and the others. The `pins` gate reads the workflows and the
+`Makefile`, and `TestExactSemverRejectsWhatCanMoveUnderYou` holds what
+counts as exact.
+
+Rejected: floating major tags and `@latest`.
+Cost: Dependabot or a person bumps each pin by hand, and a security fix
+in an action arrives only with the bump.
+
+### D-81 make check scans for vulnerabilities in source mode, licenses against an allowlist and secrets with gitleaks, as CI does
+
+`make check` scans for known vulnerabilities in source mode, for
+licenses against an allowlist, and for secrets with gitleaks, as CI
+does.
+
+Source mode follows call paths rather than a symbol table, so it reports
+a vulnerability the code can reach
+([govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck)).
+It checks the packages of the Go release on the path, and skips them
+under a version string it cannot read, so it runs under an official Go
+release. The license check accepts Apache-2.0, BSD, MIT and ISC, and
+fails on anything else a dependency carries. gitleaks scans for
+credentials, which the `leaks` gate does not look for (D-49). The
+`parity` gate holds CI to the same three (D-69).
+
+Rejected: govulncheck in binary mode, which reads a symbol table and
+reports what the code cannot reach.
+Cost: `github.com/segmentio/asm` is ignored by path, because go-licenses
+cannot name its MIT-0 license, so the check does not see a later change
+to that module's license.
+
+### D-82 CI runs on Linux, macOS and Windows
+
+CI runs the unit tests on Linux, macOS and Windows.
+
+A person installs this server on all three, and the release builds for
+all three (D-91). Each platform breaks things the others pass. POSIX
+regular expressions have no `\s` or `\b`, so a pattern git accepts on
+Linux matches nothing on macOS, and a fixture binary on Windows has to
+be a real build. Every gate that greps through git therefore greps a
+fixed string and applies the pattern in Go, where the engine is the same
+everywhere. The workflow's `test` job runs on `ubuntu-latest`,
+`macos-latest` and `windows-latest`.
+
+Rejected: Linux alone, which passes what macOS and Windows fail.
+Cost: git's GNU regex extensions are off limits, so the gates grep a
+fixed string and match in Go, and every pull request waits on three
+runners.
+
+### D-83 A tag is the whole release, and its notes are that version's CHANGELOG section
+
+A tag is the whole release. Pushing a version tag runs the release
+workflow, which builds, signs and publishes, and the release notes are
+that version's CHANGELOG section, taken verbatim.
+
+The CHANGELOG is the one place a release is described, so the notes
+cannot disagree with it. The `release-notes` gate takes exactly one
+version's section, and refuses a tag that is not a version, which is
+what the workflow passes it. `TestChangelogSectionTakesOneVersion` holds
+the cut. The maintainer cuts every tag. The steps are in
+[release.md](release.md).
+
+Rejected: release notes written in the release form, a second
+description of the release that can disagree with the CHANGELOG.
+Cost: a version with no CHANGELOG section fails at tag time, after the
+tag is pushed, and a pushed tag is not moved, so the fix is a patch
+version.
+
+### D-84 A release is signed and attested: the checksums cover every artifact the .mcpb included, under keyless cosign and build provenance, with an SBOM per archive and byte-identical rebuilds
+
+A release is signed and attested. The checksums cover every archive and
+the `.mcpb`, a keyless cosign signature covers the checksums, every
+artifact carries build provenance, each archive has an SBOM, and a
+rebuild is byte-identical.
+
+The bundle is packed in the universal binary's post hook and named in
+`checksum.extra_files` and `release.extra_files` in `.goreleaser.yaml`.
+GoReleaser hashes the artifacts it built, and a file a hook dropped into
+`dist/` is not one of them. So without that entry the bundle ships
+outside the signature while the README tells people to verify it.
+Keyless signing ties the signature to the workflow's identity, with no
+private key to hold or leak. `mod_timestamp` set to the commit's time
+makes a rebuild byte-identical. The `mcpb` gate holds each of these
+lines, and `TestReleaseWiringIsHeld` fails when one is deleted.
+
+Rejected: a bundle dropped into `dist/` by a hook alone, which ships
+outside the signature.
+Cost: the signing step runs only in the release workflow, so the local
+rehearsal skips signing, the SBOMs and publishing.
+
+### D-85 A tag name reaches no shell: it travels through the environment, and the trigger admits only alphanumeric suffixes
+
+A tag name reaches no shell. The release workflow passes it through the
+environment, never into a `run:` line, and the trigger admits only a
+version, with an alphanumeric suffix at most.
+
+An Actions expression is substituted as text before bash parses the
+line, and double quotes stop word splitting but not command
+substitution. Git accepts `$`, a backquote, `;` and braces in a ref
+name. A tag substituted into a `run:` line could run a command in the
+job that holds the identity that signs the release (D-84). An
+environment variable is data to bash, not code. The trigger's patterns
+admit `vX.Y.Z` and a suffix of letters and digits, so a tag with shell
+syntax starts no release. `TestReleaseNotesRefusesATagThatIsNotAVersion`
+holds the gate's side of it.
+
+Rejected: the tag substituted into a `run:` line.
+Cost: every step that needs the tag reads it from the environment, and a
+tag with an unusual suffix starts no release at all.
+
+### D-86 A go install build reports the module version Go embeds
+
+A `go install` build reports the version Go embeds. `internal/version`
+takes the tag and commit from `-ldflags`, and falls back to the module
+version and the VCS revision from `debug.ReadBuildInfo`
+([ReadBuildInfo](https://pkg.go.dev/runtime/debug#ReadBuildInfo)).
+
+`go install` applies no `-ldflags`, so without the fallback every build
+installed that way would report `dev`, and no bug report from one could
+be traced to a build. `doctor` prints which source answered, the stamp,
+the module or neither, because "dev" and a real version are the same
+word to a person saying what they run (D-59).
+`TestSourceAndModuleAlwaysAnswer` and `TestStampFrom` hold the fallback.
+
+Rejected: the `-ldflags` stamp alone, which leaves every `go install`
+build reporting `dev`.
+Cost: a binary built by hand from a checkout carries whatever version Go
+derives for that tree. Only a release carries the stamp the release
+workflow sets.
+
+### D-87 Changes reach main through a pull request with eight required checks and no bypass actors
+
+Changes reach `main` through a pull request, with the required checks
+green and no bypass actors. The required checks are the test job on
+Linux, macOS and Windows, and `gates`, `cover`, `static`, `secrets` and
+`coverage`.
+
+A rule that only a careful person keeps is broken on the first hurried
+day. Branch protection makes the checks the merge condition, and no
+bypass actors means the maintainer is held too. The checks are required
+by name, so the names in the ruleset and the job names in the workflow
+have to agree. The maintainer pushes and merges. The settings live in
+the repository's ruleset, which [CONTRIBUTING.md](../CONTRIBUTING.md)
+describes.
+
+Rejected: a direct push to `main`, which skips every check CI runs.
+Cost: renaming a CI job silently drops its requirement, because the
+ruleset waits for a name the workflow does not produce, and only review
+notices.
+
+### D-88 Both bundles ship: the .plugin, which is how people install this server, and the .mcpb beside it
+
+Both bundles ship: the `.plugin`, which is how people install this
+server, and a Claude Desktop `.mcpb` beside it.
+
+The `.plugin` carries binaries for each platform and a launcher, with an
+`.mcp.json` that points at the plugin's root. It is the install path
+people use, and dropping it would break them. The `.mcpb` is what Claude
+Desktop installs, and the Google servers ship one too. The `plugin` and
+`mcpb` gates each validate their manifest against the files the packer
+stages, because the failures that matter are referential: an entry point
+nothing stages, an override no declared platform can reach, a launcher
+choosing between binary names no manifest mentions.
+`TestPluginGateAgainstThisRepository` and `TestCommittedManifestPasses`
+run them on the tree.
+
+Rejected: dropping the `.plugin` to ship the `.mcpb` alone.
+Cost: two manifests and two packers to keep honest, each with its own
+gate.
+
+### D-89 The .mcpb asks for every setting the server reads, derived from config.Vars, each defaulting to the server's own default, and is the whole setup
+
+The `.mcpb` asks for every setting the server reads, derived from
+`config.Vars`, each defaulting to the server's own default, and it is
+the whole setup. It asks for the address, the API token, the
+organization id, `enable_destructive` and `upload_dir`.
+
+A Favro credential is a token rather than a sign-in, so the bundle can
+collect everything the server needs and work on the first call. The
+`mcpb` gate derives what the bundle asks for from `config.Vars`: each
+variable is asked for or left out with a reason. The switch defaults to
+off and the folder to an empty string, which `internal/config` reads as
+unset. The reference host leaves a key with no default as its literal
+placeholder
+([config.ts](https://github.com/anthropics/mcpb/blob/v2.1.2/src/shared/config.ts)).
+Claude Desktop approves per tool and a person can always allow one, so a
+switch left off is the guard a bundle install keeps. The token is asked
+for as sensitive.
+
+Rejected: an optional key without a default; a `tools` list in the
+manifest; a required switch; a manifest saying the bundle does not sign
+you in.
+Cost: a person turns each switch on by hand. Issue #124 asks to install
+the bundle in Claude Desktop itself, since its handling of hints, blank
+fields and overrides comes from documentation.
+
+### D-90 A bundle's commands start with ${__dirname}/ and name a staged binary or the launcher, and no platform override sets env or args
+
+A bundle's commands start with `${__dirname}/` and name a staged binary
+or the launcher. `mcp_config.args` is empty, and no platform override
+sets `env` or `args`.
+
+The reference host takes an override's `env` or `args` in place of the
+base's
+([config.ts](https://github.com/anthropics/mcpb/blob/v2.1.2/src/shared/config.ts)).
+An override's `env`, even an empty one, drops every base variable on
+that platform. An argument such as `--dry-run` would configure the
+server past every check on `env`. A relative command has no documented
+base. The `mcpb` gate refuses each of these, and a command that names
+`LICENSE`, `NOTICE` or `README.md`. A claimed platform must start the
+file staged for it, and the launcher is generated from the same table
+the packer stages from. `TestManifestProblemsRunsEveryCheck` and
+`TestLauncherNamesWhatThePackerStages` hold both. The manifest is held
+to a vendored copy of its published schema.
+
+Rejected: an override's `env` or `args`, which replace the base's; a
+`$schema` that names a branch rather than a tag; manifest version 0.4,
+which adds nothing this bundle uses.
+Cost: a platform that needs a different setting has no way to say so in
+the manifest, and the launcher stands in for it.
+
+### D-91 One release matrix names the six archives, and both bundles run the Windows amd64 binary on arm64
+
+One release matrix, `releaseMatrix` in `scripts/gates/plugin.go`, names
+the archives the release builds: darwin, linux and windows, each on
+amd64 and arm64. Both bundles run the Windows amd64 binary on arm64.
+
+A manifest names one command per platform and has no key for the
+architecture. Windows on arm64 runs an amd64 program under emulation, so
+the bundles stage the amd64 binary for `win32`. The windows arm64
+archive is for an install from the release page. The `mcpb` and `plugin`
+gates both read the one table, so the archives, the staged files and the
+launcher cannot disagree. `TestGoreleaserMatrixIsTheOneTheBundleClaims`
+holds `.goreleaser.yaml` to it.
+
+Rejected: a native arm64 Windows binary in the bundles, which the
+manifest has no key to choose.
+Cost: Windows 10 on Arm cannot run x64 code, so a bundle install there
+fails. Issue #125 asks whether to ship a native windows arm64 binary in
+the bundles.
+
+### D-92 The MCP registry entry obeys the rules the registry enforces in code
+
+The MCP registry entry, `packaging/registry/server.json`, obeys the
+rules the registry enforces in its code, and the `registry` gate holds
+them in every `make check`.
+
+The registry's schema does not carry those rules: its validator does.
+The identifier must be an HTTPS GitHub release asset URL containing
+"mcp", it must not sit beside a `registryBaseUrl`, and the bundle's hash
+must be 64 hex characters. Each is refused at publish time, after the
+sign-in has succeeded, which is the worst moment to find out. The
+committed entry carries a placeholder version and hash, since a real
+version in the tree is stale at the next release. `registry-publish`
+fills both in from the signed checksums at tag time.
+`TestMCPRegistryCatchesWhatTheRegistryRefuses` plants each break.
+
+Rejected: holding the entry to the registry's published schema alone,
+which passes what its validator refuses.
+Cost: the rules are read from the registry's source, so a rule it adds
+is unknown here until the entry is refused.
+
+### D-93 A write whose 200 is not trusted carries an `unverified` error class
+
+A write whose 200 the server does not trust would carry an error class
+of its own, `unverified`. It is declined.
+
+The message would read
+`[unverified] Favro returned 200 and the write was not read back`. It
+renders on an error result, which sets `IsError` and tells the caller
+the call failed, when the write may well have landed. A caller that
+retries on `IsError` posts the comment twice or creates the card twice,
+so the class would cause the damage it was meant to warn about. It is
+also constant per tool rather than per call, and a constant per tool is
+a tool description, which is where the warning lives. The honest signal
+for a write that was read back is a field on a successful result (D-24).
+
+Rejected: an `unverified` error class, which marks a call that may have
+landed as failed.
+Cost: a write Favro may have ignored is reported as a note on a
+successful result, which a caller has to read to notice (D-24).
+
+### D-94 The server confirms its riskiest writes with the person, through MCP form elicitation
+
+The server would confirm its riskiest writes with the person, through
+MCP form elicitation: a form with no fields, put before the write, with
+the write sent only on an accept. It is superseded by D-31, under which
+the server asks the person nothing.
+
+The MCP specification gives consent to each tool call to the host, and
+never makes an elicitation's answer consent: a client may answer "from
+the user or other sources"
+([elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation)).
+Clients answer such a question with nobody there, as a Claude Code
+`Elicitation` hook or Codex under full access does, or never draw it. No
+client's allow and ask rules match it. Most widely used servers with
+risky writes never ask. A question on every call is answered without
+reading.
+
+Rejected: confirming writes through form elicitation; Claude Code's mark
+sent only to a client that cannot ask.
+Cost: while it held, `FAVRO_REQUIRE_PROMPT` refused the asking writes on
+a client that could not ask. That setting is refused at start (D-32).
+
+Next ID: D-95

@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +46,50 @@ func TestTheStepsRunThroughAServerStartedWithDryRun(t *testing.T) {
 	}
 	if string(got) != "--dry-run" {
 		t.Errorf("the steps' server was started with %q, want --dry-run", got)
+	}
+}
+
+// Each line of a run names its step by the name a code comment cites,
+// and a failure or a skip says why after the name. Under -v a step's Why
+// follows its name.
+func TestEachStepIsPrintedByItsName(t *testing.T) {
+	steps := []livecover.Step{
+		{Name: "read a tag", Tool: "favro_get_tag", Args: map[string]any{}, Why: "a tag by id"},
+		{Name: "a tag that does not exist is [not_found]", Tool: "favro_get_tag", Args: map[string]any{}, ExpectError: "not_found"},
+		{Name: "read a group", Tool: "favro_get_group", Args: map[string]any{}, Why: "a group by id"},
+		{Name: "read a card's tag", Tool: "favro_get_tag", Args: map[string]any{"card_id": livecover.AnyCardID}},
+	}
+	for _, tc := range []struct {
+		verbose bool
+		want    []string
+	}{
+		{false, []string{
+			"ok   read a tag",
+			"FAIL a tag that does not exist is [not_found]: expected [not_found], got [forbidden] Favro denied access (HTTP 403)",
+			"SKIP read a group: favro_get_group is not registered",
+			"SKIP read a card's tag: no {card_id} seen yet in this organization",
+		}},
+		{true, []string{
+			"ok   read a tag (a tag by id)",
+			"FAIL a tag that does not exist is [not_found]: expected [not_found], got [forbidden] Favro denied access (HTTP 403)",
+			"SKIP read a group (a group by id): favro_get_group is not registered",
+			"SKIP read a card's tag: no {card_id} seen yet in this organization",
+		}},
+	} {
+		var buf bytes.Buffer
+		out := &printer{red: redact.New(), w: bufio.NewWriter(&buf)}
+		fake := &fakeFavro{results: map[string][]string{"favro_get_tag": {`{}`, "[forbidden] Favro denied access (HTTP 403)"}}}
+
+		got := runSteps(fake, out, newPool(""), steps, map[string]tool{"favro_get_tag": {readOnly: true}}, tc.verbose)
+		if got != (tally{passed: 1, failed: 1, skipped: 2}) {
+			t.Errorf("-v %v: tally %+v, want 1 passed, 1 failed and 2 skipped", tc.verbose, got)
+		}
+		lines := strings.Split(buf.String(), "\n")
+		for _, want := range tc.want {
+			if !slices.Contains(lines, want) {
+				t.Errorf("-v %v: no line %q in the transcript:\n%s", tc.verbose, want, buf.String())
+			}
+		}
 	}
 }
 
@@ -105,7 +151,7 @@ func TestEveryPlaceholderAStepNamesIsResolvedOrSkipsTheStep(t *testing.T) {
 
 		args, missing := full.resolve(step.Args)
 		if missing != "" {
-			t.Errorf("%s (%q): %s unresolved with every placeholder supplied", step.Tool, step.Why, missing)
+			t.Errorf("%s (%q): %s unresolved with every placeholder supplied", step.Tool, step.Name, missing)
 			continue
 		}
 		got, err := json.Marshal(args)
@@ -114,12 +160,12 @@ func TestEveryPlaceholderAStepNamesIsResolvedOrSkipsTheStep(t *testing.T) {
 		}
 		for _, ph := range livecover.Placeholders {
 			if strings.Contains(string(got), `"`+string(ph)+`"`) {
-				t.Errorf("%s (%q) sends %s as written: %s", step.Tool, step.Why, ph, got)
+				t.Errorf("%s (%q) sends %s as written: %s", step.Tool, step.Name, ph, got)
 			}
 		}
 
 		if _, missing := newPool("").resolve(step.Args); namesOne && missing == "" {
-			t.Errorf("%s (%q) names a placeholder and was not skipped with none supplied", step.Tool, step.Why)
+			t.Errorf("%s (%q) names a placeholder and was not skipped with none supplied", step.Tool, step.Name)
 		}
 	}
 	// The floor: every placeholder was found in some step, so the check
@@ -134,12 +180,10 @@ func TestEveryPlaceholderAStepNamesIsResolvedOrSkipsTheStep(t *testing.T) {
 	}
 }
 
-// The driver printed its summary and then hung forever, holding the
-// server process open, because stop closed the wrong end of the stdin
-// pipe: StdinPipe sets cmd.Stdin to the READ end and returns the write
-// end, and a type assertion to a Closer succeeds on either. `make live`
-// never returned, and the only reason it was survivable is that the
-// summary prints first and a person reads it and presses Ctrl-C.
+// stop closes the write end of the stdin pipe: StdinPipe sets cmd.Stdin
+// to the READ end and returns the write end, and a type assertion to a
+// Closer succeeds on either. Closing the wrong end leaves the server
+// waiting for EOF and the driver hung after its summary.
 //
 // The child is this test binary re-invoked, rather than `cat` or
 // `sleep`, because `make check` runs the suite on the Windows runner

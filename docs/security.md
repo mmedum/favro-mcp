@@ -1,176 +1,156 @@
-# Security
+# Security model
 
-Reporting a vulnerability: [SECURITY.md](../SECURITY.md). Never a public
-issue.
+The threat model and the invariants the code holds.
+[`SECURITY.md`](../SECURITY.md) says how to report a vulnerability.
+
+It applies to one binary, a subprocess of your MCP client on your
+machine, with your own Favro address, API token and organization, against
+Favro only (D-01, D-53). It opens no listener, and has no telemetry, no
+crash reporting and no update check. `make api-diff`, a maintainer
+command that `make check` never runs, is the one other fetch: it reads
+Favro's published reference.
 
 ## Trust boundaries
 
-- **The person** runs the binary under their own account. They may also
-  approve each tool call in their MCP client, but that is not a boundary
-  this server relies on: hosts have auto-approve modes and the MCP spec
-  says clients treat tool annotations as untrusted. What this server
-  controls is which tools it registers and what it refuses.
-- **The MCP client** (Claude Code, Claude Desktop, Cowork) speaks
-  JSON-RPC over stdio. Stdout carries only protocol frames; every log
-  goes to stderr through `slog`.
-- **Favro** is the only network peer: `favro.com`. No telemetry, no crash
-  reporting, no update check. The one exception is a maintainer command —
-  `gates api-diff` fetches `favro.com/developer` to refresh the API
-  snapshot, and it never runs in `make check`.
+| Boundary | Crosses | Assumption |
+|---|---|---|
+| MCP client ↔ this server | An OS pipe | Both run as the same OS user, unauthenticated. Stdout carries only protocol frames (D-45). |
+| This server ↔ Favro | HTTPS to `favro.com` | Every call carries HTTP Basic with the address and the token, and the organization header (D-54). Every call has a timeout (D-43). |
+| This server ↔ disk | The file system | The upload tools read only inside `FAVRO_UPLOAD_DIR` (D-38). No tool writes the environment, a file or the keyring; only `favro-mcp auth` writes the keyring (D-39). |
+| Card authors ↔ the model | Every card, comment and description a tool returns | Written by anyone in the organization, sometimes to steer an assistant. |
 
-There is no multi-tenant boundary to cross. The server holds one token,
-binds one organization at startup, and no tool accepts an
-`organization_id`.
+## What is worth stealing
 
-## Credentials
+- **The API token.** It carries the permissions of the user who issued
+  it, in every organization that user can reach, and Favro cannot scope
+  it down. It lives in the OS keyring or the environment.
+- **Organization content.** It passes through tool results to your
+  client, and through nothing else.
+- **The organization itself.** A delete, a collection opened wider, or a
+  description overwritten. Favro has no undo.
 
-- HTTP Basic with an address and an API token, because Favro's REST API
-  offers no OAuth flow at all. Both come from the environment or the OS
-  keyring; `favro-mcp auth login` writes the keyring entries with the
-  token input masked.
-- **The token is never printed.** Not by a tool result, not by a log line
-  at any level, not by `auth status`, and not by `doctor` in either of
-  its modes. `doctor` prints its length and deliberately not a prefix: a
-  prefix of a secret is part of a secret.
-- Favro's API tokens carry the issuing user's own permissions and cannot
-  be scoped down at issue time. The honest mitigation is to issue the
-  token from a least-privileged service user rather than from an admin
-  account.
-- `favro-mcp auth logout` deletes the keyring entries. It cannot revoke
-  the token at Favro — do that in Favro's own UI.
+## Adversaries
 
-## What does not reach a log
+**A card author writing to steer your assistant.** The server returns
+card text faithfully and does not interpret it, so it cannot stop a
+model being persuaded. It limits what persuasion reaches. The destructive
+tools are absent unless the deployer turns them on (D-29). The ordinary
+writes share only inside the organization (D-35), and opening a
+collection is a destructive tool of its own (D-36). The upload tools
+read one directory (D-38). A tag name with a typo never creates a tag
+(D-21), and no tool changes the server's settings (D-39).
 
-Logs carry startup and shutdown facts and, at `debug`, one line per
-request: the method, the redacted path, the names of the query
-parameters, the attempt number and the redacted headers. There is no
-response log at all — not a status code, not an elapsed time. Nothing
-carries a payload, and nothing carries anything that identifies or
-reconstructs the subject. Four things
-used to, and each is now held by a test:
+**A malicious MCP client, or a persuaded model driving an honest one.**
+It can call any registered tool as you, so registration is the control.
+`confirm: true` and a collection's name passed as a witness are written
+by the model; they are never your approval (D-30, D-36).
 
-- The query string, which carries `cardCommonId`, `widgetCommonId` and
-  `sequentialId`. The parameter *names* are logged instead.
-- The path, which is `/cards/{cardId}` for every get-one endpoint. Ids in
-  the path are masked.
-- The `organizationId` header, which `Token.Apply` sets on every request.
-- The startup line's `organization_id`, which named the tenant at `info`
-  in the first line of every session.
+**The repository's own live runs.** The evals point a model at a real
+organization, so card text reaches a process that holds a live token.
+The model gets this server's tools and nothing else, from a server with
+no destructive tools (D-77).
 
-A debug log is therefore safe to attach to a bug report. `favro_ping`
-still returns the organization id, because a tool result goes to the
-caller who asked for it; a log goes to whoever ends up holding the file.
+**A forged release.** The checksums are signed keylessly and every
+archive carries build provenance (D-84). A tag name never reaches a
+shell (D-85).
 
-## What `doctor` prints
+## Invariants the code holds
 
-`doctor` is a different surface from a log, and a more dangerous one,
-because the issue form asks people to paste it in public. It is held to
-the same rule by construction rather than by care: every line goes
-through `internal/redact`, and the values it must not leak are
-*registered* with the redactor by name rather than left to a pattern to
-notice.
+A test or a gate holds each of these. A way to break one is a
+vulnerability.
 
-That distinction is the whole of it. Every pattern in `internal/redact`
-is anchored on a shape a tenant's data takes — a 24-hex run, an address,
-a link — so a value that is tenant data and takes some other shape passes
-straight through. The organization ids `doctor` prints arrive from the
-API rather than from configuration, and nothing but a regex stood between
-them and a public issue until they were registered.
+- **Stdout carries only JSON-RPC.** forbidigo, `make smoke` and
+  `TestForbidigoGuardsStdout` hold it (D-45).
+- **A log line carries the method, the path's shape, the query's
+  parameter names, the attempt and the outcome, never a payload, an id
+  or the organization.** `TestDebugLogNeverCarriesTheSubject`,
+  `TestRedactPathIDs` and `TestStartupLineNamesNoTenant` hold it (D-46).
+- **The token is never printed**: not in a result, a log, a dry-run
+  record, `auth status` or `doctor`.
+  `TestAuthStatus_ReportsSourceAndOrgButNeverTheToken` and
+  `TestSecretsScrubsTheTokenAndLeavesIdentifiers` hold it (D-47).
+  `doctor` registers every value it hides with the redactor, which
+  `TestDoctorRedactsCredentials` holds (D-48).
+- **The destructive tools are absent without `FAVRO_ENABLE_DESTRUCTIVE`,
+  and each refuses a call without `confirm: true`.**
+  `TestDestructiveToolsAreOptIn` and `TestEveryDestructiveCallNeedsConfirm`
+  hold it (D-29, D-30).
+- **A dry run sends no write, whatever the handler does.**
+  `TestEveryWriteTakesDryRunAndSendsNothing` and
+  `TestADryRunWritesNothingWhateverTheHandlerDoes` hold it (D-28).
+- **The ordinary writes share only inside the organization, and a
+  widening names its collection and is read back.**
+  `TestOrdinaryWritesShareOnlyInsideTheOrganization`,
+  `TestCollectionWritesRefuseWideSharing` and `TestWidenCollectionSharing`
+  hold it (D-35, D-36).
+- **The server asks nobody, and no tool writes its own settings.**
+  `TestNoToolWritesTheServersOwnSettings` holds the second (D-31, D-39),
+  and the tool tests' client fails any call that asks.
+- **The upload tools read only inside `FAVRO_UPLOAD_DIR`, a link
+  included.** `TestMCP_UploadAttachment_ReadsOnlyTheUploadDir` and
+  `TestUploadToolsNeedAnUploadDir` hold it (D-38).
+- **A write is sent once, and one whose answer was lost is
+  `ambiguous_outcome`.** `TestDo_WriteIsNotRepeatedAfter5xx` and
+  `TestDo_WriteCutOffAfterSendIsAmbiguous` hold it (D-41).
+- **Every HTTP call has a timeout**, the startup check and `doctor`'s
+  live half included. `TestDefaultValidator_HasReasonableDefaults` holds
+  it, and forbidigo refuses `http.DefaultClient` and the package-level
+  helpers that use it (D-43).
+- **No result can carry a webhook's signing secret**, since no type has
+  a field for it. `TestWebhookSecretIsNeverDecoded` holds it (D-52).
+- **Nothing in the repository identifies a real organization.**
+  `make leaks` and gitleaks hold it (D-49). The live driver and the evals
+  print only through the redactor, which `make transcript` holds (D-51).
 
-`--show-ids` prints ids and addresses in full, for the user's own screen,
-and says on its own output that it is unsafe to share. The token is
-scrubbed in that mode too.
+Every regular expression runs on Go's RE2 engine, in linear time.
 
-## The transcript the live drivers write
+## Not a vulnerability
 
-`scripts/livefavro` and `scripts/evals` both drive the built binary
-against a real organization and print only through `internal/redact`;
-the `transcript` gate fails the build if anything else reaches the
-terminal, in either of them.
+Do not report these as vulnerabilities. Open an ordinary issue if one
+surprises you.
 
-The gate read only the first of those for a day, and the second printed
-a failing task's whole trace — live ids the model had resolved — with
-nothing failing. It takes a list now, and its test names both drivers,
-because a gate that passes and a gate that looked at the wrong directory
-print the same sentence.
+- **The client did not prompt.** Annotations are hints, and a client can
+  run a tool with nobody approving. A destructive tool registered while
+  its switch is off is a vulnerability.
+- **What runs as you can act as you**, the environment and the keyring
+  included.
+- **The token reaches everything its user can.** Favro offers no scope
+  narrower than the user.
+- **A tool result is not masked.** It is your data, returned to you;
+  `favro_ping` returns the organization id for the same reason.
+- **A model following instructions in a card.** That is the client's
+  concern. Content that makes the server itself break an invariant is a
+  vulnerability.
+- **A live run's output names cards and boards.** The redactor removes
+  ids and addresses, not names, and the output is for the maintainer's
+  own terminal (D-51).
+- **Someone else's code.** A flaw in Favro goes to Favro, and one in a
+  dependency to that project.
 
-**What that redactor cannot do is measured rather than assumed.** On a
-complete run — 122 steps, of which 104 reached Favro and 18 were skipped
-for ids that organization does not have — it produced 56 KB in which
-there were zero ids of either shape, zero addresses, zero app links and
-zero signed URLs. It also left 54 card and board *names*, because a name
-is ordinary words
-and a pattern that caught it would catch the rest of the sentence. That
-is acceptable for a maintainer's terminal showing them an organization
-they already hold a token for. It is not acceptable in a file, and the
-leak gate cannot catch it either. **Do not commit a transcript.**
+## Dependency vulnerabilities
 
-## What the eval harness lets a model reach
+`govulncheck` runs in source mode in `make check` and in CI, and fails
+when this server's code can reach a vulnerable symbol (D-81). A CVE in a
+dependency is a vulnerability here only then. It is fixed in a release
+whose CHANGELOG entry names the CVE or GHSA; otherwise the dependency is
+updated in the normal course.
 
-`make evals` points a model at a real organization through this server,
-which makes the run itself a trust boundary rather than only a test.
-Card text in that organization may have been written by anyone with
-access to it, and the process tree holds a live Favro credential — so a
-built-in tool that runs a command would be an exfiltration path for
-text the maintainer did not write.
+## What you are responsible for
 
-The confinement is fail-closed, and it is spelled that way deliberately:
-
-- `--tools ""` — the CLI's own switch for "no built-in tools at all".
-  This replaced a hand-written list of built-in names to disallow, which
-  is a denylist of a surface this repository does not own: it fails
-  open, it goes stale on the next CLI release, and it had already let
-  `Grep` and `Glob` through once. `Monitor`, which runs a shell command
-  under a name that is not `Bash`, was still missing from it.
-- `--allowed-tools mcp__favro__*` with `--strict-mcp-config` — this
-  server's tools, and no other MCP server the developer has configured.
-- `--setting-sources ""` — no user, project or local settings, so the
-  maintainer's pre-approved permission rules, hooks and skills do not
-  decide what the run may do.
-- The model's server is started **without** `FAVRO_ENABLE_DESTRUCTIVE`,
-  so it holds no delete tool. Teardown runs on the harness's own
-  session, which is the only place those exist.
-
-The sandbox it builds is its own collection and board, removed at the
-end of the run even if the build fails halfway.
-
-## What can go wrong and what limits it
-
-| Risk | Mitigation |
-|---|---|
-| A **destructive** tool runs unattended | They are **not registered** unless `FAVRO_ENABLE_DESTRUCTIVE=true`, and a registered one refuses a call without `confirm: true`, which the model sets and so is a witness, not approval. A host in an auto-approve mode runs an annotated tool without prompting, and the MCP spec says clients treat annotations as untrusted — so the only guarantee is absence from `tools/list`. Which tools those are is read at registration from whether a tool takes `confirm`, never from a list of names. This covers deletion and nothing else: `favro_update_card` replaces a description wholesale, and it, `favro_replace_in_card_description`, `favro_update_comment` and `favro_update_tags` are registered by default with no `confirm`. They overwrite, and Favro has no undo, so they say `destructiveHint: true` and a client that reads it asks first. |
-| A delete, an upload or a public collection happens without the person | The server asks nobody; the client approves each call (`docs/architecture.md` §9.2). claude.ai and Codex ask before any write that changes or removes something, which says `destructiveHint: true`, VS Code before every tool that writes, and Claude Code on every call of the five tools marked `requiresUserInteraction` — the deletes of a tag, group, widget or collection, and `favro_widen_collection_sharing` — refusing them where it cannot prompt. For the rest, the README gives `permissions.ask` rules. A client that runs with nobody watching gets what is registered, so leave `FAVRO_ENABLE_DESTRUCTIVE` and `FAVRO_UPLOAD_DIR` unset there. |
-| A collection is opened, or someone outside the organization added, through an ordinary write a client always allows | The ordinary collection, group and widget writes share only with members of the organization by userId and with its groups: an email, `type: 'organization'`, a new admin, someone whose organization role is not a member's, guests as widget owners and a public or organization-wide collection are refused `[blocked]`. Opening a collection is `favro_widen_collection_sharing`, which is destructive and takes the collection's name as a witness. |
-| A tool widens the server's own reach | No tool writes the environment, a file or the keyring: `TestNoToolWritesTheServersOwnSettings` follows every package the tools import and refuses such a call outside `auth.KeyringSource`, which only `favro-mcp auth` uses. |
-| A write happens during a preview | Every mutating tool takes `dry_run`, and the gate lives in the HTTP client rather than in each tool, so a dry run cannot reach `RoundTrip`. A test proves it per tool. |
-| A typo creates a permanent org-global tag | The tag tools hard-fail on an unknown tag name rather than creating it. Favro's own `addTags` creates unknown tags, which turns a typo into something everyone in the organization then sees. |
-| A write is reported as succeeding when Favro ignored it | Favro answers 200 for a request body it ignored, and its REST docs disagree with the live API in places. Writes send the documented shape; a tool whose write is unverified says so in its description; and the project's definition of done requires reading the resource back against a real organization before a phase ships. |
-| Tenant data reaching the repository | `gates leaks` scans the working tree for addresses, 24-hex ids, keyed organization ids, app links and card references, and `gates leaks history` scans every blob and commit message. It caught the example card reference in the bug-report form's own first draft. |
-| Secrets reaching the repository | gitleaks in `make check` and in CI, with `.gitleaks.toml`. The pre-commit hook runs the faster tenant-data scan (`gates leaks`) rather than gitleaks, so a committed credential is caught by `make check` or CI and not at the commit itself. Every fixture is generated rather than recorded from a live response. |
-| A tampered release | Archives, the `.mcpb` bundle and `checksums.txt` are covered by a keyless cosign signature and by build provenance; an SBOM ships per archive. `gates mcpb` holds the eight configuration lines that make that true, because deleting any one of them ships an unsigned artifact while every other check stays green. See the README's "Verifying a download". |
-| A release tag carrying a command | A tag name reaches a `run:` block, git permits `$`, backtick, `;` and `{}` in a ref name, and the release job holds `id-token: write`. The tag goes through the environment rather than into the script, the trigger admits only alphanumeric pre-release suffixes, and `gates release-notes` refuses a version that is not one. |
-| A hung Favro endpoint | Every API call carries a 30s client timeout; the startup validation carries 5s and `doctor` caps its whole live half at 15s. |
-| Regex denial of service | Go's RE2 engine, linear time. |
-
-## Threats this server does not address
-
-- **Anything the token can do in Favro, and anything in the upload
-  directory.** The first half is bounded by choosing the user the token
-  belongs to. The second by what you put in `FAVRO_UPLOAD_DIR`.
-- **What is in the upload directory.** `favro_upload_attachment` and
-  `favro_upload_comment_attachment` exist only when `FAVRO_UPLOAD_DIR` is
-  set, and read inside it and nowhere else: a `..` or a symbolic link out
-  of it is refused. Anything in it can be sent to Favro, and a card's text
-  can suggest which file. The server sends on the model's word: list the
-  upload tools under your client's ask rules to see each one first, with
-  its path in the arguments. Point the variable at a directory that holds
-  only what you are willing to attach to a card, never at your home
-  directory.
-- **Prompt injection through Favro content.** A card description is
-  untrusted text that reaches a model. This server renders it faithfully
-  and does not interpret it; nothing here prevents a model from acting on
-  instructions it reads in a card. Read that together with the bullet
-  above rather than on its own: the worst case is not a stray Favro
-  write.
-- **A compromised MCP host.** The host holds the stdio pipe and decides
-  which tools to call.
+- **The token's user.** Issue the token from a user with the least
+  access you need, not an administrator. For read-only use, leave
+  `FAVRO_ENABLE_DESTRUCTIVE` off and start the server with `--dry-run`
+  (D-56). [`troubleshooting.md`](troubleshooting.md#tasks) says how to
+  rotate the token, revoke it and handle a suspected exposure.
+- **The switches you turn on.** `FAVRO_ENABLE_DESTRUCTIVE` registers
+  deletes and the widening tool, so leave it off for a client that runs
+  with nobody watching. `FAVRO_UPLOAD_DIR` is a directory whose every
+  file a model can send to Favro; point it at one that holds only what
+  you would attach to a card, never your home directory.
+- **Your client's approvals.** Give the sharing, upload and deleting
+  tools an `ask` rule, as the README's
+  [Approving calls](../README.md#approving-calls) shows.
+- **Where the token lives.** Keep a keyring available, and
+  `FAVRO_API_TOKEN` out of shared shells and logs.
+- **What you paste.** `doctor` and a debug log are built to be safe
+  (D-46, D-48). `doctor --show-ids`, a token and a tool result are not.

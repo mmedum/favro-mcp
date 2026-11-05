@@ -411,11 +411,9 @@ func TestCleanDisconnect(t *testing.T) {
 	}
 }
 
-// TestStartupLineNamesNoTenant is the second half of what §9 says A2
-// owes. The startup line logged the organization id at INFO, which
-// named the tenant in the first line of every session — not at debug,
-// not behind a flag, in every log anyone has ever collected from this
-// server.
+// TestStartupLineNamesNoTenant holds that the startup line, logged at
+// INFO in every session, names no tenant: an organization id there
+// would be in every log anyone collects from this server.
 //
 // The assertion is over everything that was logged, not over the one
 // line: the rule is that no forbidden value reaches a log at any
@@ -479,7 +477,7 @@ func TestUsageDocumentsDestructiveFlag(t *testing.T) {
 //
 // Behavior rather than a predicate: run() is what falls through, so a
 // test of a `looksLikeSubcommand` helper would pass with the guard
-// deleted. Two sibling servers have the fix and exactly that gap.
+// deleted.
 func TestRun_UnknownCommand_FailsWithoutStartingTheServer(t *testing.T) {
 	isolateCredentials(t)
 	restoreDefaultLogger(t)

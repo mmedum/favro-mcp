@@ -78,9 +78,9 @@ jobs:
         run: go run ./scripts/gates schema-ack "$PR_BASE_REF" "$PR_HEAD"
 
   # Not `needs: test`. Only the coverage floor depends on the matrix, and
-  # it has its own job below; the other fourteen gates read the repository
-  # and the built binary, so making all of them wait for a three-OS race
-  # run put the whole matrix's wall clock in front of every one of them.
+  # it has its own job below; the other gates read the repository and the
+  # built binary, so making them wait for a three-OS race run would put
+  # the whole matrix's wall clock in front of every one of them.
   gates:
     name: gates
     runs-on: ubuntu-latest
@@ -128,14 +128,16 @@ jobs:
         run: go run ./scripts/gates plugin
       - name: mcpb manifest
         run: go run ./scripts/gates mcpb
-      - name: rule 8
-        run: go run ./scripts/gates rule8 bin/favro-mcp
+      - name: one organization
+        run: go run ./scripts/gates one-organization bin/favro-mcp
       - name: schema diff
         run: go run ./scripts/gates schema-diff bin/favro-mcp
       - name: stdio smoke
         run: go run ./scripts/gates smoke bin/favro-mcp
       - name: staleness
         run: go run ./scripts/gates staleness bin/favro-mcp
+      - name: docs resolve
+        run: go run ./scripts/gates docs
       - name: upload schemas
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -184,9 +186,8 @@ jobs:
         with:
           version: v2.14.0
           args: --timeout=5m
-      # Source mode, which x/vuln understands on Go 1.27 as of v1.8.0;
-      # v1.7.0's analysis topped out at go1.26 and this repository ran
-      # binary mode to work around it.
+      # Source mode, which reads the Go 1.27 standard library from
+      # x/vuln v1.8.0. See the Makefile's vuln target.
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
       - name: licenses
@@ -213,10 +214,10 @@ jobs:
           # from both, which is what lets this one be written without it.
           #
           # And it MUST be written without it: the action prepends `v`
-          # itself, so `v8.30.1` fetched .../download/vv8.30.1/ and got a
-          # 404. The job then failed in twelve seconds with a Node stack
-          # trace about a missing `file` parameter, which is the tar
-          # extractor being handed nothing.
+          # itself, so `v8.30.1` fetches .../download/vv8.30.1/, a 404,
+          # and the job fails with a Node stack trace about a missing
+          # `file` parameter, which is the tar extractor handed nothing.
+          # https://github.com/gitleaks/gitleaks-action/blob/e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e/src/gitleaks.js#L73-L79
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_CONFIG: .gitleaks.toml
           # Required since the action's v2: it reads the PR to scan only

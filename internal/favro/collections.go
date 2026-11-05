@@ -18,25 +18,32 @@ type Collection struct {
 	// values.
 	PublicSharing string `json:"publicSharing,omitempty"`
 	Archived      bool   `json:"archived,omitempty"`
-	// FullMembersCanAddWidgets is the docs-canonical field name,
-	// confirmed live during Phase 4.5. Phase 3.3 originally shipped
-	// `fullMembersCanAddGuests` which never matched the wire key —
-	// removed in Phase 4.5.
+	// FullMembersCanAddWidgets is the documented field name, and the
+	// key Favro sends.
 	FullMembersCanAddWidgets bool `json:"fullMembersCanAddWidgets,omitempty"`
 }
 
 // ListCollectionsFilter bundles the documented query parameters for
 // /collections. Only `archived` is documented; a zero filter
-// requests every collection.
+// requests the active collections.
 type ListCollectionsFilter struct {
+	// Archived, when true, includes archived collections beside the
+	// active ones.
 	Archived bool
 }
 
-// Values returns the filter as url.Values; empty fields are omitted.
+// Values returns the filter as url.Values.
 func (f ListCollectionsFilter) Values() url.Values {
 	q := url.Values{}
-	if f.Archived {
-		q.Set("archived", "true")
+	// Favro answers no archived parameter with active and archived
+	// collections, archived=false with active ones only, and
+	// archived=true with archived ones only. Its reference says only "If
+	// true, return archived collections. Optional." Checked by hand
+	// against a live organization; the live steps "list collections" and
+	// "list collections, archived ones included" read each form.
+	// https://favro.com/developer/#get-all-collections
+	if !f.Archived {
+		q.Set("archived", "false")
 	}
 	return q
 }
@@ -51,9 +58,8 @@ func (f ListCollectionsFilter) Values() url.Values {
 // invites.
 //
 // Color and IconName are not in Favro's documented parameter list.
-// They are kept because earlier phases sent them and Favro accepts
-// the body; live observation in Phase 5.4 was that `color` is
-// ignored on write and Favro derives `background` instead.
+// Favro accepts a body carrying them; `color` is ignored on write, and
+// Favro derives `background` instead.
 type CreateCollectionRequest struct {
 	Name                     string       `json:"name"`
 	ShareToUsers             []SharedUser `json:"shareToUsers,omitempty"`

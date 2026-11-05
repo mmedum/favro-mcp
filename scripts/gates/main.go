@@ -1,11 +1,10 @@
 // Command gates runs this repository's own checks.
 //
 // They are Go rather than shell, and they live here rather than under
-// internal/, for the reasons the shared standard gives: a shell script
-// is held to no gofmt, vet, lint or test; `make check` runs on the
-// Windows runner, where bash is a dependency rather than a given; and a
-// script that parses JSON with `sed` is how a quote ends up inside a
-// string. This program replaced two such scripts. internal/ is the
+// internal/: a shell script is held to no gofmt, vet, lint or test;
+// `make check` runs on the Windows runner, where bash is a dependency
+// rather than a given; and a script that parses JSON with `sed` is how
+// a quote ends up inside a string. internal/ is the
 // server's own implementation, and a thing that only ever runs on a
 // maintainer's machine does not belong there. GoReleaser builds only
 // ./cmd/..., so none of this ships.
@@ -152,12 +151,16 @@ func init() {
 			run: stalenessCmd, args: "[BIN]", runs: inCheck,
 			doc: "the documentation must match the code",
 		},
+		"docs": {
+			run: docs, args: "", runs: inCheck,
+			doc: "decision IDs, citations, links, paths, the codemap and live steps resolve",
+		},
 		"plugin": {
 			run: pluginGate, args: "", runs: inCheck,
 			doc: "the committed plugin manifest against the files the packer stages",
 		},
-		"rule8": {
-			run: rule8, args: "[BIN]", runs: inCheck,
+		"one-organization": {
+			run: oneOrganization, args: "[BIN]", runs: inCheck,
 			doc: "no tool input takes an organization_id; the server is single-org",
 		},
 		"mcpb": {
@@ -221,12 +224,18 @@ func exitCode(err error) int {
 }
 
 func usage() string {
+	names := slices.Sorted(maps.Keys(commands))
+	nameWidth, argsWidth := 0, 0
+	for _, name := range names {
+		nameWidth = max(nameWidth, len(name))
+		argsWidth = max(argsWidth, len(commands[name].args))
+	}
 	var b strings.Builder
 	b.WriteString("usage: gates COMMAND [ARGS]\n\n")
-	for _, name := range slices.Sorted(maps.Keys(commands)) {
+	for _, name := range names {
 		c := commands[name]
 		mark := map[where]string{manual: " ", inCheck: "*", inPR: "+"}[c.runs]
-		fmt.Fprintf(&b, "  %s %-14s %-14s %s\n", mark, name, c.args, c.doc)
+		fmt.Fprintf(&b, "  %s %-*s %-*s %s\n", mark, nameWidth, name, argsWidth, c.args, c.doc)
 	}
 	b.WriteString("\n  * runs in both `make check` and CI; + runs in CI on a pull request only; the parity gate checks both.\n")
 	return b.String()
@@ -327,26 +336,6 @@ func schemaDiffCmd(w io.Writer, args []string) error {
 
 // moduleRoot walks up from the working directory to the directory
 // holding go.mod. Every gate that reads the repository needs it.
-// gitLines runs a git command that writes NUL-separated paths and
-// returns them. The splitting idiom is the detail that is easy to get
-// subtly wrong — a trailing NUL yields a phantom empty entry, and an
-// empty entry passes a floor check — so it lives here rather than in
-// each caller. Each caller keeps its own flags and its own floor, which
-// is the part that legitimately differs.
-func gitLines(root string, args ...string) ([]string, error) {
-	out, err := exec.Command("git", append([]string{"-C", root}, args...)...).Output()
-	if err != nil {
-		return nil, err
-	}
-	var lines []string
-	for _, l := range strings.Split(strings.TrimRight(string(out), "\x00"), "\x00") {
-		if l != "" {
-			lines = append(lines, l)
-		}
-	}
-	return lines, nil
-}
-
 func moduleRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {

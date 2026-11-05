@@ -6,12 +6,16 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
+// changelogPath is the changelog, from the module root.
+const changelogPath = "CHANGELOG.md"
+
 // releasableVersion is the shape a tag has to take to reach this
-// command. It is the third of three places holding the same rule, and
-// the only one that survives an edit to the workflow.
+// command (D-85). It is the third of three places holding the same rule,
+// and the only one that survives an edit to the workflow.
 //
 // The reason is not hygiene. This argument is a git ref name; git
 // permits `$`, `(`, `)`, backtick, `;` and `{}` in one, and `${IFS}`
@@ -20,8 +24,10 @@ import (
 // that can mint this repository's Sigstore identity and have a tampered
 // artifact signed under it — after which every verification step README
 // documents passes. The workflow passes the tag through the environment
-// now and its trigger no longer admits those characters; this refuses
-// them even if both are changed back.
+// and its trigger admits none of those characters; this refuses them
+// even if both change.
+// https://git-scm.com/docs/git-check-ref-format
+// https://docs.github.com/en/actions/reference/security/secure-use#good-practices-for-mitigating-script-injection-attacks
 var releasableVersion = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$`)
 
 // releaseNotes prints one version's CHANGELOG section, which the release
@@ -34,8 +40,7 @@ var releasableVersion = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$`)
 //
 // A version with no section is an error rather than an empty string. A
 // release whose changelog entry was never written should fail loudly at
-// tag time, not publish with empty notes — which is what happened for
-// every release before the section was wired in at all.
+// tag time, not publish with empty notes.
 func releaseNotes(w io.Writer, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: gates release-notes VERSION")
@@ -48,12 +53,12 @@ func releaseNotes(w io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
-	data, err := os.ReadFile(filepath.Join(root, "CHANGELOG.md"))
+	data, err := os.ReadFile(filepath.Join(root, changelogPath))
 	if err != nil {
 		return err
 	}
 	version := strings.TrimPrefix(args[0], "v")
-	section := changelogSection(string(data), version)
+	section := sectionFor(string(data), version)
 	if section == "" {
 		return fmt.Errorf("no CHANGELOG.md section for version %s", version)
 	}
@@ -68,46 +73,48 @@ func releaseNotes(w io.Writer, args []string) error {
 // announce as a missing level. The changelog itself is right: `###` is
 // correct under its own `## [1.2.3]`. Only the release page differs.
 //
-// Fences are tracked because a `###` inside a code block is content.
+// Fences are read as the docs gate reads them, because a `###` inside a
+// code block is content.
 func promoteHeadings(section string) string {
 	lines := strings.Split(section, "\n")
-	inFence := false
+	code := docsCodeLines(lines)
 	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "```") {
-			inFence = !inFence
-			continue
-		}
-		if !inFence && strings.HasPrefix(line, "###") {
+		if !code[i] && strings.HasPrefix(line, "###") {
 			lines[i] = line[1:]
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-// changelogSection extracts one version's body from a Keep a Changelog
-// document. It stops at the next heading of any level and at the link
-// reference block, which sits at the bottom under no heading at all.
-func changelogSection(changelog, version string) string {
-	_, rest, ok := strings.Cut(changelog, "## ["+version+"]")
-	if !ok {
-		return ""
+// sectionFor is one version's body from a Keep a Changelog document,
+// without the heading line, which carries the date, and without the
+// blank lines that top and tail it.
+func sectionFor(changelog, version string) string {
+	lines := strings.Split(changelog, "\n")
+	from, to := changelogSection(lines, version)
+	return strings.Trim(strings.Join(lines[from:to], "\n"), "\n")
+}
+
+// changelogSection is the range of lines under `## [version]`, empty
+// when there is no such heading. It stops at the next heading and at the
+// link reference block, which follows the oldest section under no
+// heading of its own.
+func changelogSection(lines []string, version string) (from, to int) {
+	want := "## [" + version + "]"
+	start := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, want) })
+	if start < 0 {
+		return 0, 0
 	}
-	var body []string
-	for line := range strings.Lines(rest) {
-		trimmed := strings.TrimRight(line, "\n")
-		if strings.HasPrefix(trimmed, "## ") {
-			break
-		}
-		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]: http") {
-			break
-		}
-		body = append(body, trimmed)
+	to = start + 1
+	for to < len(lines) && !strings.HasPrefix(lines[to], "## ") && !isLinkDefinition(lines[to]) {
+		to++
 	}
-	// The first line is the remainder of the heading line itself — the
-	// date — and the blank lines around the body are the document's
-	// formatting rather than its content.
-	if len(body) > 0 {
-		body = body[1:]
-	}
-	return strings.Trim(strings.Join(body, "\n"), "\n")
+	return start + 1, to
+}
+
+// isLinkDefinition reports whether a line is a Markdown link definition,
+// as a changelog's compare-link footer is made of. It is the docs gate's
+// rule, held to the first column: an indented one continues a list item.
+func isLinkDefinition(line string) bool {
+	return !strings.HasPrefix(line, " ") && docsMDLinkDef.MatchString(line)
 }

@@ -27,11 +27,11 @@ import (
 // refused at publish time — after the login has succeeded — which is the
 // worst moment to find out.
 //
-// Adopted from google-drive-mcp, the one sibling that publishes to the
-// registry. The committed entry carries a placeholder version and a
-// placeholder hash on purpose: a real version in the tree is a stale
-// version the moment the next release goes out, and `registry-publish`
-// is what fills both in from the signed checksums at tag time.
+// The gate follows google-drive-mcp's. The committed entry carries a
+// placeholder version and a placeholder hash on purpose: a real version
+// in the tree is a stale version the moment the next release goes out,
+// and `registry-publish` is what fills both in from the signed checksums
+// at tag time.
 const (
 	registryFile        = "packaging/registry/server.json"
 	registryPlaceholder = "0.0.0-dev"

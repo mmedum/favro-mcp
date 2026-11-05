@@ -15,15 +15,15 @@ import (
 // this sentinel mainly catches direct in-process callers.
 var errMissingID = render.Sentinel(render.ClassInvalid, "favro: id is required")
 
-// listPage requests one paginated page of T from path. page is
-// 1-indexed; pass 0 for "first page" (the absent-page Favro default).
-// requestID, when non-empty, rides as X-Favro-Backend-Identifier so
-// Favro routes the call to the backend that holds the cursor — which
-// is required for any page > 0.
+// listPage requests one paginated page of T from path. page is Favro's
+// 0-indexed page; 0 sends no page parameter, which is the first page.
+// requestID, when non-empty, is sent as the X-Favro-Backend-Identifier
+// header. Favro serves the page from page alone, so the header changes
+// nothing; see Paginate.
 //
 // Pagination is intentionally not auto-aggregated; per-resource list
 // methods expose pages explicitly because silent multi-page reads
-// burn the per-organization rate-limit budget.
+// burn the hourly rate limit.
 func listPage[T any](ctx context.Context, c *Client, path string, page int, requestID string) (favro.PageEnvelope[T], error) {
 	return listPageQ[T](ctx, c, path, nil, page, requestID)
 }

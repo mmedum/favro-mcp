@@ -14,9 +14,9 @@ import (
 	"github.com/mmedum/favro-mcp/v4/internal/service"
 )
 
-// errDescriptionFindNoMatch is the refusal in §7.3: a `find` that
-// matched nothing would PUT the description back unchanged, and a
-// no-op write returns 200 exactly like a real one — so the caller
+// errDescriptionFindNoMatch refuses a replace whose `find` matched
+// nothing (D-19): the write would PUT the description back unchanged,
+// and a no-op write returns 200 exactly like a real one — so the caller
 // would read success where nothing happened.
 var errDescriptionFindNoMatch = render.Sentinel(render.ClassNotFound,
 	"favro: 'find' matched nothing in the card description; refusing to PUT an unchanged body. "+findMatchesStoredMarkdown)

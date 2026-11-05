@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -9,23 +11,6 @@ import (
 
 	"github.com/mmedum/favro-mcp/v4/internal/config"
 )
-
-// A number in prose is a claim about the list beside it. The fix for a
-// wrong one is not to edit the number by hand each release; it is this.
-func TestCountsMatchHoldsTheNumberAgainstTheList(t *testing.T) {
-	if problems := countsMatch("It exposes Favro's REST API as 83 typed tools.", 83); len(problems) > 0 {
-		t.Errorf("83 and 83 agree; got %v", problems)
-	}
-	problems := countsMatch("It exposes Favro's REST API as 83 typed tools.", 84)
-	if len(problems) != 1 || !strings.Contains(problems[0], "registers 84") {
-		t.Errorf("a stale count should be reported, got %v", problems)
-	}
-	// A README that states no count leaves this rule holding nothing,
-	// and a rule holding nothing should say so rather than pass.
-	if problems := countsMatch("no numbers here", 83); len(problems) == 0 {
-		t.Error("a README with no tool count means this check reads nothing; it should say so")
-	}
-}
 
 func TestToolsDocumentedReadsBothDirections(t *testing.T) {
 	registered := []string{"favro_ping", "favro_list_cards"}
@@ -85,28 +70,6 @@ func TestPermissionRulesNameRegisteredTools(t *testing.T) {
 	}
 }
 
-// A design document's status line claims something no tag can derive, so
-// nothing but this will catch it. A sibling's said v0.5.0 five releases
-// after v0.5.0.
-func TestStatusCurrentComparesAgainstTheNewestHeading(t *testing.T) {
-	arch := "**Status, 2026-09-13.** Released: v1.1.2. The rest of the document.\n"
-	changelog := "## [Unreleased]\n\n## [1.1.2] - 2026-08-27\n\n## [1.1.1] - 2026-08-26\n"
-	if problems := statusCurrent(arch, changelog); len(problems) > 0 {
-		t.Errorf("the status line is current; got %v", problems)
-	}
-
-	stale := "**Status, 2026-09-13.** Released: v1.0.0. The rest.\n"
-	if problems := statusCurrent(stale, changelog); len(problems) != 1 {
-		t.Errorf("a stale status line should be reported, got %v", problems)
-	}
-	if problems := statusCurrent("no status line here", changelog); len(problems) != 1 {
-		t.Errorf("a missing status line means the check is reading the wrong file, got %v", problems)
-	}
-	if problems := statusCurrent(arch, "# Changelog\n"); len(problems) != 1 {
-		t.Errorf("a changelog with no headings should be reported, got %v", problems)
-	}
-}
-
 // The gate against the repository.
 func TestStalenessAgainstThisRepository(t *testing.T) {
 	root, err := moduleRoot()
@@ -123,15 +86,48 @@ func TestStalenessAgainstThisRepository(t *testing.T) {
 	}
 	// Each number the summary carries, because each is a separate thing
 	// it could stop reading.
-	out.mustSay(t, "tools and")
-	out.mustSay(t, "gates documented")
+	out.mustSay(t, "tools documented")
+	out.mustSay(t, "settings")
 	out.mustSay(t, "documents")
 }
 
+// The gate reads the docs gate's view of the Markdown at the root and
+// directly under docs/: what git would commit, untracked files included
+// and ignored ones left out. A document a rule names is required.
+func TestStalenessReadsWhatGitWouldCommit(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	gitIn(t, "-C", dir, "init", "-q")
+	for _, rel := range []string{readmePath, toolsDocPath, configDocPath, changelogPath, "docs/new.md", "docs/sub/nested.md", "notes.txt"} {
+		put(t, dir, rel, "# "+rel+"\r\n")
+	}
+	put(t, dir, ".gitignore", "scratch.md\n")
+	put(t, dir, "scratch.md", "# ignored\n")
+	gitIn(t, "-C", dir, "add", readmePath, toolsDocPath)
+
+	documents, err := readDocuments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{changelogPath, readmePath, configDocPath, toolsDocPath, "docs/new.md"}
+	slices.Sort(want)
+	if got := slices.Sorted(maps.Keys(documents)); !slices.Equal(got, want) {
+		t.Errorf("read %q, want %q", got, want)
+	}
+	if got := documents[readmePath]; got != "# README.md\n" {
+		t.Errorf("README.md read as %q, want its CRLF folded", got)
+	}
+
+	if err := os.Remove(filepath.Join(dir, filepath.FromSlash(configDocPath))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readDocuments(dir); err == nil || err.Error() != configDocPath+" is missing; staleness reads it" {
+		t.Errorf("got %v, want %s reported missing", err, configDocPath)
+	}
+}
+
 // A number in prose is a claim about a list, and the list is in the
-// binary. This one has gone stale twice here: §8 said twelve while the
-// code annotated thirteen, and after that was corrected A5 added a
-// fourteenth delete tool and the changelog sentence stayed at thirteen.
+// binary: a delete tool added later leaves the sentence behind.
 func TestDestructiveCountMatchesTheBinary(t *testing.T) {
 	dump := &schemaDump{Tools: []schemaTool{
 		tool("favro_delete_one", nil, "confirm"), tool("favro_delete_two", nil, "confirm"), {Name: "favro_read"},
@@ -162,34 +158,6 @@ func TestDestructiveCountMatchesTheBinary(t *testing.T) {
 	}
 	if problems := destructiveCountMatches(map[string]string{"a.md": "no claim here"}, dump); len(problems) == 0 {
 		t.Error("a document set stating no count was not caught")
-	}
-}
-
-// The gate table in docs/development.md is derived from the registry
-// rather than compared against a list typed into this test: a gate can
-// be added to main.go and to both CI lists and still be invisible to
-// anyone reading the documentation.
-func TestGatesDocumentedAgainstTheRegistry(t *testing.T) {
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	development, err := os.ReadFile(filepath.Join(root, "docs", "development.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if problems := gatesDocumented(string(development)); len(problems) > 0 {
-		t.Errorf("%s", strings.Join(problems, "\n"))
-	}
-	// A gate that runs on a pull request alone is documented too.
-	without := strings.ReplaceAll(string(development), "`schema-ack`", "`elsewhere`")
-	if problems := gatesDocumented(without); !slices.Contains(problems, "docs/development.md does not name the schema-ack gate") {
-		t.Errorf("an undocumented pull-request gate passed: %q", problems)
-	}
-	// And the floor: an empty document must fail rather than pass for
-	// having found nothing to complain about.
-	if problems := gatesDocumented(""); len(problems) == 0 {
-		t.Error("an empty docs/development.md was not caught")
 	}
 }
 
@@ -310,5 +278,149 @@ func TestThePluginSectionNamesWhatThePluginStages(t *testing.T) {
 		if got := pluginPlatformsDocumented(strings.Replace(readme, tc.old, tc.new, 1)); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// The changelog fixtures: a released v0.9.0, a v0.9.1 with and without
+// entries, and an [Unreleased] section with and without them.
+const (
+	clReleased   = "## [0.9.0] - 2026-01-01\n\n### Added\n\n- The first tool.\n"
+	clNext       = "## [0.9.1] - 2026-02-01\n\n### Added\n\n- A second tool.\n\n"
+	clNextEmpty  = "## [0.9.1] - 2026-02-01\n\n"
+	clUnreleased = "# Changelog\n\n## [Unreleased]\n\n"
+	clWritten    = clUnreleased + "### Added\n\n- A second tool.\n\n"
+	clEmpty      = "Go source changed and CHANGELOG.md [Unreleased] has no entry; " +
+		"write one under [Unreleased], or under the version heading this release tags"
+)
+
+// The CHANGELOG rule: a change to Go source is written up under
+// [Unreleased], or, on the release commit before its tag, under the
+// version that commit releases.
+func TestTheChangelogRule(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name          string
+		changelog     string
+		sourceChanged bool
+		// tagged are the versions that have a tag.
+		tagged []string
+		want   []string
+	}{
+		{"an undocumented source change", clUnreleased + clReleased, true, []string{"0.9.0"}, []string{clEmpty}},
+		{"a documented source change", clWritten + clReleased, true, []string{"0.9.0"}, nil},
+		{"the release commit before its tag", clUnreleased + clNext + clReleased, true, []string{"0.9.0"}, nil},
+		{
+			"a release commit with nothing under its version", clUnreleased + clNextEmpty + clReleased, true,
+			[]string{"0.9.0"},
+			[]string{"Go source changed and CHANGELOG.md [0.9.1], the untagged version this commit " +
+				"releases, has no entry; write one under [Unreleased], or under the version heading this release tags"},
+		},
+		{
+			"an undocumented source change after the release is tagged", clUnreleased + clNext + clReleased, true,
+			[]string{"0.9.0", "0.9.1"},
+			[]string{clEmpty},
+		},
+		{
+			"prose and an indented bullet, which are no entry", clUnreleased + "Some prose.\n  - an aside\n\n" + clReleased, true,
+			[]string{"0.9.0"},
+			[]string{clEmpty},
+		},
+		{"an [Unreleased] section followed only by the link footer", clUnreleased +
+			"[Unreleased]: https://example.com/compare/v0.9.0...HEAD\n- not an entry\n", true, nil, []string{clEmpty}},
+		{"no [Unreleased] section", "# Changelog\n\n" + clReleased, true, []string{"0.9.0"}, []string{clEmpty}},
+		{"no change to Go source", clUnreleased + clReleased, false, []string{"0.9.0"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := changelogRule(tc.changelog, tc.sourceChanged, func(v string) bool { return slices.Contains(tc.tagged, v) })
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("changelogRule() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// What changelogRule is told comes from git: whether Go source outside
+// the tests differs from the last tag, which is not always the commit
+// before HEAD, and whether a version is tagged. Each row is a repository
+// whose v0.9.0 tag is followed by one more commit.
+func TestTheChangelogRuleReadsGit(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		changelog string
+		// source, test and readme say which files the commit after v0.9.0
+		// changes, and later commits a change to the README alone after it.
+		source, test, readme, later bool
+		// tag tags that commit, and edit then changes Go source uncommitted.
+		tag, edit bool
+		want      []string
+	}{
+		{
+			name: "an undocumented source change after the release is tagged", changelog: clUnreleased + clNext + clReleased,
+			source: true, tag: true, edit: true, want: []string{clEmpty},
+		},
+		{
+			name: "an undocumented source change two commits after the tag", changelog: clUnreleased + clReleased,
+			source: true, later: true, want: []string{clEmpty},
+		},
+		{name: "the release commit before its tag", changelog: clUnreleased + clNext + clReleased, source: true},
+		{name: "a change to a test alone", changelog: clUnreleased + clReleased, test: true},
+		{name: "a change to no Go source", changelog: clUnreleased + clReleased, readme: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			gitIn(t, "-C", dir, "init", "-q")
+			put(t, dir, "main.go", "package main\n")
+			put(t, dir, "main_test.go", "package main\n")
+			put(t, dir, "README.md", "# Fixture\n")
+			put(t, dir, changelogPath, clUnreleased+clReleased)
+			gitIn(t, "-C", dir, "add", "-A")
+			gitIn(t, "-C", dir, "commit", "-q", "-m", "Release 0.9.0")
+			gitIn(t, "-C", dir, "tag", "-a", "v0.9.0", "-m", "v0.9.0")
+
+			if tc.source {
+				put(t, dir, "main.go", "package main\n\nfunc main() {}\n")
+			}
+			if tc.test {
+				put(t, dir, "main_test.go", "package main\n\nfunc helper() {}\n")
+			}
+			if tc.readme {
+				put(t, dir, "README.md", "# Fixture\n\nMore words.\n")
+			}
+			put(t, dir, changelogPath, tc.changelog)
+			gitIn(t, "-C", dir, "add", "-A")
+			gitIn(t, "-C", dir, "commit", "-q", "-m", "The next change")
+			if tc.later {
+				put(t, dir, "README.md", "# Fixture\n\nA later change.\n")
+				gitIn(t, "-C", dir, "commit", "-q", "-am", "A later change")
+			}
+			if tc.tag {
+				gitIn(t, "-C", dir, "tag", "-a", "v0.9.1", "-m", "v0.9.1")
+			}
+			if tc.edit {
+				put(t, dir, "main.go", "package main\n\nfunc main() { main() }\n")
+			}
+
+			got, err := checkChangelog(dir, tc.changelog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("checkChangelog() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Outside a git checkout the CHANGELOG rule has no tag to measure from.
+// It reached no verdict, so it says so and exits 2, as the docs gate does.
+func TestTheChangelogRuleNeedsAGitCheckout(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	_, err := checkChangelog(dir, clUnreleased+clReleased)
+	if !errors.As(err, new(couldNotRun)) || exitCode(err) != 2 {
+		t.Errorf("got %v; want a git failure that could not run", err)
 	}
 }

@@ -159,9 +159,9 @@ func stampVersion(raw []byte, version, path string) ([]byte, error) {
 //
 // A bundle claims a version in five places — its filename, the archive
 // filenames, the manifest inside it, the binary's own --version, and
-// checksums.txt — and a sibling shipped one that agreed in four of them.
-// Only one of the five can be checked from here, and it is the one a
-// user actually sees at runtime.
+// checksums.txt — and any one of them can disagree with the rest. Only
+// one of the five can be checked from here, and it is the one a user
+// actually sees at runtime.
 //
 // A snapshot build is exempt because goreleaser stamps the binary from
 // the last tag and names the archive after the next patch, so the two

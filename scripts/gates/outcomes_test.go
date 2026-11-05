@@ -119,12 +119,10 @@ func register(r *resolver) {
 	}
 }
 
-// TestOutcomesReadsAClosureThatCapturesTheRequest is the one way this
-// repository differs from the sibling the gate came from. Handlers here
-// are literals passed to addTool, and a state-diff closure takes no
+// TestOutcomesReadsAClosureThatCapturesTheRequest: handlers here are
+// literals passed to addTool, and a state-diff closure takes no
 // parameters at all — it reads the handler's `in` from the enclosing
-// scope. A per-function walk, which is what the sibling does, sees
-// nothing here.
+// scope. A per-function walk sees nothing here.
 func TestOutcomesReadsAClosureThatCapturesTheRequest(t *testing.T) {
 	t.Parallel()
 
