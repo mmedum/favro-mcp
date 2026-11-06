@@ -394,7 +394,7 @@ switch off by default (D-88, D-89, D-90, D-91). Releasing is in
 | D-81 | make check scans for vulnerabilities in source mode, licenses against an allowlist and secrets with gitleaks, as CI does | accepted | vuln, licenses, secrets, parity |
 | D-82 | CI runs on Linux, macOS and Windows | accepted | review |
 | D-83 | A tag is the whole release, and its notes are that version's CHANGELOG section | accepted | release-notes, TestChangelogSectionTakesOneVersion, TestReleaseNotesRefusesATagThatIsNotAVersion |
-| D-84 | A release is signed and attested: the checksums cover every artifact the .mcpb included, under keyless cosign and build provenance, with an SBOM per archive and byte-identical rebuilds | accepted | mcpb, TestReleaseWiringIsHeld |
+| D-84 | A release is signed and attested: the checksums cover the archives and both bundles, under keyless cosign and build provenance, with an SBOM per archive and byte-identical rebuilds | accepted | mcpb, TestReleaseWiringIsHeld, TestTheBundlesCarryProvenance |
 | D-85 | A tag name reaches no shell: it travels through the environment, and the trigger admits only alphanumeric suffixes | accepted | TestReleaseNotesRefusesATagThatIsNotAVersion, TestReleaseNotesAcceptsRealVersionShapes, review |
 | D-86 | A go install build reports the module version Go embeds | accepted | TestSourceAndModuleAlwaysAnswer, TestStampFrom |
 | D-87 | Changes reach main through a pull request with eight required checks and no bypass actors | accepted | review |
@@ -2254,22 +2254,24 @@ Cost: a version with no CHANGELOG section fails at tag time, after the
 tag is pushed, and a pushed tag is not moved, so the fix is a patch
 version.
 
-### D-84 A release is signed and attested: the checksums cover every artifact the .mcpb included, under keyless cosign and build provenance, with an SBOM per archive and byte-identical rebuilds
+### D-84 A release is signed and attested: the checksums cover the archives and both bundles, under keyless cosign and build provenance, with an SBOM per archive and byte-identical rebuilds
 
-A release is signed and attested. The checksums cover every archive and
-the `.mcpb`, a keyless cosign signature covers the checksums, every
-artifact carries build provenance, each archive has an SBOM, and a
-rebuild is byte-identical.
+A release is signed and attested. The checksums cover every archive, the
+`.mcpb` and the `.plugin`, and a keyless cosign signature covers the
+checksums. The archives, both bundles and `checksums.txt` carry build
+provenance, each archive has an SBOM, and a rebuild is byte-identical.
 
-The bundle is packed in the universal binary's post hook and named in
+Both bundles are packed in the universal binary's post hook and named in
 `checksum.extra_files` and `release.extra_files` in `.goreleaser.yaml`.
 GoReleaser hashes the artifacts it built, and a file a hook dropped into
-`dist/` is not one of them. So without that entry the bundle ships
+`dist/` is not one of them. So without those entries a bundle ships
 outside the signature while the README tells people to verify it.
 Keyless signing ties the signature to the workflow's identity, with no
 private key to hold or leak. `mod_timestamp` set to the commit's time
 makes a rebuild byte-identical. The `mcpb` gate holds each of these
-lines, and `TestReleaseWiringIsHeld` fails when one is deleted.
+lines, and `TestReleaseWiringIsHeld` fails when one is deleted. It holds
+the attest step in `release.yml` to name both bundles too, which
+`TestTheBundlesCarryProvenance` drives.
 
 Rejected: a bundle dropped into `dist/` by a hook alone, which ships
 outside the signature.

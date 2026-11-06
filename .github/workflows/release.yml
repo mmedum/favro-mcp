@@ -90,31 +90,22 @@ jobs:
         run: goreleaser release --clean --release-header="$RUNNER_TEMP/release-header.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Provenance over the archives, the checksum file and the bundle:
+      # Provenance over the archives, the checksum file and both bundles:
       # `gh attestation verify` then answers which workflow, at which
       # commit, produced a given file. The signature above says the
       # checksums came from this workflow; this says the same for each
-      # artifact without going through checksums.txt first.
+      # artifact without going through checksums.txt first. A pre-release
+      # has no .plugin, and that line matching nothing is not an error
+      # while the others match.
+      # https://github.com/actions/attest/blob/508db95dd578ae2727ebd6217d5ba78e4fbda05d/src/subject.ts#L150
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/*.tar.gz
             dist/*.zip
             dist/*.mcpb
+            dist/*.plugin
             dist/checksums.txt
-
-      - name: package .plugin
-        # Plugin packaging shares the goreleaser job because it consumes
-        # dist/ — a separate runner would lose those artifacts. Skipped on
-        # pre-release tags: the .plugin represents a stable install.
-        if: ${{ !contains(github.ref, '-') }}
-        run: go run ./scripts/gates plugin-pack
-      - name: attach .plugin to release
-        if: ${{ !contains(github.ref, '-') }}
-        run: gh release upload "$TAG" favro-mcp.plugin --clobber
-        env:
-          TAG: ${{ github.ref_name }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # After the release, never inside it. The registry sends a HEAD to the
   # bundle's download URL before it accepts the entry, so an entry

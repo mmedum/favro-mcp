@@ -4,9 +4,10 @@ A maintainer releases by pushing a tag, and the tag is the whole release
 (D-83). `release.yml` runs the linter and the unit tests, takes the
 tag's CHANGELOG section as the release notes, and publishes with
 GoReleaser. The archives, their
-SBOMs and the `.mcpb` bundle are in the cosign-signed `checksums.txt`
-and carry build provenance (D-84). A tag without a pre-release suffix
-also gets `favro-mcp.plugin` and the MCP registry entry (D-88, D-92).
+SBOMs and both bundles are in the cosign-signed `checksums.txt`, and
+the archives, both bundles and `checksums.txt` carry build provenance
+(D-84). Only a tag without a pre-release suffix
+gets `favro-mcp.plugin` and the MCP registry entry (D-88, D-92).
 
 The tag waits for the owner's explicit go.
 
@@ -28,16 +29,16 @@ The tag waits for the owner's explicit go.
   committed, which `make check` does not; the history is not rewritten
   (D-50).
 - Rehearse the build into `dist/`, publishing nothing, with the
-  GoReleaser version `release.yml` pins. It skips signing, which needs
-  the workflow's identity, and SBOMs, since syft is installed only in
-  CI. `plugin-pack` then builds `favro-mcp.plugin` from `dist/`:
+  GoReleaser version `release.yml` pins. It packs both bundles, and
+  skips signing, which needs the workflow's identity, and SBOMs, since
+  syft is installed only in CI:
 
   ```bash
   go run github.com/goreleaser/goreleaser/v2@v2.18.1 release --snapshot --clean --skip=sign,sbom,publish
-  go run ./scripts/gates plugin-pack
   ```
 
-  The version must agree in the archives' and the bundle's file names
+  A rehearsal after a pre-release tag packs no `.plugin`, since a
+  snapshot takes `.Prerelease` from the last tag. The version must agree in the archives' and the bundle's file names
   and `checksums.txt`. A rehearsal's `--version` names the last tag and
   the commit, since the binary is stamped from the tag; after the real
   release it names the new version. A bundle missing from
@@ -74,7 +75,7 @@ token, so read the first run after any change to the pipeline.
 | Fails | State afterward | Recovery |
 |---|---|---|
 | tests, release notes, cosign or SBOMs | no release | fix it, then release the next patch |
-| attestation or `.plugin` upload | release published, incomplete | fix it, then release the next patch |
+| attestation | release published, incomplete | fix it, then release the next patch |
 | registry publish | release fine, no entry | `gh workflow run publish-mcp.yml --ref main -f tag=vX.Y.Z`; do not tag again |
 
 `publish-mcp.yml` fills the entry's hash in from the signed

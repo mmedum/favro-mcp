@@ -429,7 +429,11 @@ func cmdShim() string {
 	return "@echo off\r\n" + `"%~dp0windows-amd64\favro-mcp.exe" %*` + "\r\n"
 }
 
-// pluginPack assembles the bundle from a GoReleaser dist directory.
+// pluginPack assembles the bundle from a GoReleaser dist directory, into
+// it. It runs as the universal binary's post hook, beside mcpb-pack, and
+// `./dist/*.plugin` in checksum.extra_files then puts the bundle in
+// checksums.txt and under the signature (D-84). Written anywhere else,
+// the glob matches nothing, which GoReleaser skips without a word.
 //
 // The version comes from one place — dist/metadata.json — and goes in
 // through a JSON decode and encode, never a substitution over text: the
@@ -452,7 +456,7 @@ func pluginPack(w io.Writer, args []string) error {
 	for _, name := range slices.Sorted(maps.Keys(files)) {
 		entries = append(entries, bundleFile{name: name, body: files[name]})
 	}
-	out := filepath.Join(root, bundleName)
+	out := filepath.Join(dist, bundleName)
 	if err := writeZipAt(out, entries, func(name string) fs.FileMode {
 		if executable[name] {
 			return 0o755
@@ -486,7 +490,7 @@ func stageBundle(root, dist string) (files map[string][]byte, executable map[str
 			"stamp a placeholder", version)
 	}
 
-	binaries, err := builtBinaries(filepath.Join(dist, "artifacts.json"))
+	binaries, err := builtBinaries(dist)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -522,12 +526,7 @@ func stageBundle(root, dist string) (files map[string][]byte, executable map[str
 
 	executable = map[string]bool{launcherPath: true, cmdShimPath: true}
 	for _, p := range platforms {
-		src, ok := binaries[p.dir()]
-		if !ok {
-			return nil, nil, "", fmt.Errorf("dist carries no %s binary; the bundle would ship a "+
-				"launcher arm pointing at nothing", p.dir())
-		}
-		data, err := os.ReadFile(src)
+		data, err := os.ReadFile(binaries[p.dir()])
 		if err != nil {
 			return nil, nil, "", err
 		}
@@ -545,40 +544,28 @@ func stageBundle(root, dist string) (files map[string][]byte, executable map[str
 	return files, executable, version, nil
 }
 
-// builtBinaries maps goos-goarch to the path GoReleaser built, read from
-// its own manifest rather than by globbing: the layout under dist/
-// carries a build id and an amd64 variant suffix, and a glob that
-// quietly matched two would pack whichever sorted first — a bundle built
-// from the wrong binary is not something a checksum catches, because the
-// checksum is of whatever was built.
-func builtBinaries(path string) (map[string]string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("%w (run goreleaser first)", err)
-	}
-	var artifacts []struct {
-		Path   string `json:"path"`
-		Goos   string `json:"goos"`
-		Goarch string `json:"goarch"`
-		Type   string `json:"type"`
-	}
-	if err := json.Unmarshal(data, &artifacts); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
+// builtBinaries maps each platform the bundle stages to the one binary
+// GoReleaser built for it under dist. It globs, as mcpb-pack does,
+// because both run in the same post hook, before artifacts.json exists;
+// onlyMatch says why, and why a glob matching two is refused.
+func builtBinaries(dist string) (map[string]string, error) {
 	out := map[string]string{}
-	for _, a := range artifacts {
-		if a.Type != "Binary" {
-			continue
+	for _, p := range platforms {
+		glob := "*" + p.goos + "_" + p.goarch + "*/" + p.binary()
+		found, err := distFiles(dist, glob)
+		if err != nil {
+			return nil, fmt.Errorf("looking for the %s binary: %w", p.dir(), err)
 		}
-		key := a.Goos + "-" + a.Goarch
-		if existing, ok := out[key]; ok {
-			return nil, fmt.Errorf("dist carries two %s binaries (%s and %s); packing one of them "+
-				"at random is how a bundle ships the wrong build", key, existing, a.Path)
+		switch len(found) {
+		case 1:
+			out[p.dir()] = found[0]
+		case 0:
+			return nil, fmt.Errorf("dist carries no %s binary matching %s; the bundle would ship a "+
+				"launcher arm pointing at nothing", p.dir(), glob)
+		default:
+			return nil, fmt.Errorf("dist carries %d %s binaries (%s); packing one of them is how a "+
+				"bundle ships the wrong build", len(found), p.dir(), strings.Join(found, " "))
 		}
-		out[key] = a.Path
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("%s lists no binaries", path)
 	}
 	return out, nil
 }

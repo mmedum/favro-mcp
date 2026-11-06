@@ -192,12 +192,10 @@ hooks: ## point git at the repository's own hooks
 	git config core.hooksPath .githooks
 
 .PHONY: package-plugin
-package-plugin: ## build a snapshot favro-mcp.plugin (requires goreleaser)
-	goreleaser release --snapshot --clean --skip=publish
-	$(GO) run ./scripts/gates plugin-pack
+package-plugin: package-mcpb ## build a snapshot favro-mcp.plugin into dist/, with the .mcpb
 
 .PHONY: package-mcpb
-package-mcpb: ## build a snapshot .mcpb bundle (requires goreleaser)
+package-mcpb: ## build snapshot bundles, the .mcpb and favro-mcp.plugin, into dist/ (requires goreleaser)
 	goreleaser release --snapshot --clean --skip=publish
 
 .PHONY: check
@@ -205,7 +203,7 @@ check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes ap
 
 .PHONY: clean
 clean: ## remove build artifacts
-	$(RM) -r $(BIN_DIR) dist coverage.out coverage.html favro-mcp.plugin
+	$(RM) -r $(BIN_DIR) dist coverage.out coverage.html
 
 .PHONY: evals
 evals: build ## drive a model through the tools and score it (needs credentials + the claude CLI)

@@ -45,11 +45,20 @@ universal_binaries:
     hooks:
       # The one point in the pipeline where every binary exists and
       # checksums.txt has not been written yet. That is what MAKES it
-      # possible for the bundle to be in that file, and therefore under
-      # the signature. It is not what puts it there — see
-      # checksum.extra_files below. It needs nothing but the Go
-      # toolchain, so `make package-mcpb` rehearses it locally as is.
-      post: go run ./scripts/gates mcpb-pack {{ .Version }} dist
+      # possible for the bundles to be in that file, and therefore under
+      # the signature. It is not what puts them there — see
+      # checksum.extra_files below. They need nothing but the Go
+      # toolchain, so `make package-mcpb` rehearses both locally as is.
+      #
+      # The .plugin is packed on a stable tag only, since it represents a
+      # stable install. .Prerelease is the tag's suffix, so on a
+      # pre-release its hook is empty, which goreleaser skips, and the
+      # ./dist/*.plugin globs below match nothing, which it skips too.
+      # https://github.com/goreleaser/goreleaser/blob/v2.18.1/internal/shell/shell.go#L22
+      # https://github.com/goreleaser/goreleaser/blob/v2.18.1/internal/extrafiles/extra_files.go#L29
+      post:
+        - go run ./scripts/gates mcpb-pack {{ .Version }} dist
+        - "{{ if not .Prerelease }}go run ./scripts/gates plugin-pack dist{{ end }}"
 
 archives:
   - id: favro-mcp
@@ -71,14 +80,15 @@ archives:
 
 checksum:
   name_template: checksums.txt
-  # The bundle is not a goreleaser artifact — a hook dropped it into
-  # dist/, and goreleaser hashes the artifacts IT built. Naming it here
-  # is what puts it in checksums.txt, and checksums.txt is the file
-  # cosign signs, so this is what makes the bundle verifiable at all.
-  # Without it the bundle ships unsigned while looking no different.
+  # The bundles are not goreleaser artifacts — a hook dropped them into
+  # dist/, and goreleaser hashes the artifacts IT built. Naming them here
+  # is what puts them in checksums.txt, and checksums.txt is the file
+  # cosign signs, so this is what makes the bundles verifiable at all.
+  # Without it a bundle ships unsigned while looking no different.
   # https://goreleaser.com/customization/checksum/
   extra_files:
     - glob: ./dist/*.mcpb
+    - glob: ./dist/*.plugin
 
 # One SBOM per archive, so somebody deploying a binary they did not build
 # can see what is inside it.
@@ -121,7 +131,8 @@ release:
   draft: false
   mode: replace
   name_template: "{{ .ProjectName }} {{ .Tag }}"
-  # Checksummed above and uploaded here. Both, or the bundle either
+  # Checksummed above and uploaded here. Both, or a bundle either
   # ships unsigned or is hashed and never published.
   extra_files:
     - glob: ./dist/*.mcpb
+    - glob: ./dist/*.plugin
