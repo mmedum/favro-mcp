@@ -8,6 +8,9 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Fixed
+- `favro-mcp.plugin` is listed in the signed checksums.txt and carries build provenance, like every other release file.
+
 ## [4.4.1] - 2026-11-05
 
 ### Changed

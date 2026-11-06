@@ -1204,10 +1204,14 @@ func goreleaserBlocks(text string) (map[string]string, error) {
 // releaseProblems holds .goreleaser.yaml under root, read once, to the
 // bundle: it builds every binary the table stages and every
 // releaseMatrix archive, the bundle reaches every one of them, and the
-// lines that make the bundle exist, be hashed, be signed and be
-// published are there.
+// lines that make both bundles exist, be hashed, be signed, be attested
+// and be published are there.
 func releaseProblems(root string) []string {
 	text, err := goreleaserText(root)
+	if err != nil {
+		return []string{err.Error()}
+	}
+	workflow, err := os.ReadFile(filepath.Join(root, releaseWorkflow))
 	if err != nil {
 		return []string{err.Error()}
 	}
@@ -1220,6 +1224,7 @@ func releaseProblems(root string) []string {
 		return []string{err.Error()}
 	}
 	problems, _ := mcpbReleaseWiring(blocks)
+	problems = append(problems, attestedBundles(code(string(workflow)))...)
 	problems = append(problems, releaseArchiveProblems(built)...)
 	problems = append(problems, mcpbMatrixProblems(mcpbBinaries)...)
 
@@ -1287,8 +1292,8 @@ func mcpbMatrixProblems(binaries []mcpbBinary) []string {
 	return problems
 }
 
-// mcpbReleaseWiring holds the lines that make the bundle exist, be
-// hashed, be signed and be published.
+// mcpbReleaseWiring holds the lines that make both bundles, the .mcpb
+// and the .plugin, exist, be hashed, be signed and be published.
 //
 // Nothing else here can see them, and that is the point. Delete
 // `checksum.extra_files` and the release still succeeds, `make check`
@@ -1321,6 +1326,13 @@ func mcpbReleaseWiring(blocks map[string]string) (problems []string, checked int
 			"them — without this glob the bundle is absent from checksums.txt and so outside the signature")
 	require("release", ".mcpb",
 		"without this glob the bundle is hashed and never uploaded")
+	require("universal_binaries", pluginHook,
+		"the .plugin is packed in the same post hook as the .mcpb, so it can be hashed with the archives, "+
+			"and on a stable tag only, since it represents a stable install")
+	require("checksum", ".plugin",
+		"without this glob the .plugin is absent from checksums.txt and so outside the signature")
+	require("release", ".plugin",
+		"without this glob the .plugin is hashed and never uploaded")
 	require("signs", "cosign",
 		"the checksum file is signed with a keyless certificate; without it every download is unverifiable")
 	require("signs", "artifacts: checksum",
@@ -1333,6 +1345,61 @@ func mcpbReleaseWiring(blocks map[string]string) (problems []string, checked int
 		"without an explicit id list the universal binary is archived too, and the release page offers "+
 			"a fourth macOS download nobody should have to choose between")
 	return problems, checked
+}
+
+// pluginHook is the .plugin's post hook as .goreleaser.yaml writes it.
+// The guard leaves the hook empty on a pre-release tag, which
+// goreleaser skips, so an inverted or missing guard ships the .plugin
+// on the wrong tags.
+const pluginHook = "{{ if not .Prerelease }}go run ./scripts/gates plugin-pack dist{{ end }}"
+
+// releaseWorkflow is the workflow that publishes and attests a release.
+const releaseWorkflow = ".github/workflows/release.yml"
+
+// attestedBundles holds release.yml's provenance step to both bundles:
+// the README tells people to verify each one's attestation, and a line
+// deleted from subject-path drops it with every other gate green.
+// workflow is release.yml as code gives it.
+func attestedBundles(workflow string) []string {
+	var paths [][]string
+	for _, loc := range usesLine.FindAllStringSubmatchIndex(workflow, -1) {
+		if strings.HasPrefix(workflow[loc[2]:loc[3]], "actions/attest-build-provenance@") {
+			paths = append(paths, strings.Fields(subjectPath(stepBlock(workflow, loc[0]))))
+		}
+	}
+	if len(paths) == 0 {
+		return []string{releaseWorkflow + " has no attest-build-provenance step, so no release file carries provenance"}
+	}
+	var problems []string
+	for _, glob := range []string{"dist/*.mcpb", "dist/*.plugin"} {
+		if !slices.ContainsFunc(paths, func(p []string) bool { return slices.Contains(p, glob) }) {
+			problems = append(problems, fmt.Sprintf("%s's attest-build-provenance step does not name %s in "+
+				"subject-path, so that bundle ships with no provenance while the README says to verify it",
+				releaseWorkflow, glob))
+		}
+	}
+	return problems
+}
+
+// subjectPath is the value of a step's subject-path input: the rest of
+// its line and every line indented deeper.
+func subjectPath(step string) string {
+	lines := strings.Split(step, "\n")
+	for i, line := range lines {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if !ok || key != "subject-path" {
+			continue
+		}
+		out := []string{value}
+		for _, l := range lines[i+1:] {
+			if strings.TrimSpace(l) != "" && indentOf(l) <= indentOf(line) {
+				break
+			}
+			out = append(out, l)
+		}
+		return strings.Join(out, "\n")
+	}
+	return ""
 }
 
 // mcpbPack writes the bundle from the binaries goreleaser just built.
@@ -1444,28 +1511,24 @@ func mcpbLayout(root, dist, launcher string) ([]bundleFile, map[string]string, e
 
 // onlyMatch is the one file under dist matching the glob.
 //
-// Globbing rather than reading dist/artifacts.json, which is what
-// plugin.go does and what its comment argues for. The reason is
-// ordering, not preference: mcpb-pack runs as the universal binary's
-// post hook, and goreleaser writes artifacts.json after the archives —
-// measured on a snapshot run, the bundle is written a full second
-// before that file exists. The hook is also the only place the bundle
-// CAN be written if it is to be in checksums.txt, so the glob is
-// forced.
+// Globbing rather than reading dist/artifacts.json. The reason is
+// ordering, not preference: mcpb-pack and plugin-pack run as the
+// universal binary's post hook, and goreleaser writes artifacts.json at
+// the end of the release, after the checksums. metadata.json, which
+// plugin-pack reads, is written before the build.
+// https://github.com/goreleaser/goreleaser/blob/v2.18.1/internal/pipeline/pipeline.go#L88-L175
+// The hook is also the only place a bundle CAN be written if it is to
+// be in checksums.txt, so the glob is forced.
 //
 // One match or nothing, then: the layout under dist/ carries a build id
 // and an amd64 variant, and a glob that quietly matched two would pack
 // whichever sorted first. A bundle built from the wrong binary is not
 // something a checksum catches — the checksum is of whatever was built.
 func onlyMatch(dist, glob, what string) (string, error) {
-	matches, err := filepath.Glob(filepath.Join(dist, glob))
+	matches, err := distFiles(dist, glob)
 	if err != nil {
 		return "", fmt.Errorf("looking for the %s: %w", what, err)
 	}
-	matches = slices.DeleteFunc(matches, func(p string) bool {
-		info, err := os.Stat(p)
-		return err != nil || !info.Mode().IsRegular()
-	})
 	if len(matches) != 1 {
 		found := ""
 		if len(matches) > 0 {
@@ -1475,6 +1538,18 @@ func onlyMatch(dist, glob, what string) (string, error) {
 			what, dist, len(matches), found)
 	}
 	return matches[0], nil
+}
+
+// distFiles is every regular file under dist matching the glob.
+func distFiles(dist, glob string) ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join(dist, glob))
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(matches, func(p string) bool {
+		info, err := os.Stat(p)
+		return err != nil || !info.Mode().IsRegular()
+	}), nil
 }
 
 // bundleManifest is the part of the manifest these gates read.

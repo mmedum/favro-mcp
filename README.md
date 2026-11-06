@@ -65,7 +65,7 @@ The bundle carries a macOS universal binary, a Windows amd64 binary, and both Li
 
 ### Cowork plugin (recommended)
 
-Each tagged release publishes a single multi-arch `favro-mcp.plugin` zip on the [GitHub Releases page](https://github.com/mmedum/favro-mcp/releases). The bundle contains binaries for darwin-amd64, darwin-arm64, linux-amd64, linux-arm64 and windows-amd64. On macOS and Linux a launcher shim picks the right one at runtime, and on Windows a `.cmd` shim runs the windows-amd64 binary, which Windows on arm64 (windows-arm64) runs under emulation.
+Each stable (non-pre-release) release publishes a single multi-arch `favro-mcp.plugin` zip on the [GitHub Releases page](https://github.com/mmedum/favro-mcp/releases). The bundle contains binaries for darwin-amd64, darwin-arm64, linux-amd64, linux-arm64 and windows-amd64. On macOS and Linux a launcher shim picks the right one at runtime, and on Windows a `.cmd` shim runs the windows-amd64 binary, which Windows on arm64 (windows-arm64) runs under emulation.
 
 1. Download `favro-mcp.plugin` from the release.
 2. Install it into your Cowork profile (drag-and-drop, or follow Cowork's plugin install flow).
@@ -103,7 +103,7 @@ Either needs the Go version `go.mod` declares. Under the default
 
 ## Verifying a download
 
-Every release carries `checksums.txt`, an SBOM per archive, a keyless [cosign](https://docs.sigstore.dev/) signature over the checksum file, and build provenance attested by GitHub. The `.mcpb` bundle is in `checksums.txt` with the archives, so one signature covers all of it.
+Every release carries `checksums.txt`, an SBOM per archive, a keyless [cosign](https://docs.sigstore.dev/) signature over the checksum file, and build provenance attested by GitHub. Both bundles, `favro-mcp.plugin` and the `.mcpb`, are in `checksums.txt` with the archives, so one signature covers all of it.
 
 ```bash
 # 1. The file is what the release says it is.
@@ -117,6 +117,7 @@ cosign verify-blob checksums.txt \
 
 # 3. Which workflow, at which commit, built a given artifact.
 gh attestation verify favro-mcp_<version>_<os>_<arch>.tar.gz --repo mmedum/favro-mcp
+gh attestation verify favro-mcp.plugin --repo mmedum/favro-mcp
 ```
 
 Builds are reproducible: `-trimpath` plus the commit's own timestamp, so rebuilding a tag gives byte-identical archives.

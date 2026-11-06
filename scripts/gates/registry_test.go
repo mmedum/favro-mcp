@@ -44,9 +44,8 @@ func TestUsageAlignsEveryColumn(t *testing.T) {
 // from the code, then require each entry to be backed by something.
 //
 // A command counts as covered when the tests exercise it by name, or
-// exercise a function it delegates to — `plugin-pack` is staging plus a
-// zip write, and the two halves are tested separately, which is a real
-// test of the command rather than a hole. The delegation is read from
+// exercise a function it delegates to: a command that is two halves
+// tested separately is tested, not a hole. The delegation is read from
 // the source rather than assumed, so this cannot be satisfied by a test
 // that merely mentions the right word in a comment.
 func TestEveryCommandHasATest(t *testing.T) {

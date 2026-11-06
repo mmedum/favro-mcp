@@ -247,20 +247,20 @@ func TestVersionsAgree(t *testing.T) {
 	}
 }
 
-// stageBundle against a synthetic dist: the version comes from
-// goreleaser's own metadata, the manifest is stamped through a JSON
+// stageBundle against dist as the post hook sees it: the version comes
+// from goreleaser's own metadata, the manifest is stamped through a JSON
 // decode and encode, and every binary is staged executable.
 func TestStageBundleStampsTheVersionAndStagesEveryPlatform(t *testing.T) {
 	root, err := moduleRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A snapshot version, because the staged binaries here are synthetic
-	// and the last staging step asks the host's one for its version. The
-	// real-version path is TestVersionsAgree's subject; this test's is
-	// what gets staged and how the manifest is stamped.
+	// A snapshot version, which versionsAgree does not execute, so the
+	// placeholders stand. The real-version path is TestVersionsAgree's
+	// subject; this test's is what gets staged and how the manifest is
+	// stamped.
 	const version = "1.2.0-snapshot-abc1234"
-	dist := fakeDist(t, version)
+	dist := inertHookDist(t, version)
 
 	files, executable, packed, err := stageBundle(root, dist)
 	if err != nil {
@@ -304,59 +304,56 @@ func TestStageBundleRefusesWhatItCannotTrust(t *testing.T) {
 	if _, _, _, err := stageBundle(root, t.TempDir()); err == nil {
 		t.Error("no dist at all should be an error naming what to run first")
 	}
-	if _, _, _, err := stageBundle(root, fakeDist(t, placeholderVersion)); err == nil {
+	if _, _, _, err := stageBundle(root, inertHookDist(t, placeholderVersion)); err == nil {
 		t.Error("the packer must not stamp the placeholder as a real version")
 	}
-	if _, _, _, err := stageBundle(root, fakeDist(t, "")); err == nil {
+	if _, _, _, err := stageBundle(root, inertHookDist(t, "")); err == nil {
 		t.Error("an empty version should stop the pack")
 	}
 
 	// A dist missing a platform the launcher dispatches to: the bundle
 	// would install and then fail for every user of that platform, with
 	// the launcher's own "missing from the bundle" message.
-	dist := fakeDist(t, "1.2.0-snapshot-abc1234")
-	trimmed := filepath.Join(dist, "artifacts.json")
-	data, err := os.ReadFile(trimmed)
-	if err != nil {
+	dist := inertHookDist(t, "1.2.0-snapshot-abc1234")
+	if err := os.RemoveAll(filepath.Join(dist, "favro-mcp_linux_arm64_v8.0")); err != nil {
 		t.Fatal(err)
 	}
-	var artifacts []map[string]any
-	if err := json.Unmarshal(data, &artifacts); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeJSON(trimmed, artifacts[:1]); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, err := stageBundle(root, dist); err == nil {
-		t.Error("a dist missing a platform should stop the pack")
+	_, _, _, err = stageBundle(root, dist)
+	if want := "dist carries no linux-arm64 binary matching *linux_arm64*/favro-mcp; the bundle would ship " +
+		"a launcher arm pointing at nothing"; err == nil || err.Error() != want {
+		t.Errorf("a dist missing linux-arm64 gave %v, want an error naming %q", err, want)
 	}
 }
 
-// fakeDist writes what goreleaser leaves behind: a metadata document, an
-// artifact list, and a binary per platform.
-func fakeDist(t *testing.T, version string) string {
-	t.Helper()
-	dir := t.TempDir()
-	if err := writeJSON(filepath.Join(dir, "metadata.json"), map[string]any{"version": version}); err != nil {
-		t.Fatal(err)
+// The packer writes into dist, where `./dist/*.plugin` in
+// .goreleaser.yaml's checksum and release extra_files finds it. A bundle
+// written anywhere else matches nothing, and GoReleaser skips an empty
+// glob without a word, so the release ships no .plugin.
+func TestPluginPackWritesTheBundleIntoDist(t *testing.T) {
+	dist := inertHookDist(t, "1.2.0-snapshot-abc1234")
+	var out sink
+	if err := pluginPack(&out, []string{dist}); err != nil {
+		t.Fatalf("pluginPack: %v", err)
 	}
-	var artifacts []map[string]any
-	for _, p := range platforms {
-		bin := filepath.Join(dir, p.dir(), p.binary())
-		if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(bin, []byte("synthetic binary for "+p.dir()), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		artifacts = append(artifacts, map[string]any{
-			"path": bin, "goos": p.goos, "goarch": p.goarch, "type": "Binary",
-		})
+	out.mustSay(t, "packed favro-mcp.plugin: version 1.2.0-snapshot-abc1234")
+
+	zr, err := zip.OpenReader(filepath.Join(dist, "favro-mcp.plugin"))
+	if err != nil {
+		t.Fatalf("the packer wrote no bundle into dist: %v", err)
 	}
-	if err := writeJSON(filepath.Join(dir, "artifacts.json"), artifacts); err != nil {
-		t.Fatal(err)
+	defer func() { _ = zr.Close() }()
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, f.Name)
 	}
-	return dir
+	want := []string{
+		".claude-plugin/plugin.json", ".mcp.json", "LICENSE", "NOTICE", "README.md",
+		"bin/darwin-amd64/favro-mcp", "bin/darwin-arm64/favro-mcp", "bin/favro-mcp", "bin/favro-mcp.cmd",
+		"bin/linux-amd64/favro-mcp", "bin/linux-arm64/favro-mcp", "bin/windows-amd64/favro-mcp.exe",
+	}
+	if !slices.Equal(names, want) {
+		t.Errorf("the bundle carries %q, want %q", names, want)
+	}
 }
 
 func writeJSON(path string, v any) error {
@@ -369,24 +366,21 @@ func writeJSON(path string, v any) error {
 
 // Two binaries for one platform means packing whichever sorted first,
 // and a bundle built from the wrong binary is not something a checksum
-// catches: the checksum is of whatever was built.
+// catches: the checksum is of whatever was built. A second amd64 variant
+// in the build config is how dist comes to hold two.
 func TestBuiltBinariesRefusesAnAmbiguousDist(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "artifacts.json")
-	if err := writeJSON(path, []map[string]any{
-		{"path": "a", "goos": "linux", "goarch": "amd64", "type": "Binary"},
-		{"path": "b", "goos": "linux", "goarch": "amd64", "type": "Binary"},
-	}); err != nil {
+	dist := inertHookDist(t, "1.2.0-snapshot-abc1234")
+	second := filepath.Join(dist, "favro-mcp_linux_amd64_v3", "favro-mcp")
+	if err := os.MkdirAll(filepath.Dir(second), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := builtBinaries(path); err == nil {
-		t.Error("two binaries for one platform should stop the pack")
-	}
-	if err := writeJSON(path, []map[string]any{{"path": "a", "type": "Archive"}}); err != nil {
+	if err := os.WriteFile(second, []byte("not a real binary"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := builtBinaries(path); err == nil {
-		t.Error("a dist with no binaries should fail rather than stage nothing")
+	_, err := builtBinaries(dist)
+	if want := "dist carries 2 linux-amd64 binaries (" + filepath.Join(dist, "favro-mcp_linux_amd64_v1", "favro-mcp") +
+		" " + second + "); packing one of them is how a bundle ships the wrong build"; err == nil || err.Error() != want {
+		t.Errorf("two linux-amd64 builds gave %v, want an error naming %q", err, want)
 	}
 }
 
