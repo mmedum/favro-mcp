@@ -361,7 +361,7 @@ switch off by default (D-88, D-89, D-90, D-91). Releasing is in
 | D-48 | doctor's report is written to be pasted in public: the values it hides are registered with the redactor by kind, and --show-ids prints them for the person's own screen | accepted | TestDoctorRedactsCredentials, TestLiteralRedactsWhatNoPatternMatches, TestCountReportsWhatItRedacted, TestDoctorShowIDsPrintsIDsButNeverTheToken |
 | D-49 | Nothing from a real tenant enters the repository: fixtures are synthetic and name resources by role, and leaks scans the tree | accepted | leaks, TestFindLeaksCatchesEachShape, TestFindLeaksLeavesTheRepositoryAlone, TestLeaksReadsTheRepository |
 | D-50 | The history scan runs by hand and the history is not rewritten; each known finding is accepted in its own commit by hash, rule and count | accepted | TestKnownFindingIsPinnedToItsCommit, TestEveryKnownFindingIsInTheHistory, TestHistoryReadsATagFromItsMessage |
-| D-51 | The live driver and the evals print only through internal/redact, and a transcript is never committed | accepted | transcript, TestTranscriptAgainstThisRepository, TestTranscriptSkipsOnlyTheDisabledStub |
+| D-51 | The live driver and the evals print only through internal/redact, and a transcript is never committed | accepted | transcript, TestTranscriptAgainstThisRepository, TestTranscriptSkipsOnlyTheDisabledStub, TestTranscriptReadsEveryDriverFile |
 | D-52 | The webhook signing secret has no field, so no result can carry it | accepted | TestWebhookSecretIsNeverDecoded |
 | D-53 | Favro is the only network peer; there is no telemetry, crash reporting or update check | accepted | review |
 | D-54 | Favro is authenticated by HTTP Basic, an address and an API token; there is no OAuth flow | accepted | TestValidator_AuthorizationHeaderIsBasic |
@@ -375,11 +375,11 @@ switch off by default (D-88, D-89, D-90, D-91). Releasing is in
 | D-62 | Every registered tool has a smokeToolInputs row | accepted | TestMCP_AllTools_SmokeCallable |
 | D-63 | Where two tools overlap, each description names the other and says when to choose it | accepted | review |
 | D-64 | The released tool surface is a contract: a removed tool, a removed input or a newly required one is a break that schema-diff names | accepted | schema-diff, TestCompareSurfacesNamesEveryBreakingChange, TestSameSurfaceIgnoresTheBuildStamp, TestABreakIsABreakOfARelease |
-| D-65 | A pull request names each changed item of the tool surface in a commit footer | accepted | schema-ack, TestSchemaAckNeedsEveryItemNamed, TestSchemaAckTellsARefusalFromAFailure, TestParityHoldsThisRepositorysPullRequestGates |
+| D-65 | A pull request names each changed item of the tool surface in a commit footer | accepted | schema-ack, TestSchemaAckNeedsEveryItemNamed, TestSchemaAckTellsARefusalFromAFailure, TestParityHoldsThePullRequestGates |
 | D-66 | --dump-schemas lists the whole surface, whatever the flags, as an in-memory client session sees it | accepted | TestDumpSchemasListsEverythingAClientIsTold, TestDumpSchemasNeedsNoCredentials |
 | D-67 | Webhooks are listed and deleted, never registered | accepted | api-coverage, TestDeleteWebhookIsGatedAndDryRunnable, TestListWebhooksDecodesABareArray |
 | D-68 | Every rule adopted is a test that derives its list from the code and asserts a floor on how much it read | accepted | TestEveryCommandHasATest, review |
-| D-69 | make check and CI run the same set, matched by what each recipe runs | accepted | parity, TestParityCatchesEachDivergence, TestParityAgainstThisRepository, TestParityRefusesToCompareNothing |
+| D-69 | make check and CI run the same set, matched by what each recipe runs | accepted | parity, TestParityCatchesEachDivergence, TestParityAgainstThisRepository, TestParityRefusesToCompareNothing, TestParityHoldsTheTreesTagsToAVetPass, TestParityRefusesACommandWhoseFailureMakeIgnores |
 | D-70 | Unit tests use only Go's standard library, against httptest fakes, with the race detector | accepted | depguard, review |
 | D-71 | Every package holds an 80% statement floor of its own | accepted | cover, TestEveryExemptionNamesARealPackage, TestReadProfileRefusesAnEmptyRun |
 | D-72 | Every endpoint Favro documents and every field of a modeled type has a verdict, held offline to a snapshot refetched by hand | accepted | api-coverage, api-fields, TestAPICoverageAgainstThisRepository, TestCheckCoverageReportsAnUndecidedEndpoint, TestCheckFieldsReportsAStaleWaiver |
@@ -388,12 +388,12 @@ switch off by default (D-88, D-89, D-90, D-91). Releasing is in
 | D-75 | The live driver's write mode writes only to probes it created, and deletes them however the run ends | accepted | TestScratchWritesOnlyToObjectsTheRunCreated, TestSweepFailsOnAProbeThatIsStillThere, TestEachInterruptRunsTheCleanups, live |
 | D-76 | Agent evals score each task by the end state read back and by the trace, in a sandbox the run makes and removes | accepted | TestEveryTaskIsScorableAndExplained, live |
 | D-77 | The eval session reaches this server's tools and nothing else, and none that deletes | accepted | review |
-| D-78 | The documentation is held to the code: tool names, counts, settings, gates, the package map and paths | accepted | staleness, TestStalenessAgainstThisRepository, TestToolsDocumentedReadsBothDirections, TestDestructiveCountMatchesTheBinary, TestEveryEnvNameReachesBothDocuments, TestTheChangelogRule |
+| D-78 | The documentation is held to the code: tool names, counts, settings, gates, the package map and paths | accepted | staleness, TestStalenessAgainstThisRepository, TestToolsDocumentedReadsBothDirections, TestDestructiveCountMatchesTheBinary, TestEveryEnvNameReachesBothDocuments, TestTheChangelogRule, TestTheChangelogRuleCountsWhatShips, TestStalenessRunsEveryOtherCheckWithoutARelease |
 | D-79 | The toolchain is the one go.mod names, everywhere; there is no N-1 matrix entry | accepted | review |
-| D-80 | Every action is pinned to a full SHA, every tool to one exact version, and every workflow pins its shell | accepted | pins, TestPinsReadsTheWorkflows, TestExactSemverRejectsWhatCanMoveUnderYou, TestPinsShellReadsDepth, TestPinsHoldTheMakefileToCI |
-| D-81 | make check scans for vulnerabilities in source mode, licenses against an allowlist and secrets with gitleaks, as CI does | accepted | vuln, licenses, secrets, parity |
+| D-80 | Every action is pinned to a full SHA, every tool to one exact version, and every workflow pins its shell | accepted | pins, TestPinsReadsTheWorkflows, TestExactSemverRejectsWhatCanMoveUnderYou, TestPinsShellReadsDepth, TestUnpinnedTools, TestPinsNamesEachProblem |
+| D-81 | make check scans for vulnerabilities in source mode, licenses against an allowlist and secrets with gitleaks, as CI does | accepted | vuln, licenses, secrets, parity, TestTheHookScansWithTheMakefilesGitleaks |
 | D-82 | CI runs on Linux, macOS and Windows | accepted | review |
-| D-83 | A tag is the whole release, and its notes are that version's CHANGELOG section | accepted | release-notes, TestChangelogSectionTakesOneVersion, TestReleaseNotesRefusesATagThatIsNotAVersion |
+| D-83 | A tag is the whole release, and its notes are that version's CHANGELOG section | accepted | release-notes, TestChangelogSectionTakesOneVersion, TestASectionEndsOnlyAtTheLinkFooter, TestReleaseNotesReadTheFence, TestReleaseNotesRefusesATagThatIsNotAVersion |
 | D-84 | A release is signed and attested: the checksums cover the archives and both bundles, under keyless cosign and build provenance, with an SBOM per archive and byte-identical rebuilds | accepted | mcpb, TestReleaseWiringIsHeld, TestTheBundlesCarryProvenance |
 | D-85 | A tag name reaches no shell: it travels through the environment, and the trigger admits only alphanumeric suffixes | accepted | TestReleaseNotesRefusesATagThatIsNotAVersion, TestReleaseNotesAcceptsRealVersionShapes, review |
 | D-86 | A go install build reports the module version Go embeds | accepted | TestSourceAndModuleAlwaysAnswer, TestStampFrom |
@@ -1558,9 +1558,13 @@ a transcript is never committed.
 
 The `transcript` gate holds both drivers, `scripts/livefavro` and
 `scripts/evals`, to one rule: only the printer may name `os.Stdout` or
-`os.Stderr`, and the printer redacts. A rule over writes to `os.Stdout`
-misses a driver that wraps the terminal in a buffered writer once and
-prints through it. The redactor catches what has a shape: a 24-hex id,
+`os.Stderr`, and the printer redacts. It reads every Go file git lists
+under a driver that the driver's build compiles, with the tags its make
+target runs it with, a package under it included. A rule over writes to
+`os.Stdout` misses a driver that wraps the terminal in a buffered writer
+once and prints through it.
+
+The redactor catches what has a shape: a 24-hex id,
 an address, a link, a signed attachment URL. A card's name is ordinary
 words, and a pattern that caught it would catch the sentence around it.
 A verbose run therefore shows real names. That is right in a
@@ -1863,7 +1867,7 @@ merge commit. Footers are read as Conventional Commits defines them
 A token is matched in any case, except `BREAKING CHANGE`, which is upper
 case, and a value may wrap onto further lines. A gate that could not run
 says so, apart from a refusal.
-`TestParityHoldsThisRepositorysPullRequestGates` holds CI to running it.
+`TestParityHoldsThePullRequestGates` holds CI to running it.
 
 Rejected: a case-sensitive footer token; a footer value read as one
 line, which drops a wrapped value.
@@ -1941,18 +1945,22 @@ from the code, such as one about prose, rests on review (D-63).
 
 ### D-69 make check and CI run the same set, matched by what each recipe runs
 
-`make check` and CI run the same set of checks. The `parity` gate reads
-the `check:` line in `Makefile` and derives each prerequisite's
-signature from its recipe, then finds each in the workflow.
+`make check` and CI run the same set of checks. The `parity` gate holds
+every command `make check` runs to a `ci.yml` command in the same shell
+words, or to the action that stands in for it, and every go command CI
+runs to one `make check` runs. Each gate runs in the pipeline its
+dispatch entry records, with the same arguments on both sides. The
+release is `.goreleaser.yaml`, `release.yml` and the local workflows it
+calls.
 
 They are two lists in two files, and an edit reaches one of them.
 Deleting a scan from CI would leave `make check` calling itself
 everything CI runs while CI ran less. Matching by what each recipe runs,
 rather than by target names, means no third list maps names to jobs.
-Pinned tools are compared by their full module path and version, so a
-version prefix cannot match a different tool.
-`TestParityRefusesToCompareNothing` holds the floor, and
-`TestParityAgainstThisRepository` runs the gate on the tree.
+Every file a `//go:build` tag keeps out of a plain build is vetted on
+both sides, and a recipe line make runs past a failure, behind `-` or
+`.IGNORE`, is refused. `TestParityRefusesToCompareNothing` holds the
+floor, and `TestParityAgainstThisRepository` runs the gate on the tree.
 
 Rejected: a map from target names to jobs, the third hand-maintained
 list.
@@ -2141,7 +2149,9 @@ tool rows in [TOOLS.md](TOOLS.md) and the README to the registry both
 ways, and any prose count of the destructive tools to the binary. It
 holds every `FAVRO_*` variable the source reads to
 [configuration.md](configuration.md) and the README, and the CHANGELOG
-to its rules.
+to its rules. A commit since the newest release tag HEAD reaches that
+changes what the binary is built from needs an entry; with no such tag
+the rule says it could not run, and the other checks still run.
 
 A document a person copies into a client's configuration is an input,
 and a number in prose is a claim about a list beside it. Correcting a
@@ -2187,9 +2197,13 @@ SHA is the only immutable reference to an action
 ([security hardening](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions)).
 A floating version or `@latest` runs whatever was published last, in the
 job that signs the release. A shell left to the runner differs between
-Windows and the others. The `pins` gate reads the workflows and the
-`Makefile`, and `TestExactSemverRejectsWhatCanMoveUnderYou` holds what
-counts as exact.
+Windows and the others. The `pins` gate reads the workflows, the
+`Makefile`, the commands `.goreleaser.yaml` runs and the git hook, and
+refuses an action it cannot classify and a container image with no
+digest. A known tool's name as a word of a recipe or hook line, other
+than the module a `go run` names, runs whatever version the PATH holds
+wherever it sits on the line, so the gate refuses it too.
+`TestExactSemverRejectsWhatCanMoveUnderYou` holds what counts as exact.
 
 Rejected: floating major tags and `@latest`.
 Cost: Dependabot or a person bumps each pin by hand, and a security fix
@@ -2207,12 +2221,19 @@ a vulnerability the code can reach
 It checks the packages of the Go release on the path, and skips them
 under a version string it cannot read, so it runs under an official Go
 release. The license check accepts Apache-2.0, BSD, MIT and ISC, and
-fails on anything else a dependency carries. gitleaks scans for
-credentials, which the `leaks` gate does not look for (D-49). The
-`parity` gate holds CI to the same three (D-69).
+fails on anything else a dependency carries.
+
+gitleaks scans every commit HEAD reaches for credentials, which the
+`leaks` gate does not look for (D-49). CI runs `make secrets`, so the
+Makefile holds the scan's version and flags, and the pre-commit hook
+scans the staged changes with both, since a credential is in the history
+once it is committed. The `parity` gate holds CI to the same
+vulnerability, license and secret scans (D-69).
 
 Rejected: govulncheck in binary mode, which reads a symbol table and
-reports what the code cannot reach.
+reports what the code cannot reach; gitleaks over every branch the clone
+holds, its default, which lets a stale branch's finding fail every pull
+request.
 Cost: `github.com/segmentio/asm` is ignored by path, because go-licenses
 cannot name its MIT-0 license, so the check does not see a later change
 to that module's license.
@@ -2244,8 +2265,9 @@ that version's CHANGELOG section, taken verbatim.
 The CHANGELOG is the one place a release is described, so the notes
 cannot disagree with it. The `release-notes` gate takes exactly one
 version's section, and refuses a tag that is not a version, which is
-what the workflow passes it. `TestChangelogSectionTakesOneVersion` holds
-the cut. The maintainer cuts every tag. The steps are in
+what the workflow passes it. A section ends at the next heading of its
+level or above, or at the compare-link footer, and a heading in a fence
+is an example. `TestChangelogSectionTakesOneVersion` holds the cut. The maintainer cuts every tag. The steps are in
 [release.md](release.md).
 
 Rejected: release notes written in the release form, a second
@@ -2270,7 +2292,8 @@ Keyless signing ties the signature to the workflow's identity, with no
 private key to hold or leak. `mod_timestamp` set to the commit's time
 makes a rebuild byte-identical. The `mcpb` gate holds each of these
 lines, and `TestReleaseWiringIsHeld` fails when one is deleted. It holds
-the attest step in `release.yml` to name both bundles too, which
+the attest step in `release.yml` to name the archives, both bundles and
+the checksum file too, each in an entry of its own, which
 `TestTheBundlesCarryProvenance` drives.
 
 Rejected: a bundle dropped into `dist/` by a hook alone, which ships
@@ -2291,8 +2314,12 @@ name. A tag substituted into a `run:` line could run a command in the
 job that holds the identity that signs the release (D-84). An
 environment variable is data to bash, not code. The trigger's patterns
 admit `vX.Y.Z` and a suffix of letters and digits, so a tag with shell
-syntax starts no release. `TestReleaseNotesRefusesATagThatIsNotAVersion`
-holds the gate's side of it.
+syntax starts no release. The `release-notes` gate accepts `vX.Y.Z` and
+a prerelease of dot-separated identifiers of letters, digits and
+hyphens, each holding a letter or a digit
+([semver](https://semver.org/#spec-item-9)), and refuses any other tag.
+`TestReleaseNotesRefusesATagThatIsNotAVersion` holds the gate's side of
+it.
 
 Rejected: the tag substituted into a `run:` line.
 Cost: every step that needs the tag reads it from the environment, and a

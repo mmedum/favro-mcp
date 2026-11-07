@@ -176,6 +176,8 @@ jobs:
       - name: gofmt
         run: go run ./scripts/gates fmt-check
       - run: go vet ./...
+      # The evals harness builds only with its tag.
+      - run: go vet -tags=evals ./...
       - name: go.mod is tidy
         run: go mod tidy -diff
       - name: go mod verify
@@ -203,26 +205,24 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # gitleaks scans every commit HEAD reaches, so a shallow clone
+          # would hide a credential a commit added and a later one removed.
           fetch-depth: 0
           persist-credentials: false
-      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
-        env:
-          # The action installs the tool, so pinning the action pins a
-          # wrapper and not the scanner. `gates pins` holds this to the
-          # same version the Makefile runs, or a commit can pass one and
-          # fail the other — it compares with the leading `v` stripped
-          # from both, which is what lets this one be written without it.
-          #
-          # And it MUST be written without it: the action prepends `v`
-          # itself, so `v8.30.1` fetches .../download/vv8.30.1/, a 404,
-          # and the job fails with a Node stack trace about a missing
-          # `file` parameter, which is the tar extractor handed nothing.
-          # https://github.com/gitleaks/gitleaks-action/blob/e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e/src/gitleaks.js#L73-L79
-          GITLEAKS_VERSION: 8.30.1
-          GITLEAKS_CONFIG: .gitleaks.toml
-          # Required since the action's v2: it reads the PR to scan only
-          # the commits in it.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          # Its own cache, keyed by the Makefile that pins gitleaks. Every
+          # other job shares go.mod's key and saves a cache without
+          # gitleaks, and setup-go saves nothing over a hit on its key, so
+          # on that key gitleaks is built from source on every run.
+          # https://github.com/actions/setup-go/blob/b7ad1dad31e06c5925ef5d2fc7ad053ef454303e/src/cache-save.ts#L75-L80
+          cache-dependency-path: Makefile
+      # The Makefile holds the scanner's command, flags and version, so
+      # `make check` runs exactly this.
+      - name: gitleaks
+        run: make secrets
 
   coverage:
     name: coverage
@@ -243,3 +243,6 @@ jobs:
         with:
           files: coverage.out
           fail_ci_if_error: false
+          # The Codecov CLI the action downloads, which is `latest` unless
+          # this names one.
+          version: v11.3.2

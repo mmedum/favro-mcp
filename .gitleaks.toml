@@ -5,10 +5,9 @@
 # because those are ordinary words — that is what `gates leaks` is for,
 # and the two are complementary rather than alternatives.
 #
-# The same version runs here and in CI; `gates pins` fails if the
-# Makefile's pin and the workflow's GITLEAKS_VERSION disagree, because a
-# commit that passes one and fails the other is a debugging session
-# nobody can reproduce locally.
+# CI runs `make secrets`, so the Makefile holds the one version and the
+# flags both scans use: `make secrets` over the commits HEAD reaches, and
+# the pre-commit hook over the staged changes.
 
 title = "favro-mcp"
 

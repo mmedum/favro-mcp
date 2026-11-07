@@ -31,14 +31,16 @@ const boundOrgInput = "organization_id"
 var oneOrganizationWaived = map[string]string{}
 
 func oneOrganization(w io.Writer, args []string) error {
-	out, err := dumpSchemas(binOr(args))
+	dump, err := toolDump(binOr(args))
 	if err != nil {
 		return err
 	}
-	dump, err := parseSchemas(out)
-	if err != nil {
-		return fmt.Errorf("parse --dump-schemas: %w", err)
-	}
+	return oneOrganizationOf(w, dump, oneOrganizationWaived)
+}
+
+// oneOrganizationOf holds the tools of dump to the rule, waived naming the
+// tools allowed to break it, which a test hands a table of its own.
+func oneOrganizationOf(w io.Writer, dump *schemaDump, waived map[string]string) error {
 	if len(dump.Tools) < 50 {
 		return fmt.Errorf("the dump carries %d tools; this check is not reading this server",
 			len(dump.Tools))
@@ -51,7 +53,7 @@ func oneOrganization(w io.Writer, args []string) error {
 		if _, ok := t.InputSchema.Properties[boundOrgInput]; !ok {
 			continue
 		}
-		if _, waived := oneOrganizationWaived[t.Name]; waived {
+		if _, ok := waived[t.Name]; ok {
 			continue
 		}
 		problems = append(problems, fmt.Sprintf(
@@ -62,7 +64,7 @@ func oneOrganization(w io.Writer, args []string) error {
 
 	// A waiver naming a tool that no longer declares it reads as a
 	// considered exception and covers nothing.
-	for _, name := range slices.Sorted(maps.Keys(oneOrganizationWaived)) {
+	for _, name := range slices.Sorted(maps.Keys(waived)) {
 		idx := slices.IndexFunc(dump.Tools, func(t schemaTool) bool { return t.Name == name })
 		if idx < 0 {
 			problems = append(problems, fmt.Sprintf("%s is waived from one-organization and is not registered", name))
@@ -77,7 +79,7 @@ func oneOrganization(w io.Writer, args []string) error {
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "\n"))
 	}
-	_, err = fmt.Fprintf(w, "one-organization ok: %d tool inputs carry no %s (%d waived)\n",
-		checked, boundOrgInput, len(oneOrganizationWaived))
+	_, err := fmt.Fprintf(w, "one-organization ok: %d tool inputs carry no %s (%d waived)\n",
+		checked, boundOrgInput, len(waived))
 	return err
 }

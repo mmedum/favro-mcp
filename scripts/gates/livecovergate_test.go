@@ -1,8 +1,11 @@
 package main
 
 import (
+	"go/token"
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,6 +15,7 @@ import (
 // TestLiveCoverAgainstThisRepository is the gate against the surface it
 // guards, which is the run that matters.
 func TestLiveCoverAgainstThisRepository(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	var out sink
 	if err := liveCover(&out, nil); err != nil {
 		t.Fatalf("the live driver does not cover the surface: %v", err)
@@ -52,6 +56,7 @@ func TestStepsWithoutDryRunNamesEveryWriteThatLacksIt(t *testing.T) {
 
 // TestTranscriptAgainstThisRepository likewise.
 func TestTranscriptAgainstThisRepository(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	var out sink
 	if err := transcript(&out, nil); err != nil {
 		t.Fatalf("a live driver prints without redacting: %v", err)
@@ -61,42 +66,105 @@ func TestTranscriptAgainstThisRepository(t *testing.T) {
 	// while a second driver printed live ids beside it, so "it passed"
 	// and "it looked at the driver that was already clean" printed the
 	// same sentence.
-	for _, dir := range transcriptDriverDirs {
-		out.mustSay(t, dir)
+	for _, d := range transcriptDrivers {
+		out.mustSay(t, d.dir)
 	}
 }
 
 // TestTranscriptSkipsOnlyTheDisabledStub holds the one exemption to its
-// shape. buildExcluded skips a file whose //go:build constraint is a
-// negation; if that ever matched a real driver file, the gate would
-// read less and still say ok.
+// shape: a file the driver's build never compiles. If that ever matched a
+// real driver file, the gate would read less and still say ok.
 func TestTranscriptSkipsOnlyTheDisabledStub(t *testing.T) {
-	root, err := moduleRoot()
+	t.Chdir(parityRepoRoot)
+	files, err := docsFiles(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk, err := readMakefile()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var skipped []string
-	for _, dir := range transcriptDriverDirs {
-		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(dir)))
+	for _, d := range transcriptDrivers {
+		tags, err := transcriptTags(mk, d)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
-				continue
-			}
-			excluded, err := buildExcluded(filepath.Join(root, filepath.FromSlash(dir), e.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if excluded {
-				skipped = append(skipped, dir+"/"+e.Name())
-			}
+		_, s, problems := transcriptFiles(token.NewFileSet(), files, d.dir, tags)
+		if len(problems) > 0 {
+			t.Fatal(problems)
 		}
+		skipped = append(skipped, s...)
 	}
-	want := []string{"scripts/evals/disabled.go"}
-	if len(skipped) != len(want) || (len(skipped) > 0 && skipped[0] != want[0]) {
-		t.Errorf("the gate skips %v, want exactly %v — a driver file must not be able to opt out by carrying a negated build tag", skipped, want)
+	if want := []string{"scripts/evals/disabled.go"}; !slices.Equal(skipped, want) {
+		t.Errorf("the gate skips %v, want exactly %v — a driver file must not be able to opt out by carrying a build tag", skipped, want)
+	}
+}
+
+// The gate reads every file of a driver that its build compiles, as git
+// lists the checkout: one in a package under it, and one an OS tag builds.
+// A file another tag or the driver's own negated tag keeps out is not the
+// driver. The tags are the ones the driver's Makefile target runs it with.
+func TestTranscriptReadsEveryDriverFile(t *testing.T) {
+	const makefile = "GO ?= go\n\nlive:\n\t@$(GO) run ./scripts/livefavro\n\nevals:\n\t$(GO) run -tags=evals ./scripts/evals\n"
+	const allowed = "package main\n\nimport \"os\"\n\nfunc newPrinter() { _ = os.Stdout }\n\nfunc fatal() { _ = os.Stderr }\n\n" +
+		"func start() { _, _ = os.Stdout, os.Stderr }\n"
+	loud := func(build, pkg string) string {
+		return build + "package " + pkg + "\n\nimport \"fmt\"\n\nfunc loud() { fmt.Println(\"a card name\") }\n"
+	}
+	const redact = "; print through the Redactor instead (printer.fail, printer.line, printer.redacted, printer.result)"
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{"every file the builds compile", map[string]string{
+			"scripts/livefavro/main.go":        allowed,
+			"scripts/livefavro/signal.go":      loud("//go:build !windows\n\n", "main"),
+			"scripts/livefavro/probe/probe.go": loud("", "probe"),
+			"scripts/evals/run.go":             loud("//go:build evals && linux\n\n", "main"),
+			"scripts/evals/disabled.go":        loud("//go:build !evals\n\n", "main"),
+			"scripts/evals/live.go":            loud("//go:build evals && live\n\n", "main"),
+			"scripts/livefavro/testdata/x.go":  loud("", "x"),
+			"scripts/other/main.go":            loud("", "main"),
+		}, "a live driver prints without redacting:\n" +
+			"  scripts/evals/run.go: loud calls fmt.Println" + redact + "\n" +
+			"  scripts/livefavro/probe/probe.go: loud calls fmt.Println" + redact + "\n" +
+			"  scripts/livefavro/signal.go: loud calls fmt.Println" + redact},
+		// One driver read whole is no excuse for the other read not at all.
+		{"a driver none of whose files its build compiles", map[string]string{
+			"scripts/livefavro/main.go": allowed,
+			"scripts/evals/disabled.go": "//go:build !evals\n\npackage main\n",
+		}, "a live driver prints without redacting:\n" +
+			"  read no Go file of scripts/evals that its build compiles; the drivers table names a directory or a tag that is gone"},
+		// A tag the target adds builds a file the driver did not build before.
+		{"the tags the Makefile runs a driver with", map[string]string{
+			"Makefile":                  "GO ?= go\nevals:\n\t$(GO) run -tags evals,live ./scripts/evals/\nlive:\n\t$(GO) run ./scripts/livefavro\n",
+			"scripts/livefavro/main.go": allowed,
+			"scripts/evals/live.go":     loud("//go:build evals && live\n\n", "main"),
+		}, "a live driver prints without redacting:\n" +
+			"  scripts/evals/live.go: loud calls fmt.Println" + redact},
+		{"a target that does not run its driver", map[string]string{
+			"Makefile":                  "GO ?= go\nevals:\n\t$(GO) run -tags=evals ./scripts/other\nlive:\n\t$(GO) run ./scripts/livefavro\n",
+			"scripts/livefavro/main.go": allowed,
+			"scripts/evals/run.go":      loud("//go:build evals\n\n", "main"),
+		}, "a live driver prints without redacting:\n" +
+			"  Makefile: evals runs no `go run` of scripts/evals, so the gate cannot tell which of its files the driver builds"},
+		{"fewer mentions of the terminal than the floor", map[string]string{
+			"scripts/livefavro/main.go": "package main\n\nimport \"os\"\n\nfunc newPrinter() { _, _, _ = os.Stdout, os.Stderr, os.Stdout }\n",
+			"scripts/evals/run.go":      "//go:build evals\n\npackage main\n",
+		}, "a live driver prints without redacting:\n" +
+			"  read 3 mentions of os.Stdout and os.Stderr, want at least 4: the reader is not seeing its input"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := initRepo(t)
+			put(t, dir, "Makefile", makefile)
+			putAll(t, dir, tc.files)
+			err := transcript(io.Discard, nil)
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("transcript() = %v\nwant %s", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -105,11 +173,7 @@ func TestTranscriptSkipsOnlyTheDisabledStub(t *testing.T) {
 // exists is a step that silently never runs, and the driver reports it
 // as a skip, which looks like an organization that lacks something.
 func TestEveryStepNamesARegisteredTool(t *testing.T) {
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	schema, err := toolOptions(filepath.Join(root, "schemas.json"))
+	schema, err := toolOptions(filepath.Join(parityRepoRoot, "schemas.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

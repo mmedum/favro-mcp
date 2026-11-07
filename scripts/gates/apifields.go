@@ -65,12 +65,7 @@ type waiver struct {
 //
 // Runs offline, against whatever `gates api-diff` last fetched.
 func apiFields(w io.Writer, _ []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-
-	surface, err := readSurface(filepath.Join(root, filepath.FromSlash(apiSurfacePath)))
+	surface, err := readSurface(filepath.FromSlash(apiSurfacePath))
 	if err != nil {
 		return err
 	}
@@ -79,12 +74,12 @@ func apiFields(w io.Writer, _ []string) error {
 			apiSurfacePath, len(surface.Resources), minFieldResources)
 	}
 
-	modeled, err := wireFields(filepath.Join(root, "internal", "favro"))
+	modeled, err := wireFields(filepath.Join("internal", "favro"))
 	if err != nil {
 		return err
 	}
 
-	waived, err := readWaivers(filepath.Join(root, filepath.FromSlash(apiFieldsWaivedPath)))
+	waived, err := readWaivers(filepath.FromSlash(apiFieldsWaivedPath))
 	if err != nil {
 		return err
 	}

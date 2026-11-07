@@ -27,6 +27,9 @@ GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 GOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@v1.8.0
 GOLICENSES    ?= github.com/google/go-licenses@v1.6.0
 GITLEAKS      ?= github.com/zricethezav/gitleaks/v8@v8.30.1
+GORELEASER    ?= github.com/goreleaser/goreleaser/v2@v2.18.1
+# --redact keeps a found secret out of a CI log anyone can read.
+GITLEAKS_FLAGS = --config .gitleaks.toml --redact --no-banner
 
 .DEFAULT_GOAL := help
 
@@ -48,8 +51,9 @@ fmt-check: ## fail if formatting is not clean
 	@$(GO) run ./scripts/gates fmt-check
 
 .PHONY: vet
-vet: ## go vet
+vet: ## go vet, the evals harness included, which builds only with -tags=evals
 	$(GO) vet ./...
+	$(GO) vet -tags=evals ./...
 
 .PHONY: lint
 lint: ## golangci-lint
@@ -89,9 +93,14 @@ licenses: ## every dependency's license is one we accept
 # https://github.com/segmentio/asm/blob/main/LICENSE
 	$(GO) run $(GOLICENSES) check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC --ignore github.com/segmentio/asm
 
+# gitleaks git with no --log-opts runs `git log --all`, every branch the
+# clone holds, so in CI a stale branch's finding would fail every pull
+# request (https://github.com/gitleaks/gitleaks/blob/v8.30.1/sources/git.go#L90-L94).
+# --log-opts=HEAD scans HEAD's history, the same commits here and in CI,
+# which checks out the whole of it.
 .PHONY: secrets
-secrets: ## credentials, as CI scans for them
-	$(GO) run $(GITLEAKS) dir . --config .gitleaks.toml --no-banner
+secrets: ## credentials in every commit HEAD reaches, as CI scans for them
+	$(GO) run $(GITLEAKS) git --log-opts=HEAD $(GITLEAKS_FLAGS) .
 
 .PHONY: leaks
 leaks: ## identifiers and tenant data in the working tree
@@ -195,8 +204,8 @@ hooks: ## point git at the repository's own hooks
 package-plugin: package-mcpb ## build a snapshot favro-mcp.plugin into dist/, with the .mcpb
 
 .PHONY: package-mcpb
-package-mcpb: ## build snapshot bundles, the .mcpb and favro-mcp.plugin, into dist/ (requires goreleaser)
-	goreleaser release --snapshot --clean --skip=publish
+package-mcpb: ## build snapshot bundles, the .mcpb and favro-mcp.plugin, into dist/
+	$(GO) run $(GORELEASER) release --snapshot --clean --skip=publish
 
 .PHONY: check
 check: fmt-check vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields transcript outcomes registry live-cover parity plugin mcpb one-organization schema-diff smoke staleness docs ## everything CI runs

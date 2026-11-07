@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -10,6 +11,7 @@ import (
 // TestMCPRegistryAgainstThisRepository is the gate against the entry it
 // guards, which is the run that matters.
 func TestMCPRegistryAgainstThisRepository(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	var out sink
 	if err := registry(&out, nil); err != nil {
 		t.Fatalf("the committed registry entry would be refused: %v", err)
@@ -25,11 +27,7 @@ func TestMCPRegistryAgainstThisRepository(t *testing.T) {
 func TestMCPRegistryEntryCarriesAPlaceholder(t *testing.T) {
 	t.Parallel()
 
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(root + "/" + registryFile)
+	raw, err := os.ReadFile(filepath.Join(parityRepoRoot, registryFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,11 +155,7 @@ func TestSumFromChecksums(t *testing.T) {
 func committedEntry(t *testing.T) map[string]any {
 	t.Helper()
 
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(root + "/" + registryFile)
+	raw, err := os.ReadFile(filepath.Join(parityRepoRoot, registryFile))
 	if err != nil {
 		t.Fatal(err)
 	}

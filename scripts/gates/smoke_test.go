@@ -1,15 +1,9 @@
 package main
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
-
-func built(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
 
 func TestLineWithFindsTheResponse(t *testing.T) {
 	out := `{"id":1,"result":{}}` + "\n" + `{"id":3,"result":{"isError":true}}` + "\n"

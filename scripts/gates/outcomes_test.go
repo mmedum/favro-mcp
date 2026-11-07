@@ -3,6 +3,7 @@ package main
 import (
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -10,6 +11,7 @@ import (
 // TestOutcomesAgainstThisRepository is the gate against the surface it
 // guards, which is the run that matters.
 func TestOutcomesAgainstThisRepository(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	var out sink
 	if err := outcomes(&out, nil); err != nil {
 		t.Fatalf("a tool states an outcome the response did not carry: %v", err)
@@ -159,11 +161,7 @@ func register(r *resolver) {
 func TestOutcomeClaimsRowsAreWellFormed(t *testing.T) {
 	t.Parallel()
 
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows, err := readOutcomeClaims(root + "/" + outcomeClaimsFile)
+	rows, err := readOutcomeClaims(filepath.Join(parityRepoRoot, outcomeClaimsFile))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}

@@ -57,15 +57,11 @@ func TestReadProfileRefusesAnEmptyRun(t *testing.T) {
 // An exemption naming a package the list does not contain reads as a
 // considered exemption and exempts nothing.
 func TestEveryExemptionNamesARealPackage(t *testing.T) {
-	root, err := moduleRoot()
+	module, err := modulePath(parityRepoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	module, err := modulePath(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pkgs, err := internalPackages(module, root)
+	pkgs, err := internalPackages(module, parityRepoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}

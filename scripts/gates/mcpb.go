@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -55,9 +56,9 @@ import (
 //     plugin.go does, so the two cannot disagree.
 //
 // The gate and the packer start from one function, committedManifest,
-// which reads the manifest, go.mod, LICENSE and .goreleaser.yaml once
-// from one root, generates the launcher for go.mod's module, and runs
-// every check. A bundle cannot be packed past a rule the gate enforces.
+// which reads the manifest, go.mod, LICENSE, .goreleaser.yaml and the
+// release's workflows once from one root, generates the launcher for
+// go.mod's module, and runs every check. A bundle cannot be packed past a rule the gate enforces.
 
 const (
 	mcpbTemplateDir  = "packaging/mcpb"
@@ -222,11 +223,7 @@ func mcpbLauncherScript(module string) string {
 // commit that writes it rather than at the most expensive moment there
 // is. It needs no build and no network.
 func mcpbGate(w io.Writer, _ []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-	b, problems, err := committedManifest(root)
+	b, problems, err := committedManifest(".")
 	if err != nil {
 		return err
 	}
@@ -1173,62 +1170,40 @@ func startProblems(m bundleManifest, switches []string, declared [][]string) []s
 	return problems
 }
 
-// topLevelKey matches a goreleaser top-level block header.
-var topLevelKey = regexp.MustCompile(`(?m)^([a-z_]+):`)
-
-// goreleaserBlocks splits .goreleaser.yaml, as goreleaserText read it,
-// into its top-level blocks.
-//
-// Regular expressions rather than a YAML parser, for the reason
-// goreleaserMatrix gives: a parser is a dependency this program does not
-// otherwise need, and the file it reads is one this repository writes.
-// The floor below is what keeps a changed layout from reading as an
-// empty set of blocks, which would pass every check that follows.
-func goreleaserBlocks(text string) (map[string]string, error) {
-	locs := topLevelKey.FindAllStringSubmatchIndex(text, -1)
-	blocks := map[string]string{}
-	for i, loc := range locs {
-		end := len(text)
-		if i+1 < len(locs) {
-			end = locs[i+1][0]
-		}
-		blocks[text[loc[2]:loc[3]]] = text[loc[1]:end]
-	}
-	if len(blocks) < 6 {
-		return nil, fmt.Errorf(".goreleaser.yaml parsed as %d top-level blocks; its shape has changed "+
-			"and these checks are reading nothing", len(blocks))
-	}
-	return blocks, nil
-}
-
 // releaseProblems holds .goreleaser.yaml under root, read once, to the
 // bundle: it builds every binary the table stages and every
 // releaseMatrix archive, the bundle reaches every one of them, and the
 // lines that make both bundles exist, be hashed, be signed, be attested
-// and be published are there.
+// and be published are there. The attestation is the release's
+// workflows', release.yml's and those it calls, under root.
 func releaseProblems(root string) []string {
-	text, err := goreleaserText(root)
+	release, err := readGoreleaser(root)
 	if err != nil {
 		return []string{err.Error()}
 	}
-	workflow, err := os.ReadFile(filepath.Join(root, releaseWorkflow))
+	built, err := goreleaserMatrix(release)
 	if err != nil {
 		return []string{err.Error()}
 	}
-	built, err := goreleaserMatrix(text)
-	if err != nil {
-		return []string{err.Error()}
+	var unread error
+	flows := releaseWorkflows(func(p string) (workflowFile, bool) {
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(p)))
+		if err != nil {
+			unread = cmp.Or(unread, err)
+			return workflowFile{}, false
+		}
+		return parseWorkflow(p, string(data)), true
+	})
+	if unread != nil {
+		return []string{unread.Error()}
 	}
-	blocks, err := goreleaserBlocks(text)
-	if err != nil {
-		return []string{err.Error()}
-	}
-	problems, _ := mcpbReleaseWiring(blocks)
-	problems = append(problems, attestedBundles(code(string(workflow)))...)
+	problems := slices.Clone(release.refused)
+	problems = append(problems, mcpbReleaseWiring(release)...)
+	problems = append(problems, attestedBundles(flows, release)...)
 	problems = append(problems, releaseArchiveProblems(built)...)
 	problems = append(problems, mcpbMatrixProblems(mcpbBinaries)...)
 
-	_, universal := blocks["universal_binaries"]
+	universal := release.has("universal_binaries")
 	for _, b := range mcpbBinaries {
 		switch {
 		case b.universal:
@@ -1292,7 +1267,7 @@ func mcpbMatrixProblems(binaries []mcpbBinary) []string {
 	return problems
 }
 
-// mcpbReleaseWiring holds the lines that make both bundles, the .mcpb
+// mcpbReleaseWiring holds the values that make both bundles, the .mcpb
 // and the .plugin, exist, be hashed, be signed and be published.
 //
 // Nothing else here can see them, and that is the point. Delete
@@ -1304,47 +1279,52 @@ func mcpbMatrixProblems(binaries []mcpbBinary) []string {
 // `release.extra_files`, or it ships unsigned, or is hashed and never
 // published, since GoReleaser hashes and uploads only what it built.
 // https://goreleaser.com/customization/checksum/
-func mcpbReleaseWiring(blocks map[string]string) (problems []string, checked int) {
-	require := func(block, needle, why string) {
-		checked++
-		body, ok := blocks[block]
-		if !ok {
-			problems = append(problems, fmt.Sprintf(".goreleaser.yaml has no %s block; %s", block, why))
-			return
-		}
-		if !strings.Contains(body, needle) {
-			problems = append(problems, fmt.Sprintf(".goreleaser.yaml's %s block does not mention %q; %s",
-				block, needle, why))
+func mcpbReleaseWiring(release goreleaserFile) []string {
+	var problems []string
+	require := func(what string, found []goreleaserValue, holds func(string) bool, why string) {
+		if !slices.ContainsFunc(found, func(v goreleaserValue) bool { return holds(v.value) }) {
+			problems = append(problems, fmt.Sprintf("%s has no %s; %s", parityGoreleaser, what, why))
 		}
 	}
+	is := func(want string) func(string) bool { return func(v string) bool { return v == want } }
+	endsIn := func(suffix string) func(string) bool {
+		return func(v string) bool { return strings.HasSuffix(v, suffix) }
+	}
+	set := func(v string) bool { return v != "" }
+	packs := func(v string) bool {
+		return slices.ContainsFunc(parityGateCalls(shellSplit(goreleaserCommand(v))),
+			func(c parityGateCall) bool { return c.name == "mcpb-pack" })
+	}
+	postHook := release.at("universal_binaries.hooks.post", "universal_binaries.hooks.post.cmd")
+	checksums, uploads := release.at("checksum.extra_files.glob"), release.at("release.extra_files.glob")
 
-	require("universal_binaries", "mcpb-pack",
+	require("universal_binaries.hooks.post that runs mcpb-pack", postHook, packs,
 		"the post hook is the one point where every binary exists and checksums.txt is unwritten, "+
 			"which is what makes it possible for the bundle to be hashed with the archives")
-	require("checksum", ".mcpb",
+	require("checksum.extra_files.glob ending in .mcpb", checksums, endsIn(".mcpb"),
 		"goreleaser hashes the artifacts IT built, and a file a hook dropped into dist/ is not one of "+
 			"them — without this glob the bundle is absent from checksums.txt and so outside the signature")
-	require("release", ".mcpb",
+	require("release.extra_files.glob ending in .mcpb", uploads, endsIn(".mcpb"),
 		"without this glob the bundle is hashed and never uploaded")
-	require("universal_binaries", pluginHook,
+	require("universal_binaries.hooks.post of "+strconv.Quote(pluginHook), postHook, is(pluginHook),
 		"the .plugin is packed in the same post hook as the .mcpb, so it can be hashed with the archives, "+
 			"and on a stable tag only, since it represents a stable install")
-	require("checksum", ".plugin",
+	require("checksum.extra_files.glob ending in .plugin", checksums, endsIn(".plugin"),
 		"without this glob the .plugin is absent from checksums.txt and so outside the signature")
-	require("release", ".plugin",
+	require("release.extra_files.glob ending in .plugin", uploads, endsIn(".plugin"),
 		"without this glob the .plugin is hashed and never uploaded")
-	require("signs", "cosign",
+	require("signs.cmd of cosign", release.at("signs.cmd"), is("cosign"),
 		"the checksum file is signed with a keyless certificate; without it every download is unverifiable")
-	require("signs", "artifacts: checksum",
+	require("signs.artifacts of checksum", release.at("signs.artifacts"), is("checksum"),
 		"the signature has to be over the checksum file, which is what covers the bundle too")
-	require("sboms", "archive",
+	require("sboms.artifacts of archive", release.at("sboms.artifacts"), is("archive"),
 		"one SBOM per archive, so a deployer can see what is inside a binary they did not build")
-	require("builds", "mod_timestamp",
+	require("builds.mod_timestamp", release.at("builds.mod_timestamp"), set,
 		"without it two builds of the same tag differ and `sha256sum -c` on a rebuild means nothing")
-	require("archives", "ids:",
+	require("archives.ids", release.at("archives.ids"), set,
 		"without an explicit id list the universal binary is archived too, and the release page offers "+
 			"a fourth macOS download nobody should have to choose between")
-	return problems, checked
+	return problems
 }
 
 // pluginHook is the .plugin's post hook as .goreleaser.yaml writes it.
@@ -1353,53 +1333,97 @@ func mcpbReleaseWiring(blocks map[string]string) (problems []string, checked int
 // on the wrong tags.
 const pluginHook = "{{ if not .Prerelease }}go run ./scripts/gates plugin-pack dist{{ end }}"
 
-// releaseWorkflow is the workflow that publishes and attests a release.
-const releaseWorkflow = ".github/workflows/release.yml"
-
-// attestedBundles holds release.yml's provenance step to both bundles:
-// the README tells people to verify each one's attestation, and a line
-// deleted from subject-path drops it with every other gate green.
-// workflow is release.yml as code gives it.
-func attestedBundles(workflow string) []string {
-	var paths [][]string
-	for _, loc := range usesLine.FindAllStringSubmatchIndex(workflow, -1) {
-		if strings.HasPrefix(workflow[loc[2]:loc[3]], "actions/attest-build-provenance@") {
-			paths = append(paths, strings.Fields(subjectPath(stepBlock(workflow, loc[0]))))
+// attestedBundles holds the release workflows' provenance steps to every
+// file the release publishes, as the goreleaser config names them:
+// releaseFiles'. The README tells people to verify each one's
+// attestation, and an entry deleted from subject-path drops it with every
+// other gate green.
+func attestedBundles(flows []workflowFile, release goreleaserFile) []string {
+	files, problems := releaseFiles(release)
+	attested := false
+	for _, w := range flows {
+		for _, s := range w.steps {
+			if s.action() != "actions/attest-build-provenance" {
+				continue
+			}
+			attested = true
+			subjects, ok := s.with["subject-path"]
+			if !ok {
+				problems = append(problems, fmt.Sprintf("%s:%d: the attestation names no subject-path", w.path, s.line))
+				continue
+			}
+			problems = append(problems, releaseSubjectProblems(subjects.value, files)...)
 		}
 	}
-	if len(paths) == 0 {
-		return []string{releaseWorkflow + " has no attest-build-provenance step, so no release file carries provenance"}
-	}
-	var problems []string
-	for _, glob := range []string{"dist/*.mcpb", "dist/*.plugin"} {
-		if !slices.ContainsFunc(paths, func(p []string) bool { return slices.Contains(p, glob) }) {
-			problems = append(problems, fmt.Sprintf("%s's attest-build-provenance step does not name %s in "+
-				"subject-path, so that bundle ships with no provenance while the README says to verify it",
-				releaseWorkflow, glob))
-		}
+	if !attested {
+		problems = append(problems, releaseWorkflow+" and the workflows it calls have no attest-build-provenance step, "+
+			"so no release file carries provenance")
 	}
 	return problems
 }
 
-// subjectPath is the value of a step's subject-path input: the rest of
-// its line and every line indented deeper.
-func subjectPath(step string) string {
-	lines := strings.Split(step, "\n")
-	for i, line := range lines {
-		key, value, ok := strings.Cut(strings.TrimSpace(line), ":")
-		if !ok || key != "subject-path" {
-			continue
-		}
-		out := []string{value}
-		for _, l := range lines[i+1:] {
-			if strings.TrimSpace(l) != "" && indentOf(l) <= indentOf(line) {
-				break
-			}
-			out = append(out, l)
-		}
-		return strings.Join(out, "\n")
+// releaseFiles is the subject-path entry for each file the release
+// publishes, in the config's order, in goreleaser's dist directory: a glob
+// for an archive in each of archives' formats and format_overrides', one
+// for each release.extra_files glob past its last *, and
+// checksum.name_template's file, which a fixed subject-path has to match.
+// goreleaser's default format and checksum name are no value to hold.
+func releaseFiles(release goreleaserFile) (files, problems []string) {
+	dist := cmp.Or(release.first("dist"), "dist")
+	if len(release.at("archives.formats")) == 0 {
+		problems = append(problems, "archives.formats is not set, so nothing holds the subject-path to the archives")
 	}
-	return ""
+	for _, v := range release.at("archives.formats", "archives.format_overrides.formats") {
+		files = append(files, path.Join(dist, "*."+v.value))
+	}
+	for _, v := range release.at("release.extra_files.glob") {
+		base := path.Base(v.value)
+		files = append(files, path.Join(dist, "*"+base[strings.LastIndexByte(base, '*')+1:]))
+	}
+	// Without a name_template goreleaser names the checksum file for the
+	// project and version, which a fixed subject-path does not match.
+	if checksum := release.first("checksum.name_template"); checksum != "" {
+		files = append(files, path.Join(dist, checksum))
+	} else {
+		problems = append(problems, "checksum.name_template is empty, so nothing holds the subject-path to the "+
+			"file every other artifact is verified through")
+	}
+	var once []string
+	for _, f := range files {
+		if !slices.Contains(once, f) {
+			once = append(once, f)
+		}
+	}
+	return once, problems
+}
+
+// releaseSubjectProblems holds an attestation's subject-path, a list
+// separated by commas or newlines, to name each of files as an entry of
+// its own. actions/attest v4.2.1, which attest-build-provenance
+// v4.2.2 runs, splits subject-path at commas and newlines and trims each
+// glob, so a space-separated value is one glob that matches nothing
+// (https://github.com/actions/attest/blob/508db95dd578ae2727ebd6217d5ba78e4fbda05d/src/subject.ts#L303).
+func releaseSubjectProblems(subjects string, files []string) []string {
+	var problems []string
+	parts := strings.FieldsFunc(subjects, func(r rune) bool { return r == ',' || r == '\n' })
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	if slices.ContainsFunc(parts, func(p string) bool { return strings.ContainsAny(p, " \t") }) {
+		problems = append(problems, fmt.Sprintf("subject-path %q separates with a space, which is read as one "+
+			"glob; separate with commas or newlines", subjects))
+	}
+	// actions/attest skips a glob that matches nothing while another
+	// matches, so dist/unused/*.mcpb attests no bundle and
+	// dist/*.mcpb.sigstore.json only a signature
+	// (https://github.com/actions/attest/blob/508db95dd578ae2727ebd6217d5ba78e4fbda05d/src/subject.ts#L150).
+	for _, want := range files {
+		if !slices.Contains(parts, want) {
+			problems = append(problems, fmt.Sprintf("subject-path %q does not name %s, so it ships with no "+
+				"provenance while the README says to verify it", subjects, want))
+		}
+	}
+	return problems
 }
 
 // mcpbPack writes the bundle from the binaries goreleaser just built.
@@ -1414,19 +1438,15 @@ func mcpbPack(w io.Writer, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: gates mcpb-pack VERSION [DIST]")
 	}
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
 	version := strings.TrimPrefix(args[0], "v")
-	dist := filepath.Join(root, "dist")
+	dist := "dist"
 	if len(args) > 1 {
 		dist = args[1]
 	}
 
 	// The gate's own start, read once: a bundle cannot be packed past a
 	// rule the gate enforces.
-	b, problems, err := committedManifest(root)
+	b, problems, err := committedManifest(".")
 	if err != nil {
 		return err
 	}
@@ -1439,7 +1459,7 @@ func mcpbPack(w io.Writer, args []string) error {
 		return err
 	}
 
-	files, binaries, err := mcpbLayout(root, dist, b.launcher)
+	files, binaries, err := mcpbLayout(".", dist, b.launcher)
 	if err != nil {
 		return err
 	}
@@ -1531,8 +1551,11 @@ func onlyMatch(dist, glob, what string) (string, error) {
 	}
 	if len(matches) != 1 {
 		found := ""
-		if len(matches) > 0 {
-			found = ": " + strings.Join(matches, " ")
+		for _, m := range matches {
+			found += " " + filepath.ToSlash(m)
+		}
+		if found != "" {
+			found = ":" + found
 		}
 		return "", fmt.Errorf("expected exactly one %s under %s, found %d%s (run goreleaser first)",
 			what, dist, len(matches), found)

@@ -18,9 +18,10 @@ google-docs-mcp, is fine.
 Fixtures are synthetic and written inline in the tests. `make leaks`
 scans the tree for addresses at a real domain, Favro's 24-hex ids, keyed
 organization ids and tokens, app links and card references.
-`make secrets` runs gitleaks for credentials. Both run in `make check`
-and CI. `make hooks` points git at `.githooks`, whose pre-commit hook
-runs gofmt, `go vet` and the leak scan on every commit.
+`make secrets` runs gitleaks for credentials, over every commit HEAD
+reaches. Both run in `make check` and CI. `make hooks` points git at
+`.githooks`, whose pre-commit hook runs gofmt, `go vet`, the leak scan
+and gitleaks over the staged changes on every commit.
 
 **Commit under your GitHub no-reply address**, the one at
 `users.noreply.github.com`, and credit co-authors with theirs. The
@@ -82,7 +83,8 @@ make check
 
 `make check` runs the gates CI runs, and the `check` target in the
 `Makefile` is the list. `make parity` fails when that list and `ci.yml`
-differ, so a check you add goes in both (D-69). CI runs the tests on
+differ, command by command, or when a gate runs outside the pipeline its
+dispatch entry names, so a check you add goes in both (D-69). CI runs the tests on
 Linux, macOS and Windows (D-82).
 
 `go run ./scripts/gates` lists the checks, and `go run ./scripts/gates
@@ -96,7 +98,8 @@ These are worth knowing before they fail on you:
 - **The coverage floor** is 80% of statements in every package on its
   own, not on the average (D-71). An exemption names its reason.
 - **`make schema-diff`** holds the committed `schemas.json` to the
-  binary's dump, and the tool surface to the last tag's (D-64).
+  binary's dump, and the tool surface to the newest release tag HEAD
+  reaches (D-64).
   `make schemas` rewrites the file.
 - **`make api-coverage` and `make api-fields`** hold every endpoint and
   field of Favro's reference to a verdict in `testdata/api-coverage.tsv`
@@ -109,7 +112,9 @@ These are worth knowing before they fail on you:
   [`docs/TOOLS.md`](docs/TOOLS.md#error-classes) (D-40).
 - **`make staleness`** holds `docs/TOOLS.md`'s tool table to the binary
   both ways, the README's permission rules and plugin section, and
-  `docs/configuration.md` to every setting the code reads (D-78).
+  `docs/configuration.md` to every setting the code reads (D-78). A
+  commit since the newest release tag HEAD reaches that changes what the
+  binary is built from needs a CHANGELOG entry.
 - **`make live-cover`** fails when a tool or option has no live step, or
   no waiver in `testdata/live-cover-waived.tsv` (D-74).
 

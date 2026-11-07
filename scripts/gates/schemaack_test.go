@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -240,11 +238,9 @@ func TestABreakOfTheReleaseIsMatchedByItsField(t *testing.T) {
 // older tag a branch cut before the last release reaches. Before the
 // first tag there is none, and nothing breaks one.
 func TestReleasedBreaksReadTheBaseBranchTag(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	gitIn(t, "init", "-q", "-b", "main")
-	gitIn(t, "commit", "--quiet", "--allow-empty", "-m", "Start")
-	gitIn(t, "branch", "before-any-release")
+	dir := initRepo(t)
+	mustGit(t, "commit", "--quiet", "--allow-empty", "-m", "Start")
+	mustGit(t, "branch", "before-any-release")
 	head := surfaceOf(t, renamed)
 
 	breaks, err := releasedBreaks("HEAD", head)
@@ -255,16 +251,16 @@ func TestReleasedBreaksReadTheBaseBranchTag(t *testing.T) {
 	commit := func(body, message string) {
 		t.Helper()
 		put(t, dir, "schemas.json", body)
-		gitIn(t, "add", "schemas.json")
-		gitIn(t, "commit", "--quiet", "-m", message)
+		mustGit(t, "add", "schemas.json")
+		mustGit(t, "commit", "--quiet", "-m", message)
 	}
 	commit(plain, "Release 1")
-	gitIn(t, "tag", "v1.0.0")
-	gitIn(t, "branch", "feature")
+	mustGit(t, "tag", "v1.0.0")
+	mustGit(t, "branch", "feature")
 	// The next release renamed the input already, so it breaks nothing.
 	commit(renamed, "Release 2")
-	gitIn(t, "tag", "v2.0.0")
-	gitIn(t, "switch", "--quiet", "feature")
+	mustGit(t, "tag", "v2.0.0")
+	mustGit(t, "switch", "--quiet", "feature")
 	// A later commit and the working tree are not the release.
 	commit(`{"tools":[{"name":"other"}]}`, "After")
 	put(t, dir, "schemas.json", `{"tools":[{"name":"another"}]}`)
@@ -290,9 +286,8 @@ func TestSchemaAckTellsARefusalFromAFailure(t *testing.T) {
 	if refused == nil || exitCode(refused) != 1 || errors.As(refused, new(couldNotRun)) {
 		t.Errorf("a refusal (%v) exits %d, want 1", refused, exitCode(refused))
 	}
-	t.Chdir(t.TempDir())
-	gitIn(t, "init", "-q")
-	gitIn(t, "commit", "--quiet", "--allow-empty", "-m", "Start")
+	initRepo(t)
+	mustGit(t, "commit", "--quiet", "--allow-empty", "-m", "Start")
 	// git's own words, which a locale would translate.
 	t.Setenv("LC_ALL", "C")
 	t.Setenv("LANGUAGE", "")
@@ -303,19 +298,5 @@ func TestSchemaAckTellsARefusalFromAFailure(t *testing.T) {
 	}
 	if err := schemaAck(io.Discard, []string{"HEAD"}); err == nil || err.Error() != "usage: gates schema-ack BASE HEAD" {
 		t.Errorf("schemaAck with one argument = %v, want its usage", err)
-	}
-}
-
-// gitIn runs git in the working directory as a fixture identity,
-// reading none of the machine's configuration: no signing key, no
-// hooks, no default branch of its own.
-func gitIn(t *testing.T, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.com",
-		"GIT_COMMITTER_NAME=Fixture", "GIT_COMMITTER_EMAIL=fixture@example.com",
-		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 }

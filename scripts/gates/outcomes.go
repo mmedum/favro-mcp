@@ -49,11 +49,7 @@ import (
 // say anything. What makes a branch honest is that it consults something
 // before it speaks.
 func outcomes(w io.Writer, _ []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-	dir := filepath.Join(root, filepath.FromSlash(outcomeScanDir))
+	dir := filepath.FromSlash(outcomeScanDir)
 
 	fset := token.NewFileSet()
 	files, err := parseOutcomeDir(fset, dir)
@@ -71,7 +67,7 @@ func outcomes(w io.Writer, _ []string) error {
 			len(fields), outcomeScanDir, minOutcomeFields)
 	}
 
-	exempt, err := readOutcomeClaims(filepath.Join(root, filepath.FromSlash(outcomeClaimsFile)))
+	exempt, err := readOutcomeClaims(filepath.FromSlash(outcomeClaimsFile))
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"os"
@@ -51,7 +52,7 @@ const (
 
 // The ends of the problems several tests expect, written once.
 const (
-	notAHolder = "which is not live, review, a make target, a gates command, an enabled linter or a test or fuzz function"
+	notAHolder = "which is not review, a make target, a gates command, an enabled linter or a test or fuzz function"
 	bySlug     = "cite a D-ID, docs/<file>.md#<slug> or a source link"
 	undefined  = ", which no step or -writes check in internal/livecover is named"
 )
@@ -77,6 +78,10 @@ func docsFixture() map[string]string {
 			".PHONY: docs",
 			"docs:",
 			"\t@go run ./scripts/gates docs",
+			"",
+			".PHONY: live",
+			"live:",
+			"\t@go run ./scripts/livefavro",
 		),
 		fxGolangci: textLines(
 			`version: "2"`,
@@ -260,7 +265,12 @@ func drop(file string) docsEdit              { return docsEdit{file: file} }
 // turn a reject row into a copy of the accepted checkout.
 func docsEdited(t *testing.T, edits ...docsEdit) map[string]string {
 	t.Helper()
-	files := docsFixture()
+	return applyEdits(t, docsFixture(), edits...)
+}
+
+// applyEdits is files with the edits applied, as docsEdited applies them.
+func applyEdits(t *testing.T, files map[string]string, edits ...docsEdit) map[string]string {
+	t.Helper()
 	for _, e := range edits {
 		switch body := files[e.file]; {
 		case e.old == "" && e.new == "":
@@ -293,7 +303,7 @@ func docsTree(t *testing.T, files map[string]string) string {
 // docsFixtureFloors keeps the floors out of the rows whose subject is not a
 // floor. The fixture is far smaller than the repository, and a pass that
 // reads nothing still fails.
-var docsFixtureFloors = docsFloors{links: 1, spanPaths: 1, packages: 1}
+var docsFixtureFloors = docsFloors{links: 1, spanPaths: 1, packages: 1, liveSteps: 1}
 
 // docsRun runs every check over files, listed as git lists them, held to
 // floors. Listing a checkout is docsFiles' part, and the tests that need
@@ -445,14 +455,15 @@ func TestDocsGateSaysWhatItRead(t *testing.T) {
 // stays in the index until the deletion is staged, and has nothing to
 // read.
 func TestDocsGateReadsWhatGitWouldCommit(t *testing.T) {
+	isolateGit(t)
 	root := t.TempDir()
 	t.Chdir(root)
 	putAll(t, root, docsEdited(t,
 		add("internal/old/old.go", "package old\n"),
 		add("internal/generated/broken.go", "this is not Go\n"),
 	))
-	gitIn(t, "init", "-q")
-	gitIn(t, "add", "-A")
+	mustGit(t, "init", "-q")
+	mustGit(t, "add", "-A")
 	if err := os.Remove(filepath.Join(root, "internal", "old", "old.go")); err != nil {
 		t.Fatal(err)
 	}
@@ -593,6 +604,14 @@ func TestDocsGateHoldsHeldByToWhatExists(t *testing.T) {
 		{"a decision held by nothing", []docsEdit{
 			replace(fxArch, "| TestRetry, smoke |", "| |"),
 		}, []string{"docs/architecture.md:12: D-01 is held by nothing"}},
+		// live is the Makefile's target, so it holds only while `make live` does.
+		{"live, while the Makefile has its target", []docsEdit{
+			replace(fxArch, "| TestRetry, smoke |", "| TestRetry, live |"),
+		}, nil},
+		{"live, with no make live", []docsEdit{
+			replace(fxArch, "| TestRetry, smoke |", "| TestRetry, live |"),
+			replace(fxMakefile, "\n.PHONY: live\nlive:\n\t@go run ./scripts/livefavro\n", ""),
+		}, []string{`docs/architecture.md:12: D-01 is held by "live", ` + notAHolder}},
 	})
 }
 
@@ -785,7 +804,7 @@ func TestDocsGateResolvesCitations(t *testing.T) {
 				"      # Pinned, as E-12 found.",
 				"      - run: go test ./...",
 			)),
-			add(".goreleaser.yaml", textLines("version: 2", "# Archives follow §3.")),
+			add(parityGoreleaser, textLines("version: 2", "# Archives follow §3.")),
 		}, []string{
 			".github/workflows/ci.yml:5: cites E-12; evidence has no IDs: state the behavior at the line that depends on it, with its source link",
 			".gitignore:2: cites docs/runbook.md#stairs, and docs/runbook.md has no heading with that slug",
@@ -949,30 +968,40 @@ func TestDocsGateRefusesToReadNothing(t *testing.T) {
 }
 
 // Each pass has a floor of its own, so one that keeps reading cannot make
-// up for another that stops. Each row raises one floor one past what the
-// fixture holds.
+// up for another that stops. Each row raises one floor past what the
+// fixture holds: its links, code-span paths and packages by one, and the
+// live steps, which are internal/livecover's however many it holds, past
+// any it could.
 func TestDocsGateHoldsEachPassToItsFloor(t *testing.T) {
 	t.Parallel()
+	atFloor := docsFloors{links: 8, spanPaths: 14, packages: 2, liveSteps: 1}
+	raised := func(raise func(*docsFloors)) docsFloors {
+		f := atFloor
+		raise(&f)
+		return f
+	}
 	for _, tc := range []struct {
 		name   string
 		floors docsFloors
 		want   []string
 	}{
-		{"each pass at its floor", docsFloors{links: 8, spanPaths: 14, packages: 2}, nil},
+		{"each pass at its floor", atFloor, nil},
 		{
-			"links one under their floor",
-			docsFloors{links: 9, spanPaths: 14, packages: 2},
+			"links one under their floor", raised(func(f *docsFloors) { f.links++ }),
 			[]string{"8 Markdown links checked, fewer than 9: the links are not being read"},
 		},
 		{
-			"code-span paths one under their floor",
-			docsFloors{links: 8, spanPaths: 15, packages: 2},
+			"code-span paths one under their floor", raised(func(f *docsFloors) { f.spanPaths++ }),
 			[]string{"14 code-span paths checked, fewer than 15: the code spans are not being read"},
 		},
 		{
-			"packages one under their floor",
-			docsFloors{links: 8, spanPaths: 14, packages: 3},
+			"packages one under their floor", raised(func(f *docsFloors) { f.packages++ }),
 			[]string{"2 package directories under internal/ and cmd/, fewer than 3: the tree is not being read"},
+		},
+		{
+			"live steps under their floor", raised(func(f *docsFloors) { f.liveSteps = 100_000 }),
+			[]string{fmt.Sprintf("%d live steps read from internal/livecover, fewer than 100000: "+
+				"the driver's steps are not being read", len(livecover.Names()))},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -980,6 +1009,56 @@ func TestDocsGateHoldsEachPassToItsFloor(t *testing.T) {
 			checkDocs(t, tc.floors, nil, tc.want)
 		})
 	}
+}
+
+// Under [Unreleased]'s Removed heading a code span or a live step names
+// what the release takes away, so it need not exist. Decisions and links
+// are still held, and only the changelog has the section.
+func TestDocsGateLetsTheRemovedSectionNameWhatIsGone(t *testing.T) {
+	t.Parallel()
+	unreleased := "#codemap` says.\n"
+	checkDocsCases(t, []docsCase{
+		{"a removed path, target and live step", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n### Removed\n\n- `internal/gone`, `make gone` and the live step \"gone now\".\n"),
+		}, nil},
+		{"a level-4 heading inside Removed keeps it", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n### Removed\n\n#### Tools\n\n- `internal/gone`.\n"),
+		}, nil},
+		{"a decision and a link under Removed", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n### Removed\n\n- D-07, and [the page](docs/gone.md).\n"),
+		}, []string{
+			"CHANGELOG.md:9: cites D-07, which is not a decision",
+			"CHANGELOG.md:9: links to docs/gone.md, which does not exist",
+		}},
+		{"the heading after Removed ends it", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n### Removed\n\n- `internal/gone`.\n\n### Fixed\n\n- `internal/lost` and the live step \"lost\".\n"),
+		}, []string{
+			"CHANGELOG.md:13: names internal/lost, which does not exist",
+			`CHANGELOG.md:13: names the live step "lost"` + undefined,
+		}},
+		{"a Removed heading outside the changelog", []docsEdit{
+			replace(fxRunbook, "Back to [the first steps](#steps).", "### Removed\n\n`internal/gone`."),
+		}, []string{"docs/runbook.md:14: names internal/gone, which does not exist"}},
+	})
+}
+
+// The scan reads what release-notes lifts, through the one CHANGELOG
+// reader: a heading in a fence ends no section.
+func TestDocsGateScansWhatTheReleaseNoteLifts(t *testing.T) {
+	t.Parallel()
+	unreleased := "#codemap` says.\n"
+	checkDocsCases(t, []docsCase{
+		{"a heading in a fence", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n~~~markdown\n## [1.0.0]\n~~~\n\n- As D-07 says.\n"),
+		}, []string{"CHANGELOG.md:11: cites D-07, which is not a decision"}},
+		{"a heading with a tab", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n##\tLater\n\n- As D-07 says.\n"),
+		}, nil},
+		// A link footer in any case ends the section, as release-notes cuts it.
+		{"a lowercase footer", []docsEdit{
+			replace(fxChangelog, unreleased, unreleased+"\n[unreleased]: https://example.com/compare/v1.0.0...HEAD\n- As D-07 says.\n"),
+		}, nil},
+	})
 }
 
 // The codemap is held to the tree: every package directory under

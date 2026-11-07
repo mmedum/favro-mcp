@@ -46,33 +46,23 @@ type command struct {
 	runs where
 }
 
-// where is the pipeline a command has to run in. Three states, because a
-// gate that only a pull request can run is neither a gate `make check`
-// runs nor a convenience nothing does.
+// where is the pipeline a command has to run in, which parity holds.
 type where int
 
 const (
-	// manual is a maintainer convenience or a release step; nothing
-	// holds it to a pipeline.
+	// manual is a maintainer convenience, run by a Makefile target or the
+	// git hook and never by `make check`: api-diff refetches Favro's
+	// reference over the network, which no pipeline may depend on.
 	manual where = iota
 	// inCheck has to run in BOTH `make check` and the CI workflow.
 	inCheck
 	// inPR has to run in CI on a pull request and NOT in `make check`:
 	// it measures from the merge-base, which only a pull request has.
 	inPR
+	// inRelease runs in the release workflows or the goreleaser config,
+	// and never in `make check`.
+	inRelease
 )
-
-// commandsIn are the commands that have to run in w, sorted.
-func commandsIn(w where) []string {
-	var out []string
-	for name, c := range commands {
-		if c.runs == w {
-			out = append(out, name)
-		}
-	}
-	slices.Sort(out)
-	return out
-}
 
 // commands is the one list of what this program does — the usage text,
 // the dispatch and the parity gate all read it, so they cannot drift.
@@ -120,7 +110,7 @@ func init() {
 			doc: "the committed MCP registry entry obeys the rules that registry enforces in code",
 		},
 		"registry-publish": {
-			run: registryPublish, args: "VERSION [DIST]",
+			run: registryPublish, args: "VERSION [DIST]", runs: inRelease,
 			doc: "print the registry entry to publish, with the bundle's hash from the signed checksums",
 		},
 		"live-cover": {
@@ -168,19 +158,19 @@ func init() {
 			doc: "the committed Claude Desktop manifest against the files the packer stages",
 		},
 		"mcpb-pack": {
-			run: mcpbPack, args: "VERSION [DIST]",
+			run: mcpbPack, args: "VERSION [DIST]", runs: inRelease,
 			doc: "assemble the .mcpb from a goreleaser dist (release only)",
 		},
 		"plugin-pack": {
-			run: pluginPack, args: "[DIST]",
+			run: pluginPack, args: "[DIST]", runs: inRelease,
 			doc: "assemble favro-mcp.plugin from a goreleaser dist (release only)",
 		},
 		"release-notes": {
-			run: releaseNotes, args: "VERSION",
+			run: releaseNotes, args: "VERSION", runs: inRelease,
 			doc: "print one version's CHANGELOG section (release only)",
 		},
 		"fmt-check": {
-			run: fmtCheck, args: "",
+			run: fmtCheck, args: "", runs: inCheck,
 			doc: "every Go file is gofmt'd",
 		},
 		"precommit": {
@@ -198,21 +188,39 @@ func main() {
 	if !ok {
 		fail("unknown command %q\n\n%s", os.Args[1], usage())
 	}
+	// Every command reads the repository from its root, so it runs the same
+	// from any directory under it.
+	root, err := moduleRoot()
+	if err == nil {
+		err = os.Chdir(root)
+	}
+	if err != nil {
+		fail("could not run: %v", err)
+	}
 	if err := c.run(os.Stdout, os.Args[2:]); err != nil {
 		fmt.Fprintf(os.Stderr, "gates: %v\n", err)
 		os.Exit(exitCode(err))
 	}
 }
 
-// couldNotRun is an error that stopped schema-ack before it could judge:
-// a build or a git call that failed. Its message says so, which is what
-// tells it from a refusal in CI, since `go run` exits 1 whatever the
-// program's own status was.
+// couldNotRun is a gate that could not reach a verdict, a failed build or
+// git call, rather than one that found a problem. Its message says so,
+// which is what tells it from a refusal in CI, since `go run` exits 1
+// whatever the program's own status was.
 type couldNotRun struct{ error }
 
 func (e couldNotRun) Error() string { return "could not run: " + e.error.Error() }
 
 func (e couldNotRun) Unwrap() error { return e.error }
+
+// floorProblems is a problem when a gate read fewer of what than least:
+// found nothing and looked at nothing print the same sentence otherwise.
+func floorProblems(what string, read, least int) []string {
+	if read >= least {
+		return nil
+	}
+	return []string{fmt.Sprintf("read %d %s, want at least %d: the reader is not seeing its input", read, what, least)}
+}
 
 // exitCode is 2 for a gate that could not run, as for a usage error, and
 // 1 for a gate that ran and refused. A built binary exits with it.
@@ -234,10 +242,11 @@ func usage() string {
 	b.WriteString("usage: gates COMMAND [ARGS]\n\n")
 	for _, name := range names {
 		c := commands[name]
-		mark := map[where]string{manual: " ", inCheck: "*", inPR: "+"}[c.runs]
+		mark := map[where]string{manual: " ", inCheck: "*", inPR: "+", inRelease: "r"}[c.runs]
 		fmt.Fprintf(&b, "  %s %-*s %-*s %s\n", mark, nameWidth, name, argsWidth, c.args, c.doc)
 	}
-	b.WriteString("\n  * runs in both `make check` and CI; + runs in CI on a pull request only; the parity gate checks both.\n")
+	b.WriteString("\n  * runs in both `make check` and CI; + runs in CI on a pull request only; r runs in the release;\n" +
+		"  the parity gate checks each. Every command runs from the module root, and reads a path argument from there.\n")
 	return b.String()
 }
 
@@ -335,21 +344,19 @@ func schemaDiffCmd(w io.Writer, args []string) error {
 }
 
 // moduleRoot walks up from the working directory to the directory
-// holding go.mod. Every gate that reads the repository needs it.
+// holding go.mod, which main runs every command from.
 func moduleRoot() (string, error) {
-	dir, err := os.Getwd()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	for {
+	for dir := cwd; ; dir = filepath.Dir(dir) {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir, nil
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("no go.mod above %s", dir)
+		if filepath.Dir(dir) == dir {
+			return "", fmt.Errorf("no go.mod in %s or above it", cwd)
 		}
-		dir = parent
 	}
 }
 

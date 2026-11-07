@@ -59,11 +59,7 @@ type registryEntry struct {
 // registry checks the committed entry against the rules the registry
 // enforces in code.
 func registry(out io.Writer, _ []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-	raw, err := os.ReadFile(root + "/" + registryFile)
+	raw, err := os.ReadFile(registryFile)
 	if err != nil {
 		return fmt.Errorf("%w (the registry entry is %s)", err, registryFile)
 	}
@@ -184,11 +180,7 @@ func registryPublish(out io.Writer, args []string) error {
 	if len(args) > 1 && args[1] != "" {
 		dist = args[1]
 	}
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-	raw, err := os.ReadFile(root + "/" + registryFile)
+	raw, err := os.ReadFile(registryFile)
 	if err != nil {
 		return err
 	}
