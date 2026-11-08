@@ -54,12 +54,7 @@ var classesDocRow = regexp.MustCompile("^\\|\\s*`([a-z_]+)`\\s*\\|")
 // vocabulary. That is what catches the class somebody adds in
 // anticipation and never wires up.
 func classes(w io.Writer, _ []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-
-	sourcePath := filepath.Join(root, classesSourcePath)
+	sourcePath := classesSourcePath
 	declared, err := declaredClasses(sourcePath)
 	if err != nil {
 		return err
@@ -73,7 +68,7 @@ func classes(w io.Writer, _ []string) error {
 			len(declared), classesSourcePath, classesFloor)
 	}
 
-	documented, docLines, err := documentedClasses(filepath.Join(root, classesDocPath))
+	documented, docLines, err := documentedClasses(classesDocPath)
 	if err != nil {
 		return err
 	}
@@ -82,7 +77,7 @@ func classes(w io.Writer, _ []string) error {
 			classesDocPath, classesDocSection)
 	}
 
-	emitted, filesRead, err := emittedClasses(root, declared)
+	emitted, filesRead, err := emittedClasses(".", declared)
 	if err != nil {
 		return err
 	}

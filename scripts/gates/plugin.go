@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 )
@@ -135,13 +134,9 @@ func staged() []string {
 }
 
 func pluginGate(w io.Writer, _ []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
 	var problems []string
 
-	manifest, err := readJSON(filepath.Join(root, manifestPath))
+	manifest, err := readJSON(manifestPath)
 	if err != nil {
 		return err
 	}
@@ -158,7 +153,7 @@ func pluginGate(w io.Writer, _ []string) error {
 	// will actually be in the archive. A schema cannot check this,
 	// because the property is about the bundle rather than about the
 	// document.
-	mcp, err := readJSON(filepath.Join(root, mcpPath))
+	mcp, err := readJSON(mcpPath)
 	if err != nil {
 		return err
 	}
@@ -179,15 +174,16 @@ func pluginGate(w io.Writer, _ []string) error {
 	// directions: an unreachable binary is dead weight, and a launcher
 	// arm with no binary is the failure mode with the worst error
 	// message a user can get.
-	release, err := goreleaserText(root)
+	release, err := readGoreleaser(".")
 	if err != nil {
 		return err
 	}
-	built, err := goreleaserMatrix(release)
-	if err != nil {
-		return err
+	problems = append(problems, release.refused...)
+	if built, err := goreleaserMatrix(release); err != nil {
+		problems = append(problems, err.Error())
+	} else {
+		problems = append(problems, pluginMatrixProblems(built, emulated())...)
 	}
-	problems = append(problems, pluginMatrixProblems(built, emulated())...)
 
 	// The launcher the packer will write must name every directory it
 	// stages, and nothing else. This is the check that reads the
@@ -261,20 +257,28 @@ func pluginMatrixProblems(built []string, emulation map[string]string) []string 
 // tree — the lint config excuses exactly those rules there on the
 // grounds that the code never leaves a maintainer's machine — and why
 // nothing under scripts/ is held to the tool surface's compatibility
-// promise. That premise was true and held by nothing; a second `main:`
-// in the build config would quietly ship the gates. release is
-// .goreleaser.yaml as goreleaserText read it.
-func onlyTheServerShips(release string) []string {
-	mains := buildMain.FindAllStringSubmatch(release, -1)
-	if len(mains) == 0 {
-		return []string{".goreleaser.yaml names no `main:`; this check is reading the wrong shape"}
+// promise. That premise was true and held by nothing; a second build in
+// the config would quietly ship the gates. A build with no main builds
+// the module root, so each names ./cmd/favro-mcp, and so does every other
+// main, a ko image's or any section's, since each builds the package it
+// names into the release.
+func onlyTheServerShips(release goreleaserFile) []string {
+	builds := release.builds()
+	if len(builds) == 0 {
+		return []string{parityGoreleaser + " names no build; this check is reading the wrong shape"}
 	}
 	var problems []string
-	for _, m := range mains {
-		if m[1] != "./cmd/favro-mcp" {
+	for _, build := range builds {
+		if !slices.ContainsFunc(build, func(v goreleaserValue) bool { return v.keys == "builds.main" }) {
+			problems = append(problems, fmt.Sprintf("%s:%d: a build that names no main, so goreleaser builds the "+
+				"module root; name ./cmd/favro-mcp", parityGoreleaser, build[0].line))
+		}
+	}
+	for _, v := range release.values {
+		if (v.keys == "main" || strings.HasSuffix(v.keys, ".main")) && v.value != "./cmd/favro-mcp" {
 			problems = append(problems, fmt.Sprintf(
-				".goreleaser.yaml builds %s as well as the server; everything outside ./cmd is "+
-					"maintainer tooling and must not ship", m[1]))
+				"%s:%d: %s builds %s as well as the server; everything outside ./cmd is "+
+					"maintainer tooling and must not ship", parityGoreleaser, v.line, v.keys, v.value))
 		}
 	}
 	return problems
@@ -313,84 +317,6 @@ func serverCommand(mcp map[string]any) (string, error) {
 		return command, nil
 	}
 	return "", fmt.Errorf("unreachable")
-}
-
-var (
-	goosKey    = regexp.MustCompile(`(?m)^\s*goos:\s*$`)
-	goarchKey  = regexp.MustCompile(`(?m)^\s*goarch:\s*$`)
-	listItem   = regexp.MustCompile(`^\s*-\s*([a-z0-9]+)\s*$`)
-	buildMain  = regexp.MustCompile(`(?m)^\s*main:\s*(\S+)`)
-	ignorePair = regexp.MustCompile(`(?m)^\s*-\s*goos:\s*([a-z0-9]+)\s*\n\s*goarch:\s*([a-z0-9]+)`)
-)
-
-// goreleaserText is .goreleaser.yaml under root with its comments
-// stripped, read once for every check that reads it.
-func goreleaserText(root string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(root, ".goreleaser.yaml"))
-	if err != nil {
-		return "", err
-	}
-	return code(string(data)), nil
-}
-
-// goreleaserMatrix is every goos-goarch pair the release actually
-// builds, read from text as goreleaserText gives it: the cross product
-// of the two lists, less the ignore entries.
-//
-// Read with regular expressions rather than a YAML parser, and that is a
-// deliberate limit rather than laziness: a parser is a dependency this
-// program does not otherwise need, and the file it reads is one this
-// repository writes. The floors below are what keep a changed layout
-// from reading as an empty matrix.
-func goreleaserMatrix(text string) ([]string, error) {
-	oses := listAfter(text, goosKey)
-	arches := listAfter(text, goarchKey)
-	if len(oses) < 2 || len(arches) < 2 {
-		return nil, fmt.Errorf(".goreleaser.yaml parsed as %d platforms and %d architectures; "+
-			"the build block's shape has changed and this check is reading nothing", len(oses), len(arches))
-	}
-	ignored := map[string]bool{}
-	for _, m := range ignorePair.FindAllStringSubmatch(text, -1) {
-		ignored[m[1]+"-"+m[2]] = true
-	}
-	var out []string
-	for _, o := range oses {
-		for _, a := range arches {
-			if pair := o + "-" + a; !ignored[pair] {
-				out = append(out, pair)
-			}
-		}
-	}
-	slices.Sort(out)
-	return out, nil
-}
-
-// listAfter returns the YAML list immediately following the first match
-// of key: the run of `- value` items that follows it, stopping at the
-// first line that is not one.
-func listAfter(text string, key *regexp.Regexp) []string {
-	loc := key.FindStringIndex(text)
-	if loc == nil {
-		return nil
-	}
-	var out []string
-	for _, line := range strings.Split(text[loc[1]:], "\n") {
-		// withoutComment, because listItem anchors on the end of the
-		// line: a trailing `# x86-64 only` on a matrix entry would
-		// otherwise end the list early, and the gate would then report a
-		// platform the build config plainly names as one it does not
-		// build.
-		entry := withoutComment(line)
-		if entry == "" {
-			continue
-		}
-		m := listItem.FindStringSubmatch(entry)
-		if m == nil {
-			break
-		}
-		out = append(out, m[1])
-	}
-	return out
 }
 
 // launcherScript is the shim the bundle carries for macOS and Linux. It
@@ -440,15 +366,11 @@ func cmdShim() string {
 // manifest is JSON, and a `sed` over JSON is how a quote ends up inside
 // a string.
 func pluginPack(w io.Writer, args []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-	dist := filepath.Join(root, "dist")
+	dist := "dist"
 	if len(args) == 1 {
 		dist = args[0]
 	}
-	files, executable, version, err := stageBundle(root, dist)
+	files, executable, version, err := stageBundle(".", dist)
 	if err != nil {
 		return err
 	}
@@ -564,7 +486,7 @@ func builtBinaries(dist string) (map[string]string, error) {
 				"launcher arm pointing at nothing", p.dir(), glob)
 		default:
 			return nil, fmt.Errorf("dist carries %d %s binaries (%s); packing one of them is how a "+
-				"bundle ships the wrong build", len(found), p.dir(), strings.Join(found, " "))
+				"bundle ships the wrong build", len(found), p.dir(), filepath.ToSlash(strings.Join(found, " ")))
 		}
 	}
 	return out, nil

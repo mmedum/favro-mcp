@@ -27,11 +27,7 @@ func schemaDiff(w io.Writer, bin string) error {
 	if err != nil {
 		return err
 	}
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-	committed, err := os.ReadFile(filepath.Join(root, "schemas.json"))
+	committed, err := os.ReadFile("schemas.json")
 	if err != nil {
 		return fmt.Errorf("%w — run `make schemas` and commit the result", err)
 	}
@@ -81,18 +77,6 @@ func releaseSurface(rev string) (toolSurface, string, error) {
 		return toolSurface{}, tag, fmt.Errorf("schemas.json at %s: %w", tag, err)
 	}
 	return s, tag, nil
-}
-
-// lastTagOn is the newest tag rev reaches in the repository at root, or
-// "" when it reaches none: no tag yet, or only tags outside its history,
-// as a fork that fetched upstream's has. Any other failure is an error: a
-// tag that could not be read is not a release that does not exist.
-func lastTagOn(root, rev string) (string, error) {
-	tags, err := git("-C", root, "tag", "--merged", rev)
-	if err != nil || tags == "" {
-		return "", err
-	}
-	return git("-C", root, "describe", "--tags", "--abbrev=0", rev)
 }
 
 // sameSurface fails unless the committed schemas.json is the surface this

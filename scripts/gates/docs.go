@@ -32,9 +32,7 @@ import (
 const (
 	architectureDoc = "docs/architecture.md"
 	docsAgentFile   = "CLAUDE.md"
-	docsMakefile    = "Makefile"
 	docsLintConfig  = ".golangci.yml"
-	docsWorkflowDir = ".github/workflows"
 )
 
 // A decision ID is D- and two or more digits, zero-padded.
@@ -73,7 +71,7 @@ var (
 	docsLineSuffix = regexp.MustCompile(`:\d+(?::\d+)?$`)
 	// A comment cites live steps by their quoted names, listed with commas,
 	// "and" or "or".
-	docsLiveStepCite = regexp.MustCompile(`\blive steps? ((?:"[^"]*"(?:,? and |,? or |, )?)+)`)
+	docsLiveStepCite = regexp.MustCompile(`\blive steps? ((?:"[^"]*"` + docsListSeparator + `?)+)`)
 	docsQuotedName   = regexp.MustCompile(`"([^"]*)"`)
 	// YAML and TOML end a line with a comment after white space.
 	docsTrailingComment = regexp.MustCompile(`\s#`)
@@ -104,9 +102,10 @@ var (
 
 	docsSeparatorRow = regexp.MustCompile(`^\|(\s*:?-+:?\s*\|)+$`)
 	docsGatesCommand = regexp.MustCompile(`(?:^|\s|\./)scripts/gates\s+(\S+)`)
-	// A rule line: targets, a colon, and not the := of an assignment.
-	docsMakeRule = regexp.MustCompile(`(?m)^([^\s:#=]+(?:[ \t]+[^\s:#=]+)*)[ \t]*:(?:[^=]|$)`)
 )
+
+// docsListSeparator joins the names of a list: commas, "and" or "or".
+const docsListSeparator = `(?:,? and |,? or |, )`
 
 const docsSupersededBy = "superseded by "
 
@@ -127,22 +126,17 @@ func docsFollowable(word string) bool {
 	return !strings.ContainsAny(word, docsUnfollowable) && !strings.Contains(word, "...")
 }
 
-// docsFloors are the fewest links, code-span paths and package
-// directories the gate may read. Live steps need no floor: they come
-// from livecover.Names, which its own test holds.
-type docsFloors struct{ links, spanPaths, packages int }
+// docsFloors are the fewest links, code-span paths, package directories
+// and live steps the gate may read.
+type docsFloors struct{ links, spanPaths, packages, liveSteps int }
 
 // docsLimits are the repository's floors, each well under what it holds.
 // A pass below its floor has stopped reading what it checks.
-var docsLimits = docsFloors{links: 30, spanPaths: 90, packages: 10}
+var docsLimits = docsFloors{links: 30, spanPaths: 90, packages: 10, liveSteps: 120}
 
 // docs runs the gate over the checkout the gates run in.
 func docs(out io.Writer, _ []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return couldNotRun{err}
-	}
-	return docsGateAt(root, docsLimits, out)
+	return docsGateAt(".", docsLimits, out)
 }
 
 // docsGateAt runs every check over the checkout at root and reports every
@@ -348,37 +342,47 @@ func (g *docsCheck) lines(rel string) ([]string, bool) {
 // rather than dropping keeps the line numbers.
 func docsProse(doc string) []string {
 	lines := strings.Split(doc, "\n")
-	code := docsCodeLines(lines)
+	var fence docsFence
 	for i, line := range lines {
 		lines[i] = strings.TrimRight(line, " \t\r")
-		if code[i] {
+		if fence.code(lines[i]) {
 			lines[i] = ""
 		}
 	}
 	return lines
 }
 
-// docsCodeLines reports, per line, whether it opens, closes or sits inside
-// a fence. release-notes reads fences with it too, so a line the docs gate
-// reads as code is never lifted into a heading.
-func docsCodeLines(lines []string) []bool {
-	code := make([]bool, len(lines))
-	fence := ""
-	for i, line := range lines {
-		unindented := strings.TrimLeft(strings.TrimRight(line, " \t\r"), " ")
-		marker := docsFenceMarker(unindented)
-		switch {
-		case fence == "" && marker != "":
-			fence = marker
-			code[i] = true
-		case fence != "":
-			if strings.HasPrefix(marker, fence) && strings.TrimLeft(unindented, marker[:1]) == "" {
-				fence = ""
-			}
-			code[i] = true
+// docsFence follows a Markdown document's fenced code a line at a time.
+// Its zero value is outside any fence. release-notes reads fences with it
+// too, so a line the docs gate reads as code is never lifted into a heading.
+type docsFence struct{ open string }
+
+// code reports whether a line opens, sits inside or closes fenced code. A
+// fence closes at a line of only its own character, at least as many
+// (https://spec.commonmark.org/0.31.2/#fenced-code-blocks).
+func (f *docsFence) code(line string) bool {
+	unindented := strings.TrimLeft(strings.TrimRight(line, " \t\r"), " ")
+	marker := docsFenceMarker(unindented)
+	switch {
+	case f.open == "" && marker != "":
+		f.open = marker
+	case f.open != "":
+		if strings.HasPrefix(marker, f.open) && strings.TrimLeft(unindented, marker[:1]) == "" {
+			f.open = ""
 		}
+	default:
+		return false
 	}
-	return code
+	return true
+}
+
+// docsHeadingLevel is the level of an ATX heading line, or 0 for any other
+// line (https://spec.commonmark.org/0.31.2/#atx-headings).
+func docsHeadingLevel(line string) int {
+	if !docsATXHeading.MatchString(line) {
+		return 0
+	}
+	return len(line) - len(strings.TrimLeft(line, "#"))
 }
 
 // docsFenceMarker is the run of three or more backticks or tildes a line
@@ -482,10 +486,14 @@ func (g *docsCheck) readGo() {
 
 // readLiveSteps reads the names a comment can cite as a live step: the
 // steps livecover gives the driver, and the checks its -writes run
-// makes.
+// makes. internal/livecover's own test refuses two of one name.
 func (g *docsCheck) readLiveSteps() {
 	for _, name := range livecover.Names() {
 		g.liveSteps[name] = true
+	}
+	if n := len(g.liveSteps); n < g.floors.liveSteps {
+		g.fail("%d live steps read from internal/livecover, fewer than %d: the driver's steps are not being read",
+			n, g.floors.liveSteps)
 	}
 }
 
@@ -550,16 +558,14 @@ func docsStringLines(fset *token.FileSet, f *ast.File) []docsSourceLine {
 // "Held by" item may name.
 func (g *docsCheck) readVocabulary() {
 	g.makeTargets = map[string]bool{}
-	if mk, ok := g.readFile(docsMakefile); ok {
-		for _, m := range docsMakeRule.FindAllStringSubmatch(mk, -1) {
-			for _, target := range strings.Fields(m[1]) {
-				if !strings.HasPrefix(target, ".") {
-					g.makeTargets[target] = true
-				}
+	if text, ok := g.readFile(makefilePath); ok {
+		for target := range parseMakefile(text).targets {
+			if !strings.HasPrefix(target, ".") {
+				g.makeTargets[target] = true
 			}
 		}
 		if len(g.makeTargets) == 0 {
-			g.at(docsMakefile, 0, "no targets read: a Held by naming one would never match")
+			g.at(makefilePath, 0, "no targets read: a Held by naming one would never match")
 		}
 	}
 	if cfg, ok := g.readFile(docsLintConfig); ok {
@@ -578,28 +584,35 @@ func docsEnabledLinters(cfg string) map[string]bool {
 	out := map[string]bool{}
 	inLinters, inEnable, childIndent := false, false, -1
 	for _, raw := range strings.Split(cfg, "\n") {
-		line := withoutComment(raw)
-		if line == "" {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		at := indentOf(raw)
+		at, key := indent(raw), docsYAMLKey(trimmed)
 		if at == 0 {
-			inLinters, inEnable, childIndent = line == "linters:", false, -1
+			inLinters, inEnable, childIndent = key == "linters:", false, -1
 			continue
 		}
 		if !inLinters {
 			continue
 		}
-		if item, ok := strings.CutPrefix(line, "- "); ok && inEnable {
-			out[strings.Trim(strings.TrimSpace(item), `"'`)] = true
+		if item, ok := strings.CutPrefix(trimmed, "- "); ok && inEnable {
+			value, _ := workflowValue(item)
+			out[value] = true
 			continue
 		}
 		if childIndent < 0 {
 			childIndent = at
 		}
-		inEnable = at == childIndent && line == "enable:"
+		inEnable = at == childIndent && key == "enable:"
 	}
 	return out
+}
+
+// docsYAMLKey is a YAML line without the comment after it.
+func docsYAMLKey(line string) string {
+	key, _ := yamlCutComment(line)
+	return key
 }
 
 // docsIsGatesCommand reports whether name is a command of this program,
@@ -610,9 +623,9 @@ func docsIsGatesCommand(name string) bool {
 }
 
 // holds reports whether a "Held by" item names something that exists.
+// live is the Makefile's target, so it holds only while `make live` does.
 func (g *docsCheck) holds(item string) bool {
-	return item == "live" || item == "review" || docsIsGatesCommand(item) ||
-		g.makeTargets[item] || g.linters[item] || g.tests[item]
+	return item == "review" || docsIsGatesCommand(item) || g.makeTargets[item] || g.linters[item] || g.tests[item]
 }
 
 // docsListItems splits a comma-separated cell. A closing period and code
@@ -851,7 +864,7 @@ func (g *docsCheck) checkDecision(d *docsDecision) {
 	default:
 		for _, h := range holders {
 			if !g.holds(h) {
-				g.at(architectureDoc, d.line, "%s is held by %q, which is not live, review, a make target, "+
+				g.at(architectureDoc, d.line, "%s is held by %q, which is not review, a make target, "+
 					"a gates command, an enabled linter or a test or fuzz function", d.id, h)
 			}
 		}
@@ -867,14 +880,13 @@ func docsIsTrailer(file, line string) bool {
 // scanned is the range of a Markdown file's lines the citation scan
 // reads. A changelog's released sections were true when written; its
 // [Unreleased] section becomes a release note, and the scan reads the
-// lines release-notes lifts, from the file as it is rather than with its
-// fences blanked.
+// lines release-notes lifts, through the one CHANGELOG reader.
 func (g *docsCheck) scanned(file string, lines []string) (from, to int) {
 	if file != changelogPath {
 		return 0, len(lines)
 	}
 	raw, _ := g.readFile(file)
-	return changelogSection(strings.Split(raw, "\n"), "Unreleased")
+	return readChangelog(raw).section("Unreleased")
 }
 
 func (g *docsCheck) checkCitations() {
@@ -1051,9 +1063,17 @@ func (g *docsCheck) checkMarkdown(file string) {
 	// A paragraph can cite a live step across a line break, as a comment
 	// can, so the prose is checked in runs of adjacent lines.
 	var prose []docsSourceLine
+	removed := false
 	for i := from; i < to; i++ {
 		line := lines[i]
-		if line != "" {
+		// A code span or a live step under [Unreleased]'s Removed heading
+		// names what the release takes away, so it need not exist. The scan
+		// ends at the next level-2 heading, so a level-3 heading sets or
+		// ends Removed, and a deeper one sits inside it.
+		if file == changelogPath && docsHeadingLevel(line) == 3 {
+			removed = docsATXHeading.FindStringSubmatch(line)[1] == "Removed"
+		}
+		if line != "" && !removed {
 			prose = append(prose, docsSourceLine{i + 1, line})
 		}
 		if docsIsTrailer(file, line) {
@@ -1061,7 +1081,7 @@ func (g *docsCheck) checkMarkdown(file string) {
 		}
 		g.checkLine(file, i+1, line)
 		g.checkLinks(file, i+1, line)
-		if strings.Contains(line, "`") {
+		if !removed && strings.Contains(line, "`") {
 			for _, span := range codeSpans(line) {
 				g.checkSpan(file, i+1, span)
 			}
@@ -1281,7 +1301,7 @@ func (g *docsCheck) checkPath(file string, n int, word string) {
 func (g *docsCheck) spanTarget(file, p string) (string, bool) {
 	tries := []string{p}
 	if !strings.Contains(p, "/") {
-		tries = []string{path.Join(path.Dir(file), p), p, path.Join(docsWorkflowDir, p)}
+		tries = []string{path.Join(path.Dir(file), p), p, path.Join(workflowDir, p)}
 	}
 	for _, t := range tries {
 		if g.exists(t) {

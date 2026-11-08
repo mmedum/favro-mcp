@@ -86,11 +86,6 @@ type apiSurface struct {
 // than one nobody runs, because the next check then holds the verdicts
 // to a snapshot that is neither the old truth nor the new one.
 func apiDiff(w io.Writer, _ []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-
 	page, err := fetchReference()
 	if err != nil {
 		return err
@@ -116,7 +111,7 @@ func apiDiff(w io.Writer, _ []string) error {
 		return err
 	}
 
-	path := filepath.Join(root, filepath.FromSlash(apiSurfacePath))
+	path := filepath.FromSlash(apiSurfacePath)
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}

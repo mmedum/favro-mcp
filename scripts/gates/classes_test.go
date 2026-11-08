@@ -13,6 +13,7 @@ import (
 // fixture is a gate nobody has watched succeed against the thing it
 // guards.
 func TestClassesAgainstThisRepository(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	var out sink
 	if err := classes(&out, nil); err != nil {
 		t.Fatalf("the error vocabulary and its documentation disagree: %v", err)

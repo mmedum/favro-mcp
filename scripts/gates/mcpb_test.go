@@ -2,9 +2,10 @@ package main
 
 import (
 	"archive/zip"
+	"cmp"
 	"encoding/json"
 	"errors"
-	"maps"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +20,7 @@ import (
 // repoFile reads a path relative to the repository root.
 func repoFile(t *testing.T, rel string) []byte {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(rel)))
+	data, err := os.ReadFile(filepath.Join(parityRepoRoot, filepath.FromSlash(rel)))
 	if err != nil {
 		t.Fatalf("read %s: %v", rel, err)
 	}
@@ -77,7 +78,7 @@ func dig(doc map[string]any, path ...string) map[string]any {
 func copiedRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	for _, rel := range []string{mcpbManifestPath, "go.mod", "LICENSE", ".goreleaser.yaml", releaseWorkflow} {
+	for _, rel := range []string{mcpbManifestPath, "go.mod", "LICENSE", parityGoreleaser, releaseWorkflow, fxPublish} {
 		put(t, root, rel, string(repoFile(t, rel)))
 	}
 	return root
@@ -105,7 +106,7 @@ func has(problems []string, want string) bool {
 // real one passes every check the gate and the packer run, read from the
 // repository root.
 func TestCommittedManifestPasses(t *testing.T) {
-	_, problems, err := committedManifest(repoRoot(t))
+	_, problems, err := committedManifest(parityRepoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,18 +187,36 @@ func TestManifestProblemsRunsEveryCheck(t *testing.T) {
 		},
 		// The archive a downstream user found missing.
 		{
-			name: "windows arm64 ignored", file: ".goreleaser.yaml", old: "      - arm64\n",
+			name: "windows arm64 ignored", file: parityGoreleaser, old: "      - arm64\n",
 			new:  "      - arm64\n    ignore:\n      - goos: windows\n        goarch: arm64\n",
 			want: ".goreleaser.yaml does not build windows-arm64, so the release carries no windows_arm64 archive",
 		},
+		// Every build is read, in goreleaser's usual shape, its first key on
+		// the dash.
 		{
-			name: "no checksum glob", file: ".goreleaser.yaml",
+			name: "a second build for a platform the matrix does not name", file: parityGoreleaser,
+			old:  "      - arm64\n\nuniversal_binaries:",
+			new:  "      - arm64\n  - main: ./cmd/favro-mcp\n    goos:\n      - freebsd\n    goarch:\n      - amd64\n\nuniversal_binaries:",
+			want: ".goreleaser.yaml builds freebsd-amd64, which is not in the release matrix",
+		},
+		{
+			name: "no checksum glob", file: parityGoreleaser,
 			old: "    - glob: ./dist/*.mcpb\n    - glob: ./dist/*.plugin\n\n# One SBOM",
-			new: "    - glob: ./dist/*.plugin\n\n# One SBOM", want: `.goreleaser.yaml's checksum block does not mention ".mcpb"`,
+			new: "    - glob: ./dist/*.plugin\n\n# One SBOM", want: ".goreleaser.yaml has no checksum.extra_files.glob ending in .mcpb",
+		},
+		{
+			name: "a shape the config reader does not read", file: parityGoreleaser,
+			old: "    binary: favro-mcp\n", new: "    binary: &bin favro-mcp\n",
+			want: ".goreleaser.yaml:13: binary: an anchor, an alias or a tag; write the value out",
+		},
+		{
+			name: "a checksum glob named only in a comment", file: parityGoreleaser,
+			old: "    - glob: ./dist/*.mcpb\n    - glob: ./dist/*.plugin\n\n# One SBOM",
+			new: "    - glob: ./dist/*.plugin # not ./dist/*.mcpb\n\n# One SBOM", want: ".goreleaser.yaml has no checksum.extra_files.glob ending in .mcpb",
 		},
 		{
 			name: "no attested plugin", file: releaseWorkflow, old: "            dist/*.plugin\n", new: "",
-			want: "attest-build-provenance step does not name dist/*.plugin in subject-path",
+			want: "does not name dist/*.plugin, so it ships with no provenance",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -486,6 +505,7 @@ func TestTheVendoredSchemaIsTheRecordedOne(t *testing.T) {
 // synthetic dist, then reads the zip back: the manifest at the root, the
 // mode on every staged binary, and one entry per file.
 func TestMcpbPackWritesAnInstallableBundle(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	dist := fakeHookDist(t, "9.9.9")
 
 	var out sink
@@ -626,6 +646,7 @@ func buildHostStub(t *testing.T, out, version string) {
 // binary disagrees with its manifest is indistinguishable from a correct
 // one until somebody runs it.
 func TestMcpbPackRefusesABinaryThatDisagreesAboutItsVersion(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	dist := fakeHookDist(t, "1.0.0")
 	var out sink
 	err := mcpbPack(&out, []string{"v2.0.0", dist})
@@ -641,6 +662,7 @@ func TestMcpbPackRefusesABinaryThatDisagreesAboutItsVersion(t *testing.T) {
 // build id and an amd64 variant, and a bundle built from the wrong
 // binary is not something a checksum catches.
 func TestMcpbPackRefusesAnAmbiguousGlob(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	dist := t.TempDir()
 	for _, p := range []string{
 		"favro-mcp_darwin_all/favro-mcp",
@@ -687,6 +709,7 @@ func TestMcpbPackRunsEveryCheckTheGateRuns(t *testing.T) {
 
 // TestMcpbGateReportsHowMuchItRead.
 func TestMcpbGateReportsHowMuchItRead(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	var out sink
 	if err := mcpbGate(&out, nil); err != nil {
 		t.Fatalf("mcpbGate: %v", err)
@@ -770,125 +793,230 @@ func TestTheIdentityRefusesEachBreak(t *testing.T) {
 	}
 }
 
-// TestReleaseWiringIsHeld drives each requirement by removing it from a
-// synthetic block set. The lines it covers are invisible to every other
-// check here: delete checksum.extra_files and the release succeeds,
-// make check passes, and the bundle ships outside the signature while
-// README says it is covered.
+// TestReleaseWiringIsHeld breaks each requirement in the committed config,
+// one at a time, as text the reader parses. The values it covers are
+// invisible to every other check here: delete checksum.extra_files and the
+// release succeeds, make check passes, and the bundle ships outside the
+// signature while README says it is covered.
 func TestReleaseWiringIsHeld(t *testing.T) {
-	release, err := goreleaserText(repoRoot(t))
-	if err != nil {
-		t.Fatal(err)
+	cfg := strings.ReplaceAll(string(repoFile(t, parityGoreleaser)), "\r\n", "\n")
+	if problems := mcpbReleaseWiring(parseGoreleaser(cfg)); len(problems) > 0 {
+		t.Fatalf("the committed %s does not satisfy its own wiring check:\n%s", parityGoreleaser, strings.Join(problems, "\n"))
 	}
-	whole, err := goreleaserBlocks(release)
-	if err != nil {
-		t.Fatalf("goreleaserBlocks: %v", err)
-	}
-	problems, checked := mcpbReleaseWiring(whole)
-	if len(problems) > 0 {
-		t.Fatalf("the committed .goreleaser.yaml does not satisfy its own wiring check:\n%s",
-			strings.Join(problems, "\n"))
-	}
-	if checked < 11 {
-		t.Errorf("the wiring check made %d assertions; it is not reading the file", checked)
-	}
-
-	// Every block it depends on, removed one at a time.
-	for _, block := range []string{"universal_binaries", "checksum", "release", "signs", "sboms", "builds", "archives"} {
-		t.Run("without "+block, func(t *testing.T) {
-			partial := map[string]string{}
-			for k, v := range whole {
-				if k != block {
-					partial[k] = v
-				}
-			}
-			if got, _ := mcpbReleaseWiring(partial); len(got) == 0 {
-				t.Errorf("removing the %s block was not caught", block)
-			}
-		})
-	}
-
-	// The .plugin's lines, broken one at a time. They share each block
-	// with a .mcpb line, so removing the block cannot tell them apart.
-	const hookWant = `.goreleaser.yaml's universal_binaries block does not mention ` +
-		`"{{ if not .Prerelease }}go run ./scripts/gates plugin-pack dist{{ end }}"`
-	for _, tc := range []struct{ name, block, old, new, want string }{
+	const (
+		hook          = `.goreleaser.yaml has no universal_binaries.hooks.post of "{{ if not .Prerelease }}go run ./scripts/gates plugin-pack dist{{ end }}"`
+		pluginHookRaw = `        - "{{ if not .Prerelease }}go run ./scripts/gates plugin-pack dist{{ end }}"` + "\n"
+		checksumGlobs = "    - glob: ./dist/*.mcpb\n    - glob: ./dist/*.plugin\n\n# One SBOM"
+		releaseGlobs  = "never published.\n  extra_files:\n    - glob: ./dist/*.mcpb\n    - glob: ./dist/*.plugin\n"
+	)
+	for _, tc := range []struct{ name, old, new, want string }{
 		{
-			"the plugin hook removed", "universal_binaries",
-			`- "{{ if not .Prerelease }}go run ./scripts/gates plugin-pack dist{{ end }}"`, "", hookWant,
+			"the bundle's hook removed", "        - go run ./scripts/gates mcpb-pack {{ .Version }} dist\n", "",
+			".goreleaser.yaml has no universal_binaries.hooks.post that runs mcpb-pack",
 		},
-		{"the guard inverted", "universal_binaries", "{{ if not .Prerelease }}", "{{ if .Prerelease }}", hookWant},
+		{"the plugin hook removed", pluginHookRaw, "", hook},
+		{"the guard inverted", "{{ if not .Prerelease }}", "{{ if .Prerelease }}", hook},
+		{"the guard missing", pluginHookRaw, "        - go run ./scripts/gates plugin-pack dist\n", hook},
 		{
-			"the guard missing", "universal_binaries",
-			`"{{ if not .Prerelease }}go run ./scripts/gates plugin-pack dist{{ end }}"`,
-			"go run ./scripts/gates plugin-pack dist", hookWant,
+			"no checksum glob for the bundle", checksumGlobs, "    - glob: ./dist/*.plugin\n\n# One SBOM",
+			".goreleaser.yaml has no checksum.extra_files.glob ending in .mcpb",
 		},
 		{
-			"no checksum glob", "checksum", "- glob: ./dist/*.plugin", "",
-			`.goreleaser.yaml's checksum block does not mention ".plugin"`,
+			"no checksum glob for the plugin", checksumGlobs, "    - glob: ./dist/*.mcpb\n\n# One SBOM",
+			".goreleaser.yaml has no checksum.extra_files.glob ending in .plugin",
 		},
 		{
-			"no release glob", "release", "- glob: ./dist/*.plugin", "",
-			`.goreleaser.yaml's release block does not mention ".plugin"`,
+			"no release glob for the bundle", releaseGlobs, "never published.\n  extra_files:\n    - glob: ./dist/*.plugin\n",
+			".goreleaser.yaml has no release.extra_files.glob ending in .mcpb",
 		},
+		{
+			"no release glob for the plugin", releaseGlobs, "never published.\n  extra_files:\n    - glob: ./dist/*.mcpb\n",
+			".goreleaser.yaml has no release.extra_files.glob ending in .plugin",
+		},
+		{"another signer", "  - cmd: cosign\n", "  - cmd: gpg\n", ".goreleaser.yaml has no signs.cmd of cosign"},
+		{
+			"a signature over every artifact", "    artifacts: checksum\n", "    artifacts: all\n",
+			".goreleaser.yaml has no signs.artifacts of checksum",
+		},
+		// A value is the key's, not what a comment after it says.
+		{
+			"the signed artifacts named only in a comment", "    artifacts: checksum\n", "    artifacts: all # artifacts: checksum\n",
+			".goreleaser.yaml has no signs.artifacts of checksum",
+		},
+		{
+			"an SBOM per binary", "  - artifacts: archive\n", "  - artifacts: binary\n",
+			".goreleaser.yaml has no sboms.artifacts of archive",
+		},
+		{
+			"no build timestamp", "    mod_timestamp: \"{{ .CommitTimestamp }}\"\n", "",
+			".goreleaser.yaml has no builds.mod_timestamp",
+		},
+		{"no archive ids", "    ids: [favro-mcp]\n    formats:", "    formats:", ".goreleaser.yaml has no archives.ids"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if !strings.Contains(whole[tc.block], tc.old) {
-				t.Fatalf("the %s block does not say %q", tc.block, tc.old)
+			if !strings.Contains(cfg, tc.old) {
+				t.Fatalf("%s does not say %q", parityGoreleaser, tc.old)
 			}
-			partial := maps.Clone(whole)
-			partial[tc.block] = strings.Replace(whole[tc.block], tc.old, tc.new, 1)
-			if got, _ := mcpbReleaseWiring(partial); len(got) != 1 || !strings.HasPrefix(got[0], tc.want) {
+			got := mcpbReleaseWiring(parseGoreleaser(strings.Replace(cfg, tc.old, tc.new, 1)))
+			if len(got) != 1 || !strings.HasPrefix(got[0], tc.want) {
 				t.Errorf("got %q, want the one problem %q", got, tc.want)
 			}
 		})
 	}
 }
 
-// release.yml's provenance step names both bundles in subject-path: the
-// README tells people to verify each one's attestation, and no other
-// check reads the workflow's subjects.
+// release.yml's provenance step names every file the release publishes in
+// subject-path, as the goreleaser config names them: the archives, both
+// bundles and the checksum file, each in an entry of its own. The README
+// tells people to verify each one's attestation, and no other check reads
+// the workflow's subjects. A row's cfg is the committed config unless it
+// gives one.
 func TestTheBundlesCarryProvenance(t *testing.T) {
 	workflow := strings.ReplaceAll(string(repoFile(t, releaseWorkflow)), "\r\n", "\n")
-	if got := attestedBundles(code(workflow)); len(got) > 0 {
+	cfg := strings.ReplaceAll(string(repoFile(t, parityGoreleaser)), "\r\n", "\n")
+	attested := func(workflow, cfg string) []string {
+		return attestedBundles([]workflowFile{parseWorkflow(releaseWorkflow, workflow)}, parseGoreleaser(cfg))
+	}
+	if got := attested(workflow, cfg); len(got) > 0 {
 		t.Fatalf("the committed %s: %q", releaseWorkflow, got)
 	}
-	for _, tc := range []struct{ name, old, new, want string }{
+	const (
+		block    = "          subject-path: |\n            dist/*.tar.gz\n            dist/*.zip\n            dist/*.mcpb\n            dist/*.plugin\n            dist/checksums.txt\n"
+		all      = "dist/*.tar.gz\ndist/*.zip\ndist/*.mcpb\ndist/*.plugin\ndist/checksums.txt"
+		unproven = ", so it ships with no provenance while the README says to verify it"
+	)
+	missing := func(subjects, what string) string {
+		return fmt.Sprintf("subject-path %q does not name %s%s", subjects, what, unproven)
+	}
+	for _, tc := range []struct {
+		name, old, new string
+		cfg            string
+		want           []string
+	}{
 		{
-			"no .mcpb", "            dist/*.mcpb\n", "",
-			".github/workflows/release.yml's attest-build-provenance step does not name dist/*.mcpb in subject-path",
+			"no .mcpb", "            dist/*.mcpb\n", "", "",
+			[]string{missing("dist/*.tar.gz\ndist/*.zip\ndist/*.plugin\ndist/checksums.txt", "dist/*.mcpb")},
 		},
 		{
-			"no .plugin", "            dist/*.plugin\n", "",
-			".github/workflows/release.yml's attest-build-provenance step does not name dist/*.plugin in subject-path",
+			"no .plugin", "            dist/*.plugin\n", "", "",
+			[]string{missing("dist/*.tar.gz\ndist/*.zip\ndist/*.mcpb\ndist/checksums.txt", "dist/*.plugin")},
+		},
+		{
+			"no archives and no checksum file", "            dist/*.tar.gz\n            dist/*.zip\n", "", "",
+			[]string{
+				missing("dist/*.mcpb\ndist/*.plugin\ndist/checksums.txt", "dist/*.tar.gz"),
+				missing("dist/*.mcpb\ndist/*.plugin\ndist/checksums.txt", "dist/*.zip"),
+			},
+		},
+		{
+			"a signature where the bundle goes", "            dist/*.mcpb\n", "            dist/*.mcpb.sigstore.json\n", "",
+			[]string{missing("dist/*.tar.gz\ndist/*.zip\ndist/*.mcpb.sigstore.json\ndist/*.plugin\ndist/checksums.txt", "dist/*.mcpb")},
+		},
+		// actions/attest skips a glob that matches nothing, so an entry in
+		// another folder leaves the bundle unattested.
+		{
+			"the bundle in another folder", "            dist/*.mcpb\n", "            dist/unused/*.mcpb\n", "",
+			[]string{missing("dist/*.tar.gz\ndist/*.zip\ndist/unused/*.mcpb\ndist/*.plugin\ndist/checksums.txt", "dist/*.mcpb")},
 		},
 		{
 			"the .plugin in another input", "            dist/*.plugin\n            dist/checksums.txt\n",
-			"            dist/checksums.txt\n          subject-name: dist/*.plugin\n",
-			".github/workflows/release.yml's attest-build-provenance step does not name dist/*.plugin in subject-path",
+			"            dist/checksums.txt\n          subject-name: dist/*.plugin\n", "",
+			[]string{missing("dist/*.tar.gz\ndist/*.zip\ndist/*.mcpb\ndist/checksums.txt", "dist/*.plugin")},
+		},
+		// actions/attest splits at commas and newlines only, so a folded
+		// block is one glob that matches nothing.
+		{"a folded block", "subject-path: |", "subject-path: >", "", []string{
+			fmt.Sprintf("subject-path %q separates with a space, which is read as one glob; separate with commas or newlines",
+				strings.ReplaceAll(all, "\n", " ")),
+			missing(strings.ReplaceAll(all, "\n", " "), "dist/*.tar.gz"),
+			missing(strings.ReplaceAll(all, "\n", " "), "dist/*.zip"),
+			missing(strings.ReplaceAll(all, "\n", " "), "dist/*.mcpb"),
+			missing(strings.ReplaceAll(all, "\n", " "), "dist/*.plugin"),
+			missing(strings.ReplaceAll(all, "\n", " "), "dist/checksums.txt"),
+		}},
+		{
+			"commas, a space after each", block,
+			"          subject-path: dist/*.tar.gz, dist/*.zip, dist/*.mcpb, dist/*.plugin, dist/checksums.txt\n", "", nil,
+		},
+		{
+			"another checksum file", "", "", strings.Replace(cfg, "name_template: checksums.txt", "name_template: '{{ .ProjectName }}_checksums.txt'", 1),
+			[]string{missing(all, "dist/{{ .ProjectName }}_checksums.txt")},
+		},
+		{
+			"no checksum name", "", "", strings.Replace(cfg, "  name_template: checksums.txt\n", "", 1),
+			[]string{"checksum.name_template is empty, so nothing holds the subject-path to the file every other artifact is verified through"},
+		},
+		{
+			"no subject-path", block, "", "",
+			[]string{releaseWorkflow + ":101: the attestation names no subject-path"},
 		},
 		{
 			"the step commented out", "      - uses: actions/attest-build-provenance@",
-			"      # - uses: actions/attest-build-provenance@",
-			".github/workflows/release.yml has no attest-build-provenance step, so no release file carries provenance",
+			"      # - uses: actions/attest-build-provenance@", "",
+			[]string{releaseWorkflow + " and the workflows it calls have no attest-build-provenance step, " +
+				"so no release file carries provenance"},
+		},
+		{
+			"no archive formats", "", "", strings.Replace(cfg, "    formats: [tar.gz]\n", "", 1),
+			[]string{"archives.formats is not set, so nothing holds the subject-path to the archives"},
+		},
+		// A format two archives share is one file ending to name.
+		{
+			"a format two archives share, left out", "            dist/*.tar.gz\n", "",
+			strings.Replace(cfg, "formats: [zip]", "formats: [tar.gz]", 1),
+			[]string{missing("dist/*.zip\ndist/*.mcpb\ndist/*.plugin\ndist/checksums.txt", "dist/*.tar.gz")},
+		},
+		{
+			"an archive format the attestation does not name", "", "",
+			strings.Replace(cfg, "formats: [tar.gz]", "formats: [tar.gz, tar.zst]", 1),
+			[]string{missing(all, "dist/*.tar.zst")},
+		},
+		// goreleaser writes every file into its dist directory, so a config
+		// that moves it leaves each dist/ entry matching nothing.
+		{
+			"another dist directory", "", "", strings.Replace(cfg, "version: 2\n", "version: 2\ndist: ./out\n", 1),
+			[]string{
+				missing(all, "out/*.tar.gz"), missing(all, "out/*.zip"), missing(all, "out/*.mcpb"),
+				missing(all, "out/*.plugin"), missing(all, "out/checksums.txt"),
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if !strings.Contains(workflow, tc.old) {
 				t.Fatalf("%s does not say %q", releaseWorkflow, tc.old)
 			}
-			edited := strings.Replace(workflow, tc.old, tc.new, 1)
-			if got := attestedBundles(code(edited)); len(got) != 1 || !strings.HasPrefix(got[0], tc.want) {
-				t.Errorf("got %q, want the one problem %q", got, tc.want)
+			edited := workflow
+			if tc.old != "" {
+				edited = strings.Replace(workflow, tc.old, tc.new, 1)
+			}
+			got := attested(edited, cmp.Or(tc.cfg, cfg))
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("problems:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(tc.want, "\n  "))
 			}
 		})
+	}
+}
+
+// The attestation is read from release.yml and the workflows it calls, so
+// a workflow it calls that is not there is a release that cannot run.
+func TestTheReleaseWorkflowsAreReadWhole(t *testing.T) {
+	root := copiedRoot(t)
+	if err := os.Remove(filepath.Join(root, filepath.FromSlash(fxPublish))); err != nil {
+		t.Fatal(err)
+	}
+	_, problems, err := committedManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(problems) != 1 || !strings.Contains(problems[0], "publish-mcp.yml") {
+		t.Errorf("problems = %q, want the one naming publish-mcp.yml, which release.yml calls", problems)
 	}
 }
 
 // The release carries releaseMatrix's archives, both ways: a pair
 // .goreleaser.yaml leaves out is an archive nobody can download.
 func TestReleaseArchivesAreTheFamilys(t *testing.T) {
-	release, err := goreleaserText(repoRoot(t))
+	release, err := readGoreleaser(parityRepoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -952,18 +1080,9 @@ func TestTheDesktopBundleRunsOnEveryPair(t *testing.T) {
 	saved := mcpbBinaries
 	t.Cleanup(func() { mcpbBinaries = saved })
 	mcpbBinaries = without(func(b mcpbBinary) bool { return b.universal })
-	if got := releaseProblems(repoRoot(t)); !has(got, "the release builds darwin-amd64 and the Desktop bundle stages no binary") {
+	if got := releaseProblems(parityRepoRoot); !has(got, "the release builds darwin-amd64 and the Desktop bundle stages no binary") {
 		t.Errorf("releaseProblems without the universal binary: %q", got)
 	}
-}
-
-func repoRoot(t *testing.T) string {
-	t.Helper()
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return root
 }
 
 // What the manifest claims about ITSELF: which format version it is,

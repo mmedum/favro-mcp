@@ -77,15 +77,11 @@ func TestFindLeaksLeavesTheRepositoryAlone(t *testing.T) {
 // a considered decision and exempts nothing. This is what deletes a
 // stale one.
 func TestEveryAllowedPrefixIsUsed(t *testing.T) {
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
 	// Without `\b`, and matched in Go afterwards. git's -E is POSIX ERE
 	// on macOS, where `\b` is a GNU extension that matches nothing — so
 	// this found no files, git exited 1 for "no matches", and the test
 	// reported the repository as unreadable. It passed on Linux.
-	out, err := exec.Command("git", "-C", root, "grep", "-l", "-E",
+	out, err := exec.Command("git", "-C", parityRepoRoot, "grep", "-l", "-E",
 		`(`+strings.Join(prefixes(), "|")+`)-[0-9]`).Output()
 	if err != nil {
 		var exit *exec.ExitError
@@ -99,7 +95,7 @@ func TestEveryAllowedPrefixIsUsed(t *testing.T) {
 	for prefix := range allowedRefPrefixes {
 		// No `\b`: POSIX ERE has no such escape, so on macOS this matched
 		// nothing and every prefix looked unused.
-		if err := exec.Command("git", "-C", root, "grep", "-q", "-E",
+		if err := exec.Command("git", "-C", parityRepoRoot, "grep", "-q", "-E",
 			prefix+`-[0-9]`).Run(); err != nil {
 			t.Errorf("allowedRefPrefixes has %q (%s) and nothing in the repository uses it; "+
 				"delete the entry rather than leaving a hole open",
@@ -186,15 +182,11 @@ func TestKnownFindingIsPinnedToItsCommit(t *testing.T) {
 // A pin that accepts nothing is a hole somebody forgot to close. Each is
 // held to the commit it names, by count, so a failure prints no value.
 func TestEveryKnownFindingIsInTheHistory(t *testing.T) {
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, k := range knownFindings {
-		out, err := exec.Command("git", "-C", root, "log", "-1", "--format=%B", k.commit).Output()
+		out, err := exec.Command("git", "-C", parityRepoRoot, "log", "-1", "--format=%B", k.commit).Output()
 		if err != nil {
 			// CI's test job checks out one commit.
-			shallow, _ := exec.Command("git", "-C", root, "rev-parse", "--is-shallow-repository").Output()
+			shallow, _ := exec.Command("git", "-C", parityRepoRoot, "rev-parse", "--is-shallow-repository").Output()
 			if strings.TrimSpace(string(shallow)) == "true" {
 				t.Skipf("a shallow clone does not hold %s", k.commit[:8])
 			}
@@ -241,6 +233,7 @@ func TestArtifactRejectsWhatDoesNotBelong(t *testing.T) {
 // The floor. A scan that reads nothing reports exactly what a clean
 // repository reports.
 func TestLeaksReadsTheRepository(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	var out strings.Builder
 	if err := leaks(&out, nil); err != nil {
 		t.Fatalf("the repository should be clean: %v", err)

@@ -26,11 +26,7 @@ var exemptFromFloor = map[string]string{}
 // the average. An average hides a package at 20% behind four at 95%,
 // and the one at 20% is where the next defect is.
 func coverageFloor(w io.Writer, profile string, minimum float64) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-	module, err := modulePath(root)
+	module, err := modulePath(".")
 	if err != nil {
 		return err
 	}

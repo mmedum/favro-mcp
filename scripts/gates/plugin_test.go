@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -56,11 +58,7 @@ func TestTheReleaseMatrixIsTheFamilysSix(t *testing.T) {
 }
 
 func TestGoreleaserMatrixIsTheOneTheBundleClaims(t *testing.T) {
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	release, err := goreleaserText(root)
+	release, err := readGoreleaser(parityRepoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +123,7 @@ func TestPluginMatrixProblems(t *testing.T) {
 // unbuilt, which is a gate that fails for the wrong reason — or, with
 // the comparison the other way round, one that passes for it.
 func TestGoreleaserMatrixRefusesAFileItCannotRead(t *testing.T) {
-	if _, err := goreleaserMatrix("version: 2\n"); err == nil {
+	if _, err := goreleaserMatrix(parseGoreleaser("version: 2\n")); err == nil {
 		t.Error("a config with no build matrix should fail loudly rather than report no platforms")
 	}
 }
@@ -215,11 +213,57 @@ func TestWriteZipIsReproducibleAndKeepsModes(t *testing.T) {
 
 // The gate against the repository.
 func TestPluginGateAgainstThisRepository(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	var out sink
 	if err := pluginGate(&out, nil); err != nil {
 		t.Fatalf("the committed manifest should match what the packer stages: %v", err)
 	}
 	out.mustSay(t, "files staged")
+}
+
+// The gate reads every build the release config holds, in goreleaser's
+// usual shape, a build's first key on its dash: a second build of the
+// gates ships maintainer tooling, and one for a platform no launcher arm
+// reaches ships a binary nobody can run.
+func TestThePluginGateReadsEveryBuild(t *testing.T) {
+	const lastBuild = "      - arm64\n\nuniversal_binaries:"
+	for _, tc := range []struct{ name, build, want string }{
+		{"the committed builds", "", ""},
+		{
+			"a second build of the gates", "  - main: ./scripts/gates\n    goos:\n      - linux\n    goarch:\n      - amd64\n",
+			".goreleaser.yaml:36: builds.main builds ./scripts/gates as well as the server; everything outside ./cmd is " +
+				"maintainer tooling and must not ship",
+		},
+		{
+			"a second build for a platform no launcher reaches", "  - main: ./cmd/favro-mcp\n    goos:\n      - freebsd\n    goarch:\n      - amd64\n",
+			"GoReleaser builds freebsd-amd64 and no launcher arm reaches it; that binary ships unusable",
+		},
+		{
+			"a build the reader cannot read whole", "  - main: ./cmd/favro-mcp\n    binary: &bin favro-mcp\n    goos:\n      - linux\n    goarch:\n      - amd64\n",
+			".goreleaser.yaml:37: binary: an anchor, an alias or a tag; write the value out",
+		},
+		{
+			"a build on goreleaser's default architectures", "  - main: ./cmd/favro-mcp\n    goos:\n      - linux\n",
+			".goreleaser.yaml:36: a build that leaves goos or goarch to goreleaser's default, which this gate does not read",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, rel := range []string{"go.mod", manifestPath, mcpPath, parityGoreleaser} {
+				put(t, root, rel, strings.ReplaceAll(string(repoFile(t, rel)), "\r\n", "\n"))
+			}
+			cfg := strings.ReplaceAll(string(repoFile(t, parityGoreleaser)), "\r\n", "\n")
+			if !strings.Contains(cfg, lastBuild) {
+				t.Fatalf("%s does not say %q", parityGoreleaser, lastBuild)
+			}
+			put(t, root, parityGoreleaser, strings.Replace(cfg, lastBuild, "      - arm64\n"+tc.build+"\nuniversal_binaries:", 1))
+			t.Chdir(root)
+			err := pluginGate(io.Discard, nil)
+			if got := fmt.Sprint(err); tc.want == "" && err != nil || tc.want != "" && got != tc.want {
+				t.Errorf("pluginGate = %v, want %q", err, tc.want)
+			}
+		})
+	}
 }
 
 // The version the manifest will claim, against the version the binary
@@ -251,10 +295,6 @@ func TestVersionsAgree(t *testing.T) {
 // from goreleaser's own metadata, the manifest is stamped through a JSON
 // decode and encode, and every binary is staged executable.
 func TestStageBundleStampsTheVersionAndStagesEveryPlatform(t *testing.T) {
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
 	// A snapshot version, which versionsAgree does not execute, so the
 	// placeholders stand. The real-version path is TestVersionsAgree's
 	// subject; this test's is what gets staged and how the manifest is
@@ -262,7 +302,7 @@ func TestStageBundleStampsTheVersionAndStagesEveryPlatform(t *testing.T) {
 	const version = "1.2.0-snapshot-abc1234"
 	dist := inertHookDist(t, version)
 
-	files, executable, packed, err := stageBundle(root, dist)
+	files, executable, packed, err := stageBundle(parityRepoRoot, dist)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,17 +337,13 @@ func TestStageBundleStampsTheVersionAndStagesEveryPlatform(t *testing.T) {
 // any other value: a manifest edited by hand would otherwise ship a
 // version nothing else in the release agrees with.
 func TestStageBundleRefusesWhatItCannotTrust(t *testing.T) {
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, err := stageBundle(root, t.TempDir()); err == nil {
+	if _, _, _, err := stageBundle(parityRepoRoot, t.TempDir()); err == nil {
 		t.Error("no dist at all should be an error naming what to run first")
 	}
-	if _, _, _, err := stageBundle(root, inertHookDist(t, placeholderVersion)); err == nil {
+	if _, _, _, err := stageBundle(parityRepoRoot, inertHookDist(t, placeholderVersion)); err == nil {
 		t.Error("the packer must not stamp the placeholder as a real version")
 	}
-	if _, _, _, err := stageBundle(root, inertHookDist(t, "")); err == nil {
+	if _, _, _, err := stageBundle(parityRepoRoot, inertHookDist(t, "")); err == nil {
 		t.Error("an empty version should stop the pack")
 	}
 
@@ -318,7 +354,7 @@ func TestStageBundleRefusesWhatItCannotTrust(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(dist, "favro-mcp_linux_arm64_v8.0")); err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, err = stageBundle(root, dist)
+	_, _, _, err := stageBundle(parityRepoRoot, dist)
 	if want := "dist carries no linux-arm64 binary matching *linux_arm64*/favro-mcp; the bundle would ship " +
 		"a launcher arm pointing at nothing"; err == nil || err.Error() != want {
 		t.Errorf("a dist missing linux-arm64 gave %v, want an error naming %q", err, want)
@@ -330,6 +366,7 @@ func TestStageBundleRefusesWhatItCannotTrust(t *testing.T) {
 // written anywhere else matches nothing, and GoReleaser skips an empty
 // glob without a word, so the release ships no .plugin.
 func TestPluginPackWritesTheBundleIntoDist(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	dist := inertHookDist(t, "1.2.0-snapshot-abc1234")
 	var out sink
 	if err := pluginPack(&out, []string{dist}); err != nil {
@@ -378,8 +415,10 @@ func TestBuiltBinariesRefusesAnAmbiguousDist(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := builtBinaries(dist)
-	if want := "dist carries 2 linux-amd64 binaries (" + filepath.Join(dist, "favro-mcp_linux_amd64_v1", "favro-mcp") +
-		" " + second + "); packing one of them is how a bundle ships the wrong build"; err == nil || err.Error() != want {
+	// The gate prints slash paths on every OS.
+	slash := filepath.ToSlash(dist)
+	if want := "dist carries 2 linux-amd64 binaries (" + slash + "/favro-mcp_linux_amd64_v1/favro-mcp " +
+		slash + "/favro-mcp_linux_amd64_v3/favro-mcp); packing one of them is how a bundle ships the wrong build"; err == nil || err.Error() != want {
 		t.Errorf("two linux-amd64 builds gave %v, want an error naming %q", err, want)
 	}
 }
@@ -387,20 +426,32 @@ func TestBuiltBinariesRefusesAnAmbiguousDist(t *testing.T) {
 // The premise the lint exclusions and the whole scripts/ directory rest
 // on: the release builds the server and nothing else.
 func TestOnlyTheServerShips(t *testing.T) {
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	release, err := goreleaserText(root)
+	release, err := readGoreleaser(parityRepoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if problems := onlyTheServerShips(release); len(problems) > 0 {
 		t.Errorf("the release should build only ./cmd/favro-mcp: %v", problems)
 	}
-	// A config with no build at all must not read as "nothing extra
-	// ships": it reads as a check that has lost its subject.
-	if problems := onlyTheServerShips("version: 2\n"); len(problems) == 0 {
-		t.Error("an unreadable build config should be reported, not passed")
+	for _, tc := range []struct{ name, cfg, want string }{
+		// A config with no build at all must not read as "nothing extra
+		// ships": it reads as a check that has lost its subject.
+		{"no build", "version: 2\n", ".goreleaser.yaml names no build; this check is reading the wrong shape"},
+		{
+			"a build that names no main", "builds:\n  - id: x\n    binary: x\n",
+			".goreleaser.yaml:2: a build that names no main, so goreleaser builds the module root; name ./cmd/favro-mcp",
+		},
+		// A ko image, or any other section with a main, builds that package
+		// and ships it as the release's.
+		{
+			"another section's main",
+			"builds:\n  - main: ./cmd/favro-mcp\nkos:\n  - id: tooling\n    main: ./scripts/gates\n    repositories:\n      - ghcr.io/example/x\n",
+			".goreleaser.yaml:5: kos.main builds ./scripts/gates as well as the server; everything outside ./cmd is " +
+				"maintainer tooling and must not ship",
+		},
+	} {
+		if got := onlyTheServerShips(parseGoreleaser(tc.cfg)); !slices.Equal(got, []string{tc.want}) {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

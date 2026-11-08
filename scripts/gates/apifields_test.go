@@ -10,6 +10,7 @@ import (
 // TestAPIFieldsAgainstThisRepository is the gate against the thing it
 // guards, which is the run that matters.
 func TestAPIFieldsAgainstThisRepository(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	var out sink
 	if err := apiFields(&out, nil); err != nil {
 		t.Fatalf("the documented fields and the wire types disagree: %v", err)
@@ -22,11 +23,7 @@ func TestAPIFieldsAgainstThisRepository(t *testing.T) {
 // this gate. A resource the reference documents and sectionTypes does
 // not name is a resource whose fields nothing compares.
 func TestEverySectionWithFieldsHasAType(t *testing.T) {
-	root, err := moduleRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	surface, err := readSurface(filepath.Join(root, filepath.FromSlash(apiSurfacePath)))
+	surface, err := readSurface(filepath.Join(parityRepoRoot, filepath.FromSlash(apiSurfacePath)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +31,7 @@ func TestEverySectionWithFieldsHasAType(t *testing.T) {
 		t.Fatalf("read %d resources, expected at least %d", len(surface.Resources), minFieldResources)
 	}
 
-	modeled, err := wireFields(filepath.Join(root, "internal", "favro"))
+	modeled, err := wireFields(filepath.Join(parityRepoRoot, "internal", "favro"))
 	if err != nil {
 		t.Fatal(err)
 	}

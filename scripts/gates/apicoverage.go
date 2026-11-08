@@ -70,12 +70,7 @@ func (r coverageRow) matches(e apiEndpoint) bool {
 //
 // It runs offline, against whatever `gates api-diff` last fetched.
 func apiCoverage(w io.Writer, _ []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-
-	surface, err := readSurface(filepath.Join(root, filepath.FromSlash(apiSurfacePath)))
+	surface, err := readSurface(filepath.FromSlash(apiSurfacePath))
 	if err != nil {
 		return err
 	}
@@ -84,7 +79,7 @@ func apiCoverage(w io.Writer, _ []string) error {
 			apiSurfacePath, len(surface.Endpoints), minSurfaceEndpoints)
 	}
 
-	rows, err := readCoverage(filepath.Join(root, filepath.FromSlash(apiCoveragePath)))
+	rows, err := readCoverage(filepath.FromSlash(apiCoveragePath))
 	if err != nil {
 		return err
 	}
@@ -92,7 +87,7 @@ func apiCoverage(w io.Writer, _ []string) error {
 		return fmt.Errorf("%s holds %d verdicts, expected at least %d", apiCoveragePath, len(rows), minCoverageRows)
 	}
 
-	methods, err := clientMethods(filepath.Join(root, "internal", "favroapi"))
+	methods, err := clientMethods(filepath.Join("internal", "favroapi"))
 	if err != nil {
 		return err
 	}

@@ -174,11 +174,7 @@ func leaks(w io.Writer, args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("usage: gates leaks [history]")
 	}
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-	files, err := lsFiles(root)
+	files, err := lsFiles(".")
 	if err != nil {
 		// Outside a git checkout there is nothing to enumerate and
 		// nothing to be wrong. Any other failure is a broken check, and
@@ -200,7 +196,7 @@ func leaks(w io.Writer, args []string) error {
 		if skipFiles[filepath.Base(name)] {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(root, name))
+		data, err := os.ReadFile(name)
 		if err != nil {
 			continue // deleted or unreadable is not this gate's business
 		}
@@ -266,13 +262,9 @@ func lsFiles(root string) ([]string, error) {
 // clean before a repository goes public — and this one already is
 // public, which makes it a regression check rather than a release gate.
 func leakHistory(w io.Writer) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
 	// -z ends each commit with a NUL, so each message is scanned on its
 	// own and a known finding stays pinned to the one commit it is in.
-	messages, err := exec.Command("git", "-C", root, "log", "-z", "--format=%H%n%B").Output()
+	messages, err := exec.Command("git", "log", "-z", "--format=%H%n%B").Output()
 	if err != nil {
 		return fmt.Errorf("git log: %w", err)
 	}
@@ -291,7 +283,7 @@ func leakHistory(w io.Writer) error {
 	}
 
 	// Every object the history holds, by hash, deduplicated by git itself.
-	blobs, err := exec.Command("git", "-C", root, "rev-list", "--objects", "--all").Output()
+	blobs, err := exec.Command("git", "rev-list", "--objects", "--all").Output()
 	if err != nil {
 		return fmt.Errorf("git rev-list: %w", err)
 	}
@@ -299,7 +291,7 @@ func leakHistory(w io.Writer) error {
 	if len(lines) < 50 {
 		return fmt.Errorf("only %d objects; the history scan is not reading the repository", len(lines))
 	}
-	kinds, err := objectKinds(root, lines)
+	kinds, err := objectKinds(lines)
 	if err != nil {
 		return err
 	}
@@ -309,7 +301,7 @@ func leakHistory(w io.Writer) error {
 		if !ok || path == "" || skipFiles[filepath.Base(path)] {
 			continue
 		}
-		data, err := exec.Command("git", "-C", root, "cat-file", "-p", hash).Output()
+		data, err := exec.Command("git", "cat-file", "-p", hash).Output()
 		if err != nil || bytes.IndexByte(data, 0) >= 0 {
 			continue // a binary: not this rule's business
 		}
@@ -328,13 +320,13 @@ func leakHistory(w io.Writer) error {
 // objectKinds asks git for the type of every listed object in one call,
 // so a tag is known by what git says it is rather than by how its text
 // starts.
-func objectKinds(root string, lines []string) (map[string]string, error) {
+func objectKinds(lines []string) (map[string]string, error) {
 	var hashes strings.Builder
 	for _, line := range lines {
 		hash, _, _ := strings.Cut(line, " ")
 		hashes.WriteString(hash + "\n")
 	}
-	cmd := exec.Command("git", "-C", root, "cat-file", "--batch-check=%(objectname) %(objecttype)")
+	cmd := exec.Command("git", "cat-file", "--batch-check=%(objectname) %(objecttype)")
 	cmd.Stdin = strings.NewReader(hashes.String())
 	out, err := cmd.Output()
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 // A gate that only ever runs against a fixture is one nobody has
 // watched succeed against the thing it guards.
 func TestAPICoverageAgainstThisRepository(t *testing.T) {
+	t.Chdir(parityRepoRoot)
 	var out sink
 	if err := apiCoverage(&out, nil); err != nil {
 		t.Fatalf("the API surface and its verdicts disagree: %v", err)

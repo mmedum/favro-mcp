@@ -39,12 +39,7 @@ const (
 // The steps come from internal/livecover, which the driver runs — so
 // the gate and the driver cannot disagree about what coverage means.
 func liveCover(w io.Writer, _ []string) error {
-	root, err := moduleRoot()
-	if err != nil {
-		return err
-	}
-
-	schemaPath := filepath.Join(root, "schemas.json")
+	schemaPath := "schemas.json"
 	schema, err := toolOptions(schemaPath)
 	if err != nil {
 		return err
@@ -58,7 +53,7 @@ func liveCover(w io.Writer, _ []string) error {
 		return err
 	}
 
-	waived, err := readLiveWaivers(filepath.Join(root, filepath.FromSlash(liveCoverWaivedPath)))
+	waived, err := readLiveWaivers(filepath.FromSlash(liveCoverWaivedPath))
 	if err != nil {
 		return err
 	}

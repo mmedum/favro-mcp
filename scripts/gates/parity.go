@@ -2,338 +2,857 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
+	"go/build/constraint"
+	"go/parser"
+	"go/token"
 	"io"
-	"os"
+	"maps"
+	"math/bits"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 )
 
-var (
-	// The prerequisites of the `check` target, which is what a person
-	// runs and what the Makefile calls everything CI runs.
-	checkTarget = regexp.MustCompile(`(?m)^check:\s*([^#\n]*)`)
-	// A vet pass with a build tag, in either file.
-	vetTags = regexp.MustCompile(`vet -tags=([a-z]+)`)
-	// `NAME ?= value` or `NAME := value` at the top of the Makefile.
-	makeAssign = regexp.MustCompile(`(?m)^([A-Z_][A-Z0-9_]*)\s*[:?]?=\s*(.*)$`)
-	makeRef    = regexp.MustCompile(`\$\([A-Za-z_][A-Za-z0-9_]*\)`)
-	// A gate invocation in a recipe line.
-	gatesCall = regexp.MustCompile(`\./scripts/gates ([a-z-]+)`)
-	// A module pinned to a version. The command is its last path
-	// element — except when that element is a major-version suffix, as
-	// in `gitleaks/v8@v8.30.1`, where taking it literally yields "v8".
-	// That is not a false negative but something worse: "v8" appears in
-	// the workflow inside the very version string this is trying to
-	// match, so the comparison passed while comparing nothing.
-	pinnedTool = regexp.MustCompile(`([A-Za-z0-9_-]+)(?:/v\d+)?@v\d+\.\d+\.\d+`)
+// `make check` says on its first line that CI runs the same gates, and
+// the parity gate holds it to that (D-69). The two lists live in two
+// files and a person edits one, so they are compared by what they run.
+// Both sides run the same commands in the same words. Each gate runs in
+// the pipeline its dispatch entry records, with the same arguments. Every
+// tagged file is vetted on both sides: one vetted only locally compiles
+// only on a maintainer's machine.
+
+const (
+	parityCI = "ci.yml"
+	parityPR = "pr"
+	// parityGoreleaser and the release's workflows, releaseWorkflows', are
+	// where a release command must be found.
+	parityGoreleaser = ".goreleaser.yaml"
+	// releaseWorkflow is the workflow a release tag runs.
+	releaseWorkflow = ".github/workflows/release.yml"
+	// parityGatesPackage is the gates as `go run` names them.
+	parityGatesPackage = "./scripts/gates"
 )
 
-// parity holds `make check` and the CI workflow to the same set of
-// gates.
-//
-// The two lists live in different files and you are only ever editing
-// one of them, so they drift silently, usually with the local list
-// ahead: a check that runs only on a maintainer's laptop. A comment in a
-// Makefile claiming "everything CI runs" is the sentence that stops the
-// next person checking.
-//
-// The comparison is by command rather than by target name, because a
-// target and the thing CI runs for it need not be spelled alike.
-func parity(w io.Writer, _ []string) error {
-	root, err := moduleRoot()
+// parityPrereqOnly are targets in `make check`'s closure that check
+// nothing themselves, each with the reason CI does not run their recipe.
+// CI runs `make build`, so building needs none.
+var parityPrereqOnly = map[string]string{}
+
+// parityCIOnly are the go subcommands ci.yml runs that `make check` need
+// not, each with the reason.
+var parityCIOnly = map[string]string{}
+
+// parityGateName is a gates command's shape. The word after the package
+// is a call only in that shape.
+var parityGateName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+
+func parity(out io.Writer, _ []string) error {
+	in, err := readParityInputs()
 	if err != nil {
 		return err
 	}
-	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
-	if err != nil {
-		return err
+	r := parityCheck(in, commands)
+	if len(r.problems) > 0 {
+		sort.Strings(r.problems)
+		for _, p := range r.problems {
+			_, _ = fmt.Fprintln(out, "  "+p)
+		}
+		return fmt.Errorf("%d problem(s): `make check` and ci.yml disagree, and the Makefile says they do not", len(r.problems))
 	}
-	files, err := readWorkflows(root)
+	_, _ = fmt.Fprintf(out, "%d check prerequisites, %d %s command lines, %d gates in check, %d gate calls, "+
+		"%d tagged //go:build lines vetted on both sides\n", r.prereqs, r.ciLines, parityCI, r.checkGates, r.gateCalls, r.vetTags)
+	return nil
+}
+
+// parityInputs are the files parity reads, so a test can hand it an
+// edited copy of any of them.
+type parityInputs struct {
+	mk         *makefile
+	flows      []workflowFile
+	goreleaser goreleaserFile
+	hook       hookFile
+	needs      []parityTagNeed
+	// prereqOnly and ciOnly are parityPrereqOnly and parityCIOnly, which a
+	// test hands tables of its own.
+	prereqOnly, ciOnly map[string]string
+}
+
+func readParityInputs() (parityInputs, error) {
+	mk, err := readMakefile()
 	if err != nil {
-		return err
+		return parityInputs{}, err
 	}
-	ci := ""
-	for _, f := range files {
-		if f.name == "ci.yml" {
-			ci = f.data
+	flows, err := readWorkflows()
+	if err != nil {
+		return parityInputs{}, err
+	}
+	goreleaser, err := readGoreleaser(".")
+	if err != nil {
+		return parityInputs{}, err
+	}
+	files, err := docsFiles(".")
+	if err != nil {
+		return parityInputs{}, couldNotRun{err}
+	}
+	needs, err := parityTreeTags(".", files)
+	if err != nil {
+		return parityInputs{}, fmt.Errorf("reading the build tags the code uses: %w", err)
+	}
+	hook, err := readHook()
+	if err != nil {
+		return parityInputs{}, err
+	}
+	return parityInputs{
+		mk: mk, flows: flows, goreleaser: goreleaser, hook: hook, needs: needs,
+		prereqOnly: parityPrereqOnly, ciOnly: parityCIOnly,
+	}, nil
+}
+
+// parityFloors are the fewest check prerequisites, ci.yml command lines,
+// gates in check, distinct gate calls and tagged //go:build lines the gate
+// may read.
+type parityFloors struct{ prereqs, ciLines, checkGates, gateCalls, vetTags int }
+
+// parityLimits are the repository's floors, each under what it holds.
+var parityLimits = parityFloors{prereqs: 15, ciLines: 20, checkGates: 15, gateCalls: 20, vetTags: 1}
+
+// parityReport is what the gate read and found.
+type parityReport struct {
+	problems                                         []string
+	prereqs, ciLines, checkGates, gateCalls, vetTags int
+}
+
+func (r *parityReport) fail(format string, a ...any) {
+	r.problems = append(r.problems, fmt.Sprintf(format, a...))
+}
+
+// parityLine is one command a target's recipe runs, expanded.
+type parityLine struct{ target, text string }
+
+// parityCheck compares the inputs with a registry of commands.
+func parityCheck(in parityInputs, registry map[string]command) *parityReport {
+	r := &parityReport{}
+	// What a reader refused is a command parity cannot see.
+	r.problems = append(r.problems, in.mk.refused...)
+	r.problems = append(r.problems, in.goreleaser.refused...)
+	for _, w := range in.flows {
+		r.problems = append(r.problems, w.refused...)
+	}
+	check, ok := in.mk.targets["check"]
+	if !ok {
+		r.fail("the Makefile has no check: target")
+		return r
+	}
+	ci, ok := workflowNamed(in.flows, parityCI)
+	if !ok {
+		r.fail("%s/%s does not exist", workflowDir, parityCI)
+		return r
+	}
+	r.prereqs, r.ciLines = len(check.prereqs), len(ci.runs)
+	ci.runs = parityMakeRuns(in.mk, ci.runs)
+	closure := in.mk.closure("check")
+	checkLines := parityLines(in.mk, closure)
+	for _, t := range check.prereqs {
+		if _, defined := in.mk.targets[t]; !defined {
+			r.fail("check: names %s, which the Makefile does not define", t)
 		}
 	}
-	if ci == "" {
-		return fmt.Errorf("no ci.yml among the workflows; the check is reading the wrong place")
-	}
-
-	problems, vetPasses, err := parityOf(string(makefile), ci)
-	if err != nil {
-		return err
-	}
-	if len(problems) > 0 {
-		return fmt.Errorf("%s", strings.Join(problems, "\n"))
-	}
-	_, err = fmt.Fprintf(w, "parity ok: %d gates in both, %d on pull requests only, %d tagged vet passes in both\n",
-		len(commandsIn(inCheck)), len(commandsIn(inPR)), vetPasses)
-	return err
+	r.checkCommands(ci, checkLines, in.prereqOnly)
+	r.checkCIGoCommands(ci, checkLines, in.ciOnly)
+	r.checkPrereqOnly(in.mk, check.prereqs, closure, in.prereqOnly)
+	r.checkFailuresStop(in.mk, closure)
+	r.checkGatesRun(in, ci, checkLines, registry)
+	r.checkGateArgs(ci, checkLines, registry)
+	r.checkVetTags(ci, checkLines, in.needs)
+	r.problems = append(r.problems, floorProblems("check: prerequisites", r.prereqs, parityLimits.prereqs)...)
+	r.problems = append(r.problems, floorProblems(parityCI+" command lines", r.ciLines, parityLimits.ciLines)...)
+	r.problems = append(r.problems, floorProblems("gates in check", r.checkGates, parityLimits.checkGates)...)
+	r.problems = append(r.problems, floorProblems("distinct gate calls", r.gateCalls, parityLimits.gateCalls)...)
+	r.problems = append(r.problems, floorProblems("//go:build lines that need -tags", r.vetTags, parityLimits.vetTags)...)
+	return r
 }
 
-// parityOf is parityCheck with the gates the registry declares.
-func parityOf(makefile, ci string) (problems []string, vetPasses int, err error) {
-	return parityCheck(makefile, ci, commandsIn(inCheck), commandsIn(inPR))
+// parityLines are the targets' recipe lines, expanded.
+func parityLines(mk *makefile, targets []string) []parityLine {
+	var out []parityLine
+	for _, t := range targets {
+		for _, line := range mk.recipe(t) {
+			out = append(out, parityLine{t, line})
+		}
+	}
+	return out
 }
 
-// parityCheck is the rule itself, over the text of the two files rather
-// than the files. A gate cannot be watched fail against this repository
-// without first breaking this repository, so the reading is above and
-// the rule is here, where a test can hand it a Makefile and a workflow
-// that disagree.
-//
-// **Every prerequisite of `check`, not every gate.** `make check` also
-// runs things that are not gates, such as `vet`, `lint`, `vuln`,
-// `licenses`, `secrets`, `tidy` and `fmt-check`, and comparing only the
-// gate registry would let CI drop one unseen. The list it reads is the
-// `check:` line itself, which is the same list the sentence claims.
-//
-// prOnly are the gates that run on a pull request alone: in a `run:` step
-// of ci.yml, and never in `make check`, which has no pull request to
-// measure from.
-func parityCheck(makefile, ci string, declared, prOnly []string) (problems []string, vetPasses int, err error) {
-	if len(declared) < 5 {
-		return nil, 0, fmt.Errorf("only %d gates declared; the registry is not being read", len(declared))
+// parityLineTexts is the commands of recipe lines.
+func parityLineTexts(lines []parityLine) []string {
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		out = append(out, l.text)
 	}
+	return out
+}
 
-	m := checkTarget.FindStringSubmatch(makefile)
-	if m == nil {
-		return nil, 0, fmt.Errorf("no `check:` target in the Makefile; the check is reading the wrong file")
+// parityRunTexts is the commands of a workflow's run lines, those of one
+// job when job is set.
+func parityRunTexts(runs []workflowRun, job string) []string {
+	out := make([]string, 0, len(runs))
+	for _, run := range runs {
+		if job == "" || run.job == job {
+			out = append(out, run.text)
+		}
 	}
-	prereqs := strings.Fields(m[1])
-	if len(prereqs) < 10 {
-		return nil, 0, fmt.Errorf("the check target has %d prerequisites; that is not the whole list", len(prereqs))
+	return out
+}
+
+// checkCommands holds every command `make check` runs, other than a gate
+// call and a prerequisite's that checks nothing, to a ci.yml command that
+// runs it with the same words, read as the shell splits them, or to an
+// action that stands in for it.
+func (r *parityReport) checkCommands(ci workflowFile, lines []parityLine, prereqOnly map[string]string) {
+	var ciWords [][]string
+	for _, text := range parityRunTexts(ci.runs, "") {
+		for _, c := range parityCommandsOf(text) {
+			ciWords = append(ciWords, shellTexts(c.words))
+		}
 	}
-
-	// Both sides are read with commented-out lines removed. Matching the
-	// raw text would mean a single `#` in front of a CI step — the way
-	// somebody unblocks a red build — left this gate green, which is the
-	// one divergence it exists to catch.
-	ciCode := code(ci)
-	ciRuns := runLines(ci)
-
-	vars := makeVars(makefile)
-	matched := 0
-	for _, target := range prereqs {
-		recipe := recipeOf(makefile, target, vars)
-		if len(recipe) == 0 {
-			problems = append(problems, fmt.Sprintf(
-				"`make check` depends on %q and the Makefile gives it no recipe; it checks nothing", target))
+	uses := map[string]bool{}
+	for _, s := range ci.steps {
+		uses[s.action()] = true
+	}
+	for _, l := range lines {
+		if _, excused := prereqOnly[l.target]; excused {
 			continue
 		}
-		for _, line := range recipe {
-			sig := signature(line)
-			if sig == "" {
+		for _, c := range parityCommandsOf(l.text) {
+			words := shellTexts(c.words)
+			if slices.ContainsFunc(ciWords, func(ci []string) bool { return slices.Equal(ci, words) }) {
 				continue
 			}
-			// A gate is named by its invocation, which can only appear in
-			// a `run:` step. Everything else may be satisfied by an
-			// action that installs and runs the tool — `lint` is
-			// golangci-lint-action, `secrets` is gitleaks-action — so
-			// those are looked for anywhere in the workflow.
-			haystack := ciCode
-			if strings.HasPrefix(sig, "./scripts/gates ") {
-				haystack = ciRuns
-			}
-			if !strings.Contains(haystack, sig) {
-				problems = append(problems, fmt.Sprintf(
-					"`make %s` runs %q and nothing in ci.yml does; `make check` claims to be what CI runs",
-					target, sig))
-				continue
-			}
-			matched++
-		}
-	}
-	if matched < 8 {
-		return nil, 0, fmt.Errorf("only %d recipe lines matched; the Makefile's shape has changed and "+
-			"this check is reading almost nothing", matched)
-	}
-
-	// The registry's own claim, in the other direction: a command marked
-	// as a gate has to be in both lists. Without this a gate could be
-	// declared and wired nowhere.
-	for _, name := range declared {
-		if !strings.Contains(ciRuns, "./scripts/gates "+name) {
-			problems = append(problems, fmt.Sprintf(
-				"gate %q is declared in scripts/gates but no `run:` step in ci.yml runs it", name))
-		}
-		if !slices.Contains(prereqs, name) && !slices.Contains(prereqs, makeTargetFor(name)) {
-			problems = append(problems, fmt.Sprintf(
-				"gate %q is declared in scripts/gates but `make check` does not depend on it", name))
-		}
-	}
-
-	for _, name := range prOnly {
-		if !strings.Contains(ciRuns, "./scripts/gates "+name) {
-			problems = append(problems, fmt.Sprintf(
-				"gate %q runs on a pull request and no `run:` step in ci.yml runs it, so it guards nothing", name))
-		}
-		if slices.Contains(prereqs, name) || slices.Contains(prereqs, makeTargetFor(name)) {
-			problems = append(problems, fmt.Sprintf(
-				"gate %q runs on a pull request and `make check` depends on it; check has no pull request "+
-					"to measure from", name))
-		}
-	}
-
-	// The specific divergence that started this rule elsewhere: a tagged
-	// vet pass that only ever runs locally. Build tags are where a whole
-	// package can stop compiling with CI perfectly green.
-	local := tagSet(vetTags.FindAllStringSubmatch(code(makefile), -1))
-	remote := tagSet(vetTags.FindAllStringSubmatch(ciCode, -1))
-	for _, tag := range local {
-		if !slices.Contains(remote, tag) {
-			problems = append(problems, fmt.Sprintf(
-				"`make vet` runs `-tags=%s` and no workflow does; those files compile only on a "+
-					"maintainer's machine", tag))
-		}
-	}
-	for _, tag := range remote {
-		if !slices.Contains(local, tag) {
-			problems = append(problems, fmt.Sprintf(
-				"CI runs `vet -tags=%s` and `make vet` does not; a contributor cannot reproduce it", tag))
-		}
-	}
-	return problems, len(local), nil
-}
-
-// makeVars reads the Makefile's simple variable assignments, so a recipe
-// spelled `$(GO) run $(GITLEAKS)` can be compared with a workflow that
-// spells the same thing literally.
-func makeVars(makefile string) map[string]string {
-	vars := map[string]string{}
-	for _, m := range makeAssign.FindAllStringSubmatch(code(makefile), -1) {
-		vars[m[1]] = strings.TrimSpace(m[2])
-	}
-	return vars
-}
-
-// expand substitutes $(NAME) until nothing changes, which is enough for
-// assignments that refer to each other one level deep.
-func expand(line string, vars map[string]string) string {
-	for range 5 {
-		next := makeRef.ReplaceAllStringFunc(line, func(ref string) string {
-			name := ref[2 : len(ref)-1]
-			if v, ok := vars[name]; ok {
-				return v
-			}
-			return ref
-		})
-		if next == line {
-			break
-		}
-		line = next
-	}
-	return line
-}
-
-// recipeOf returns a target's recipe lines, variables expanded. A recipe
-// line is one that begins with a tab, which is the only thing make is
-// strict about.
-func recipeOf(makefile, target string, vars map[string]string) []string {
-	lines := strings.Split(makefile, "\n")
-	var recipe []string
-	for i, line := range lines {
-		if !strings.HasPrefix(line, target+":") {
-			continue
-		}
-		for _, l := range lines[i+1:] {
-			if strings.HasPrefix(l, "\t") {
-				body := strings.TrimLeft(strings.TrimPrefix(l, "\t"), "@-")
-				if body != "" {
-					recipe = append(recipe, expand(body, vars))
+			if tool, actions := parityStandIn(c.words); tool != "" {
+				if !slices.ContainsFunc(actions, func(a string) bool { return uses[a] }) {
+					r.fail("`make %s` runs %q, and %s neither runs it nor uses %s, which stands in for it",
+						l.target, c.text, parityCI, strings.Join(actions, " or "))
 				}
 				continue
 			}
-			if strings.TrimSpace(l) == "" || strings.HasPrefix(strings.TrimSpace(l), "#") {
+			r.fail("`make %s` runs %q and %s never does", l.target, c.text, parityCI)
+		}
+	}
+	for _, t := range pinsTools {
+		for _, action := range slices.Sorted(maps.Keys(t.actions)) {
+			if len(t.modules) == 0 || !uses[action] {
 				continue
 			}
-			break
-		}
-		break
-	}
-	return recipe
-}
-
-// signature reduces a recipe line to the shortest string that identifies
-// what it runs, so the same job spelled differently in a workflow still
-// matches: a gate by its subcommand, a pinned tool by its command name,
-// anything else by its first three words.
-//
-// Deriving this rather than keeping a table of target-to-step names is
-// the point. A table is a third list to maintain, and the two it sits
-// between are exactly the lists this gate exists because nobody
-// maintains.
-func signature(line string) string {
-	if m := gatesCall.FindStringSubmatch(line); m != nil {
-		return "./scripts/gates " + m[1]
-	}
-	if m := pinnedTool.FindStringSubmatch(line); m != nil {
-		return m[1]
-	}
-	fields := strings.Fields(line)
-	if len(fields) == 0 {
-		return ""
-	}
-	if len(fields) > 3 {
-		fields = fields[:3]
-	}
-	return strings.Join(fields, " ")
-}
-
-// runLines keeps the lines of a workflow that actually run something: a
-// `run:` line, and the body of a `run: |` block, which is every line
-// indented past the `run:` that opened it. Requiring the command on the
-// `run:` line itself fails closed — nothing slips through — but the
-// first multi-line step somebody writes would report a gate CI plainly
-// runs as missing.
-func runLines(ci string) string {
-	var kept []string
-	body := -1
-	for _, l := range strings.Split(code(ci), "\n") {
-		indent := indentOf(l)
-		if body >= 0 {
-			if strings.TrimSpace(l) == "" || indent > body {
-				kept = append(kept, l)
-				continue
+			if !slices.ContainsFunc(lines, func(l parityLine) bool {
+				tool, _ := parityStandIn(shellSplit(l.text))
+				return tool == t.name
+			}) {
+				r.fail("%s uses %s, and `make check` runs no %s for it to stand in for", parityCI, action, t.name)
 			}
-			body = -1
 		}
-		i := strings.Index(l, "run:")
-		if i < 0 {
+	}
+}
+
+// parityMakeRuns is ci.yml's run lines and, after them, the recipe lines
+// each line of make and targets runs: theirs and those of what they depend
+// on, at the make line's job and line. A line that sets a flag or a
+// variable, or names a target the Makefile does not define, runs no recipe
+// here, since it changes what the recipe runs. A redirection does not.
+func parityMakeRuns(mk *makefile, runs []workflowRun) []workflowRun {
+	out := slices.Clone(runs)
+	for _, run := range runs {
+		var words []string
+		for _, w := range shellSplit(run.text) {
+			if !w.redir {
+				words = append(words, w.text)
+			}
+		}
+		if len(words) < 2 || words[0] != "make" || slices.ContainsFunc(words[1:], func(t string) bool { return mk.targets[t] == nil }) {
 			continue
 		}
-		kept = append(kept, l)
-		switch strings.TrimSpace(l[i+len("run:"):]) {
-		case "|", "|-", "|+", ">", ">-", ">+":
-			body = indent
+		for _, line := range parityLines(mk, mk.closure(words[1:]...)) {
+			out = append(out, workflowRun{run.job, run.line, line.text})
 		}
 	}
-	return strings.Join(kept, "\n")
+	return out
 }
 
-// makeTargetFor maps a gate to the Makefile target that runs it, for the
-// ones whose names differ. Kept deliberately short: a long map here
-// would mean the targets and the gates have stopped resembling each
-// other, which is its own problem.
-func makeTargetFor(gate string) string {
-	if gate == "coverage" {
-		return "cover"
+// parityCommand is one command a line runs, its words and its text.
+type parityCommand struct {
+	text  string
+	words []shellWord
+}
+
+// parityCommandsOf is the commands a line runs other than gate calls: the
+// line whole when it calls no gate, and otherwise each command of its
+// lists but a gate call, so a gate call does not hide the command beside it.
+func parityCommandsOf(line string) []parityCommand {
+	words := shellSplit(line)
+	if len(parityGateCalls(words)) == 0 {
+		return []parityCommand{{line, words}}
 	}
-	return gate
+	var out []parityCommand
+	for _, c := range shellLists(words) {
+		if len(parityGateCalls(c)) == 0 {
+			out = append(out, parityCommand{strings.Join(shellTexts(c), " "), c})
+		}
+	}
+	return out
 }
 
-func tagSet(matches [][]string) []string {
+// parityStandIn is the tool a command runs with `go run` and the actions
+// that install and run it in the command's place, the installers pinsTools
+// names for it, or "" and none. The pins gate holds an action's version to
+// the Makefile's.
+func parityStandIn(words []shellWord) (string, []string) {
+	for _, run := range goRunsOf(words) {
+		module, _, _ := strings.Cut(run.pkg, "@")
+		name := pinsToolByModule(module)
+		for _, t := range pinsTools {
+			if t.name == name && len(t.actions) > 0 {
+				return name, slices.Sorted(maps.Keys(t.actions))
+			}
+		}
+	}
+	return "", nil
+}
+
+// checkCIGoCommands holds every go command ci.yml runs, other than a gate
+// call and an excused subcommand, to one `make check` runs with the same
+// words: a check only CI runs is one a contributor cannot see fail. An
+// excuse holds a reason and a subcommand ci.yml runs.
+func (r *parityReport) checkCIGoCommands(ci workflowFile, lines []parityLine, ciOnly map[string]string) {
+	local := map[string]bool{}
+	for _, l := range lines {
+		for _, c := range goCommands(l.text) {
+			local[parityGoCommand(c)] = true
+		}
+	}
+	ran := map[string]bool{}
+	for _, run := range ci.runs {
+		for _, c := range goCommands(run.text) {
+			ran[c.sub] = true
+			if _, excused := ciOnly[c.sub]; excused || parityIsGateRun(c) {
+				continue
+			}
+			if !local[parityGoCommand(c)] {
+				r.fail("%s:%d runs `%s` and `make check` does not", ci.path, run.line, parityGoCommand(c))
+			}
+		}
+	}
+	for _, sub := range slices.Sorted(maps.Keys(ciOnly)) {
+		switch {
+		case strings.TrimSpace(ciOnly[sub]) == "":
+			r.fail("go %s is excused as CI-only with no reason", sub)
+		case !ran[sub]:
+			r.fail("go %s is excused as CI-only, and %s runs no go %s; drop the excuse", sub, parityCI, sub)
+		}
+	}
+}
+
+func parityGoCommand(c goCommand) string {
+	return strings.Join(append([]string{"go", c.sub}, c.args...), " ")
+}
+
+// parityIsGateRun reports whether a go command runs a gate.
+func parityIsGateRun(c goCommand) bool {
+	rest := goAfterFlags(c.args)
+	return c.sub == "run" && len(rest) > 0 && rest[0] == parityGatesPackage
+}
+
+// checkPrereqOnly holds each prerequisite-only target to being exactly
+// that: defined, reached from check, and not a gate check: names itself.
+func (r *parityReport) checkPrereqOnly(mk *makefile, prereqs, closure []string, prereqOnly map[string]string) {
+	for _, t := range slices.Sorted(maps.Keys(prereqOnly)) {
+		switch {
+		case strings.TrimSpace(prereqOnly[t]) == "":
+			r.fail("%s is excused as a prerequisite with no reason", t)
+		case mk.targets[t] == nil:
+			r.fail("%s is excused as a prerequisite and the Makefile does not define it; drop the excuse", t)
+		case slices.Contains(prereqs, t):
+			r.fail("%s is excused as a prerequisite and check: names it as a gate", t)
+		case !slices.Contains(closure, t):
+			r.fail("%s is excused as a prerequisite and nothing `make check` runs depends on it; drop the excuse", t)
+		}
+	}
+}
+
+// checkFailuresStop refuses a command in `make check`'s closure whose
+// failure make ignores, by a - prefix or by .IGNORE: check would pass
+// where CI, which runs it bare, fails
+// (https://www.gnu.org/software/make/manual/html_node/Errors.html).
+func (r *parityReport) checkFailuresStop(mk *makefile, closure []string) {
+	// .IGNORE with no prerequisite ignores every recipe's failure
+	// (https://www.gnu.org/software/make/manual/html_node/Special-Targets.html).
+	if ignore, ok := mk.targets[".IGNORE"]; ok {
+		if len(ignore.prereqs) == 0 {
+			r.fail(".IGNORE names no target: make ignores the failure of every command")
+		}
+		for _, t := range ignore.prereqs {
+			if slices.Contains(closure, t) {
+				r.fail(".IGNORE names %s: make ignores the failure of every command `make %s` runs", t, t)
+			}
+		}
+	}
+	for _, name := range closure {
+		for i, line := range mk.recipe(name) {
+			if strings.Contains(mk.targets[name].prefixes[i], "-") {
+				r.fail("`make %s` runs %q behind a - prefix: make ignores this command's failure", name, line)
+			}
+		}
+	}
+}
+
+// parityGateSites are the gates each pipeline calls.
+type parityGateSites struct {
+	check, ci, pr, release, manual map[string]bool
+}
+
+// checkGatesRun holds every gate to the pipeline the registry records for
+// it, and every gate called anywhere to the registry.
+func (r *parityReport) checkGatesRun(in parityInputs, ci workflowFile, checkLines []parityLine, registry map[string]command) {
+	release := parityRunTexts(in.goreleaser.runs, "")
+	for _, w := range releaseWorkflows(func(p string) (workflowFile, bool) { return workflowNamed(in.flows, p) }) {
+		release = append(release, parityRunTexts(w.runs, "")...)
+	}
+	// Every workflow is read for a gate the dispatch does not have.
+	var workflows []string
+	for _, w := range in.flows {
+		workflows = append(workflows, parityRunTexts(w.runs, "")...)
+	}
+	all := parityLineTexts(parityLines(in.mk, slices.Sorted(maps.Keys(in.mk.targets))))
+	sites := parityGateSites{
+		check:   parityGatesIn(parityLineTexts(checkLines)),
+		ci:      parityGatesIn(parityRunTexts(ci.runs, "")),
+		pr:      parityGatesIn(parityRunTexts(ci.runs, parityPR)),
+		release: parityGatesIn(release),
+		manual:  parityGatesIn(append(all, parityRunTexts(in.hook.runs, "")...)),
+	}
+	called := map[string]bool{}
+	for _, set := range []map[string]bool{sites.check, sites.release, sites.manual, parityGatesIn(workflows)} {
+		maps.Copy(called, set)
+	}
+	r.gateCalls = len(called)
+	for _, name := range slices.Sorted(maps.Keys(called)) {
+		if _, ok := registry[name]; !ok {
+			r.fail("something runs `gates %s`, which the dispatch does not have", name)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(registry)) {
+		r.checkGate(name, registry[name].runs, sites)
+	}
+}
+
+// checkGate holds one gate to the pipeline its entry records.
+func (r *parityReport) checkGate(name string, runs where, sites parityGateSites) {
+	switch runs {
+	case inCheck:
+		r.checkGates++
+		if !sites.check[name] {
+			r.fail("the %s gate runs in make check by the dispatch, and no target `make check` runs calls it", name)
+		}
+		if !sites.ci[name] {
+			r.fail("the %s gate runs in make check by the dispatch, and %s never calls it", name, parityCI)
+		}
+	case inPR:
+		if !sites.pr[name] {
+			r.fail("the %s gate runs on pull requests by the dispatch, and %s's %s job never calls it", name, parityCI, parityPR)
+		}
+		if sites.check[name] {
+			r.fail("the %s gate runs on pull requests by the dispatch, and `make check` runs it, where there is no merge-base", name)
+		}
+	case inRelease:
+		if !sites.release[name] {
+			r.fail("the %s gate runs in release by the dispatch, and neither %s nor %s or a workflow it calls calls it", name,
+				parityGoreleaser, path.Base(releaseWorkflow))
+		}
+		if sites.check[name] {
+			r.fail("the %s gate runs in release by the dispatch, and `make check` runs it", name)
+		}
+	case manual:
+		if sites.check[name] {
+			r.fail("the %s gate is manual by the dispatch, and `make check` runs it; record it as inCheck", name)
+		}
+		if !sites.manual[name] {
+			r.fail("the %s gate is manual by the dispatch, and no Makefile target or hook runs it: "+
+				"a manual gate nobody can find is a gate that never fires", name)
+		}
+	default:
+		r.fail("the %s gate records no pipeline", name)
+	}
+}
+
+// releaseWorkflows is the release's workflows: release.yml and each local
+// reusable workflow it calls, directly or through another, as read finds
+// them by path. A workflow read cannot find adds nothing.
+func releaseWorkflows(read func(path string) (workflowFile, bool)) []workflowFile {
+	var out []workflowFile
+	seen := map[string]bool{releaseWorkflow: true}
+	for queue := []string{releaseWorkflow}; len(queue) > 0; queue = queue[1:] {
+		w, ok := read(queue[0])
+		if !ok {
+			continue
+		}
+		out = append(out, w)
+		for _, s := range w.steps {
+			if called, local := strings.CutPrefix(s.uses, "./"); s.reusable && local && !seen[called] {
+				seen[called] = true
+				queue = append(queue, called)
+			}
+		}
+	}
+	return out
+}
+
+// parityGatesIn are the gates command lines call.
+func parityGatesIn(lines []string) map[string]bool {
+	found := map[string]bool{}
+	for _, line := range lines {
+		for _, c := range parityGateCalls(shellSplit(line)) {
+			found[c.name] = true
+		}
+	}
+	return found
+}
+
+// parityGateCall is one call of a gate: its name, and the words after it
+// to the end of its command.
+type parityGateCall struct {
+	name string
+	args []string
+}
+
+// parityGateCalls are the gates a line's words call through `go run
+// ./scripts/gates`, the line read as the shell splits it: a call quoted in
+// an echo is a word of the echo, and flags before ./scripts/gates do not
+// hide one.
+func parityGateCalls(words []shellWord) []parityGateCall {
+	var out []parityGateCall
+	for _, run := range goRunsOf(words) {
+		if run.pkg == parityGatesPackage && len(run.args) > 0 && parityGateName.MatchString(run.args[0]) {
+			out = append(out, parityGateCall{run.args[0], run.args[1:]})
+		}
+	}
+	return out
+}
+
+// parityGateSite is one gate call compared by checkGateArgs: where it is,
+// its arguments as compared, and as written.
+type parityGateSite struct {
+	at, name, key, args string
+}
+
+// checkGateArgs holds every gate the dispatch runs in both `make check` and
+// ci.yml to the same arguments on both sides, the Makefile's variables
+// expanded: a floor of 85 in the Makefile and 80 in CI is two checks under
+// one name.
+func (r *parityReport) checkGateArgs(ci workflowFile, checkLines []parityLine, registry map[string]command) {
+	sites := func(at, line string) []parityGateSite {
+		var out []parityGateSite
+		for _, c := range parityGateCalls(shellSplit(line)) {
+			if registry[c.name].runs != inCheck {
+				continue
+			}
+			args := "no arguments"
+			if len(c.args) > 0 {
+				args = "`" + strings.Join(c.args, " ") + "`"
+			}
+			out = append(out, parityGateSite{at, c.name, parityGateArgs(registry[c.name].args, c.args), args})
+		}
+		return out
+	}
+	local, remote := make([]parityGateSite, 0, len(checkLines)), make([]parityGateSite, 0, len(ci.runs))
+	for _, l := range checkLines {
+		local = append(local, sites("`make "+l.target+"`", l.text)...)
+	}
+	for _, run := range ci.runs {
+		remote = append(remote, sites(fmt.Sprintf("%s:%d", ci.path, run.line), run.text)...)
+	}
+	// A gate one side never calls is checkGatesRun's to report.
+	unmatched := func(s parityGateSite, other []parityGateSite) bool {
+		return slices.ContainsFunc(other, func(o parityGateSite) bool { return o.name == s.name }) &&
+			!slices.ContainsFunc(other, func(o parityGateSite) bool { return o.name == s.name && o.key == s.key })
+	}
+	for _, s := range local {
+		if unmatched(s, remote) {
+			r.fail("%s calls the %s gate with %s and %s never does", s.at, s.name, s.args, parityCI)
+		}
+	}
+	for _, s := range remote {
+		if unmatched(s, local) {
+			r.fail("%s calls the %s gate with %s and `make check` never does", s.at, s.name, s.args)
+		}
+	}
+}
+
+// parityGateArgs is a gate call's arguments as compared, given how its
+// dispatch entry spells them. A [BIN] compares as a clean path, and an
+// omitted one is the gate's default, so CI's bare `smoke` and the
+// Makefile's `smoke $(BIN)` are one call. No other omitted word has a
+// value here.
+func parityGateArgs(spelling string, args []string) string {
+	out := slices.Clone(args)
+	for i, word := range strings.Fields(spelling) {
+		switch {
+		case word != "[BIN]":
+		case i < len(out):
+			out[i] = path.Clean(out[i])
+		case i == len(out):
+			// Without the host's .exe: the gate adds it where make adds
+			// $(EXE), and $(BIN) reads as bin/favro-mcp on every OS, since
+			// the $( of $(EXE) ends the shell word. The Makefile's BIN is
+			// not the default: a bare call runs bin/favro-mcp whatever BIN is.
+			out = append(out, defaultBinaryPath)
+		}
+	}
+	return strings.Join(out, "\x00")
+}
+
+// checkVetTags holds what each tagged file needs to a vet pass on both
+// sides that compiles it.
+func (r *parityReport) checkVetTags(ci workflowFile, checkLines []parityLine, needs []parityTagNeed) {
+	checkPasses, ciPasses := parityVetPasses(parityLineTexts(checkLines)), parityVetPasses(parityRunTexts(ci.runs, ""))
+	r.vetTags = len(needs)
+	for _, need := range needs {
+		if !need.vetted(checkPasses) {
+			r.fail("%s builds only with %s (//go:build %s) and `make check` vets no pass that builds it; "+
+				"a contributor cannot see it break", need.file, need, need.expr)
+		}
+		if !need.vetted(ciPasses) {
+			r.fail("%s builds only with %s (//go:build %s) and %s vets no pass that builds it; "+
+				"it compiles only on a maintainer's machine", need.file, need, need.expr, parityCI)
+		}
+	}
+}
+
+// parityVetPasses is the tags of each `go vet` in lines that sets any.
+// Only `go vet` is a vet pass: `go test -vet=off` vets nothing.
+func parityVetPasses(lines []string) [][]string {
+	var passes [][]string
+	for _, line := range lines {
+		for _, c := range goCommands(line) {
+			if c.sub != "vet" {
+				continue
+			}
+			if tags := goBuildTags(c.args); len(tags) > 0 {
+				passes = append(passes, tags)
+			}
+		}
+	}
+	return passes
+}
+
+// goBuildTags is the tags a go command's words set, from its last -tags
+// flag wherever it sits among the flags before the packages, which alone
+// set the build: -tags=a,b or -tags a,b, with one dash or two
+// (https://pkg.go.dev/flag#hdr-Command_line_flag_syntax).
+func goBuildTags(args []string) []string {
+	flags := args[:len(args)-len(goAfterFlags(args))]
 	var tags []string
-	for _, m := range matches {
-		if !slices.Contains(tags, m[1]) {
-			tags = append(tags, m[1])
+	for i, arg := range flags {
+		name, value, inline := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		if !strings.HasPrefix(arg, "-") || name != "tags" {
+			continue
+		}
+		if !inline && i+1 < len(flags) {
+			value = flags[i+1]
+		}
+		tags = strings.FieldsFunc(value, func(c rune) bool { return c == ',' })
+	}
+	return tags
+}
+
+// parityTagNeed is what a tagged file needs from a vet pass: its
+// //go:build expression, the free tags in it, and the smallest -tags lists
+// that build it, for the message. file is the first file with the line.
+type parityTagNeed struct {
+	file  string
+	expr  constraint.Expr
+	free  []string
+	lists []string
+}
+
+func (n parityTagNeed) String() string { return "-tags=" + strings.Join(n.lists, " or -tags=") }
+
+// vetted reports whether one of the passes compiles the file: its line
+// holds with exactly the pass's tags, so `live && !evals` is not compiled
+// by -tags=live,evals.
+func (n parityTagNeed) vetted(passes [][]string) bool {
+	return slices.ContainsFunc(passes, func(pass []string) bool { return parityBuildsWith(n.expr, n.free, pass) })
+}
+
+// parityTreeTags is what each //go:build line among files needs, once per
+// expression and in their order: a file that builds with tags and not
+// without them, which an untagged vet never compiles. files are the
+// checkout's at root as git lists them, so a file git ignores cannot
+// change the verdict.
+func parityTreeTags(root string, files []string) ([]parityTagNeed, error) {
+	fset := token.NewFileSet()
+	var needs []parityTagNeed
+	for _, file := range files {
+		if !strings.HasSuffix(file, ".go") || parityGoIgnores(file) {
+			continue
+		}
+		f, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(file)), nil, parser.PackageClauseOnly|parser.ParseComments)
+		if err != nil {
+			return nil, err
+		}
+		need, ok := parityRequiredTags(f)
+		if ok && !slices.ContainsFunc(needs, func(n parityTagNeed) bool { return n.expr.String() == need.expr.String() }) {
+			need.file = file
+			needs = append(needs, need)
 		}
 	}
-	slices.Sort(tags)
-	return tags
+	return needs, nil
+}
+
+// parityGoIgnores reports whether the go command ignores a file for the
+// directory it sits in: one named testdata, or one whose name starts with
+// a dot (https://pkg.go.dev/cmd/go#hdr-Package_lists_and_patterns).
+func parityGoIgnores(file string) bool {
+	return slices.ContainsFunc(strings.Split(path.Dir(file), "/"), func(dir string) bool {
+		return dir == "testdata" || dir != "." && strings.HasPrefix(dir, ".")
+	})
+}
+
+// parityGoBuildExpr is a file's //go:build expression, or nil when it has
+// none or the line does not parse
+// (https://pkg.go.dev/cmd/go#hdr-Build_constraints).
+func parityGoBuildExpr(f *ast.File) constraint.Expr {
+	for _, group := range f.Comments {
+		if group.Pos() >= f.Package {
+			break
+		}
+		for _, c := range group.List {
+			if !constraint.IsGoBuild(c.Text) {
+				continue
+			}
+			expr, err := constraint.Parse(c.Text)
+			if err != nil {
+				return nil
+			}
+			return expr
+		}
+	}
+	return nil
+}
+
+// parityRequiredTags is what a file's //go:build line needs from a vet
+// pass, false when it builds with no custom tag. Its lists are each minimal
+// set of custom tags it builds with, joined by commas. A tag the go
+// command sets for a target or a toolchain is free to be either value, so
+// `e2e && linux` needs e2e, `a && b` needs one pass that sets both,
+// `a || b` a pass that sets either, and `!windows` none.
+func parityRequiredTags(f *ast.File) (parityTagNeed, bool) {
+	expr := parityGoBuildExpr(f)
+	if expr == nil {
+		return parityTagNeed{}, false
+	}
+	free := parityFreeTags(expr)
+	var custom []string
+	expr.Eval(func(tag string) bool {
+		// ignore keeps a file out of every build, so no -tags can need it.
+		if tag != "ignore" && !slices.Contains(free, tag) && !slices.Contains(custom, tag) {
+			custom = append(custom, tag)
+		}
+		return false
+	})
+	slices.Sort(custom)
+	if parityBuildsWith(expr, free, nil) {
+		return parityTagNeed{}, false
+	}
+	var found []int
+	var lists []string
+	for size := 1; size <= len(custom); size++ {
+		for set := range 1 << len(custom) {
+			// A set holding one that builds is not minimal.
+			if bits.OnesCount(uint(set)) != size || slices.ContainsFunc(found, func(f int) bool { return set&f == f }) {
+				continue
+			}
+			var with []string
+			for i, tag := range custom {
+				if set&(1<<i) != 0 {
+					with = append(with, tag)
+				}
+			}
+			if parityBuildsWith(expr, free, with) {
+				found = append(found, set)
+				lists = append(lists, strings.Join(with, ","))
+			}
+		}
+	}
+	return parityTagNeed{expr: expr, free: free, lists: lists}, lists != nil
+}
+
+// parityFreeTags is the tags of a //go:build expression that no -tags flag
+// needs to name, parityToolchainTag's, each once.
+func parityFreeTags(expr constraint.Expr) []string {
+	var free []string
+	// Eval calls its function for every tag, even past a decided result.
+	expr.Eval(func(tag string) bool {
+		if parityToolchainTag(tag) && !slices.Contains(free, tag) {
+			free = append(free, tag)
+		}
+		return false
+	})
+	return free
+}
+
+// parityBuildsWith reports whether a file builds with the custom tags in
+// with, and no other, for some value of each free tag.
+func parityBuildsWith(expr constraint.Expr, free, with []string) bool {
+	for set := range 1 << len(free) {
+		if expr.Eval(func(tag string) bool {
+			if i := slices.Index(free, tag); i >= 0 {
+				return set&(1<<i) != 0
+			}
+			return slices.Contains(with, tag)
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
+// parityKnownOS and parityKnownArch are the GOOS and GOARCH values
+// go/build knows, as https://go.dev/src/internal/syslist/syslist.go lists
+// them.
+var (
+	parityKnownOS = map[string]bool{
+		"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true,
+		"hurd": true, "illumos": true, "ios": true, "js": true, "linux": true, "nacl": true,
+		"netbsd": true, "openbsd": true, "plan9": true, "solaris": true, "wasip1": true,
+		"windows": true, "zos": true,
+	}
+	parityKnownArch = map[string]bool{
+		"386": true, "amd64": true, "amd64p32": true, "arm": true, "armbe": true, "arm64": true,
+		"arm64be": true, "loong64": true, "mips": true, "mipsle": true, "mips64": true,
+		"mips64le": true, "mips64p32": true, "mips64p32le": true, "ppc": true, "ppc64": true,
+		"ppc64le": true, "riscv": true, "riscv64": true, "s390": true, "s390x": true,
+		"sparc": true, "sparc64": true, "wasm": true,
+	}
+	// parityOtherTags are set by the go command for a target and a
+	// toolchain, and race, msan and asan by -race, -msan and -asan
+	// (https://github.com/golang/go/blob/go1.27.3/src/cmd/go/internal/work/init.go#L212).
+	parityOtherTags = map[string]bool{
+		"unix": true, "cgo": true, "gc": true, "gccgo": true, "race": true, "msan": true, "asan": true,
+	}
+	// parityReleaseTag is a release tag, such as go1.22, set for each
+	// release up to the toolchain's own.
+	parityReleaseTag = regexp.MustCompile(`^go1\.\d+$`)
+)
+
+// parityToolchainTag reports whether a build tag is one no -tags flag
+// needs to name: an OS, an architecture or one of its features, such as
+// amd64.v2, or a tag the go command sets
+// (https://pkg.go.dev/cmd/go#hdr-Build_constraints). A goexperiment tag
+// is GOEXPERIMENT's to set (https://pkg.go.dev/internal/goexperiment).
+func parityToolchainTag(tag string) bool {
+	arch, _, _ := strings.Cut(tag, ".")
+	return parityKnownOS[tag] || parityKnownArch[arch] || parityOtherTags[tag] || parityReleaseTag.MatchString(tag) ||
+		strings.HasPrefix(tag, "goexperiment.")
 }
