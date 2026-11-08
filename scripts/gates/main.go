@@ -250,10 +250,14 @@ func usage() string {
 	return b.String()
 }
 
+// defaultBinaryPath is defaultBinary as a slash path without the host's
+// executable suffix, the name a Makefile or a workflow writes on every OS.
+const defaultBinaryPath = "bin/favro-mcp"
+
 // defaultBinary is where `make build` puts the server. Every gate that
 // drives a binary takes one as an optional argument and falls back here.
 func defaultBinary() string {
-	return filepath.Join("bin", "favro-mcp"+exeSuffix())
+	return filepath.FromSlash(defaultBinaryPath) + exeSuffix()
 }
 
 // exeSuffix is what the platform appends to an executable's name.

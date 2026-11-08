@@ -415,8 +415,10 @@ func TestBuiltBinariesRefusesAnAmbiguousDist(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := builtBinaries(dist)
-	if want := "dist carries 2 linux-amd64 binaries (" + filepath.Join(dist, "favro-mcp_linux_amd64_v1", "favro-mcp") +
-		" " + second + "); packing one of them is how a bundle ships the wrong build"; err == nil || err.Error() != want {
+	// The gate prints slash paths on every OS.
+	slash := filepath.ToSlash(dist)
+	if want := "dist carries 2 linux-amd64 binaries (" + slash + "/favro-mcp_linux_amd64_v1/favro-mcp " +
+		slash + "/favro-mcp_linux_amd64_v3/favro-mcp); packing one of them is how a bundle ships the wrong build"; err == nil || err.Error() != want {
 		t.Errorf("two linux-amd64 builds gave %v, want an error naming %q", err, want)
 	}
 }

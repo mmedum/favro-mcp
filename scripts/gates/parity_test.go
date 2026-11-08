@@ -167,8 +167,10 @@ func TestParityAgainstThisRepository(t *testing.T) {
 // TestParityCatchesEachDivergence is the point of the gate: the two lists
 // live in different files, and whichever one you are editing is the one
 // you remember. Each row is a drift, named.
-func TestParityCatchesEachDivergence(t *testing.T) {
-	t.Parallel()
+func TestParityCatchesEachDivergence(t *testing.T) { //nolint:tparallel // it sets OS, which a parallel test may not
+	// The Makefile reader keeps $(OS) as written where the environment sets
+	// it, which Windows alone does, so every OS reads the rows as Windows.
+	t.Setenv("OS", "Windows_NT")
 	const tagged = "scripts/evals/main.go builds only with -tags=evals (//go:build evals) and "
 	const secrets = "`make secrets` runs \"go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD --config .gitleaks.toml --redact --no-banner .\""
 	stale := "      - name: staleness\n        run: go run ./scripts/gates staleness bin/favro-mcp\n"
@@ -304,7 +306,7 @@ func TestParityCatchesEachDivergence(t *testing.T) {
 			"`make build` runs \"CGO_ENABLED=0 go build -trimpath -ldflags \\\"-s -w " +
 				"-X github.com/mmedum/favro-mcp/v4/internal/version.Tag=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev) " +
 				"-X github.com/mmedum/favro-mcp/v4/internal/version.Commit=$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)\\\" " +
-				"-o bin/favro-mcp$(if $(filter Windows_NT,),.exe,) ./cmd/favro-mcp\" and ci.yml never does",
+				"-o bin/favro-mcp$(if $(filter Windows_NT,$(OS)),.exe,) ./cmd/favro-mcp\" and ci.yml never does",
 			"`make build` runs \"mkdir -p bin\" and ci.yml never does",
 		}},
 		{name: "a manual gate in make check", edits: []docsEdit{
@@ -480,7 +482,7 @@ func TestParityReadsWhatRuns(t *testing.T) {
 
 // A gate both sides call takes the same arguments on both, the Makefile's
 // variables expanded. An omitted [BIN] is the binary the gate defaults
-// to, and no other omitted argument is.
+// to, by its name on every OS, and no other omitted argument is.
 func TestParityHoldsAGateCallsArguments(t *testing.T) {
 	t.Parallel()
 	checkParityCases(t, []parityCase{
@@ -510,6 +512,20 @@ func TestParityHoldsAGateCallsArguments(t *testing.T) {
 		{"the default binary left out in CI", []docsEdit{
 			replace(fxCI, "run: go run ./scripts/gates smoke bin/favro-mcp\n", "run: go run ./scripts/gates smoke\n"),
 		}, nil, nil},
+		// A bare call runs bin/favro-mcp whatever the Makefile's BIN names.
+		{"the binary left out in CI, and the Makefile's BIN another", []docsEdit{
+			replace(fxMakefile, "BIN       ?= $(BIN_DIR)/favro-mcp$(EXE)", "BIN       ?= $(BIN_DIR)/other$(EXE)"),
+			replace(fxCI, "run: go run ./scripts/gates smoke bin/favro-mcp\n", "run: go run ./scripts/gates smoke\n"),
+		}, nil, []string{
+			".github/workflows/ci.yml:132 calls the one-organization gate with `bin/favro-mcp` and `make check` never does",
+			".github/workflows/ci.yml:134 calls the schema-diff gate with `bin/favro-mcp` and `make check` never does",
+			".github/workflows/ci.yml:136 calls the smoke gate with no arguments and `make check` never does",
+			".github/workflows/ci.yml:138 calls the staleness gate with `bin/favro-mcp` and `make check` never does",
+			"`make one-organization` calls the one-organization gate with `bin/other` and ci.yml never does",
+			"`make schema-diff` calls the schema-diff gate with `bin/other` and ci.yml never does",
+			"`make smoke` calls the smoke gate with `bin/other` and ci.yml never does",
+			"`make staleness` calls the staleness gate with `bin/other` and ci.yml never does",
+		}},
 		{"an argument CI gives a gate that make check does not", []docsEdit{
 			replace(fxCI, "run: go run ./scripts/gates leaks\n", "run: go run ./scripts/gates leaks history\n"),
 		}, nil, []string{

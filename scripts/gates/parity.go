@@ -591,8 +591,9 @@ func (r *parityReport) checkGateArgs(ci workflowFile, checkLines []parityLine, r
 
 // parityGateArgs is a gate call's arguments as compared, given how its
 // dispatch entry spells them. A [BIN] compares as a clean path, and an
-// omitted one is defaultBinary, so CI's bare `smoke` and the Makefile's
-// `smoke $(BIN)` are one call. No other omitted word has a value here.
+// omitted one is the gate's default, so CI's bare `smoke` and the
+// Makefile's `smoke $(BIN)` are one call. No other omitted word has a
+// value here.
 func parityGateArgs(spelling string, args []string) string {
 	out := slices.Clone(args)
 	for i, word := range strings.Fields(spelling) {
@@ -601,7 +602,11 @@ func parityGateArgs(spelling string, args []string) string {
 		case i < len(out):
 			out[i] = path.Clean(out[i])
 		case i == len(out):
-			out = append(out, path.Clean(filepath.ToSlash(defaultBinary())))
+			// Without the host's .exe: the gate adds it where make adds
+			// $(EXE), and $(BIN) reads as bin/favro-mcp on every OS, since
+			// the $( of $(EXE) ends the shell word. The Makefile's BIN is
+			// not the default: a bare call runs bin/favro-mcp whatever BIN is.
+			out = append(out, defaultBinaryPath)
 		}
 	}
 	return strings.Join(out, "\x00")
