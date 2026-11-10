@@ -32,6 +32,9 @@ type makefile struct {
 	refused []string
 	// special are the special variables set, by name, with their values.
 	special map[string]string
+	// unsetAt is each variable a := named before any line set it, by the
+	// line of the first such :=.
+	unsetAt map[string]int
 }
 
 // makefileTarget is one target, all its rules merged.
@@ -102,7 +105,15 @@ func readMakefile() (*makefile, error) {
 func parseMakefile(text string) *makefile {
 	m := &makefile{
 		vars: map[string]string{}, simple: map[string]map[string]bool{},
-		targets: map[string]*makefileTarget{}, text: text, special: map[string]string{},
+		targets: map[string]*makefileTarget{}, text: text, special: map[string]string{}, unsetAt: map[string]int{},
+	}
+	// make breaks lines at LF alone and drops only the CR before one
+	// (https://github.com/mirror/make/blob/4.4.1/src/read.c#L2671-L2709),
+	// where the reader drops every CR at a line's end, so a lone CR can end
+	// a line in a backslash for one and not the other.
+	for _, b := range strayBreaks(text, map[rune]string{'\r': loneCR}) {
+		m.refuse(b.line, "%s at byte %d of the line, which make keeps in the line and this reader may drop; "+
+			"break lines with LF or CRLF alone", b.name, b.at)
 	}
 	var current *makefileTarget
 	// fresh is whether the current rule has yet to give its first recipe
@@ -166,7 +177,7 @@ func (m *makefile) statement(n int, line string) *makefileTarget {
 		return nil
 	}
 	if v := makefileVarLine.FindStringSubmatch(line); v != nil {
-		m.assign(v[1], v[2], v[3])
+		m.assign(n, v[1], v[2], v[3])
 		return nil
 	}
 	t := makefileTargetLine.FindStringSubmatch(line)
@@ -213,7 +224,14 @@ func makefileUnread(line string) string {
 // assign sets a variable as make does. := expands the value where it is
 // set, and += onto a variable := set expands what it appends
 // (https://www.gnu.org/software/make/manual/html_node/Simple-Assignment.html).
-func (m *makefile) assign(name, op, raw string) {
+// A := that named this variable before any line set it read the host's
+// environment, or nothing, so a line setting it after is refused by name.
+func (m *makefile) assign(n int, name, op, raw string) {
+	if at, ok := m.unsetAt[name]; ok {
+		m.refuse(at, "a := names %s, which line %d sets after it, so make expands it from the environment "+
+			"or empty there; set %s first", name, n, name)
+		delete(m.unsetAt, name)
+	}
 	value := strings.TrimSpace(makefileValue(raw))
 	old, set := m.vars[name]
 	named, simple := m.simple[name]
@@ -222,7 +240,12 @@ func (m *makefile) assign(name, op, raw string) {
 		return
 	case op == ":=" || op == "+=" && simple:
 		refs := m.refs(value)
-		value = m.expandWith(value, makefileUnset)
+		value = m.expandWith(value, func(ref string) string {
+			if unset := ref[2 : len(ref)-1]; m.unsetAt[unset] == 0 {
+				m.unsetAt[unset] = n
+			}
+			return ref
+		})
 		if op == "+=" && old != "" {
 			value = old + " " + value
 			maps.Copy(refs, named)
@@ -285,23 +308,15 @@ const makefileExpandDepth = 10
 
 // expand replaces $(NAME) with the variable's value, recursively, and $$
 // with the $ make hands the shell. A value := set is final and is not
-// expanded again. A name no line sets stays in place.
+// expanded again. A name no line sets stays in place: only the environment
+// sets it, as it does PATH, and the reader reads none, so it reads a file
+// the same on every host.
 func (m *makefile) expand(s string) string {
 	return m.expandWith(s, func(ref string) string { return ref })
 }
 
-// makefileUnset is what a := makes of $(NAME) no line has set yet: nothing,
-// as make has it, or, for a variable the environment sets, such as PATH,
-// the reference as written, since its value is the machine's.
-func makefileUnset(ref string) string {
-	if _, env := os.LookupEnv(ref[2 : len(ref)-1]); env {
-		return ref
-	}
-	return ""
-}
-
-// expandWith is expand with unset giving what a name no line sets
-// expands to.
+// expandWith is expand with unset called on each $(NAME) no line has set,
+// its result what the reference expands to.
 func (m *makefile) expandWith(s string, unset func(ref string) string) string {
 	const dollar = "\x00"
 	s = strings.ReplaceAll(s, "$$", dollar)

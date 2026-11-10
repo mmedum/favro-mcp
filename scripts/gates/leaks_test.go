@@ -23,6 +23,13 @@ func TestFindLeaksCatchesEachShape(t *testing.T) {
 		{"a token by keyword", `"favro_api_token": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5"`, "API token"},                         // leakcheck:allow gitleaks:allow
 		{"a token in the environment", "FAVRO_API_TOKEN=b2c3d4e5f6a7b8c9d0e1f2a3b4c5", "API token"},                      // leakcheck:allow gitleaks:allow
 		{"a link into the app", "see https://favro.com/organization/zk4CJpg5uozhL4R2W/board", "link into the Favro app"}, // leakcheck:allow
+		// A browser reads the host in any case, with a trailing dot or a port.
+		{"an app link, its host capitalized", "see Favro.com/organization/AAAAorg1", "link into the Favro app"},          // leakcheck:allow
+		{"an app link in capitals", "see FAVRO.COM/ORGANIZATION/AAAAorg1", "link into the Favro app"},                    // leakcheck:allow
+		{"an app link, its host ending in a dot", "see favro.com./organization/AAAAorg1", "link into the Favro app"},     // leakcheck:allow
+		{"an app link with a port", "see favro.com:443/organization/AAAAorg1", "link into the Favro app"},                // leakcheck:allow
+		{"an app link whose host does not parse", "see favro.com:port/organization/AAAAorg1", "link into the Favro app"}, // leakcheck:allow
+		{"an app link at a subdomain", "see https://www.favro.com/card/AAAAcard1", "link into the Favro app"},            // leakcheck:allow
 		{"a card reference", "fixed in ZZQ-4182 yesterday", "card reference"},                                            // leakcheck:allow
 		{"a reserved name under a real country code", "someone@example.dk", "address at a real domain"},                  // leakcheck:allow
 		{"a reserved label inside a real domain", "someone@corp.test.com", "address at a real domain"},                   // leakcheck:allow
@@ -55,6 +62,8 @@ func TestFindLeaksLeavesTheRepositoryAlone(t *testing.T) {
 		{"a standards citation", "ISO-8601 and GO-2026-4971 and BSD-3-Clause"},                                 // leakcheck:allow
 		{"a git SHA", "pinned at 3d3c42e5aac5ba805825da76410c181273ba90b1"},                                    // leakcheck:allow
 		{"the bare API host", "https://favro.com/api/v1/cards"},                                                // leakcheck:allow
+		{"a host that only starts with Favro's", "https://favro.com.example.org/organization/AAAAorg1"},        // leakcheck:allow
+		{"a host that only ends with Favro's", "https://evil-favro.com/card/AAAAcard1"},                        // leakcheck:allow
 		{"a marked line", "FAVRO_API_TOKEN=b2c3d4e5f6a7b8c9d0e1f2a3b4c5 // " + "leakcheck:allow"},              // gitleaks:allow
 		{"reserved names, any case and depth", "a@mail.invalid b@host.localhost c@corp.example D@EXAMPLE.ORG"}, // leakcheck:allow
 		{"a synthetic id made of a run", `"cardId": "aaaa0000000000000000bbbb"`},                               // leakcheck:allow

@@ -74,11 +74,12 @@ func dig(doc map[string]any, path ...string) map[string]any {
 }
 
 // copiedRoot is a temporary root holding every file committedManifest
-// reads, copied from the repository, so a test can break one of them.
+// holds the bundle to, copied from the repository, so a test can break
+// one of them. release.yml is the one workflow among them.
 func copiedRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	for _, rel := range []string{mcpbManifestPath, "go.mod", "LICENSE", parityGoreleaser, releaseWorkflow, fxPublish} {
+	for _, rel := range []string{mcpbManifestPath, "go.mod", "LICENSE", parityGoreleaser, releaseWorkflow} {
 		put(t, root, rel, string(repoFile(t, rel)))
 	}
 	return root
@@ -869,8 +870,9 @@ func TestReleaseWiringIsHeld(t *testing.T) {
 // subject-path, as the goreleaser config names them: the archives, both
 // bundles and the checksum file, each in an entry of its own. The README
 // tells people to verify each one's attestation, and no other check reads
-// the workflow's subjects. A row's cfg is the committed config unless it
-// gives one.
+// the workflow's subjects. The step sits in each job that runs goreleaser,
+// with a token that writes id-token and attestations. A row's cfg is the
+// committed config unless it gives one.
 func TestTheBundlesCarryProvenance(t *testing.T) {
 	workflow := strings.ReplaceAll(string(repoFile(t, releaseWorkflow)), "\r\n", "\n")
 	cfg := strings.ReplaceAll(string(repoFile(t, parityGoreleaser)), "\r\n", "\n")
@@ -880,19 +882,92 @@ func TestTheBundlesCarryProvenance(t *testing.T) {
 	if got := attested(workflow, cfg); len(got) > 0 {
 		t.Fatalf("the committed %s: %q", releaseWorkflow, got)
 	}
+	if got, want := attestedBundles([]workflowFile{parseWorkflow(fxPublish, workflow)}, parseGoreleaser(cfg)),
+		[]string{"no " + releaseWorkflow + ", so nothing attests what the release publishes"}; !slices.Equal(got, want) {
+		t.Errorf("workflows without %s: %q, want %q", releaseWorkflow, got, want)
+	}
+	// A local workflow release.yml calls is held as release.yml is.
+	calledRelease := textLines(
+		"jobs:",
+		"  goreleaser:",
+		"    runs-on: ubuntu-latest",
+		"    steps:",
+		"      - uses: goreleaser/goreleaser-action@"+pinSHA+" # v7.3.0",
+		"        with:",
+		"          args: release --clean",
+	)
+	if got, want := attestedBundles([]workflowFile{parseWorkflow(releaseWorkflow, workflow), parseWorkflow(fxPublish, calledRelease)},
+		parseGoreleaser(cfg)), []string{fxPublish + ": job goreleaser runs goreleaser and has no attest-build-provenance step, " +
+		"so no release file carries provenance"}; !slices.Equal(got, want) {
+		t.Errorf("a called workflow releasing with no attest step: %q, want %q", got, want)
+	}
 	const (
 		block    = "          subject-path: |\n            dist/*.tar.gz\n            dist/*.zip\n            dist/*.mcpb\n            dist/*.plugin\n            dist/checksums.txt\n"
 		all      = "dist/*.tar.gz\ndist/*.zip\ndist/*.mcpb\ndist/*.plugin\ndist/checksums.txt"
 		unproven = ", so it ships with no provenance while the README says to verify it"
+		unscoped = " which actions/attest needs to sign and store the provenance; " +
+			"grant it in the job's permissions, or the workflow's when the job sets none"
+		// jobPerms is actionRelease's job permissions, which the
+		// permission rows replace.
+		jobPerms = "    permissions:\n      id-token: write\n      attestations: write\n"
+		registry = "  registry:\n"
 	)
 	missing := func(subjects, what string) string {
 		return fmt.Sprintf("subject-path %q does not name %s%s", subjects, what, unproven)
 	}
+	// unattested is the problem of a job that runs goreleaser with no
+	// attest step.
+	unattested := func(job string) []string {
+		return []string{releaseWorkflow + ": job " + job + " runs goreleaser and has no attest-build-provenance step, " +
+			"so no release file carries provenance"}
+	}
+	// job is a job of one step, which a row puts before registry.
+	job := func(name, step string) string {
+		return "  " + name + ":\n    runs-on: ubuntu-latest\n    steps:\n" + step
+	}
+	const (
+		runClean    = "      - run: goreleaser --clean\n"
+		actionCheck = "      - uses: goreleaser/goreleaser-action@" + pinSHA + " # v7.3.0\n        with:\n          args: check\n"
+	)
+	// goreleaser-action releases with no run line, under a workflow token
+	// that writes neither scope.
+	actionRelease := textLines(
+		"permissions:",
+		"  contents: read",
+		"jobs:",
+		"  goreleaser:",
+		"    runs-on: ubuntu-latest",
+		"    permissions:",
+		"      id-token: write",
+		"      attestations: write",
+		"    steps:",
+		"      - uses: goreleaser/goreleaser-action@"+pinSHA+" # v7.3.0",
+		"        with:",
+		"          version: v2.18.1",
+		"          args: release --clean",
+		"      - uses: actions/attest-build-provenance@"+pinSHA+" # v4.2.2",
+		"        with:",
+		"          subject-path: dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/*.plugin,dist/checksums.txt",
+	)
+	if strings.Count(actionRelease, jobPerms) != 1 {
+		t.Fatalf("actionRelease does not say %q once", jobPerms)
+	}
+	noGoreleaser := textLines(
+		"jobs:",
+		"  release:",
+		"    runs-on: ubuntu-latest",
+		"    steps:",
+		"      - run: make dist",
+		"      - uses: actions/attest-build-provenance@"+pinSHA+" # v4.2.2",
+		"        with:",
+		"          subject-path: dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/*.plugin,dist/checksums.txt",
+	)
 	for _, tc := range []struct {
 		name, old, new string
 		cfg            string
 		want           []string
 	}{
+		{"goreleaser-action releasing", workflow, actionRelease, "", nil},
 		{
 			"no .mcpb", "            dist/*.mcpb\n", "", "",
 			[]string{missing("dist/*.tar.gz\ndist/*.zip\ndist/*.plugin\ndist/checksums.txt", "dist/*.mcpb")},
@@ -953,9 +1028,57 @@ func TestTheBundlesCarryProvenance(t *testing.T) {
 		{
 			"the step commented out", "      - uses: actions/attest-build-provenance@",
 			"      # - uses: actions/attest-build-provenance@", "",
-			[]string{releaseWorkflow + " and the workflows it calls have no attest-build-provenance step, " +
-				"so no release file carries provenance"},
+			unattested("goreleaser"),
 		},
+		// Another job can be skipped while the release ships, and has no
+		// dist/ of its own.
+		{
+			"the step in a job of its own", "      - uses: actions/attest-build-provenance@",
+			"  attest:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/attest-build-provenance@", "",
+			unattested("goreleaser"),
+		},
+		{
+			"no job running goreleaser", workflow, noGoreleaser, "",
+			[]string{"no job of " + releaseWorkflow + ", or of a workflow it calls, runs goreleaser, so no attest step is held to the files the release publishes"},
+		},
+		// Any job that runs goreleaser is held, whatever its subcommand
+		// and however the line spells it.
+		{"a second job running goreleaser with no subcommand", registry, job("snapshot", runClean) + registry, "", unattested("snapshot")},
+		{
+			"a second job running goreleaser behind a variable", registry,
+			job("snapshot", "      - run: GORELEASER_CURRENT_TAG=v1.0.0 goreleaser release\n") + registry, "", unattested("snapshot"),
+		},
+		{
+			"a second job running goreleaser by its path", registry,
+			job("snapshot", "      - run: /usr/local/bin/goreleaser release\n") + registry, "", unattested("snapshot"),
+		},
+		{
+			"a second job running goreleaser by its module, as the Makefile does", registry,
+			job("snapshot", "      - run: go run github.com/goreleaser/goreleaser/v2@v2.18.1 release --clean\n") + registry, "", unattested("snapshot"),
+		},
+		{"a second job checking with goreleaser-action", registry, job("check", actionCheck) + registry, "", unattested("check")},
+		{
+			"jobs running goreleaser either way, named in file order", registry,
+			job("snapshot", runClean) + job("check", actionCheck) + job("nightly", runClean) + registry, "",
+			slices.Concat(unattested("snapshot"), unattested("check"), unattested("nightly")),
+		},
+		{
+			"no attestations: write", "      attestations: write\n", "", "",
+			[]string{releaseWorkflow + ": job goreleaser attests without attestations: write," + unscoped},
+		},
+		{
+			"no id-token: write", "      id-token: write\n", "", "",
+			[]string{releaseWorkflow + ": job goreleaser attests without id-token: write," + unscoped},
+		},
+		// A job with no permissions takes the workflow's, which write neither.
+		{
+			"no permissions in the job", workflow, strings.Replace(actionRelease, jobPerms, "", 1), "",
+			[]string{
+				releaseWorkflow + ": job goreleaser attests without id-token: write," + unscoped,
+				releaseWorkflow + ": job goreleaser attests without attestations: write," + unscoped,
+			},
+		},
+		{"the job's token writing every scope", workflow, strings.Replace(actionRelease, jobPerms, "    permissions: write-all\n", 1), "", nil},
 		{
 			"no archive formats", "", "", strings.Replace(cfg, "    formats: [tar.gz]\n", "", 1),
 			[]string{"archives.formats is not set, so nothing holds the subject-path to the archives"},
@@ -994,22 +1117,6 @@ func TestTheBundlesCarryProvenance(t *testing.T) {
 				t.Errorf("problems:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(tc.want, "\n  "))
 			}
 		})
-	}
-}
-
-// The attestation is read from release.yml and the workflows it calls, so
-// a workflow it calls that is not there is a release that cannot run.
-func TestTheReleaseWorkflowsAreReadWhole(t *testing.T) {
-	root := copiedRoot(t)
-	if err := os.Remove(filepath.Join(root, filepath.FromSlash(fxPublish))); err != nil {
-		t.Fatal(err)
-	}
-	_, problems, err := committedManifest(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(problems) != 1 || !strings.Contains(problems[0], "publish-mcp.yml") {
-		t.Errorf("problems = %q, want the one naming publish-mcp.yml, which release.yml calls", problems)
 	}
 }
 

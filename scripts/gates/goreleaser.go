@@ -51,11 +51,17 @@ const (
 	goreleaserWord
 )
 
+// goreleaserChecked is the goreleaser version whose source the reader's
+// key paths and template rule are checked against. The pins gate holds it
+// to the version release.yml runs.
+const goreleaserChecked = "v2.18.1"
+
 // goreleaserKeys are, by key path, the keys whose values the release
 // runs, and the keys above them: a hook, as a string or its cmd:, a
 // publisher's cmd, and the cmd and args of a sign or an SBOM, as
 // goreleaser v2.18.1 reads them
-// (https://github.com/goreleaser/goreleaser/blob/v2.18.1/pkg/config/config.go).
+// (https://github.com/goreleaser/goreleaser/blob/v2.18.1/pkg/config/config.go;
+// a hook's string forms at marshaler.go#L31-L45 and #L65-L80 there).
 var goreleaserKeys = func() map[string]goreleaserRole {
 	keys := map[string]goreleaserRole{}
 	add := func(role goreleaserRole, paths ...string) {
@@ -110,6 +116,7 @@ type goreleaserParser struct {
 // parseGoreleaser reads the goreleaser config text.
 func parseGoreleaser(text string) goreleaserFile {
 	var p goreleaserParser
+	yamlStrayBreaks(text, p.refuse)
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	for i := 0; i < len(lines); i++ {
 		if t := strings.TrimSpace(lines[i]); t != "" && !strings.HasPrefix(t, "#") && t != "---" {
@@ -119,7 +126,13 @@ func parseGoreleaser(text string) goreleaserFile {
 	for _, v := range p.g.values {
 		switch goreleaserKeys[v.keys] {
 		case goreleaserLine:
-			if text := goreleaserCommand(strings.ReplaceAll(v.value, "\n", " ")); text != "" {
+			line := strings.ReplaceAll(v.value, "\n", " ")
+			if !goreleaserWrapped(line) {
+				p.refuse(v.line, "%s: a template control action; goreleaser runs one branch, and the gates read only "+
+					"a command wrapped whole in one {{ if }}...{{ end }}", v.keys[strings.LastIndexByte(v.keys, '.')+1:])
+				continue
+			}
+			if text := goreleaserCommand(line); text != "" {
 				p.g.runs = append(p.g.runs, workflowRun{line: v.line, text: text})
 			}
 		case goreleaserWord:
@@ -156,21 +169,8 @@ func (p *goreleaserParser) line(lines []string, i int, trimmed string) int {
 		return i
 	}
 	m := workflowKeyLine.FindStringSubmatch(trimmed)
-	switch {
-	case m == nil && !item:
-		name := last
-		if name == "" && len(p.stack) > 0 {
-			name = p.stack[len(p.stack)-1].key
-		}
-		p.refuse(n, "%s: a value continued on the next line; write it on one line or as a block scalar", cmp.Or(name, "a line"))
-		return i
-	case m == nil && (rest == "" || rest == "-" || strings.HasPrefix(rest, "- ")):
-		p.refuse(n, "%s: an empty item or an item holding a sequence; write the item's value on its dash",
-			p.stack[len(p.stack)-1].key)
-		return i
-	case m == nil:
-		// A scalar item, the value of the key it is an item of.
-		return p.value(lines, i, p.keys(), rest, col)
+	if m == nil {
+		return p.notKey(lines, i, item, rest, last, col)
 	}
 	key, raw := m[2], strings.TrimSpace(m[3])
 	if key == "<<" {
@@ -183,6 +183,26 @@ func (p *goreleaserParser) line(lines []string, i int, trimmed string) int {
 		return i
 	}
 	return p.value(lines, i, append(p.keys(), key), raw, keyCol)
+}
+
+// notKey reads lines[i], a line holding no key, with rest the line after
+// an item's dash and last the key of a value read on the line before: a
+// scalar item, the value of the key it is an item of, or a line refused.
+func (p *goreleaserParser) notKey(lines []string, i int, item bool, rest, last string, col int) int {
+	switch {
+	case !item:
+		name := last
+		if name == "" && len(p.stack) > 0 {
+			name = p.stack[len(p.stack)-1].key
+		}
+		p.refuse(i+1, "%s: a value continued on the next line; write it on one line or as a block scalar", cmp.Or(name, "a line"))
+	case rest == "" || rest == "-" || strings.HasPrefix(rest, "- "):
+		p.refuse(i+1, "%s: an empty item or an item holding a sequence; write the item's value on its dash",
+			p.stack[len(p.stack)-1].key)
+	default:
+		return p.value(lines, i, p.keys(), rest, col)
+	}
+	return i
 }
 
 // value reads raw, the value on line i of the key path keys, and returns
@@ -264,15 +284,73 @@ func (p *goreleaserParser) refuse(n int, format string, a ...any) {
 }
 
 // goreleaserTemplate is a template action, which goreleaser renders before
-// it splits a hook into words
-// (https://github.com/goreleaser/goreleaser/blob/v2.18.1/internal/pipe/universalbinary/universalbinary.go#L108-L114).
+// it splits a command line into words
+// (https://github.com/goreleaser/goreleaser/blob/v2.18.1/internal/pipe/universalbinary/universalbinary.go#L108-L114;
+// a before hook at internal/pipe/before/before.go#L28-L32, a build's at
+// internal/pipe/build/build.go#L194-L202 and a publisher's at
+// internal/exec/exec.go#L189-L197 there).
 var goreleaserTemplate = regexp.MustCompile(`\{\{.*?\}\}`)
 
-// goreleaserCommand is a command with each template action read as a word
-// break, so `{{ if not .Prerelease }}go run x{{ end }}` runs go. What an
-// action renders, such as the version, is no word a gate reads.
+// goreleaserControl is an action that renders no text of its own: a
+// wrapper's if, else, range, with or end, a break, a continue or a
+// comment (https://pkg.go.dev/text/template#hdr-Actions).
+var goreleaserControl = regexp.MustCompile(`^\{\{-?\s*(?:(if|else|end|range|with|break|continue)\b|/\*)`)
+
+// goreleaserWrapped reports whether a command line's control actions are
+// none, or one if or with that opens the line and the end that closes it.
+// goreleaserCommand reads every branch as one line, and goreleaser runs
+// only the branch it renders, so any other control action hides what runs.
+func goreleaserWrapped(line string) bool {
+	line = strings.TrimSpace(line)
+	opened := false
+	for _, at := range goreleaserTemplate.FindAllStringIndex(line, -1) {
+		m := goreleaserControl.FindStringSubmatch(line[at[0]:at[1]])
+		switch {
+		case m == nil:
+		case !opened && at[0] == 0 && (m[1] == "if" || m[1] == "with"):
+			opened = true
+		case opened && at[1] == len(line) && m[1] == "end":
+			return true
+		default:
+			return false
+		}
+	}
+	return !opened
+}
+
+// goreleaserPlaceholder is the word an action that is a word of its own
+// reads as.
+const goreleaserPlaceholder = "{{}}"
+
+// goreleaserCommand is a command with its template actions rendered
+// without a context, its words kept whole. A wrapper's actions disappear,
+// so `{{ if not .Prerelease }}go run x{{ end }}` runs go. Other actions in
+// a row that is a word of its own read as goreleaserPlaceholder, and
+// inside a word as nothing: what they render is no word a gate reads.
 func goreleaserCommand(text string) string {
-	return strings.TrimSpace(goreleaserTemplate.ReplaceAllString(text, " "))
+	text = goreleaserTemplate.ReplaceAllStringFunc(text, func(action string) string {
+		if goreleaserControl.MatchString(action) {
+			return ""
+		}
+		return action
+	})
+	var b strings.Builder
+	last := 0
+	actions := goreleaserTemplate.FindAllStringIndex(text, -1)
+	for i := 0; i < len(actions); i++ {
+		start, end := actions[i][0], actions[i][1]
+		for i+1 < len(actions) && actions[i+1][0] == end {
+			i++
+			end = actions[i][1]
+		}
+		b.WriteString(text[last:start])
+		if workflowBlankAt(text, start-1) && workflowBlankAt(text, end) {
+			b.WriteString(goreleaserPlaceholder)
+		}
+		last = end
+	}
+	b.WriteString(text[last:])
+	return strings.TrimSpace(b.String())
 }
 
 // at is every value at one of the key paths, in file order.
@@ -328,43 +406,8 @@ func (g goreleaserFile) builds() [][]goreleaserValue {
 func goreleaserMatrix(g goreleaserFile) ([]string, error) {
 	var pairs, problems []string
 	for _, build := range g.builds() {
-		var oses, arches []string
-		// ignored is each ignore entry's goos and goarch, by entry.
-		ignored := map[int][2]string{}
-		for _, v := range build {
-			switch {
-			case v.keys == "builds.goos":
-				oses = append(oses, v.value)
-			case v.keys == "builds.goarch":
-				arches = append(arches, v.value)
-			case v.keys == "builds.ignore.goos" && len(v.items) > 1:
-				ignored[v.items[1]] = [2]string{v.value, ignored[v.items[1]][1]}
-			case v.keys == "builds.ignore.goarch" && len(v.items) > 1:
-				ignored[v.items[1]] = [2]string{ignored[v.items[1]][0], v.value}
-			case v.keys == "builds.targets" || strings.HasPrefix(v.keys, "builds.ignore."):
-				problems = append(problems, fmt.Sprintf("%s:%d: %s is set, which this gate does not read; "+
-					"list the build's goos and goarch, and ignore a pair by its goos and goarch", parityGoreleaser, v.line, v.keys))
-			}
-		}
-		if len(oses) == 0 || len(arches) == 0 {
-			problems = append(problems, fmt.Sprintf("%s:%d: a build that leaves goos or goarch to goreleaser's default, "+
-				"which this gate does not read", parityGoreleaser, build[0].line))
-		}
-		skip := map[string]bool{}
-		for _, pair := range ignored {
-			if pair[0] == "" || pair[1] == "" {
-				problems = append(problems, fmt.Sprintf("%s:%d: an ignore entry without both goos and goarch, "+
-					"which this gate does not read", parityGoreleaser, build[0].line))
-			}
-			skip[pair[0]+"-"+pair[1]] = true
-		}
-		for _, o := range oses {
-			for _, a := range arches {
-				if !skip[o+"-"+a] {
-					pairs = append(pairs, o+"-"+a)
-				}
-			}
-		}
+		built, refused := goreleaserBuildPairs(build)
+		pairs, problems = append(pairs, built...), append(problems, refused...)
 	}
 	if len(problems) == 0 && len(pairs) == 0 {
 		problems = append(problems, parityGoreleaser+" builds no goos-goarch pair; this check is reading the wrong shape")
@@ -375,4 +418,53 @@ func goreleaserMatrix(g goreleaserFile) ([]string, error) {
 	}
 	slices.Sort(pairs)
 	return slices.Compact(pairs), nil
+}
+
+// goreleaserBuildPairs is the goos-goarch pairs one build's values build,
+// and what in them goreleaserMatrix refuses.
+func goreleaserBuildPairs(build []goreleaserValue) (pairs, problems []string) {
+	var oses, arches []string
+	// ignored is each ignore entry's goos and goarch, by entry.
+	ignored := map[int][2]string{}
+	for _, v := range build {
+		switch {
+		case v.keys == "builds.goos":
+			oses = append(oses, v.value)
+		case v.keys == "builds.goarch":
+			arches = append(arches, v.value)
+		case v.keys == "builds.ignore.goos" && len(v.items) > 1:
+			ignored[v.items[1]] = [2]string{v.value, ignored[v.items[1]][1]}
+		case v.keys == "builds.ignore.goarch" && len(v.items) > 1:
+			ignored[v.items[1]] = [2]string{ignored[v.items[1]][0], v.value}
+		case v.keys == "builds.targets" || strings.HasPrefix(v.keys, "builds.ignore."):
+			problems = append(problems, fmt.Sprintf("%s:%d: %s is set, which this gate does not read; "+
+				"list the build's goos and goarch, and ignore a pair by its goos and goarch", parityGoreleaser, v.line, v.keys))
+		}
+	}
+	if len(oses) == 0 || len(arches) == 0 {
+		problems = append(problems, fmt.Sprintf("%s:%d: a build that leaves goos or goarch to goreleaser's default, "+
+			"which this gate does not read", parityGoreleaser, build[0].line))
+	}
+	skip := map[string]bool{}
+	for _, pair := range ignored {
+		if pair[0] == "" || pair[1] == "" {
+			problems = append(problems, fmt.Sprintf("%s:%d: an ignore entry without both goos and goarch, "+
+				"which this gate does not read", parityGoreleaser, build[0].line))
+		}
+		skip[pair[0]+"-"+pair[1]] = true
+	}
+	return goreleaserCross(oses, arches, skip), problems
+}
+
+// goreleaserCross is each goos by each goarch, less the pairs skip holds.
+func goreleaserCross(oses, arches []string, skip map[string]bool) []string {
+	var pairs []string
+	for _, o := range oses {
+		for _, a := range arches {
+			if !skip[o+"-"+a] {
+				pairs = append(pairs, o+"-"+a)
+			}
+		}
+	}
+	return pairs
 }

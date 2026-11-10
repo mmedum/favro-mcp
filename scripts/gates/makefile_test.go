@@ -92,6 +92,9 @@ func TestMakefileReadsAsMakeDoes(t *testing.T) {
 	if got := mk.refs("$(K) $(Z)"); !maps.Equal(got, map[string]bool{"K": true, "A": true, "G": true, "Z": true}) {
 		t.Errorf("refs = %v, want K, A, G and Z", got)
 	}
+	if mk.refused != nil {
+		t.Errorf("refused = %q, want nothing: every line is one the reader reads", mk.refused)
+	}
 	// A special variable that steers only make is recorded apart, so it is
 	// neither a variable a gate expands nor a target.
 	if want := map[string]string{".DEFAULT_GOAL": "help"}; !maps.Equal(mk.special, want) {
@@ -100,17 +103,16 @@ func TestMakefileReadsAsMakeDoes(t *testing.T) {
 	if _, ok := mk.targets[".DEFAULT_GOAL"]; ok {
 		t.Error(".DEFAULT_GOAL was read as a target")
 	}
-	if mk.refused != nil {
-		t.Errorf("refused = %q, want nothing: every line is one the reader reads", mk.refused)
-	}
 }
 
 // := expands its value once, where it is set, with the variables set so
-// far: one set later changes nothing, one never set is empty, and one the
-// environment sets, such as PATH, stays as written. The value is final, so
+// far: one no line sets, such as PATH, stays as written, whatever this
+// host's environment holds. The value is final, so
 // PATH := $(GOBIN):$(PATH) names PATH once
 // (https://www.gnu.org/software/make/manual/html_node/Simple-Assignment.html).
 func TestMakefileExpandsASimpleVariableWhereItIsSet(t *testing.T) {
+	// The host's environment changes nothing: MAKEFILE_TEST_UNSET is set by
+	// neither it nor a line of the file.
 	t.Setenv("PATH", "/usr/bin")
 	t.Setenv("MAKEFILE_TEST_UNSET", "")
 	if err := os.Unsetenv("MAKEFILE_TEST_UNSET"); err != nil {
@@ -125,7 +127,7 @@ func TestMakefileExpandsASimpleVariableWhereItIsSet(t *testing.T) {
 		"GO ?= go",
 		"GOBIN := $(shell $(GO) env GOPATH)/bin",
 		"export PATH := $(GOBIN):$(PATH)",
-		"D := $$HOME $(L)",
+		"D := $$HOME",
 		"L = late",
 		"S := one",
 		"S += $(A)",
@@ -137,11 +139,11 @@ func TestMakefileExpandsASimpleVariableWhereItIsSet(t *testing.T) {
 	))
 	for ref, want := range map[string]string{
 		"$(B)":     "x@v1",
-		"$(C)":     "x@v1 end",
+		"$(C)":     "x@v1 $(MAKEFILE_TEST_UNSET)end",
 		"$(R)":     "z@v3",
 		"$(GOBIN)": "$(shell go env GOPATH)/bin",
 		"$(PATH)":  "$(shell go env GOPATH)/bin:$(PATH)",
-		"$(D)":     "$HOME ",
+		"$(D)":     "$HOME",
 		"$(S)":     "one y@v2",
 		"$(P)":     "late",
 	} {
@@ -149,12 +151,46 @@ func TestMakefileExpandsASimpleVariableWhereItIsSet(t *testing.T) {
 			t.Errorf("expand(%s) = %q, want %q", ref, got, want)
 		}
 	}
-	if got := mk.recipe("run"); !slices.Equal(got, []string{"echo x@v1 z@v3 $(shell go env GOPATH)/bin:$(PATH) $HOME "}) {
+	if got := mk.recipe("run"); !slices.Equal(got, []string{"echo x@v1 z@v3 $(shell go env GOPATH)/bin:$(PATH) $HOME"}) {
 		t.Errorf("run's recipe = %q", got)
+	}
+	if mk.refused != nil {
+		t.Errorf("refused = %q, want nothing", mk.refused)
 	}
 	// A simple variable names what its value named when it was set.
 	if got := mk.refs("$(B)"); !maps.Equal(got, map[string]bool{"B": true, "A": true}) {
 		t.Errorf("refs($(B)) = %v, want B and A", got)
+	}
+}
+
+// A := naming a variable no line has set yet reads the host's environment
+// there, or nothing, so a line that sets it later is refused by name: the
+// reader reads no environment, and make would not read the later value.
+// A variable only the environment sets, and a := naming the variable it
+// sets, read the same on every host.
+func TestMakefileRefusesASimpleVariableNamingOneSetLater(t *testing.T) {
+	t.Setenv("L", "from this host")
+	mk := parseMakefile(textLines(
+		"D := $$HOME $(L)",
+		"E := $(L) $(R)",
+		"L = late",
+		"L += later",
+		"R ?= r",
+		"export PATH := $(GOBIN):$(PATH)",
+		"GOBIN := $(HOME)/bin",
+		"F := $(MAKEFILE_TEST_UNSET)",
+	))
+	want := []string{
+		"Makefile:1: a := names L, which line 3 sets after it, so make expands it from the environment or empty there; set L first",
+		"Makefile:2: a := names R, which line 5 sets after it, so make expands it from the environment or empty there; set R first",
+		"Makefile:6: a := names GOBIN, which line 7 sets after it, so make expands it from the environment or empty there; set GOBIN first",
+	}
+	if !slices.Equal(mk.refused, want) {
+		t.Errorf("refused:\n  %s\nwant:\n  %s", strings.Join(mk.refused, "\n  "), strings.Join(want, "\n  "))
+	}
+	// What it refuses it reads as written, never as this host's value.
+	if got := mk.expand("$(D)"); got != "$HOME $(L)" {
+		t.Errorf("expand($(D)) = %q, want %q", got, "$HOME $(L)")
 	}
 }
 

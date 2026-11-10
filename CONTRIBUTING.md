@@ -113,8 +113,8 @@ These are worth knowing before they fail on you:
 - **`make staleness`** holds `docs/TOOLS.md`'s tool table to the binary
   both ways, the README's permission rules and plugin section, and
   `docs/configuration.md` to every setting the code reads (D-78). A
-  commit since the newest release tag HEAD reaches that changes what the
-  binary is built from needs a CHANGELOG entry.
+  commit since the newest release tag HEAD reaches that changes what
+  users get, as D-78 lists it, needs a CHANGELOG entry.
 - **`make live-cover`** fails when a tool or option has no live step, or
   no waiver in `testdata/live-cover-waived.tsv` (D-74).
 

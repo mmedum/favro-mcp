@@ -100,6 +100,10 @@ func TestIsolatedGitRunsNoAutomaticMaintenance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("git commit: %v\n%s", err, out)
 	}
+	// Before git 2.29 a commit starts git gc --auto itself, in the
+	// foreground, and gc.auto=0 returns it before it can detach
+	// (https://github.com/git/git/blob/v2.28.0/builtin/gc.c#L343):
+	// the pack count below holds that, so the trace may show it.
 	if trace := string(out); !strings.Contains(trace, "built-in: git commit") {
 		t.Fatalf("GIT_TRACE=1 git commit printed %q, which traces no commit", trace)
 	} else if strings.Contains(trace, "git maintenance run") {

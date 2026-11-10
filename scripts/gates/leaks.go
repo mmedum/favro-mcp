@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -79,8 +80,10 @@ var (
 
 	// A link out of the Favro app, which carries ids in its path. The
 	// bare host is allowed and has to be: the client's base URL names
-	// it, and so does every link in the README.
-	appURL = regexp.MustCompile(`\bfavro\.com/(?:organization|widget|collection|card|w|c)/[A-Za-z0-9_\-]{6,}`)
+	// it, and so does every link in the README. The link, group 1, starts
+	// where a host can, so evil-favro.com is not Favro's; appLink reads
+	// the host from group 2.
+	appURL = regexp.MustCompile(`(?i)(?:^|[^\w.\-])((?:[\w\-]+\.)*(favro\.com[^/\s]*)/(?:organization|widget|collection|card|w|c)/[A-Za-z0-9_\-]{6,})`)
 
 	// A human card reference — the "BSC-123" form people paste out of
 	// the UI. Its shape is shared with every standards-body citation in
@@ -444,7 +447,7 @@ func findLeaksAllowing(text string, addresses map[string]string) []string {
 			out = append(out, "an API token: "+config.EnvAPIToken+" = "+clipValue(m[1]))
 		}
 	}
-	if m := appURL.FindString(text); m != "" {
+	if m := appLink(text); m != "" {
 		out = append(out, "a link into the Favro app, which carries ids in its path: "+m)
 	}
 	for _, m := range cardRef.FindAllStringSubmatch(text, -1) {
@@ -454,6 +457,19 @@ func findLeaksAllowing(text string, addresses map[string]string) []string {
 		}
 	}
 	return out
+}
+
+// appLink is the first link into the Favro app in text, or "". A host
+// is compared as safeDomain compares one, so case, a trailing dot and a
+// port hide nothing, and a host that does not parse is held to the rule.
+func appLink(text string) string {
+	for _, m := range appURL.FindAllStringSubmatch(text, -1) {
+		u, err := url.Parse("//" + m[2])
+		if err != nil || strings.ToLower(strings.TrimSuffix(u.Hostname(), ".")) == "favro.com" {
+			return m[1]
+		}
+	}
+	return ""
 }
 
 func safeDomain(domain string) bool {

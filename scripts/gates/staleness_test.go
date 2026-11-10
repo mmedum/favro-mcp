@@ -303,11 +303,11 @@ const (
 	clNextEmpty  = "## [0.9.1] - 2026-02-01\n\n"
 	clUnreleased = "# Changelog\n\n## [Unreleased]\n\n"
 	clWritten    = clUnreleased + "### Added\n\n- A second tool.\n\n"
-	clEmpty      = "the binary's source changed and CHANGELOG.md [Unreleased] has no entry; " +
+	clEmpty      = "what users get changed and CHANGELOG.md [Unreleased] has no entry; " +
 		"write one under [Unreleased], or under the version heading this release tags"
 )
 
-// The CHANGELOG rule: a change to the binary's source is written up under
+// The CHANGELOG rule: a change to what users get is written up under
 // [Unreleased], or, on the release commit before its tag, under the
 // version that commit releases, a prerelease's included. A heading in a
 // fence is an example and cuts no release.
@@ -333,7 +333,7 @@ func TestTheChangelogRule(t *testing.T) {
 		{
 			"a release commit with nothing under its version", clUnreleased + clNextEmpty + clReleased, true,
 			[]string{"0.9.0"},
-			[]string{"the binary's source changed and CHANGELOG.md [0.9.1], the untagged version this commit " +
+			[]string{"what users get changed and CHANGELOG.md [0.9.1], the untagged version this commit " +
 				"releases, has no entry; write one under [Unreleased], or under the version heading this release tags"},
 		},
 		{
@@ -354,7 +354,7 @@ func TestTheChangelogRule(t *testing.T) {
 			[]string{clEmpty},
 		},
 		{"no [Unreleased] section", "# Changelog\n\n" + clReleased, true, []string{"0.9.0"}, []string{clEmpty}},
-		{"no change to the binary's source", clUnreleased + clReleased, false, []string{"0.9.0"}, nil},
+		{"no change to what users get", clUnreleased + clReleased, false, []string{"0.9.0"}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -450,11 +450,11 @@ func stalenessChangelog(t *testing.T, dir string) ([]string, error) {
 	return checkChangelog(dir, string(text))
 }
 
-// A committed change to what the binary is built from needs an entry: a
-// package it imports, a file one embeds, and go.mod but its require and
-// tool lines. A test, a fixture, a package it does not import and a
-// dependency bump do not, and nor does what is not committed, which CI
-// never sees.
+// A committed change to what users get needs an entry: a package the
+// binary imports, a file one embeds, a bundle's manifest, and go.mod but
+// its require and tool lines. A test, a fixture, a package it does not
+// import and a dependency bump do not, and nor does what is not
+// committed, which CI never sees.
 func TestTheChangelogRuleCountsWhatShips(t *testing.T) { //nolint:tparallel // its fixture sets the git isolation env, which a parallel test may not
 	const goMod = "go.mod"
 	base := stalenessRepo(t)
@@ -489,7 +489,18 @@ func TestTheChangelogRuleCountsWhatShips(t *testing.T) { //nolint:tparallel // i
 		{"a tool( block", map[string]string{goMod: gomod + "\ntool(\n\texample.com/dep\n)\n"}, nil, false},
 		{"a test", map[string]string{"internal/a/a_test.go": "package a\n\n// changed\n"}, nil, false},
 		{"a fixture", map[string]string{"internal/a/testdata/x": "y\n"}, nil, false},
-		{"a file beside a package that it does not embed", map[string]string{"internal/a/notes.md": "more\n"}, nil, false},
+		// The go command builds a package from assembly, a .syso and C as
+		// well as Go, so any file of a package directory but a test counts.
+		{"a package's assembly", map[string]string{"internal/a/b_amd64.s": "TEXT ·f(SB),$0\n"}, nil, true},
+		{"a package's .syso", map[string]string{"internal/a/res.syso": "x\n"}, nil, true},
+		{"a file beside a package that it does not embed", map[string]string{"internal/a/notes.md": "more\n"}, nil, true},
+		{"a file under a package that is no package", map[string]string{"internal/a/notes/x.md": "more\n"}, nil, false},
+		{"a fixture's assembly", map[string]string{"internal/a/testdata/b_amd64.s": "x\n"}, nil, false},
+		// A client reads a bundle's manifest to run the server.
+		{"the .mcpb's manifest", map[string]string{mcpbManifestPath: "{}\n"}, nil, true},
+		{"the .plugin's manifest", map[string]string{manifestPath: "{}\n"}, nil, true},
+		{"the .plugin's server config", map[string]string{mcpPath: "{}\n"}, nil, true},
+		{"the registry entry, which the release writes", map[string]string{"packaging/registry/server.json": "{}\n"}, nil, false},
 		{"a package the binary does not import", map[string]string{"internal/unused/u.go": "package unused\n\n// changed\n"}, nil, false},
 		// A dependency's package sits at a path of its own module's, never this one's.
 		{"a package at the path of a dependency's", map[string]string{"tools.go": "package fixture\n\n// changed\n"}, nil, false},
@@ -622,7 +633,7 @@ func TestTheChangelogRuleNeedsTheBinary(t *testing.T) {
 
 // Outside a git checkout the CHANGELOG rule has no tag to measure from.
 // It reached no verdict, so it says so and exits 2, as the docs gate does,
-// and a git that cannot answer is never "source changed".
+// and a git that cannot answer is never "what users get changed".
 func TestTheChangelogRuleNeedsAGitCheckout(t *testing.T) {
 	isolateGit(t)
 	dir := t.TempDir()

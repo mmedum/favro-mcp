@@ -379,7 +379,7 @@ switch off by default (D-88, D-89, D-90, D-91). Releasing is in
 | D-66 | --dump-schemas lists the whole surface, whatever the flags, as an in-memory client session sees it | accepted | TestDumpSchemasListsEverythingAClientIsTold, TestDumpSchemasNeedsNoCredentials |
 | D-67 | Webhooks are listed and deleted, never registered | accepted | api-coverage, TestDeleteWebhookIsGatedAndDryRunnable, TestListWebhooksDecodesABareArray |
 | D-68 | Every rule adopted is a test that derives its list from the code and asserts a floor on how much it read | accepted | TestEveryCommandHasATest, review |
-| D-69 | make check and CI run the same set, matched by what each recipe runs | accepted | parity, TestParityCatchesEachDivergence, TestParityAgainstThisRepository, TestParityRefusesToCompareNothing, TestParityHoldsTheTreesTagsToAVetPass, TestParityRefusesACommandWhoseFailureMakeIgnores |
+| D-69 | make check and CI run the same set, matched by what each recipe runs | accepted | parity, TestParityCatchesEachDivergence, TestParityAgainstThisRepository, TestParityRefusesToCompareNothing, TestParityHoldsTheTreesTagsToAVetPass, TestParityRefusesACommandWhoseFailureMakeIgnores, TestParityHoldsMakeCheckToWhatAPushRuns |
 | D-70 | Unit tests use only Go's standard library, against httptest fakes, with the race detector | accepted | depguard, review |
 | D-71 | Every package holds an 80% statement floor of its own | accepted | cover, TestEveryExemptionNamesARealPackage, TestReadProfileRefusesAnEmptyRun |
 | D-72 | Every endpoint Favro documents and every field of a modeled type has a verdict, held offline to a snapshot refetched by hand | accepted | api-coverage, api-fields, TestAPICoverageAgainstThisRepository, TestCheckCoverageReportsAnUndecidedEndpoint, TestCheckFieldsReportsAStaleWaiver |
@@ -390,7 +390,7 @@ switch off by default (D-88, D-89, D-90, D-91). Releasing is in
 | D-77 | The eval session reaches this server's tools and nothing else, and none that deletes | accepted | review |
 | D-78 | The documentation is held to the code: tool names, counts, settings, gates, the package map and paths | accepted | staleness, TestStalenessAgainstThisRepository, TestToolsDocumentedReadsBothDirections, TestDestructiveCountMatchesTheBinary, TestEveryEnvNameReachesBothDocuments, TestTheChangelogRule, TestTheChangelogRuleCountsWhatShips, TestStalenessRunsEveryOtherCheckWithoutARelease |
 | D-79 | The toolchain is the one go.mod names, everywhere; there is no N-1 matrix entry | accepted | review |
-| D-80 | Every action is pinned to a full SHA, every tool to one exact version, and every workflow pins its shell | accepted | pins, TestPinsReadsTheWorkflows, TestExactSemverRejectsWhatCanMoveUnderYou, TestPinsShellReadsDepth, TestUnpinnedTools, TestPinsNamesEachProblem |
+| D-80 | Every action is pinned to a full SHA, every tool to one exact version, and every workflow pins its shell | accepted | pins, TestPinsReadsTheWorkflows, TestExactSemverRejectsWhatCanMoveUnderYou, TestPinsShellReadsDepth, TestUnpinnedTools, TestPinsNamesEachProblem, TestReadersRefuseALineBreakTheyDoNotRead |
 | D-81 | make check scans for vulnerabilities in source mode, licenses against an allowlist and secrets with gitleaks, as CI does | accepted | vuln, licenses, secrets, parity, TestTheHookScansWithTheMakefilesGitleaks |
 | D-82 | CI runs on Linux, macOS and Windows | accepted | review |
 | D-83 | A tag is the whole release, and its notes are that version's CHANGELOG section | accepted | release-notes, TestChangelogSectionTakesOneVersion, TestASectionEndsOnlyAtTheLinkFooter, TestReleaseNotesReadTheFence, TestReleaseNotesRefusesATagThatIsNotAVersion |
@@ -1948,10 +1948,11 @@ from the code, such as one about prose, rests on review (D-63).
 `make check` and CI run the same set of checks. The `parity` gate holds
 every command `make check` runs to a `ci.yml` command in the same shell
 words, or to the action that stands in for it, and every go command CI
-runs to one `make check` runs. Each gate runs in the pipeline its
-dispatch entry records, with the same arguments on both sides. The
-release is `.goreleaser.yaml`, `release.yml` and the local workflows it
-calls.
+runs to one `make check` runs. CI's side is the jobs a push to main
+runs: the `pr` job runs on a pull request alone, so a check only it runs
+is one main never runs. Each gate runs in the pipeline its dispatch
+entry records, with the same arguments on both sides. The release is
+`.goreleaser.yaml`, `release.yml` and the local workflows it calls.
 
 They are two lists in two files, and an edit reaches one of them.
 Deleting a scan from CI would leave `make check` calling itself
@@ -2150,8 +2151,12 @@ ways, and any prose count of the destructive tools to the binary. It
 holds every `FAVRO_*` variable the source reads to
 [configuration.md](configuration.md) and the README, and the CHANGELOG
 to its rules. A commit since the newest release tag HEAD reaches that
-changes what the binary is built from needs an entry; with no such tag
-the rule says it could not run, and the other checks still run.
+changes what users get needs an entry. That is a file other than a
+test in a package the binary imports, a file one embeds, a bundle's
+manifest, or `go.mod` outside its require and tool lines. The README,
+LICENSE and NOTICE the bundles carry are docs, and the release writes
+the registry entry, so none of them counts. With no such tag the rule
+says it could not run, and the other checks still run.
 
 A document a person copies into a client's configuration is an input,
 and a number in prose is a claim about a list beside it. Correcting a
@@ -2198,11 +2203,29 @@ SHA is the only immutable reference to an action
 A floating version or `@latest` runs whatever was published last, in the
 job that signs the release. A shell left to the runner differs between
 Windows and the others. The `pins` gate reads the workflows, the
-`Makefile`, the commands `.goreleaser.yaml` runs and the git hook, and
-refuses an action it cannot classify and a container image with no
-digest. A known tool's name as a word of a recipe or hook line, other
-than the module a `go run` names, runs whatever version the PATH holds
-wherever it sits on the line, so the gate refuses it too.
+`Makefile`, the commands `.goreleaser.yaml` runs, the git hook and the
+string literals of the Go under `scripts/`, and refuses an action it
+cannot classify and a container image with no digest. A known tool's
+name as a word of a recipe or hook line, other than the module a
+`go run` names, runs whatever version the PATH holds wherever it sits on
+the line, so the gate refuses it too.
+
+A known tool's module@version on any line of a workflow or the
+`Makefile` is a pin, held to the tool's one version. Every version input
+of a step or a reusable call is held, its name read in upper case as the
+runner reads it. An `env:` version key is read in any case. An
+expression is no exact version, except a context passed to this
+repository's own reusable workflow, which holds the input where it uses
+it.
+
+setup-go reads `go-version` before `go-version-file`, so one beside
+`go.mod` is refused. The `.goreleaser.yaml` reader's key paths are
+checked against one goreleaser, and a release that runs another fails
+the gate. The readers refuse a line break they read apart from a YAML
+parser or make, such as a lone CR, so a step cannot hide after one.
+goreleaser runs one branch of a template, so the `.goreleaser.yaml`
+reader refuses a command holding a control action other than one
+`{{ if }}` or `{{ with }}` wrapping it whole.
 `TestExactSemverRejectsWhatCanMoveUnderYou` holds what counts as exact.
 
 Rejected: floating major tags and `@latest`.
@@ -2292,9 +2315,14 @@ Keyless signing ties the signature to the workflow's identity, with no
 private key to hold or leak. `mod_timestamp` set to the commit's time
 makes a rebuild byte-identical. The `mcpb` gate holds each of these
 lines, and `TestReleaseWiringIsHeld` fails when one is deleted. It holds
-the attest step in `release.yml` to name the archives, both bundles and
-the checksum file too, each in an entry of its own, which
-`TestTheBundlesCarryProvenance` drives.
+the attest step in `release.yml`, and in the local workflows it calls,
+to name the archives, both bundles and the checksum file too, each in
+an entry of its own, which
+`TestTheBundlesCarryProvenance` drives. The step sits in each job that
+runs goreleaser, through goreleaser-action or a run line, whatever the
+subcommand. That job's token writes `id-token` and `attestations`:
+another job, or a workflow it calls, can be skipped while the release
+ships.
 
 Rejected: a bundle dropped into `dist/` by a hook alone, which ships
 outside the signature.
