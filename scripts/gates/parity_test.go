@@ -164,14 +164,14 @@ func TestParityAgainstThisRepository(t *testing.T) {
 	out.mustSay(t, "gates in check")
 }
 
+// evalsTagged starts the message for a build-tagged file no vet pass builds.
+const evalsTagged = "scripts/evals/main.go builds only with -tags=evals (//go:build evals) and "
+
 // TestParityCatchesEachDivergence is the point of the gate: the two lists
 // live in different files, and whichever one you are editing is the one
 // you remember. Each row is a drift, named.
-func TestParityCatchesEachDivergence(t *testing.T) { //nolint:tparallel // it sets OS, which a parallel test may not
-	// The Makefile reader keeps $(OS) as written where the environment sets
-	// it, which Windows alone does, so every OS reads the rows as Windows.
-	t.Setenv("OS", "Windows_NT")
-	const tagged = "scripts/evals/main.go builds only with -tags=evals (//go:build evals) and "
+func TestParityCatchesEachDivergence(t *testing.T) {
+	t.Parallel()
 	const secrets = "`make secrets` runs \"go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD --config .gitleaks.toml --redact --no-banner .\""
 	stale := "      - name: staleness\n        run: go run ./scripts/gates staleness bin/favro-mcp\n"
 	for _, tc := range []struct {
@@ -184,13 +184,13 @@ func TestParityCatchesEachDivergence(t *testing.T) { //nolint:tparallel // it se
 			replace(fxCI, "      - run: go vet -tags=evals ./...\n", ""),
 		}, want: []string{
 			"`make vet` runs \"go vet -tags=evals ./...\" and ci.yml never does",
-			tagged + "ci.yml vets no pass that builds it; it compiles only on a maintainer's machine",
+			evalsTagged + "ci.yml vets no pass that builds it; it compiles only on a maintainer's machine",
 		}},
 		{name: "make check does not vet the build-tagged code", edits: []docsEdit{
 			replace(fxMakefile, "\t$(GO) vet -tags=evals ./...\n", ""),
 		}, want: []string{
 			".github/workflows/ci.yml:180 runs `go vet -tags=evals ./...` and `make check` does not",
-			tagged + "`make check` vets no pass that builds it; a contributor cannot see it break",
+			evalsTagged + "`make check` vets no pass that builds it; a contributor cannot see it break",
 		}},
 		{name: "make check does not scan for vulnerabilities", remove: "vuln", want: []string{
 			".github/workflows/ci.yml:194 runs `go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` and `make check` does not",
@@ -309,6 +309,14 @@ func TestParityCatchesEachDivergence(t *testing.T) { //nolint:tparallel // it se
 				"-o bin/favro-mcp$(if $(filter Windows_NT,$(OS)),.exe,) ./cmd/favro-mcp\" and ci.yml never does",
 			"`make build` runs \"mkdir -p bin\" and ci.yml never does",
 		}},
+		// A gate call does not hide the command its pipeline runs beside it,
+		// such as a binary whose output the gate would read.
+		{name: "a recipe that pipes a binary into a gate", edits: []docsEdit{
+			replace(fxMakefile, "\t@$(GO) run ./scripts/gates smoke $(BIN)\n", "\t@$(BIN) --version | $(GO) run ./scripts/gates smoke $(BIN)\n"),
+		}, want: []string{
+			// The words as the shell reader splits them, a $( ending each.
+			"`make smoke` runs \"bin/favro-mcp $( if $( filter Windows_NT, $( OS ) ) ,.exe, ) --version\" and ci.yml never does",
+		}},
 		{name: "a manual gate in make check", edits: []docsEdit{
 			replace(fxMakefile, "\t@$(GO) run ./scripts/gates docs\n", "\t@$(GO) run ./scripts/gates docs\n\t$(GO) run ./scripts/gates api-diff\n"),
 		}, want: []string{"the api-diff gate is manual by the dispatch, and `make check` runs it; record it as inCheck"}},
@@ -355,6 +363,39 @@ func TestParityCatchesEachDivergence(t *testing.T) { //nolint:tparallel // it se
 			}
 		})
 	}
+}
+
+// make check stands for what CI runs on every push to main, so a check CI
+// runs only in its pull-request job, which a push does not run, is one
+// main never runs: a gate, a make target's command, a vet pass or the
+// linter's action.
+func TestParityHoldsMakeCheckToWhatAPushRuns(t *testing.T) {
+	t.Parallel()
+	const prOnly = "only in its pr job, which a push to main does not run"
+	ack := `        run: go run ./scripts/gates schema-ack "$PR_BASE_REF" "$PR_HEAD"` + "\n"
+	docs := "      - name: docs resolve\n        run: go run ./scripts/gates docs\n"
+	vuln := "      - name: govulncheck\n        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...\n"
+	vet := "      - run: go vet -tags=evals ./...\n"
+	lint := "      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0\n" +
+		"        with:\n          version: v2.14.0\n          args: --timeout=5m\n"
+	moved := func(step string) []docsEdit {
+		return []docsEdit{replace(fxCI, step, ""), replace(fxCI, ack, ack+step)}
+	}
+	checkParityCases(t, []parityCase{
+		{"a check gate moved into the pr job", moved(docs), nil, []string{
+			"the docs gate runs in make check by the dispatch, and ci.yml calls it " + prOnly,
+		}},
+		{"a make target's command moved into the pr job", moved(vuln), nil, []string{
+			"`make vuln` runs \"go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...\", and ci.yml runs it " + prOnly,
+		}},
+		{"a vet pass moved into the pr job", moved(vet), nil, []string{
+			"`make vet` runs \"go vet -tags=evals ./...\", and ci.yml runs it " + prOnly,
+			evalsTagged + "ci.yml vets no pass that builds it; it compiles only on a maintainer's machine",
+		}},
+		{"the linter's action moved into the pr job", moved(lint), nil, []string{
+			"`make lint` runs \"go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run ./...\", and ci.yml runs it " + prOnly,
+		}},
+	})
 }
 
 // make carries on past a failure that a - prefix or .IGNORE tells it to

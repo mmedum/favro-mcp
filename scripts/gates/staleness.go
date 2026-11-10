@@ -386,7 +386,7 @@ func countWord(s string) (int, bool) {
 // changelogRule, measured from the newest release HEAD reaches, as
 // lastTagOn finds it for schema-diff. One tag listing serves both. No such
 // tag, or a git or go call that cannot answer, is couldNotRun, never
-// "source changed".
+// "what users get changed".
 func checkChangelog(dir, text string) ([]string, error) {
 	tags, err := releaseTags(dir)
 	if err != nil {
@@ -418,13 +418,13 @@ func changelogUnrun(dir string, err error) error {
 	return couldNotRun{fmt.Errorf("the CHANGELOG rule: %w", err)}
 }
 
-// changelogRule requires a change to the binary's source to be written
+// changelogRule requires a change to what users get to be written
 // up: an entry under [Unreleased], or, on a release commit, under the
 // newest version heading while that version has no tag. A release commit
 // moves the entries under the version it is about to tag, and CI runs on
 // it before the tag exists.
-func changelogRule(text string, sourceChanged bool, tagged func(version string) bool) []string {
-	if !sourceChanged {
+func changelogRule(text string, shippedChanged bool, tagged func(version string) bool) []string {
+	if !shippedChanged {
 		return nil
 	}
 	doc := readChangelog(text)
@@ -438,16 +438,15 @@ func changelogRule(text string, sourceChanged bool, tagged func(version string) 
 		}
 		where = "[" + v[0].label + "], the untagged version this commit releases,"
 	}
-	return []string{"the binary's source changed and " + changelogPath + " " + where + " has no entry; " +
+	return []string{"what users get changed and " + changelogPath + " " + where + " has no entry; " +
 		"write one under [Unreleased], or under the version heading this release tags"}
 }
 
 // shippedChangedSince reports whether the commits since..HEAD of the
-// checkout at dir change the binary's source: a Go file other than a test
-// in a package of this module the binary imports, a file such a package
-// embeds, or go.mod outside its require and tool lines. A package counts
-// by its directory, so a file another platform builds counts, and so does
-// a file removed from it. Commits are compared, as CI sees them.
+// checkout at dir change what users get: a file other than a test in a
+// package of this module the binary imports, a file such a package
+// embeds, a bundle's manifest, or go.mod outside its require and tool
+// lines. Commits are compared, as CI sees them.
 func shippedChangedSince(dir, since string) (bool, error) {
 	out, err := git("-C", dir, "diff", since+"..HEAD", "--name-only", "--no-renames", "-z")
 	if err != nil {
@@ -480,8 +479,21 @@ func shippedChangedSince(dir, since string) (bool, error) {
 // slash-separated from the module root.
 type shippedSource struct{ dirs, embeds map[string]bool }
 
+// bundleManifests are the files the packers stage that tell a client how
+// to run the server, so a change to one changes what users get.
+// Not counted: README.md, LICENSE, NOTICE, the registry entry, and the launchers scripts/gates generates.
+var bundleManifests = map[string]bool{mcpbManifestPath: true, manifestPath: true, mcpPath: true}
+
+// has reports whether file is shipped: a bundle's manifest, an embedded
+// file, or any file but a test in a package directory, since the go
+// command builds a package from assembly, a .syso and C as well as Go
+// (`go help filetype`). A package counts by its directory, so a file of it
+// another platform builds counts, and so does one removed from it. The
+// packages are the host's, in the checkout: a package only another
+// platform's files import, or a directory the head removes whole, is not
+// one.
 func (s *shippedSource) has(file string) bool {
-	return s.embeds[file] || strings.HasSuffix(file, ".go") && !strings.HasSuffix(file, "_test.go") && s.dirs[path.Dir(file)]
+	return bundleManifests[file] || s.embeds[file] || !strings.HasSuffix(file, "_test.go") && s.dirs[path.Dir(file)]
 }
 
 // listShipped asks the go command what ./cmd/... is built from in the

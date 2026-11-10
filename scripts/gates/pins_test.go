@@ -210,15 +210,22 @@ func TestExactSemverRejectsWhatCanMoveUnderYou(t *testing.T) {
 		}
 	}
 	// go-version-file names a file rather than a version, and go.mod is
-	// the pin.
+	// the pin. A workflow's key is read in any case.
 	for key, want := range map[string]bool{
 		"go-version-file": false, "version": true, "cosign-release": true, "syft-version": true,
 		"GITLEAKS_VERSION": true, "COSIGN_RELEASE": true, "persist-credentials": false,
-		// The Makefile's VERSION is the server's, not a tool's.
-		"VERSION": false, "GOVULNCHECK": false,
+		"Tool_Version": true, "TOOL_Release": true, "Syft-Version": true, "VERSION": true,
 	} {
 		if got := workflowVersionKey.MatchString(key); got != want {
-			t.Errorf("%q read as a version key = %v, want %v", key, got, want)
+			t.Errorf("%q read as a workflow's version key = %v, want %v", key, got, want)
+		}
+	}
+	// The Makefile's VERSION is the server's, not a tool's.
+	for name, want := range map[string]bool{
+		"GITLEAKS_VERSION": true, "COSIGN_RELEASE": true, "VERSION": false, "GOVULNCHECK": false,
+	} {
+		if got := pinsVersionVar.MatchString(name); got != want {
+			t.Errorf("%q read as a Makefile version variable = %v, want %v", name, got, want)
 		}
 	}
 	const sha = "f06c13b6b1a9625abc9e6e439d9c05a8f2190e94"
@@ -467,7 +474,25 @@ func TestUnpinnedTools(t *testing.T) {
 		}, []string{
 			".github/workflows/ci.yml:11: actions/setup-go is pinned by SHA and does not set go-version-file, " +
 				"so the tool it installs is whatever is current that morning",
+			".github/workflows/ci.yml:13: actions/setup-go sets go-version, which setup-go reads before go-version-file; pin Go by go.mod alone",
 			`.github/workflows/codeql.yml:10: actions/setup-go sets go-version-file to "tools/go.mod", which is not the repository's go.mod`,
+		}},
+		// setup-go reads go-version before go-version-file, so a go-version
+		// beside go.mod is the Go the step installs.
+		{"setup-go with a go-version beside go.mod", []docsEdit{
+			replace(fxPublish, "go-version-file: go.mod", "go-version: 1.26.0\n          go-version-file: go.mod"),
+		}, []string{
+			".github/workflows/publish-mcp.yml:12: actions/setup-go sets go-version, which setup-go reads before go-version-file; " +
+				"pin Go by go.mod alone",
+		}},
+		// An installer's version given as an expression is no exact version,
+		// whatever env: sets it, and that env value names no tool.
+		{"an installer's version given as an expression", []docsEdit{
+			replace(fxRelease, "defaults:\n", "env:\n  GORELEASER_VERSION: v2.18.1\ndefaults:\n"),
+			replace(fxRelease, `          version: "v2.18.1"`, "          version: ${{ env.GORELEASER_VERSION }}"),
+		}, []string{
+			`.github/workflows/release.yml:26: goreleaser/goreleaser-action: goreleaser is pinned to "${{ env.GORELEASER_VERSION }}", which is not one exact version`,
+			".github/workflows/release.yml:6: the env value GORELEASER_VERSION names a version of a tool pinsTools does not know",
 		}},
 		{"an installer nothing uses", []docsEdit{
 			replace(fxRelease, "      - uses: anchore/sbom-action/download-syft@"+pinSHA+" # v0.24.3\n        with:\n          syft-version: v1.51.1\n", ""),
@@ -476,11 +501,56 @@ func TestUnpinnedTools(t *testing.T) {
 			"no workflow step installs syft through anchore/sbom-action/download-syft; the reader is not seeing the step, " +
 				"or the table names an installer nothing uses",
 		}},
-		{"jobs that call a reusable workflow, held to the SHA rule only", []docsEdit{
+		// Another repository's reusable workflow is read by no gate, so a
+		// version it is given is held where it is given.
+		{"jobs that call a reusable workflow, held to the SHA rule and an exact version", []docsEdit{
 			replace(fxCodeQL, "analyze@"+pinSHA+" # v4.39.1\n", "analyze@"+pinSHA+" # v4.39.1\n"+
-				"  call:\n    uses: o/r/.github/workflows/x.yml@"+pinSHA+" # v1.0.0\n  tagged:\n    uses: o/r/.github/workflows/x.yml@v1\n"),
+				"  call:\n    uses: o/r/.github/workflows/x.yml@"+pinSHA+" # v1.0.0\n    with:\n      cosign-release: latest\n"+
+				"      ref-version: ${{ github.ref_name }}\n"+
+				"  tagged:\n    uses: o/r/.github/workflows/x.yml@v1\n"),
 		}, []string{
-			`.github/workflows/codeql.yml:18: o/r/.github/workflows/x.yml is pinned to "v1", a tag or branch that can be moved; pin the 40-character commit SHA`,
+			`.github/workflows/codeql.yml:18: o/r/.github/workflows/x.yml: cosign-release is "latest", which is not one exact version`,
+			`.github/workflows/codeql.yml:19: o/r/.github/workflows/x.yml: ref-version is "${{ github.ref_name }}", which is not one exact version`,
+			`.github/workflows/codeql.yml:21: o/r/.github/workflows/x.yml is pinned to "v1", a tag or branch that can be moved; pin the 40-character commit SHA`,
+		}},
+		// The runner reads an input's name in upper case, so an installer's
+		// input in another case is the one that pins its tool.
+		{"an installer's input in another case", []docsEdit{
+			replace(fxRelease, "cosign-release: v3.1.3", "COSIGN-RELEASE: latest"),
+		}, []string{
+			`.github/workflows/release.yml:18: sigstore/cosign-installer: cosign is pinned to "latest", which is not one exact version`,
+			"cosign is v3.1.3 at .github/workflows/publish-mcp.yml:15: sigstore/cosign-installer and " +
+				"latest at .github/workflows/release.yml:18: sigstore/cosign-installer: one tool, one version",
+		}},
+		{"a version input in another case on an action that installs nothing", []docsEdit{
+			ci("      - uses: actions/checkout@"+pinSHA+" # v7.0.1\n", "      - uses: actions/checkout@"+pinSHA+" # v7.0.1\n"+
+				"        with:\n          Tool-Version: latest\n"),
+		}, []string{
+			`.github/workflows/ci.yml:12: actions/checkout: Tool-Version is "latest", which is not one exact version`,
+		}},
+		// This repository's own reusable workflow is read as a workflow, so a
+		// version it is given is held where it uses it. A local action's
+		// action.yml is read by no gate, so its inputs are held here.
+		{"a version given to a local reusable workflow, and to a local action", []docsEdit{
+			replace(fxRelease, "    uses: ./"+fxPublish+"\n", "    uses: ./"+fxPublish+"\n    with:\n      release-version: ${{ github.ref_name }}\n"),
+			ci("      - uses: actions/checkout@"+pinSHA+" # v7.0.1\n", "      - uses: actions/checkout@"+pinSHA+" # v7.0.1\n"+
+				"      - uses: ./.github/actions/setup\n        with:\n          tool-version: latest\n          ref-version: ${{ github.ref_name }}\n"),
+		}, []string{
+			`.github/workflows/ci.yml:14: ./.github/actions/setup: ref-version is "${{ github.ref_name }}", which is not one exact version`,
+			`.github/workflows/ci.yml:13: ./.github/actions/setup: tool-version is "latest", which is not one exact version`,
+		}},
+		// A literal given to this repository's own reusable workflow is held
+		// there too: a run step in it may fetch whatever version it is given.
+		// A literal inside an expression is a literal all the same.
+		{"a literal version given to a local reusable workflow", []docsEdit{
+			replace(fxRelease, "    uses: ./"+fxPublish+"\n", "    uses: ./"+fxPublish+"\n    with:\n      tool-version: latest\n"+
+				"      Other-Release: v1\n      quoted-version: ${{ 'latest' }}\n      fallback-version: ${{ inputs.v || 'latest' }}\n"+
+				"      ref-version: ${{ github.ref_name }}\n      exact-version: v1.2.3\n"),
+		}, []string{
+			`.github/workflows/release.yml:34: ./.github/workflows/publish-mcp.yml: Other-Release is "v1", which is not one exact version`,
+			`.github/workflows/release.yml:36: ./.github/workflows/publish-mcp.yml: fallback-version is "${{ inputs.v || 'latest' }}", which is not one exact version`,
+			`.github/workflows/release.yml:35: ./.github/workflows/publish-mcp.yml: quoted-version is "${{ 'latest' }}", which is not one exact version`,
+			`.github/workflows/release.yml:33: ./.github/workflows/publish-mcp.yml: tool-version is "latest", which is not one exact version`,
 		}},
 		{"a container image by tag, by digest and on the line after its key", []docsEdit{
 			ci(checkout, "      - uses: docker://alpine:3.20\n      - uses: docker://alpine@"+pinDigest+"\n"+checkout),
@@ -536,6 +606,12 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			`.github/workflows/release.yml:24: goreleaser/goreleaser-action: goreleaser is pinned to "~> v2", which is not one exact version`,
 			`.github/workflows/release.yml:25: goreleaser/goreleaser-action: setup-version is "v2", which is not one exact version`,
 		}},
+		// The .goreleaser.yaml reader trusts one goreleaser's key paths.
+		{"goreleaser at a version the config reader was not checked against", []docsEdit{
+			replace(fxRelease, `          version: "v2.18.1"`, "          version: v2.18.2"),
+		}, []string{".github/workflows/release.yml:24: goreleaser/goreleaser-action runs goreleaser v2.18.2, and the " +
+			".goreleaser.yaml reader is checked against v2.18.1's source; check its key paths and template rule " +
+			"against v2.18.2's, then set goreleaserChecked"}},
 		{"an env version of a tool nobody named", []docsEdit{
 			replace(fxPublish, "PUBLISHER_VERSION: v1.8.1", "PUBLISHER_VERSION: v1.8.1\n          NODE_VERSION: 22.1.0"),
 		}, []string{".github/workflows/publish-mcp.yml:19: the env value NODE_VERSION names a version of a tool pinsTools does not know"}},
@@ -546,6 +622,17 @@ func TestPinsNamesEachProblem(t *testing.T) {
 		}, []string{
 			".github/workflows/publish-mcp.yml:19: the env value COSIGN_RELEASE names a version of a tool pinsTools does not know",
 			".github/workflows/publish-mcp.yml:20: the env value node-version names a version of a tool pinsTools does not know",
+		}},
+		// An env value's name is read ignoring case, as an input's is, so a
+		// run step downloading by ${Tool_Version} takes a version all the same.
+		{"env versions in another case", []docsEdit{
+			replace(fxPublish, "PUBLISHER_VERSION: v1.8.1", "PUBLISHER_VERSION: v1.8.1\n          Tool_Version: latest\n"+
+				"          TOOL_Release: latest\n          Version: latest\n          Syft_Version: >-\n            latest"),
+		}, []string{
+			".github/workflows/publish-mcp.yml:22: Syft_Version: a block scalar; write the value on the key's line",
+			".github/workflows/publish-mcp.yml:19: the env value Tool_Version names a version of a tool pinsTools does not know",
+			".github/workflows/publish-mcp.yml:20: the env value TOOL_Release names a version of a tool pinsTools does not know",
+			".github/workflows/publish-mcp.yml:21: the env value Version names a version of a tool pinsTools does not know",
 		}},
 		{"an env version that is not one version", []docsEdit{
 			replace(fxPublish, "PUBLISHER_VERSION: v1.8.1", "PUBLISHER_VERSION: v1"),
@@ -565,7 +652,20 @@ func TestPinsNamesEachProblem(t *testing.T) {
 		}},
 		{"a version a reader cannot see, through bash -c", []docsEdit{
 			ci("govulncheck@v1.8.0 ./...", "govulncheck@v1.8.0 ./...\n      - run: bash -c \"go run golang.org/x/vuln/cmd/govulncheck@master ./...\""),
-		}, []string{`.github/workflows/ci.yml:15: govulncheck is pinned to "master", which is not one exact version`}},
+		}, []string{
+			`.github/workflows/ci.yml:15: golang.org/x/vuln/cmd/govulncheck: govulncheck is pinned to "master", which is not one exact version`,
+			"govulncheck is v1.8.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and master at " +
+				".github/workflows/ci.yml:15: golang.org/x/vuln/cmd/govulncheck: one tool, one version",
+		}},
+		// make's ?= takes a value the environment gives, so an env: naming a
+		// tool's module@version is the version make runs.
+		{"a tool's version in an env value a make target takes", []docsEdit{
+			ci("govulncheck@v1.8.0 ./...", "govulncheck@v1.8.0 ./...\n      - run: make vuln\n        env:\n"+
+				"          GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.1.0"),
+		}, []string{
+			"govulncheck is v1.8.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and v1.1.0 at " +
+				".github/workflows/ci.yml:17: golang.org/x/vuln/cmd/govulncheck: one tool, one version",
+		}},
 		{"CI and the Makefile at two versions of each tool", []docsEdit{
 			ci("govulncheck@v1.8.0", "govulncheck@v1.8.1"),
 			ci("version: v2.14.0", "version: v2.13.0"),
@@ -581,12 +681,11 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			mk("\t$(GO) run $(GOVULNCHECK) ./...", "\t@echo $(GOVULNCHECK)\n\tgovulncheck ./..."),
 		}, []string{
 			`Makefile: GOLANGCI_LINT: golangci-lint is pinned to "v2.14", which is not one exact version`,
-			`Makefile: GOLICENSES: go-licenses is pinned to "latest", which is not one exact version`,
+			"Makefile: GOLICENSES is pinned to @latest",
 			"Makefile:13: @latest installs whatever is newest. Name the version: what builds a release must not float",
 			"Makefile:11: names govulncheck as a word of its own, which runs it from the PATH at whatever version is installed there; " + recipeRemedy,
 			"Makefile: GOVULNCHECK pins golang.org/x/vuln/cmd/govulncheck@v1.8.0 and no recipe runs it with the go command, so the tool runs from the PATH",
 			"golangci-lint is v2.14.0 at .github/workflows/ci.yml:18: golangci/golangci-lint-action and v2.14 at Makefile: GOLANGCI_LINT: one tool, one version",
-			"go-licenses is v1.6.0 at .github/workflows/ci.yml:15: go run github.com/google/go-licenses and latest at Makefile: GOLICENSES: one tool, one version",
 		}},
 		// One variable holds the module and its version, so the version
 		// cannot drift from the module it is for.
@@ -597,6 +696,11 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			"Makefile: GOVULNCHECK_VERSION holds a version apart from its module; write the tool as one `NAME ?= module@version` variable",
 			"Makefile: GOVULNCHECK pins golang.org/x/vuln/cmd/govulncheck@v1.8.0 and no recipe runs it with the go command, so the tool runs from the PATH",
 		}},
+		// A Makefile variable's name is read as written: VERSION is the
+		// server's own, which the build stamps into the binary.
+		{"the server's own VERSION", []docsEdit{
+			mk("GO ?= go\n", "GO ?= go\nVERSION ?= dev\n"),
+		}, nil},
 		{"a recipe that runs a tool at its own version", []docsEdit{
 			mk("\t$(GO) run $(GOLICENSES) check ./...",
 				"\t$(GO) run $(GOLICENSES) check ./...\n\tgo run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./..."),
@@ -644,13 +748,17 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			"go-licenses is v1.6.0 at .github/workflows/ci.yml:15: go run github.com/google/go-licenses and v1.6.1 at " +
 				".goreleaser.yaml:6: go run github.com/google/go-licenses: one tool, one version",
 		}},
+		{"a goreleaser hook running a tool through bash -c", []docsEdit{
+			replace(parityGoreleaser, "    - go mod tidy\n", "    - go mod tidy\n    - bash -c \"go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...\"\n"),
+		}, []string{
+			"govulncheck is v1.8.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and v1.7.0 at " +
+				".goreleaser.yaml:5: golang.org/x/vuln/cmd/govulncheck: one tool, one version",
+		}},
+		// The floating rule refuses an @latest, which is not reported again.
 		{"a goreleaser hook at latest, read as a run line is", []docsEdit{
 			replace(parityGoreleaser, "    - go mod tidy\n", "    - go mod tidy\n    - go run golang.org/x/vuln/cmd/govulncheck@latest ./...\n"),
 		}, []string{
 			".goreleaser.yaml:5: @latest installs whatever is newest. Name the version: what builds a release must not float",
-			`.goreleaser.yaml:5: go run golang.org/x/vuln/cmd/govulncheck: govulncheck is pinned to "latest", which is not one exact version`,
-			"govulncheck is v1.8.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and latest at " +
-				".goreleaser.yaml:5: go run golang.org/x/vuln/cmd/govulncheck: one tool, one version",
 		}},
 		// goreleaser renders a template before it runs a hook, so a tool a
 		// guarded hook fetches is held as any hook's is.
@@ -660,12 +768,16 @@ func TestPinsNamesEachProblem(t *testing.T) {
 				"    - go run github.com/google/go-licenses@v1.6.1 check {{ .Version }}\n"),
 		}, []string{
 			".goreleaser.yaml:5: @latest installs whatever is newest. Name the version: what builds a release must not float",
-			`.goreleaser.yaml:5: go run golang.org/x/vuln/cmd/govulncheck: govulncheck is pinned to "latest", which is not one exact version`,
-			"govulncheck is v1.8.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and latest at " +
-				".goreleaser.yaml:5: go run golang.org/x/vuln/cmd/govulncheck: one tool, one version",
 			"go-licenses is v1.6.0 at .github/workflows/ci.yml:15: go run github.com/google/go-licenses and v1.6.1 at " +
 				".goreleaser.yaml:6: go run github.com/google/go-licenses: one tool, one version",
 		}},
+		// goreleaser runs the one branch it renders, so a hook whose else
+		// branch fetches an unknown tool at a branch is refused, not read whole.
+		{"a goreleaser hook running a tool at a branch in its else", []docsEdit{
+			replace(parityGoreleaser, "    - go mod tidy\n", "    - go mod tidy\n"+
+				`    - "{{ if .IsSnapshot }}true{{ else }}go run github.com/someone/tool@main dist{{ end }}"`+"\n"),
+		}, []string{".goreleaser.yaml:5: hooks: a template control action; goreleaser runs one branch, and the gates read only " +
+			"a command wrapped whole in one {{ if }}...{{ end }}"}},
 		// The release runs its hooks, signs, SBOMs and publishers, and only
 		// they are held: a release note may tell a person to install @latest.
 		{"a release footer and a changelog filter naming latest", []docsEdit{
@@ -715,18 +827,6 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			".goreleaser.yaml:29: @latest installs whatever is newest. Name the version: what builds a release must not float",
 			".goreleaser.yaml:21: releases/latest/download installs whatever is newest. Name the version: what builds a release must not float",
 			".goreleaser.yaml:26: @latest installs whatever is newest. Name the version: what builds a release must not float",
-			`.goreleaser.yaml:8: go run golang.org/x/vuln/cmd/govulncheck: govulncheck is pinned to "latest", which is not one exact version`,
-			`.goreleaser.yaml:10: go run github.com/google/go-licenses: go-licenses is pinned to "latest", which is not one exact version`,
-			`.goreleaser.yaml:16: go run golang.org/x/vuln/cmd/govulncheck: govulncheck is pinned to "latest", which is not one exact version`,
-			`.goreleaser.yaml:29: go run github.com/google/go-licenses: go-licenses is pinned to "latest", which is not one exact version`,
-			"govulncheck is v1.8.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and latest at " +
-				".goreleaser.yaml:8: go run golang.org/x/vuln/cmd/govulncheck: one tool, one version",
-			"govulncheck is v1.8.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and latest at " +
-				".goreleaser.yaml:16: go run golang.org/x/vuln/cmd/govulncheck: one tool, one version",
-			"go-licenses is v1.6.0 at .github/workflows/ci.yml:15: go run github.com/google/go-licenses and latest at " +
-				".goreleaser.yaml:10: go run github.com/google/go-licenses: one tool, one version",
-			"go-licenses is v1.6.0 at .github/workflows/ci.yml:15: go run github.com/google/go-licenses and latest at " +
-				".goreleaser.yaml:29: go run github.com/google/go-licenses: one tool, one version",
 		}},
 		// A sign's or an SBOM's command is words, so a known tool's
 		// module@version among them is the pin.
@@ -831,6 +931,27 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			"goreleaser is v2.18.1 at .github/workflows/release.yml:24: goreleaser/goreleaser-action and  at " +
 				".goreleaser.yaml:6: go run github.com/goreleaser/goreleaser/v2: one tool, one version",
 		}},
+		// The gates' own Go may run a tool, so a module@version in one of
+		// its strings is a pin. A comment or a test's fixture pins nothing.
+		{"a tool pinned in the gates' Go", []docsEdit{
+			add("scripts/gates/scan.go", textLines(
+				"package main",
+				"",
+				"// go run golang.org/x/vuln/cmd/govulncheck@master was the old way.",
+				`const scanner = "golang.org/x/vuln/cmd/govulncheck@v1.7.0"`,
+				"const licenses = `github.com/google/go-licenses@v1.6.0`",
+			)),
+			add("scripts/gates/scan_test.go", textLines("package main", "", `const old = "golang.org/x/vuln/cmd/govulncheck@v0.0.1"`)),
+			add("scripts/gates/testdata/x.go", textLines("package x", "", `const old = "golang.org/x/vuln/cmd/govulncheck@v0.0.2"`)),
+		}, []string{
+			"govulncheck is v1.8.0 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and v1.7.0 at " +
+				"scripts/gates/scan.go: golang.org/x/vuln/cmd/govulncheck: one tool, one version",
+		}},
+		{
+			"gates' Go that does not parse",
+			[]docsEdit{add("scripts/gates/broken.go", "package main\n\nfunc {\n")},
+			[]string{"scripts/gates/broken.go:3:6: expected 'IDENT', found '{'"},
+		},
 		{"a workflow with no shell", []docsEdit{
 			replace(fxCodeQL, "defaults:\n  run:\n    shell: bash\n", ""),
 		}, []string{".github/workflows/codeql.yml: no workflow-level `defaults: run: shell:`. " +

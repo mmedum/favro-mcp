@@ -57,7 +57,7 @@ import (
 //
 // The gate and the packer start from one function, committedManifest,
 // which reads the manifest, go.mod, LICENSE, .goreleaser.yaml and the
-// release's workflows once from one root, generates the launcher for
+// workflows once from one root, generates the launcher for
 // go.mod's module, and runs every check. A bundle cannot be packed past a rule the gate enforces.
 
 const (
@@ -1174,8 +1174,8 @@ func startProblems(m bundleManifest, switches []string, declared [][]string) []s
 // bundle: it builds every binary the table stages and every
 // releaseMatrix archive, the bundle reaches every one of them, and the
 // lines that make both bundles exist, be hashed, be signed, be attested
-// and be published are there. The attestation is the release's
-// workflows', release.yml's and those it calls, under root.
+// and be published are there. The attestation is release.yml's, under
+// root.
 func releaseProblems(root string) []string {
 	release, err := readGoreleaser(root)
 	if err != nil {
@@ -1185,17 +1185,9 @@ func releaseProblems(root string) []string {
 	if err != nil {
 		return []string{err.Error()}
 	}
-	var unread error
-	flows := releaseWorkflows(func(p string) (workflowFile, bool) {
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(p)))
-		if err != nil {
-			unread = cmp.Or(unread, err)
-			return workflowFile{}, false
-		}
-		return parseWorkflow(p, string(data)), true
-	})
-	if unread != nil {
-		return []string{unread.Error()}
+	flows, err := workflowsUnder(root)
+	if err != nil {
+		return []string{err.Error()}
 	}
 	problems := slices.Clone(release.refused)
 	problems = append(problems, mcpbReleaseWiring(release)...)
@@ -1333,33 +1325,93 @@ func mcpbReleaseWiring(release goreleaserFile) []string {
 // on the wrong tags.
 const pluginHook = "{{ if not .Prerelease }}go run ./scripts/gates plugin-pack dist{{ end }}"
 
-// attestedBundles holds the release workflows' provenance steps to every
-// file the release publishes, as the goreleaser config names them:
-// releaseFiles'. The README tells people to verify each one's
+// attestedBundles holds the provenance steps of release.yml and the local
+// workflows it calls, among flows (releaseWorkflows'), to every file the
+// release publishes, as the goreleaser config names them: releaseFiles'.
+// The README tells people to verify each one's
 // attestation, and an entry deleted from subject-path drops it with every
-// other gate green.
+// other gate green. The step sits in each job that runs goreleaser,
+// whose dist/ holds the files: another job, or a workflow it calls, can
+// be skipped while the release ships, as publish-mcp.yml is on a
+// prerelease. That job's token needs id-token: write and attestations:
+// write to sign and store the provenance
+// (https://github.com/actions/attest/blob/508db95dd578ae2727ebd6217d5ba78e4fbda05d/README.md#L64-L76).
 func attestedBundles(flows []workflowFile, release goreleaserFile) []string {
 	files, problems := releaseFiles(release)
-	attested := false
-	for _, w := range flows {
-		for _, s := range w.steps {
-			if s.action() != "actions/attest-build-provenance" {
+	rw, ok := workflowNamed(flows, releaseWorkflow)
+	if !ok {
+		return append(problems, "no "+releaseWorkflow+", so nothing attests what the release publishes")
+	}
+	held := false
+	for _, w := range releaseWorkflows(flows) {
+		for _, job := range releaseJobs(w) {
+			held = true
+			attested := false
+			for _, s := range w.steps {
+				if s.job != job || s.action() != "actions/attest-build-provenance" {
+					continue
+				}
+				attested = true
+				subjects, ok := s.input("subject-path")
+				if !ok {
+					problems = append(problems, fmt.Sprintf("%s:%d: the attestation names no subject-path", w.path, s.line))
+					continue
+				}
+				problems = append(problems, releaseSubjectProblems(subjects.value, files)...)
+			}
+			if !attested {
+				problems = append(problems, fmt.Sprintf("%s: job %s runs goreleaser and has no "+
+					"attest-build-provenance step, so no release file carries provenance", w.path, job))
 				continue
 			}
-			attested = true
-			subjects, ok := s.with["subject-path"]
-			if !ok {
-				problems = append(problems, fmt.Sprintf("%s:%d: the attestation names no subject-path", w.path, s.line))
-				continue
+			for _, scope := range []string{"id-token", "attestations"} {
+				if !w.grantsWrite(job, scope) {
+					problems = append(problems, fmt.Sprintf("%s: job %s attests without %s: write, which actions/attest needs "+
+						"to sign and store the provenance; grant it in the job's permissions, or the workflow's when the job sets none",
+						w.path, job, scope))
+				}
 			}
-			problems = append(problems, releaseSubjectProblems(subjects.value, files)...)
 		}
 	}
-	if !attested {
-		problems = append(problems, releaseWorkflow+" and the workflows it calls have no attest-build-provenance step, "+
-			"so no release file carries provenance")
+	if !held {
+		return append(problems, fmt.Sprintf("no job of %s, or of a workflow it calls, runs goreleaser, so no attest "+
+			"step is held to the files the release publishes", rw.path))
 	}
 	return problems
+}
+
+// releaseJobs are the jobs of w that run goreleaser, in file order: each
+// has a goreleaser-action step, whatever its inputs, or a run line with a
+// word whose base name is goreleaser or whose module is goreleaser's, as
+// `go run` names it. No subcommand is read, so a release spelled any way
+// is held.
+func releaseJobs(w workflowFile) []string {
+	var jobs []string
+	add := func(job string) {
+		if !slices.Contains(jobs, job) {
+			jobs = append(jobs, job)
+		}
+	}
+	// Steps and run lines are each in file order, so taking the earlier
+	// line of the two keeps it.
+	steps, runs := w.steps, w.runs
+	for len(steps) > 0 || len(runs) > 0 {
+		if len(runs) == 0 || len(steps) > 0 && steps[0].line < runs[0].line {
+			if steps[0].action() == "goreleaser/goreleaser-action" {
+				add(steps[0].job)
+			}
+			steps = steps[1:]
+			continue
+		}
+		if slices.ContainsFunc(shellTexts(shellSplit(runs[0].text)), func(word string) bool {
+			module, _, _ := strings.Cut(word, "@")
+			return path.Base(word) == "goreleaser" || pinsToolByModule(module) == "goreleaser"
+		}) {
+			add(runs[0].job)
+		}
+		runs = runs[1:]
+	}
+	return jobs
 }
 
 // releaseFiles is the subject-path entry for each file the release
