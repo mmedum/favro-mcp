@@ -363,6 +363,7 @@ func mentionsFailure(answer string) bool {
 	for _, s := range []string{
 		"not possible", "cannot", "can't", "could not", "couldn't",
 		"does not exist", "doesn't exist", "no such", "not found", "failed", "unable",
+		"not going to create", "not going to add",
 	} {
 		if strings.Contains(a, s) {
 			return true
