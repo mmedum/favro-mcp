@@ -64,6 +64,10 @@ const (
 	inRelease
 )
 
+// gateRunsModule is the argument of a gate that runs a pinned tool with
+// `go run`, which the pins gate reads as that tool's pin.
+const gateRunsModule = "MODULE@VERSION"
+
 // commands is the one list of what this program does — the usage text,
 // the dispatch and the parity gate all read it, so they cannot drift.
 var commands map[string]command
@@ -172,6 +176,10 @@ func init() {
 		"fmt-check": {
 			run: fmtCheck, args: "", runs: inCheck,
 			doc: "every Go file is gofmt'd",
+		},
+		"vuln": {
+			run: vuln, args: gateRunsModule, runs: inCheck,
+			doc: "govulncheck under the official Go release go.mod names",
 		},
 		"precommit": {
 			run: precommit, args: "",
