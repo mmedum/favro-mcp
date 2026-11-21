@@ -1177,6 +1177,11 @@ func TestTheDesktopBundleRunsOnEveryPair(t *testing.T) {
 			"the release builds windows-amd64 and the Desktop bundle stages no binary that runs there",
 			"the release builds windows-arm64 and the Desktop bundle stages no binary that runs there",
 		}},
+		{"an emulated pair with a binary of its own", append(slices.Clone(mcpbBinaries), mcpbBinary{
+			name: mcpbServerDir + "favro-mcp-arm64.exe", goarch: "windows-arm64",
+		}), []string{
+			"releaseMatrix runs windows-amd64 on windows-arm64, and the Desktop bundle stages a binary of its own there",
+		}},
 	} {
 		if got := mcpbMatrixProblems(tc.binaries); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)

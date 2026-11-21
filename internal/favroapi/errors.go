@@ -232,19 +232,12 @@ func (e *AmbiguousWriteError) ErrorClass() render.Class { return render.ClassAmb
 
 // ErrorClass reports a write Favro accepted and did not perform.
 //
-// Not ClassInvalid: the arguments passed every check this client makes
-// and Favro raised no complaint about them, so telling the caller to
-// change them sends it looking in the wrong place. Not ClassConflict
-// either — that means the resource moved underneath the caller, which
-// is a specific story there is no evidence for. What is left is
-// "Favro failed", which is what ClassUnavailable says.
-//
-// It is the closest class and not an exact one: unavailable tells the
-// caller to retry later, and this result is deterministic, so a retry
-// returns it forever. The message carries the correction, since every
-// tool error is "[class] actionable message" from a closed vocabulary.
-// Whether this failure needs a class of its own is an open question.
-func (e *WriteIgnoredError) ErrorClass() render.Class { return render.ClassUnavailable }
+// ClassUnsupported, because the result is deterministic: the same call
+// is ignored again, so the caller's move is not to repeat it, which is
+// what unsupported asks. Not ClassUnavailable, which says to retry, nor
+// ClassInvalid: the arguments passed every check this client makes and
+// Favro raised no complaint about them.
+func (e *WriteIgnoredError) ErrorClass() render.Class { return render.ClassUnsupported }
 
 // ErrorClass maps the statuses *APIError can actually carry.
 //

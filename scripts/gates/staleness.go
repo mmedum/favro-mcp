@@ -99,6 +99,7 @@ func stalenessOf(w io.Writer, dump *schemaDump) error {
 	problems = append(problems, permissionRulesRegistered(readme, dump)...)
 	problems = append(problems, envDocumented(config.Vars(), prose, documents[configDocPath])...)
 	problems = append(problems, pluginPlatformsDocumented(prose)...)
+	problems = append(problems, desktopEmulationDocumented(prose)...)
 	problems = append(problems, destructiveCountMatches(documents, dump)...)
 
 	if len(problems) > 0 {
@@ -283,8 +284,7 @@ func envDocumented(vars []config.Var, readme, configuration string) []string {
 
 // pluginPlatformsDocumented holds the README's plugin section to the
 // plugin's staging table: it names every directory the plugin stages a
-// binary under, and every pair releaseMatrix runs under emulation, with
-// the word. The section is the one under "### Cowork plugin", up to the
+// binary under. The section is the one under "### Cowork plugin", up to the
 // next heading.
 func pluginPlatformsDocumented(readme string) []string {
 	const heading = "### Cowork plugin"
@@ -301,10 +301,27 @@ func pluginPlatformsDocumented(readme string) []string {
 			problems = append(problems, "README.md's plugin section does not name "+p.dir()+", which the plugin stages")
 		}
 	}
-	for _, pair := range slices.Sorted(maps.Keys(emulated())) {
-		if !strings.Contains(section, pair) || !strings.Contains(section, "emulation") {
-			problems = append(problems, fmt.Sprintf("README.md's plugin section does not say that %s runs the %s "+
-				"binary under emulation", pair, emulated()[pair]))
+	return problems
+}
+
+// desktopEmulationDocumented holds the README's Desktop bundle section to
+// releaseMatrix: it names every pair the bundle runs another pair's
+// binary on, with the word emulation. The section is the one under
+// "### Claude Desktop bundle", up to the next heading.
+func desktopEmulationDocumented(readme string) []string {
+	const heading = "### Claude Desktop bundle"
+	_, section, found := strings.Cut(readme, heading)
+	if !found {
+		return []string{"README.md has no " + heading + " section, so nothing says what the Desktop bundle runs"}
+	}
+	if end := strings.Index(section, "\n#"); end >= 0 {
+		section = section[:end]
+	}
+	var problems []string
+	for _, p := range releaseMatrix {
+		if p.runs != "" && (!strings.Contains(section, p.pair) || !strings.Contains(section, "emulation")) {
+			problems = append(problems, fmt.Sprintf("README.md's Desktop bundle section does not say that %s runs the %s "+
+				"binary under emulation", p.pair, p.runs))
 		}
 	}
 	return problems

@@ -177,7 +177,7 @@ attachment.
 **Fix:** read the resource to see whether the write landed, and repeat
 it only if it did not.
 
-## `[unavailable] Favro accepted the write and did not perform it: …`
+## `[unsupported] Favro accepted the write and did not perform it: …`
 
 **Cause:** Favro answered a card move with 200, and the card's column
 came back unchanged (D-22). The same call does the same thing again.
@@ -226,8 +226,8 @@ instead.
 
 ## The plugin does not start on Windows
 
-**Cause:** the plugin runs `bin\windows-amd64\favro-mcp.exe` through a
-`.cmd` shim. A Windows client finds the shim for
+**Cause:** the plugin runs `bin\windows-amd64\favro-mcp.exe`, or
+`bin\windows-arm64\favro-mcp.exe` on Arm, through a `.cmd` shim. A Windows client finds the shim for
 `${CLAUDE_PLUGIN_ROOT}/bin/favro-mcp` through `PATHEXT`, and one that
 ignores `PATHEXT` does not.
 

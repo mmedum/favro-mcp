@@ -52,8 +52,9 @@ const (
 	// ClassUnavailable is Favro, or the network to it, failing. Retry
 	// later; the arguments are not the problem.
 	ClassUnavailable Class = "unavailable"
-	// ClassUnsupported is a thing this server will not do, as opposed
-	// to one that failed. Retrying never helps.
+	// ClassUnsupported is a thing this server will not do, or a write
+	// Favro accepted and will ignore again, as opposed to one that
+	// failed. Retrying never helps.
 	ClassUnsupported Class = "unsupported"
 )
 

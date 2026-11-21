@@ -59,19 +59,18 @@ var platforms = []platform{
 	// Windows is reached by the .cmd shim, which PATHEXT resolves for a
 	// host asking for `bin/favro-mcp`; `uname` is not a thing it has.
 	{goos: "windows", goarch: "amd64"},
+	{goos: "windows", goarch: "arm64"},
 }
 
 // releaseMatrix is the release: darwin, linux and windows, each on amd64
-// and arm64, an archive each, and for a pair the bundles stage no binary
-// of its own, the pair whose binary runs there. Both bundle gates and
-// their tests read this one table, so they cannot disagree about a
-// platform.
+// and arm64, an archive each, and for a pair a bundle stages no binary of
+// its own, the pair whose binary runs there. Both bundle gates and their
+// tests read this one table, so they cannot disagree about a platform.
 //
-// A bundle manifest picks its command by platform and has no key for the
-// architecture, so Windows on arm64 runs the amd64 binary, from the
-// Desktop bundle and the plugin alike; its archive is for someone
-// installing from the release page. That needs Windows 11, which
-// emulates x64: Windows 10 on Arm emulates only x86.
+// A Desktop bundle manifest picks its command by platform and has no key
+// for the architecture, so the .mcpb runs the amd64 binary on Windows on
+// arm64. That needs Windows 11, which emulates x64: Windows 10 on Arm
+// emulates only x86. The plugin's .cmd shim picks windows-arm64 itself.
 // https://github.com/anthropics/mcpb/blob/v2.1.2/MANIFEST.md#L333
 // https://learn.microsoft.com/en-us/windows/arm/apps-on-arm-x86-emulation
 var releaseMatrix = []struct{ pair, runs string }{
@@ -90,18 +89,6 @@ func releasePairs() []string {
 		out = append(out, p.pair)
 	}
 	slices.Sort(out)
-	return out
-}
-
-// emulated is each pair releaseMatrix runs another pair's binary on,
-// with that pair.
-func emulated() map[string]string {
-	out := map[string]string{}
-	for _, p := range releaseMatrix {
-		if p.runs != "" {
-			out[p.pair] = p.runs
-		}
-	}
 	return out
 }
 
@@ -182,15 +169,18 @@ func pluginGate(w io.Writer, _ []string) error {
 	if built, err := goreleaserMatrix(release); err != nil {
 		problems = append(problems, err.Error())
 	} else {
-		problems = append(problems, pluginMatrixProblems(built, emulated())...)
+		problems = append(problems, pluginMatrixProblems(built)...)
 	}
 
 	// The launcher the packer will write must name every directory it
 	// stages, and nothing else. This is the check that reads the
 	// generated text rather than trusting the table it came from.
-	launcher := launcherScript()
+	launcher, shim := launcherScript(), cmdShim()
 	for _, p := range platforms {
 		if p.goos == "windows" {
+			if !strings.Contains(shim, p.dir()+`\`+p.binary()) {
+				problems = append(problems, "the Windows shim does not spawn the staged "+p.dir()+" binary")
+			}
 			continue
 		}
 		if !strings.Contains(launcher, p.dir()+"/"+p.binary()) {
@@ -202,10 +192,6 @@ func pluginGate(w io.Writer, _ []string) error {
 			}
 		}
 	}
-	if !strings.Contains(cmdShim(), `windows-amd64\favro-mcp.exe`) {
-		problems = append(problems, "the Windows shim does not spawn the staged windows-amd64 binary")
-	}
-
 	problems = append(problems, onlyTheServerShips(release)...)
 
 	if len(problems) > 0 {
@@ -218,11 +204,8 @@ func pluginGate(w io.Writer, _ []string) error {
 
 // pluginMatrixProblems holds the staged platforms to the ones GoReleaser
 // builds, both ways: each staged one is built, and each built one is
-// staged or runs, under emulation, the staged one emulation names. An
-// entry in emulation for a platform the release does not build, or for
-// one the plugin stages, is refused, so the exemption cannot outlive its
-// reason.
-func pluginMatrixProblems(built []string, emulation map[string]string) []string {
+// staged. The plugin runs no binary under emulation.
+func pluginMatrixProblems(built []string) []string {
 	staged := func(dir string) bool {
 		return slices.ContainsFunc(platforms, func(p platform) bool { return p.dir() == dir })
 	}
@@ -234,17 +217,9 @@ func pluginMatrixProblems(built []string, emulation map[string]string) []string 
 		}
 	}
 	for _, b := range built {
-		if via, ok := emulation[b]; !staged(b) && (!ok || !staged(via)) {
+		if !staged(b) {
 			problems = append(problems, fmt.Sprintf(
 				"GoReleaser builds %s and no launcher arm reaches it; that binary ships unusable", b))
-		}
-	}
-	for _, b := range slices.Sorted(maps.Keys(emulation)) {
-		switch {
-		case !slices.Contains(built, b):
-			problems = append(problems, fmt.Sprintf("emulated names %s, which .goreleaser.yaml does not build", b))
-		case staged(b):
-			problems = append(problems, fmt.Sprintf("emulated names %s, which the bundle stages", b))
 		}
 	}
 	return problems
@@ -348,11 +323,34 @@ func launcherScript() string {
 	return b.String()
 }
 
-// cmdShim is the Windows half. CRLF, because cmd.exe parses it that way
-// even when the zip was extracted on a Unix host first, and %~dp0 so the
-// shim stays relocatable.
+// cmdShim is the Windows half, generated from platforms as the launcher
+// is. CRLF, because cmd.exe parses it that way even when the zip was
+// extracted on a Unix host first, and %~dp0 so the shim stays
+// relocatable. A 64-bit cmd.exe names its machine in
+// PROCESSOR_ARCHITECTURE, and a 32-bit one under WOW64 in
+// PROCESSOR_ARCHITEW6432; a machine named by neither runs the amd64
+// binary
+// (https://learn.microsoft.com/en-us/windows/win32/winprog64/wow64-implementation-details#environment-variables).
+// A goto rather than a parenthesized block, since cmd.exe parses a
+// block's %* whole and a ")" in an argument would end it.
 func cmdShim() string {
-	return "@echo off\r\n" + `"%~dp0windows-amd64\favro-mcp.exe" %*` + "\r\n"
+	run := func(p platform) string { return `"%~dp0` + p.dir() + `\` + p.binary() + `" %*` }
+	lines := []string{"@echo off"}
+	var others []platform
+	for _, p := range platforms {
+		if p.goos != "windows" || p.goarch == "amd64" {
+			continue
+		}
+		others = append(others, p)
+		for _, v := range []string{"PROCESSOR_ARCHITECTURE", "PROCESSOR_ARCHITEW6432"} {
+			lines = append(lines, fmt.Sprintf(`if /i "%%%s%%"=="%s" goto %s`, v, strings.ToUpper(p.goarch), p.goarch))
+		}
+	}
+	lines = append(lines, run(platform{goos: "windows", goarch: "amd64"}), "exit /b %errorlevel%")
+	for _, p := range others {
+		lines = append(lines, ":"+p.goarch, run(p), "exit /b %errorlevel%")
+	}
+	return strings.Join(lines, "\r\n") + "\r\n"
 }
 
 // pluginPack assembles the bundle from a GoReleaser dist directory, into

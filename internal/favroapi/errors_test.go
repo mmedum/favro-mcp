@@ -177,7 +177,7 @@ func TestEveryErrorTypeNamesItsClass(t *testing.T) {
 		"ValidationError":     render.ClassInvalid,
 		"TransientError":      render.ClassUnavailable,
 		"APIError":            render.ClassInvalid, // by status; see its ErrorClass
-		"WriteIgnoredError":   render.ClassUnavailable,
+		"WriteIgnoredError":   render.ClassUnsupported,
 		"AmbiguousWriteError": render.ClassAmbiguousOutcome,
 	}
 	samples := map[string]error{
