@@ -675,6 +675,12 @@ func TestPinsNamesEachProblem(t *testing.T) {
 			"govulncheck is v1.8.1 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and v1.8.0 at Makefile: GOVULNCHECK: one tool, one version",
 			"go-licenses is v1.6.1 at .github/workflows/ci.yml:15: go run github.com/google/go-licenses and v1.6.0 at Makefile: GOLICENSES: one tool, one version",
 		}},
+		// The vuln gate runs its argument, so that argument is a pin.
+		{"CI runs the vuln gate at another version", []docsEdit{
+			ci("go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...", "go run ./scripts/gates vuln golang.org/x/vuln/cmd/govulncheck@v1.8.1"),
+		}, []string{
+			"govulncheck is v1.8.1 at .github/workflows/ci.yml:14: go run golang.org/x/vuln/cmd/govulncheck and v1.8.0 at Makefile: GOVULNCHECK: one tool, one version",
+		}},
 		{"the Makefile at latest, a range and a variable no recipe runs", []docsEdit{
 			mk("go-licenses@v1.6.0", "go-licenses@latest"),
 			mk("golangci-lint@v2.14.0", "golangci-lint@v2.14"),

@@ -46,14 +46,21 @@ func putAll(t *testing.T, root string, files map[string]string) {
 // It also turns automatic maintenance off. A commit starts it detached, and
 // it holds .git/objects/maintenance.lock after git returns, so a copy of the
 // repository races it (https://github.com/git/git/blob/v2.51.0/builtin/gc.c#L1663).
+//
+// The go command keeps telemetry under the same config directory and
+// starts a child that can write there after the test ends, so the
+// directory holds the mode file `go telemetry off` writes
+// (https://go.dev/doc/telemetry#config).
 func isolateGit(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
+	config := t.TempDir()
+	put(t, config, "go/telemetry/mode", "off")
 	for k, v := range map[string]string{
 		"GIT_CONFIG_GLOBAL": os.DevNull, "GIT_CONFIG_NOSYSTEM": "1",
-		"XDG_CONFIG_HOME": t.TempDir(), "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "fixture@example.com",
+		"XDG_CONFIG_HOME": config, "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "fixture@example.com",
 		"GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "fixture@example.com",
 		// Command-scope pairs, which every config file yields to:
 		// https://git-scm.com/docs/git-config#Documentation/git-config.txt-GITCONFIGCOUNT
