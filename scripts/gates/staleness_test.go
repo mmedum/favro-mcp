@@ -255,8 +255,7 @@ func TestEveryEnvNameReachesBothDocuments(t *testing.T) {
 }
 
 // The README's plugin section names every directory the plugin stages a
-// binary under, and says which pair runs another's under emulation, from
-// the tables the plugin gate reads. A README without the section is
+// binary under, from the table the plugin gate reads. A README without the section is
 // reported, not passed.
 func TestThePluginSectionNamesWhatThePluginStages(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(parityRepoRoot, "README.md"))
@@ -272,12 +271,8 @@ func TestThePluginSectionNamesWhatThePluginStages(t *testing.T) {
 		want           []string
 	}{
 		{
-			"a staged directory left out", "linux-arm64 and ", "and ",
+			"a staged directory left out", "linux-arm64, ", "",
 			[]string{"README.md's plugin section does not name linux-arm64, which the plugin stages"},
-		},
-		{
-			"no word of emulation", "under emulation", "natively",
-			[]string{"README.md's plugin section does not say that windows-arm64 runs the windows-amd64 binary under emulation"},
 		},
 		{
 			"no section", "### Cowork plugin", "### Plugin",
@@ -288,6 +283,39 @@ func TestThePluginSectionNamesWhatThePluginStages(t *testing.T) {
 			t.Fatalf("%s: the README does not say %q", tc.name, tc.old)
 		}
 		if got := pluginPlatformsDocumented(strings.Replace(readme, tc.old, tc.new, 1)); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The README's Desktop bundle section says which pair runs another's
+// binary under emulation, from releaseMatrix. A README without the
+// section is reported, not passed.
+func TestTheDesktopSectionNamesWhatRunsUnderEmulation(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(parityRepoRoot, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if got := desktopEmulationDocumented(readme); len(got) != 0 {
+		t.Fatalf("the committed README: %q", got)
+	}
+	const unsaid = "README.md's Desktop bundle section does not say that windows-arm64 runs the windows-amd64 binary under emulation"
+	for _, tc := range []struct {
+		name, old, new string
+		want           []string
+	}{
+		{"no word of emulation", "under emulation", "natively", []string{unsaid}},
+		{"the pair unnamed", "(windows-arm64)", "", []string{unsaid}},
+		{
+			"no section", "### Claude Desktop bundle", "### Desktop",
+			[]string{"README.md has no ### Claude Desktop bundle section, so nothing says what the Desktop bundle runs"},
+		},
+	} {
+		if !strings.Contains(readme, tc.old) {
+			t.Fatalf("%s: the README does not say %q", tc.name, tc.old)
+		}
+		if got := desktopEmulationDocumented(strings.Replace(readme, tc.old, tc.new, 1)); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
 	}

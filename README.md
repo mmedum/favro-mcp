@@ -61,11 +61,11 @@ Each tagged release publishes a `favro-mcp_<version>.mcpb` on the [GitHub Releas
 
 It also asks for the settings a config file would carry. The destructive tools (`enable_destructive`) stay off unless you turn them on, and so do uploads until you pick an upload folder (`upload_dir`). This server asks nobody before a call. Claude Desktop approves each tool, and a tool you always allow then runs unasked, so leave `enable_destructive` off unless you need its tools.
 
-The bundle carries a macOS universal binary, a Windows amd64 binary, and both Linux architectures behind a launcher that picks at startup. It is listed in `checksums.txt` and covered by the release signature; see [Verifying a download](#verifying-a-download).
+The bundle carries a macOS universal binary, a Windows amd64 binary, and both Linux architectures behind a launcher that picks at startup. Windows on arm64 (windows-arm64) runs the windows-amd64 binary under emulation, which needs Windows 11; the plugin below runs natively there. It is listed in `checksums.txt` and covered by the release signature; see [Verifying a download](#verifying-a-download).
 
 ### Cowork plugin (recommended)
 
-Each stable (non-pre-release) release publishes a single multi-arch `favro-mcp.plugin` zip on the [GitHub Releases page](https://github.com/mmedum/favro-mcp/releases). The bundle contains binaries for darwin-amd64, darwin-arm64, linux-amd64, linux-arm64 and windows-amd64. On macOS and Linux a launcher shim picks the right one at runtime, and on Windows a `.cmd` shim runs the windows-amd64 binary, which Windows on arm64 (windows-arm64) runs under emulation.
+Each stable (non-pre-release) release publishes a single multi-arch `favro-mcp.plugin` zip on the [GitHub Releases page](https://github.com/mmedum/favro-mcp/releases). The bundle contains binaries for darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, windows-amd64 and windows-arm64. On macOS and Linux a launcher shim picks the right one at runtime, and on Windows a `.cmd` shim does.
 
 1. Download `favro-mcp.plugin` from the release.
 2. Install it into your Cowork profile (drag-and-drop, or follow Cowork's plugin install flow).

@@ -1251,9 +1251,15 @@ func mcpbMatrixProblems(binaries []mcpbBinary) []string {
 	}
 	var problems []string
 	for _, p := range releaseMatrix {
-		if !staged(p.pair) && (p.runs == "" || !staged(p.runs)) {
+		switch {
+		case !staged(p.pair) && (p.runs == "" || !staged(p.runs)):
 			problems = append(problems, fmt.Sprintf("the release builds %s and the Desktop bundle stages no "+
 				"binary that runs there", p.pair))
+		case p.runs != "" && staged(p.pair):
+			// The emulation entry outlives its reason once the bundle
+			// stages the pair's own binary.
+			problems = append(problems, fmt.Sprintf("releaseMatrix runs %s on %s, and the Desktop bundle "+
+				"stages a binary of its own there", p.runs, p.pair))
 		}
 	}
 	return problems

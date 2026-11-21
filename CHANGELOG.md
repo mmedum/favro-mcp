@@ -8,6 +8,12 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Added
+- `favro-mcp.plugin` carries a native windows-arm64 binary, which its `.cmd` shim runs on Windows on Arm, Windows 10 included.
+
+### Changed
+- A card move Favro accepts and ignores is `[unsupported]`, not `[unavailable]`: the same call is ignored again, so retrying never helps.
+
 ### Fixed
 - For contributors: `make vuln` runs govulncheck under the official Go release `go.mod` names; a distribution build made it skip the standard library and pass.
 

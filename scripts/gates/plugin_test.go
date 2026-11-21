@@ -45,15 +45,21 @@ func TestLauncherDispatchesToEveryStagedBinary(t *testing.T) {
 }
 
 // releaseMatrix is six archives, windows-arm64 among them, and the one
-// pair a bundle runs another's binary on: Windows on arm64 runs
+// pair the Desktop bundle runs another's binary on: Windows on arm64 runs
 // windows-amd64 under emulation. Every other test reads the table.
 func TestTheReleaseMatrixIsTheFamilysSix(t *testing.T) {
 	want := []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"}
 	if got := releasePairs(); !slices.Equal(got, want) {
 		t.Errorf("releasePairs = %q, want %q", got, want)
 	}
-	if got := emulated(); len(got) != 1 || got["windows-arm64"] != "windows-amd64" {
-		t.Errorf("emulated = %v, want windows-arm64 running windows-amd64", got)
+	var runs []string
+	for _, p := range releaseMatrix {
+		if p.runs != "" {
+			runs = append(runs, p.pair+" runs "+p.runs)
+		}
+	}
+	if !slices.Equal(runs, []string{"windows-arm64 runs windows-amd64"}) {
+		t.Errorf("releaseMatrix runs %q, want windows-arm64 running windows-amd64", runs)
 	}
 }
 
@@ -76,46 +82,32 @@ func TestGoreleaserMatrixIsTheOneTheBundleClaims(t *testing.T) {
 	}
 }
 
-// Every platform the release builds is one the plugin stages, or one
-// that runs a staged binary under emulation; and the exemption holds only
-// while its reason does.
+// Every platform the release builds is one the plugin stages, and every
+// one it stages is built.
 func TestPluginMatrixProblems(t *testing.T) {
 	six := releasePairs()
-	if got := pluginMatrixProblems(six, emulated()); len(got) != 0 {
-		t.Errorf("the six release pairs with windows-arm64 emulated: %q", got)
+	if got := pluginMatrixProblems(six); len(got) != 0 {
+		t.Errorf("the six release pairs: %q", got)
 	}
 	for _, tc := range []struct {
-		name      string
-		built     []string
-		emulation map[string]string
-		want      []string
+		name  string
+		built []string
+		want  []string
 	}{
 		{
-			"a built platform nothing reaches", six, nil,
-			[]string{"GoReleaser builds windows-arm64 and no launcher arm reaches it; that binary ships unusable"},
+			"a built platform nothing reaches", append(slices.Clone(six), "linux-riscv64"),
+			[]string{"GoReleaser builds linux-riscv64 and no launcher arm reaches it; that binary ships unusable"},
 		},
 		{
-			"emulated by a platform not staged", six,
-			map[string]string{"windows-arm64": "windows-386"},
-			[]string{"GoReleaser builds windows-arm64 and no launcher arm reaches it; that binary ships unusable"},
-		},
-		{
-			"a staged platform not built", six[1:], emulated(),
+			"a staged platform not built", six[1:],
 			[]string{"the bundle stages bin/darwin-amd64, which .goreleaser.yaml does not build"},
 		},
-		{
-			"emulation for a platform not built", six[:5], emulated(),
-			[]string{"emulated names windows-arm64, which .goreleaser.yaml does not build"},
-		},
-		{
-			"emulation for a staged platform", six,
-			map[string]string{"windows-arm64": "windows-amd64", "linux-arm64": "linux-amd64"},
-			[]string{"emulated names linux-arm64, which the bundle stages"},
-		},
 	} {
-		if got := pluginMatrixProblems(tc.built, tc.emulation); !slices.Equal(got, tc.want) {
-			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pluginMatrixProblems(tc.built); !slices.Equal(got, tc.want) {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -387,6 +379,7 @@ func TestPluginPackWritesTheBundleIntoDist(t *testing.T) {
 		".claude-plugin/plugin.json", ".mcp.json", "LICENSE", "NOTICE", "README.md",
 		"bin/darwin-amd64/favro-mcp", "bin/darwin-arm64/favro-mcp", "bin/favro-mcp", "bin/favro-mcp.cmd",
 		"bin/linux-amd64/favro-mcp", "bin/linux-arm64/favro-mcp", "bin/windows-amd64/favro-mcp.exe",
+		"bin/windows-arm64/favro-mcp.exe",
 	}
 	if !slices.Equal(names, want) {
 		t.Errorf("the bundle carries %q, want %q", names, want)
@@ -453,5 +446,48 @@ func TestOnlyTheServerShips(t *testing.T) {
 		if got := onlyTheServerShips(parseGoreleaser(tc.cfg)); !slices.Equal(got, []string{tc.want}) {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// The Windows shim runs each non-amd64 Windows binary on its machine,
+// whether the cmd.exe reading it is 64-bit or a 32-bit one under WOW64,
+// and the amd64 binary everywhere else, without falling through from
+// one to the next. Each line ends in CRLF, as cmd.exe parses it.
+func TestCmdShimPicksTheBinaryByArchitecture(t *testing.T) {
+	shim := cmdShim()
+	if strings.Count(shim, "\n") != strings.Count(shim, "\r\n") {
+		t.Fatalf("the shim has a line that does not end in CRLF:\n%q", shim)
+	}
+	lines := strings.Split(strings.TrimSuffix(shim, "\r\n"), "\r\n")
+	at := func(line string) int {
+		i := slices.Index(lines, line)
+		if i < 0 {
+			t.Fatalf("the shim has no line %q:\n%s", line, shim)
+		}
+		return i
+	}
+	run := func(p platform) string { return `"%~dp0` + p.dir() + `\` + p.binary() + `" %*` }
+	amd64 := at(run(platform{goos: "windows", goarch: "amd64"}))
+	if lines[amd64+1] != "exit /b %errorlevel%" {
+		t.Errorf("the amd64 branch falls through:\n%s", shim)
+	}
+	others := 0
+	for _, p := range platforms {
+		if p.goos != "windows" || p.goarch == "amd64" {
+			continue
+		}
+		others++
+		for _, v := range []string{"PROCESSOR_ARCHITECTURE", "PROCESSOR_ARCHITEW6432"} {
+			if at(`if /i "%`+v+`%"=="`+strings.ToUpper(p.goarch)+`" goto `+p.goarch) > amd64 {
+				t.Errorf("the %s test comes after the amd64 run", v)
+			}
+		}
+		label := at(":" + p.goarch)
+		if label < amd64 || lines[label+1] != run(p) || lines[label+2] != "exit /b %errorlevel%" {
+			t.Errorf("want :%s, then its binary, then exit, after the amd64 branch:\n%s", p.goarch, shim)
+		}
+	}
+	if others == 0 {
+		t.Fatal("platforms has no Windows binary but amd64; the test reads nothing")
 	}
 }

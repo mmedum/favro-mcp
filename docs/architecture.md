@@ -303,7 +303,7 @@ The staleness gate holds the README, [TOOLS.md](TOOLS.md),
 **Distribution.** A release is built from a tag and signed and attested
 (D-83, D-84). It carries the platform archives, the `.plugin` and a
 Claude Desktop `.mcpb` whose settings derive from `config.Vars`, every
-switch off by default (D-88, D-89, D-90, D-91). Releasing is in
+switch off by default (D-88, D-89, D-90, D-95). Releasing is in
 [release.md](release.md), and fixing a symptom in
 [troubleshooting.md](troubleshooting.md).
 
@@ -401,10 +401,11 @@ switch off by default (D-88, D-89, D-90, D-91). Releasing is in
 | D-88 | Both bundles ship: the .plugin, which is how people install this server, and the .mcpb beside it | accepted | plugin, mcpb, TestPluginGateAgainstThisRepository, TestCommittedManifestPasses |
 | D-89 | The .mcpb asks for every setting the server reads, derived from config.Vars, each defaulting to the server's own default, and is the whole setup | accepted | mcpb, TestBundleVarsAreDerivedFromTheSettings, TestTheConfigDiffNamesTheFieldsThatDiffer, TestAManifestThatConfiguresNothingIsCaught |
 | D-90 | A bundle's commands start with ${__dirname}/ and name a staged binary or the launcher, and no platform override sets env or args | accepted | mcpb, TestManifestProblemsRunsEveryCheck, TestLauncherNamesWhatThePackerStages, TestTheCommittedManifestMeetsTheFloor |
-| D-91 | One release matrix names the six archives, and both bundles run the Windows amd64 binary on arm64 | accepted | TestTheReleaseMatrixIsTheFamilysSix, TestGoreleaserMatrixIsTheOneTheBundleClaims, TestReleaseArchivesAreTheFamilys |
+| D-91 | One release matrix names the six archives, and both bundles run the Windows amd64 binary on arm64 | superseded by D-95 | — |
 | D-92 | The MCP registry entry obeys the rules the registry enforces in code | accepted | registry, TestMCPRegistryCatchesWhatTheRegistryRefuses, TestMCPRegistryAgainstThisRepository |
 | D-93 | A write whose 200 is not trusted carries an `unverified` error class | rejected | — |
 | D-94 | The server confirms its riskiest writes with the person, through MCP form elicitation | superseded by D-31 | — |
+| D-95 | One release matrix names the six archives; the plugin runs a native Windows arm64 binary, and the Desktop bundle runs the amd64 one there | accepted | TestTheReleaseMatrixIsTheFamilysSix, TestGoreleaserMatrixIsTheOneTheBundleClaims, TestReleaseArchivesAreTheFamilys, TestCmdShimPicksTheBinaryByArchitecture, TestPluginMatrixProblems |
 
 ### D-01 One Go binary serves one person's Favro account over stdio; nothing is hosted
 
@@ -1322,11 +1323,15 @@ raises without a sentinel is an argument the caller got wrong.
 `internal/service` and `internal/favroapi`. The `classes` gate holds the
 vocabulary and its documentation to each other from both sides.
 
-Rejected: matching on an error's text; an `unverified` class (D-93).
+`WriteIgnoredError`, a write Favro accepted and did not perform, is
+`unsupported`: the same call is ignored again, and "do not try this
+again" is the move.
+
+Rejected: matching on an error's text; an `unverified` class (D-93); a
+class of its own for an ignored write, which would ask nothing
+`unsupported` does not.
 Cost: a server bug reaching the fallback is mislabeled, and an inline
-`fmt.Errorf` in a handler is checked by nothing. Issue #126 asks whether
-`WriteIgnoredError` needs a class of its own, since `[unavailable]`
-tells a model to retry a write Favro will ignore again.
+`fmt.Errorf` in a handler is checked by nothing.
 
 ### D-41 A 429 is retried once when it says to wait 30 seconds or less, and a read's 5xx up to three attempts; a write is sent once, and a 5xx or a failure after the dial is ambiguous_outcome
 
@@ -2268,7 +2273,7 @@ to that module's license.
 CI runs the unit tests on Linux, macOS and Windows.
 
 A person installs this server on all three, and the release builds for
-all three (D-91). Each platform breaks things the others pass. POSIX
+all three (D-95). Each platform breaks things the others pass. POSIX
 regular expressions have no `\s` or `\b`, so a pattern git accepts on
 Linux matches nothing on macOS, and a fixture binary on Windows has to
 be a real build. Every gate that greps through git therefore greps a
@@ -2483,8 +2488,7 @@ holds `.goreleaser.yaml` to it.
 Rejected: a native arm64 Windows binary in the bundles, which the
 manifest has no key to choose.
 Cost: Windows 10 on Arm cannot run x64 code, so a bundle install there
-fails. Issue #125 asks whether to ship a native windows arm64 binary in
-the bundles.
+fails. Superseded by D-95, under which the plugin's shim chooses.
 
 ### D-92 The MCP registry entry obeys the rules the registry enforces in code
 
@@ -2549,4 +2553,29 @@ sent only to a client that cannot ask.
 Cost: while it held, `FAVRO_REQUIRE_PROMPT` refused the asking writes on
 a client that could not ask. That setting is refused at start (D-32).
 
-Next ID: D-95
+### D-95 One release matrix names the six archives; the plugin runs a native Windows arm64 binary, and the Desktop bundle runs the amd64 one there
+
+One release matrix, `releaseMatrix` in `scripts/gates/plugin.go`, names
+the archives the release builds: darwin, linux and windows, each on
+amd64 and arm64. The plugin stages a binary for each of the six, and the
+Desktop bundle runs the Windows amd64 binary on arm64.
+
+The plugin reaches Windows through a `.cmd` shim, which reads
+`PROCESSOR_ARCHITECTURE`, or `PROCESSOR_ARCHITEW6432` under WOW64, and
+runs `windows-arm64` on an Arm machine
+([WOW64 environment variables](https://learn.microsoft.com/en-us/windows/win32/winprog64/wow64-implementation-details#environment-variables)).
+So Windows 10 on Arm, which emulates only x86, runs the plugin. A Desktop
+bundle manifest names one command per platform and has no key for the
+architecture ([MANIFEST.md](https://github.com/anthropics/mcpb/blob/v2.1.2/MANIFEST.md#L333)),
+so the `.mcpb` stages the amd64 binary for `win32`, which Windows 11
+emulates. The `mcpb` and `plugin` gates both read the one table, and
+`TestGoreleaserMatrixIsTheOneTheBundleClaims` holds `.goreleaser.yaml` to
+it.
+
+Rejected: a launcher for the `.mcpb` on Windows, a `.cmd` or an x86
+program, since whether Claude Desktop spawns a `.cmd` is unprobed (issue
+#124) and an x86 launcher is a seventh build.
+Cost: the plugin carries one more binary, and a `.mcpb` install on
+Windows 10 on Arm still fails (issue #125).
+
+Next ID: D-96

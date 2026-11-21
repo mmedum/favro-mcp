@@ -853,8 +853,10 @@ func TestMCP_MoveCard_FavroIgnoredTheMove(t *testing.T) {
 	}
 	text := res.Content[0].(*mcp.TextContent).Text
 	requireDeclaredClassPrefix(t, text)
-	if !strings.HasPrefix(text, "[unavailable] ") {
-		t.Errorf("the LLM-visible error must be [unavailable]: got %q", text)
+	// unsupported, not unavailable: the same call is ignored again, so a
+	// retry never helps (D-40).
+	if !strings.HasPrefix(text, "[unsupported] ") {
+		t.Errorf("the LLM-visible error must be [unsupported]: got %q", text)
 	}
 }
 
