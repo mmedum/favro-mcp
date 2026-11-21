@@ -582,6 +582,12 @@ func pinsGoRuns(line string) []pinsGoRun {
 			out = append(out, pinsGoRun{"run", run.pkg})
 		}
 	}
+	// A gate whose registry entry takes a module runs it with `go run`.
+	for _, c := range parityGateCalls(shellSplit(line)) {
+		if commands[c.name].args == gateRunsModule && len(c.args) == 1 {
+			out = append(out, pinsGoRun{"run", c.args[0]})
+		}
+	}
 	for _, c := range goCommands(line) {
 		if c.sub != "install" {
 			continue

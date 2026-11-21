@@ -106,6 +106,7 @@ var (
 // shape in words instead, as .github/ISSUE_TEMPLATE/bug_report.yml does.
 var allowedRefPrefixes = map[string]string{
 	"GO":  "Go vulnerability database ids (GO-2026-4971), cited in the changelog",
+	"CVE": "CVE ids (CVE-2026-97054), which the changelog names for a security fix",
 	"ISO": "ISO-8601, cited wherever a date format is described",
 	"BSD": "SPDX license identifiers (BSD-2-Clause, BSD-3-Clause) in the license allowlist",
 	"MIT": "the SPDX identifier MIT-0, named where the license check ignores a module",

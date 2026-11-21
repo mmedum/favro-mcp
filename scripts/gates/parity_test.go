@@ -193,7 +193,7 @@ func TestParityCatchesEachDivergence(t *testing.T) {
 			evalsTagged + "`make check` vets no pass that builds it; a contributor cannot see it break",
 		}},
 		{name: "make check does not scan for vulnerabilities", remove: "vuln", want: []string{
-			".github/workflows/ci.yml:194 runs `go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` and `make check` does not",
+			"the vuln gate runs in make check by the dispatch, and no target `make check` runs calls it",
 		}},
 		{name: "make check does not check the licenses", remove: "licenses", want: []string{
 			".github/workflows/ci.yml:200 runs `go run github.com/google/go-licenses@v1.6.0 check ./... " +
@@ -223,10 +223,12 @@ func TestParityCatchesEachDivergence(t *testing.T) {
 			replace(fxCI, "      - name: licenses\n", "      - run: go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...\n      - name: licenses\n"),
 		}, want: []string{".github/workflows/ci.yml:195 runs `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` and `make check` does not"}},
 		{name: "CI runs a tool at another version", edits: []docsEdit{
-			replace(fxCI, "govulncheck@v1.8.0", "govulncheck@v1.8.1"),
+			replace(fxCI, "go-licenses@v1.6.0", "go-licenses@v1.6.1"),
 		}, want: []string{
-			".github/workflows/ci.yml:194 runs `go run golang.org/x/vuln/cmd/govulncheck@v1.8.1 ./...` and `make check` does not",
-			"`make vuln` runs \"go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...\" and ci.yml never does",
+			".github/workflows/ci.yml:200 runs `go run github.com/google/go-licenses@v1.6.1 check ./... " +
+				"--allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC --ignore github.com/segmentio/asm` and `make check` does not",
+			"`make licenses` runs \"go run github.com/google/go-licenses@v1.6.0 check ./... " +
+				"--allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC --ignore github.com/segmentio/asm\" and ci.yml never does",
 		}},
 		{name: "make check tidies with other flags", edits: []docsEdit{
 			replace(fxMakefile, "\t$(GO) mod tidy -diff\n", "\t$(GO) mod tidy\n"),
@@ -374,7 +376,7 @@ func TestParityHoldsMakeCheckToWhatAPushRuns(t *testing.T) {
 	const prOnly = "only in its pr job, which a push to main does not run"
 	ack := `        run: go run ./scripts/gates schema-ack "$PR_BASE_REF" "$PR_HEAD"` + "\n"
 	docs := "      - name: docs resolve\n        run: go run ./scripts/gates docs\n"
-	vuln := "      - name: govulncheck\n        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...\n"
+	verify := "      - name: go mod verify\n        run: go mod verify\n"
 	vet := "      - run: go vet -tags=evals ./...\n"
 	lint := "      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0\n" +
 		"        with:\n          version: v2.14.0\n          args: --timeout=5m\n"
@@ -385,8 +387,8 @@ func TestParityHoldsMakeCheckToWhatAPushRuns(t *testing.T) {
 		{"a check gate moved into the pr job", moved(docs), nil, []string{
 			"the docs gate runs in make check by the dispatch, and ci.yml calls it " + prOnly,
 		}},
-		{"a make target's command moved into the pr job", moved(vuln), nil, []string{
-			"`make vuln` runs \"go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...\", and ci.yml runs it " + prOnly,
+		{"a make target's command moved into the pr job", moved(verify), nil, []string{
+			"`make tidy` runs \"go mod verify\", and ci.yml runs it " + prOnly,
 		}},
 		{"a vet pass moved into the pr job", moved(vet), nil, []string{
 			"`make vet` runs \"go vet -tags=evals ./...\", and ci.yml runs it " + prOnly,
@@ -403,12 +405,10 @@ func TestParityHoldsMakeCheckToWhatAPushRuns(t *testing.T) {
 // runs it bare, fails. The command is still CI's in the same words.
 func TestParityRefusesACommandWhoseFailureMakeIgnores(t *testing.T) {
 	t.Parallel()
-	const vuln = "\t$(GO) run $(GOVULNCHECK) ./...\n"
 	checkParityCases(t, []parityCase{
 		{
-			name: "a - before a check's command", edits: []docsEdit{replace(fxMakefile, vuln, "\t-$(GO) run $(GOVULNCHECK) ./...\n")},
-			want: []string{"`make vuln` runs \"go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...\" behind a - prefix: " +
-				"make ignores this command's failure"},
+			name: "a - before a check's command", edits: []docsEdit{replace(fxMakefile, "\t$(GO) mod verify\n", "\t-$(GO) mod verify\n")},
+			want: []string{"`make tidy` runs \"go mod verify\" behind a - prefix: make ignores this command's failure"},
 		},
 		{name: "a - among the other prefixes, before a gate call", edits: []docsEdit{
 			replace(fxMakefile, "\t@$(GO) run ./scripts/gates docs\n", "\t@ -$(GO) run ./scripts/gates docs\n"),
@@ -489,7 +489,7 @@ func TestParityReadsWhatRuns(t *testing.T) {
 			replace(fxMakefile, "check: fmt-check", "# check: vuln\ncheck: fmt-check"),
 			replace(fxMakefile, " vuln licenses", " licenses"),
 		}, nil, []string{
-			".github/workflows/ci.yml:194 runs `go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` and `make check` does not",
+			"the vuln gate runs in make check by the dispatch, and no target `make check` runs calls it",
 		}},
 		{"a recipe spaced and quoted otherwise than CI's line", []docsEdit{
 			replace(fxMakefile, "\t$(GO) vet ./...\n", "\t$(GO)  vet './...'\n"),
