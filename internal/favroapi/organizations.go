@@ -8,8 +8,8 @@ import (
 
 // ListOrganizations returns one page of organizations the API token
 // can see. See listPage for the pagination contract.
-func (c *Client) ListOrganizations(ctx context.Context, page int, requestID string) (favro.PageEnvelope[favro.Organization], error) {
-	return listPage[favro.Organization](ctx, c, "/organizations", page, requestID)
+func (c *Client) ListOrganizations(ctx context.Context, pg favro.Page) (favro.PageEnvelope[favro.Organization], error) {
+	return listPage[favro.Organization](ctx, c, "/organizations", pg)
 }
 
 // GetOrganization returns the organization the organizationId header

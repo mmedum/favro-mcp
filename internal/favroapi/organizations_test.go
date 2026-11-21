@@ -31,7 +31,7 @@ func TestListOrganizations_DefaultPage(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListOrganizations(context.Background(), 0, "")
+	env, err := c.ListOrganizations(context.Background(), favro.Page{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestListOrganizations_WithPage(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListOrganizations(context.Background(), 2, "req-prior")
+	_, err := c.ListOrganizations(context.Background(), favro.Page{Number: 2, RequestID: "req-prior"})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestListOrganizations_WithPage(t *testing.T) {
 	if got := rec[0].Query.Get("page"); got != "2" {
 		t.Errorf("rec[0].Query.Get(\"page\") = %v, want %v", got, "2")
 	}
-	if got := rec[0].Headers.Get(headerRequestID); got != "req-prior" {
+	if got := rec[0].Query.Get("requestId"); got != "req-prior" {
 		t.Errorf("page > 0 must forward the prior requestId as X-Favro-Backend-Identifier: got %v, want %v", got, "req-prior")
 	}
 }
@@ -92,7 +92,7 @@ func TestListOrganizations_PropagatesAuthError(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListOrganizations(context.Background(), 0, "")
+	_, err := c.ListOrganizations(context.Background(), favro.Page{})
 	var ae *AuthError
 	if !errors.As(err, &ae) {
 		t.Fatalf("got %v, want ae", err)
@@ -194,10 +194,8 @@ func TestGetOrganization_PathEscapesID(t *testing.T) {
 	}
 
 	rec := h.seen()
-	// Go's net/url leaves "%2F" encoded in URL.Path on purpose — if
-	// it decoded, the slash would be indistinguishable from a path
-	// separator. So the slash in the id is preserved as "%2F" all
-	// the way to the server, which is exactly what we want.
+	// The slash in the id reaches the server escaped once, as "%2F", so
+	// it cannot read as a path separator.
 	if got := rec[0].Path; got != "/organizations/a%2Fb" {
 		t.Errorf("rec[0].Path = %v, want %v", got, "/organizations/a%2Fb")
 	}
@@ -222,7 +220,7 @@ func TestListOrganizations_NewFieldsDecoding(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListOrganizations(context.Background(), 0, "")
+	env, err := c.ListOrganizations(context.Background(), favro.Page{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}

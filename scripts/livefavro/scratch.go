@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 
@@ -26,6 +27,16 @@ type probeKind struct {
 	idArg   string // the delete's id argument, and the read's
 	read    string // the read that fetches it by id
 
+	// deleteArgs are what the delete needs beside the id and confirm.
+	deleteArgs map[string]any
+	// alsoKeys are ids the create returns beside idKey that the run may
+	// then name, such as a card's cardCommonId.
+	alsoKeys []string
+	// heldBy is the argument naming the probe this one is removed with,
+	// for a kind the sweep cannot find by name. A create without it is
+	// refused: nothing would clean it up.
+	heldBy string
+
 	deleted, gone livecover.Check // the checks deleteAndReadBack makes
 }
 
@@ -44,6 +55,26 @@ var probeKinds = map[string]probeKind{
 		resolve: "favro_resolve_collection", found: "collection_id",
 		delete: "favro_delete_collection", idArg: "collection_id", read: "favro_get_collection",
 		deleted: livecover.CheckCollectionDeleteWithConfirm, gone: livecover.CheckCollectionGone,
+	},
+	// A widget is not removed with its collection, which Favro does not
+	// cascade, so it is swept on its own.
+	"favro_create_widget": {
+		noun: "widget", idKey: "widgetCommonId",
+		resolve: "favro_resolve_widget", found: "widget_common_id",
+		delete: "favro_delete_widget", idArg: "widget_common_id", read: "favro_get_widget",
+		deleteArgs: map[string]any{"everywhere": true},
+		deleted:    livecover.CheckWidgetDeleteWithConfirm, gone: livecover.CheckWidgetGone,
+	},
+	// A card has no read by name, so the sweep finds none: it is removed
+	// with its probe widget, since "Deleting a widget will also delete any
+	// columns, card or comments that exist on the widget"
+	// (https://favro.com/developer/#delete-a-widget). Its own delete
+	// removes every copy.
+	"favro_create_card": {
+		noun: "card", idKey: "cardId", alsoKeys: []string{"cardCommonId"}, heldBy: "widget_common_id",
+		delete: "favro_delete_card", idArg: "card_id", read: "favro_get_card",
+		deleteArgs: map[string]any{"everywhere": true},
+		deleted:    livecover.CheckCardDeleteWithConfirm, gone: livecover.CheckCardGone,
 	},
 }
 
@@ -92,6 +123,10 @@ func (s *scratch) create(name string, args map[string]any) (*callResult, error) 
 	if !ok {
 		return nil, fmt.Errorf("%s is not a create the run can clean up after, so it is not sent", name)
 	}
+	if held, _ := args[kind.heldBy].(string); kind.heldBy != "" && held == "" {
+		return nil, fmt.Errorf("%s: a %s is removed only with the probe %s names, so it is not sent without one",
+			name, kind.noun, kind.heldBy)
+	}
 	probeName, _ := args["name"].(string)
 	if !strings.HasPrefix(probeName, probePrefix) {
 		return nil, fmt.Errorf("%s: a probe's name starts %q, so it is not sent", name, probePrefix)
@@ -105,12 +140,20 @@ func (s *scratch) create(name string, args map[string]any) (*callResult, error) 
 	s.mu.Unlock()
 
 	res, err := s.srv.call(name, args)
-	if id, idErr := createdID(res, err, kind.idKey); idErr == nil {
-		s.mu.Lock()
-		s.made[id] = true
-		s.mu.Unlock()
+	for _, key := range append([]string{kind.idKey}, kind.alsoKeys...) {
+		if id, idErr := createdID(res, err, key); idErr == nil {
+			s.adopt(id)
+		}
 	}
 	return res, err
+}
+
+// adopt records an id a write of this run returned, such as a comment's
+// thread, so a later call may name it. Whatever holds it is a probe.
+func (s *scratch) adopt(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.made[id] = true
 }
 
 // ours counts the objects a call names, and refuses one this run did not
@@ -190,12 +233,15 @@ func sweep(c caller, probes []probe, out *printer) error {
 // none is left.
 func sweepOne(c caller, p probe) (deleted int, err error) {
 	kind := probeKinds[p.tool]
+	if kind.heldBy != "" {
+		return 0, nil // removed with the probe that holds it
+	}
 	ids, err := findByName(c, kind, p.name)
 	if err != nil {
 		return 0, err
 	}
 	for _, id := range ids {
-		res, err := c.call(kind.delete, map[string]any{kind.idArg: id, "confirm": true})
+		res, err := c.call(kind.delete, kind.deleteCall(id))
 		if !succeeded(res, err) {
 			return deleted, fmt.Errorf("the delete failed: %s", firstLine(detail(res, err)))
 		}
@@ -209,6 +255,13 @@ func sweepOne(c caller, p probe) (deleted int, err error) {
 		return deleted, errors.New("it reads back after the delete")
 	}
 	return deleted, nil
+}
+
+// deleteCall is the delete's arguments for id, with confirm.
+func (k probeKind) deleteCall(id string) map[string]any {
+	args := map[string]any{k.idArg: id, "confirm": true}
+	maps.Copy(args, k.deleteArgs)
+	return args
 }
 
 // findByName returns the id of every candidate named exactly name.

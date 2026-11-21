@@ -69,7 +69,7 @@ func TestDebugLogNeverCarriesTheSubject(t *testing.T) {
 	c.HTTPClient = srv.Client()
 
 	// Every id-shaped filter Favro accepts on /cards, all at once...
-	_, err := c.ListCards(context.Background(), 0, "", favro.ListCardsFilter{
+	_, err := c.ListCards(context.Background(), favro.Page{}, favro.ListCardsFilter{
 		CardCommonID:   markerCardCommonID,
 		WidgetCommonID: markerWidgetID,
 		SequentialID:   4242,
@@ -82,6 +82,9 @@ func TestDebugLogNeverCarriesTheSubject(t *testing.T) {
 	// the query. A list endpoint alone would pass while /cards/{cardId}
 	// was logged whole.
 	_, _ = c.GetCard(context.Background(), markerCardID)
+	// An id holding a slash reaches Favro escaped, and is logged as the
+	// one segment it is, not as two words that read as a path.
+	_, _ = c.GetCard(context.Background(), "acme/roadmap")
 
 	logged := buf.String()
 	if len(logged) == 0 {
@@ -90,7 +93,7 @@ func TestDebugLogNeverCarriesTheSubject(t *testing.T) {
 
 	for _, forbidden := range []string{
 		markerOrgID, markerCardCommonID, markerWidgetID,
-		markerSequentialID, markerCardID, markerEmail, markerToken,
+		markerSequentialID, markerCardID, markerEmail, markerToken, "roadmap",
 	} {
 		if strings.Contains(logged, forbidden) {
 			t.Errorf("a value that identifies the subject reached the log, which no level may carry: %q present", forbidden)

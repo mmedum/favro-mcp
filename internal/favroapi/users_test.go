@@ -31,7 +31,7 @@ func TestListUsers_DefaultPage(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListUsers(context.Background(), 0, "")
+	env, err := c.ListUsers(context.Background(), favro.Page{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestListUsers_WithPageForwardsRequestID(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListUsers(context.Background(), 2, "req-prior")
+	_, err := c.ListUsers(context.Background(), favro.Page{Number: 2, RequestID: "req-prior"})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestListUsers_WithPageForwardsRequestID(t *testing.T) {
 	if got := rec[0].Query.Get("page"); got != "2" {
 		t.Errorf("rec[0].Query.Get(\"page\") = %v, want %v", got, "2")
 	}
-	if got := rec[0].Headers.Get(headerRequestID); got != "req-prior" {
+	if got := rec[0].Query.Get("requestId"); got != "req-prior" {
 		t.Errorf("page > 0 must forward the prior requestId as X-Favro-Backend-Identifier: got %v, want %v", got, "req-prior")
 	}
 }
@@ -101,7 +101,7 @@ func TestListUsers_PropagatesAuthError(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListUsers(context.Background(), 0, "")
+	_, err := c.ListUsers(context.Background(), favro.Page{})
 	var ae *AuthError
 	if !errors.As(err, &ae) {
 		t.Fatalf("got %v, want ae", err)

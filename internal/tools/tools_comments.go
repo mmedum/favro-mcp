@@ -20,6 +20,7 @@ const (
 type listCommentsInput struct {
 	listInput
 	CardCommonID string `json:"card_common_id" jsonschema:"the cross-widget cardCommonId whose comments to list; required by Favro on every page (must be passed on follow-up pages too, not just the first)"`
+	ThreadID     string `json:"thread_id,omitempty" jsonschema:"list only this thread's comments, oldest first: a comment's threadId. Favro answers [forbidden] for a thread that is not on this card."`
 }
 
 // getCommentInput is the input for favro_get_comment.
@@ -33,10 +34,11 @@ func registerComments(reg *registry, client *favroapi.Client) {
 		Description: "List comments on a single Favro card. `card_common_id` is REQUIRED " +
 			"(the cross-widget card identity, not the per-widget cardId). Returns one " +
 			"page; pass `page` (1-indexed) plus the `request_id` from the prior response " +
-			"(and `card_common_id` again) to retrieve subsequent pages. Read-only.",
+			"(and `card_common_id` again) to retrieve subsequent pages. Each comment " +
+			"carries its `threadId`; pass it as `thread_id` to list one thread. Read-only.",
 		Annotations: readOnly("List Favro comments"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listCommentsInput) (*mcp.CallToolResult, listOutput[favro.Comment], error) {
-		env, err := client.ListComments(ctx, in.favroPage(), in.RequestID, in.CardCommonID)
+		env, err := client.ListComments(ctx, in.page(), in.CardCommonID, in.ThreadID)
 		if err != nil {
 			return nil, listOutput[favro.Comment]{}, err
 		}

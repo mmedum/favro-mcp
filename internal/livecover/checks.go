@@ -18,6 +18,15 @@ const (
 	CheckWidenOpensAndReadsBack
 	CheckCollectionReadsOrganization
 	CheckUpdateNarrowsToUsers
+	CheckAttachmentUploaded
+	CheckAttachmentRemoved
+	CheckAttachmentGone
+	CheckReplyInThread
+	CheckThreadListed
+	CheckCardDeleteWithConfirm
+	CheckCardGone
+	CheckWidgetDeleteWithConfirm
+	CheckWidgetGone
 	CheckCollectionDeleteWithoutConfirm
 	CheckCollectionDeleteWithConfirm
 	CheckCollectionGone
@@ -39,6 +48,15 @@ var checkNames = [checkCount]string{
 	CheckWidenOpensAndReadsBack:         "favro_widen_collection_sharing opens it to the organization and reads it back",
 	CheckCollectionReadsOrganization:    "the collection reads back as organization",
 	CheckUpdateNarrowsToUsers:           "favro_update_collection narrows it to users again",
+	CheckAttachmentUploaded:             "favro_upload_attachment attaches a file to a probe card",
+	CheckAttachmentRemoved:              "favro_remove_attachment detaches it by its fileURL",
+	CheckAttachmentGone:                 "the card reads back with no attachment",
+	CheckReplyInThread:                  "favro_create_comment with thread_id replies in that thread",
+	CheckThreadListed:                   "favro_list_comments with thread_id lists the thread, oldest first",
+	CheckCardDeleteWithConfirm:          "favro_delete_card with confirm deletes it",
+	CheckCardGone:                       "the card is gone",
+	CheckWidgetDeleteWithConfirm:        "favro_delete_widget with confirm deletes it",
+	CheckWidgetGone:                     "the widget is gone",
 	CheckCollectionDeleteWithoutConfirm: "favro_delete_collection without confirm is [blocked]",
 	CheckCollectionDeleteWithConfirm:    "favro_delete_collection with confirm deletes it",
 	CheckCollectionGone:                 "the collection is gone",

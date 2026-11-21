@@ -15,8 +15,10 @@ import (
 	"github.com/mmedum/favro-mcp/v4/internal/favro"
 )
 
-// pagedHandler is a fake Favro that serves N pages of testEntities.
-// Page 0 has the initial requestId; subsequent pages must echo it back.
+// pagedHandler is a fake Favro that serves N pages of testEntities, as
+// the reference describes: page 0 returns a requestId and a backend
+// identifier header, and every later page must send the requestId as a
+// query parameter and the identifier as a header.
 type pagedHandler struct {
 	totalPages int
 	requestID  string
@@ -32,13 +34,15 @@ func (p *pagedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if page > 0 {
-		gotID := r.Header.Get(headerRequestID)
-		if gotID != p.requestID {
-			p.t.Errorf("page %d expected %s=%s, got %s", page, headerRequestID, p.requestID, gotID)
+		gotID, gotBackend := r.URL.Query().Get("requestId"), r.Header.Get(headerBackendID)
+		if gotID != p.requestID || gotBackend != testBackendID {
+			p.t.Errorf("page %d: requestId=%q and %s=%q, want %q and %q",
+				page, gotID, headerBackendID, gotBackend, p.requestID, testBackendID)
 			http.Error(w, "missing or wrong request id", http.StatusBadRequest)
 			return
 		}
 	}
+	w.Header().Set(headerBackendID, testBackendID)
 
 	env := favro.PageEnvelope[testEntity]{
 		Limit:     100,
@@ -51,6 +55,9 @@ func (p *pagedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(env)
 }
+
+// testBackendID is the X-Favro-Backend-Identifier the fake answers with.
+const testBackendID = "backend-7"
 
 func TestPaginate_SinglePage_VisitsOnce(t *testing.T) {
 	t.Parallel()

@@ -105,11 +105,10 @@ func (c *Client) uploadAttachment(ctx context.Context, path, filename, mimeType 
 // presigned URL whole cannot match. Favro answers the display name and
 // the bare S3 object name with 200 and removes nothing.
 //
-// The stripped URL removes the attachment, checked by hand against a
-// live organization. No live step removes one: the step "remove an
-// attachment from a card by URL, dry run" only builds the body. Favro
-// returns 200 whether or not anything matched, so confirm by
-// re-reading the card.
+// The stripped URL removes the attachment. Favro returns 200 whether or
+// not anything matched, so confirm by re-reading the card. Checked by the
+// live steps "favro_remove_attachment detaches it by its fileURL" and
+// "the card reads back with no attachment".
 // https://favro.com/developer/#update-a-card
 func (c *Client) RemoveAttachment(ctx context.Context, cardID string, fileURLs ...string) (favro.Card, error) {
 	if cardID == "" {

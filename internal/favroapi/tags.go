@@ -20,8 +20,8 @@ const updateTagsConcurrency = 4
 
 // ListTags returns one page of tags in the active organization. Tags
 // are org-global; only `name` is filterable server-side.
-func (c *Client) ListTags(ctx context.Context, page int, requestID string, filter favro.ListTagsFilter) (favro.PageEnvelope[favro.Tag], error) {
-	return listPageQ[favro.Tag](ctx, c, "/tags", filter.Values(), page, requestID)
+func (c *Client) ListTags(ctx context.Context, pg favro.Page, filter favro.ListTagsFilter) (favro.PageEnvelope[favro.Tag], error) {
+	return listPageQ[favro.Tag](ctx, c, "/tags", filter.Values(), pg)
 }
 
 // GetTag returns a single tag by its tagId. Returns *NotFoundError

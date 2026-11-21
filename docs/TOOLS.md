@@ -5,7 +5,9 @@ Read-only tools never accept `dry_run`; every mutating tool does.
 
 Page numbers are 1-indexed: omit `page` or pass `1` for the first page.
 Pass the `next_page` value from a response, and the `request_id` from
-that same response with it, as Favro's reference asks.
+that same response with it, as Favro's reference asks. Every list tool
+that pages takes `limit`, 1 to 100 items per page, on the first page;
+later pages keep that size.
 
 Every write that changes or removes something says
 `destructiveHint: true`. Only the writes that create something new and
@@ -60,7 +62,7 @@ means.
 | `favro_get_column` | Read-only. Returns a single Favro column by its columnId. |
 | `favro_list_cards` | Read-only. Lists Favro cards. Optional filters: `widget_common_id`, `collection_id`, `card_common_id`, `sequential_id` (integer of 'BSC-123' refs), plus `unique` to dedupe across widgets. Page + `request_id` for pagination. |
 | `favro_get_card` | Read-only. Returns a single Favro card by its per-widget `cardId`. Favro's GET endpoint 403s on a `cardCommonId` — to fetch by cross-widget id, use `favro_list_cards` with the `card_common_id` filter. `description_format: "markdown"` returns the description as Favro stored it. |
-| `favro_list_comments` | Read-only. Lists comments on a single Favro card. `card_common_id` is required (Favro scopes /comments by the cross-widget cardCommonId); also accepts `page` + `request_id`. |
+| `favro_list_comments` | Read-only. Lists comments on a single Favro card. `card_common_id` is required (Favro scopes /comments by the cross-widget cardCommonId); also accepts `page` + `request_id`. Each comment carries its `threadId`; `thread_id` lists one thread, oldest first. |
 | `favro_get_comment` | Read-only. Returns a single Favro comment by its commentId. |
 | `favro_list_tags` | Read-only. Lists all tags in the active organization (tags are org-global; no widget or card scope). Accepts `page` + `request_id`. |
 | `favro_get_tag` | Read-only. Returns a single Favro tag by its tagId. |
@@ -81,7 +83,7 @@ means.
 | `favro_delete_tag` | **Destructive.** Deletes an org-global tag by `tag_id` and removes it from every card it was applied to. Resolve via `favro_resolve_tag` if you only have the name. On success the tag cache is invalidated. Pass `dry_run: true` to preview the request without contacting Favro. |
 | `favro_update_tag` | Mutating. Updates an existing tag's `name` and/or `color`; both fields optional. Changes propagate to every card the tag is applied to. On success the tag cache is invalidated. Pass `dry_run: true` to preview. |
 | `favro_update_tags` | Mutating. Apply multiple tag updates in one tool call. Favro has no bulk-tag endpoint (`PUT /tags` answers with its web app's HTML page), so this fans out to N parallel `PUT /tags/{tagId}` calls under the hood. Same total round-trips as N sequential `favro_update_tag` calls, but parallelized. Each entry needs `tag_id` plus at least one of `name` / `color`. Returns updated tags in input order. On the first per-entry error remaining in-flight requests cancel — partial successes may have already landed; the wrapped error names the offending tagId and index. Live success invalidates the tag cache. Pass `dry_run: true` to preview. |
-| `favro_create_comment` | Mutating. Adds a new comment (markdown body) to the card identified by `card_common_id`. Pass `dry_run: true` to preview. Comments are not cached at the resolver layer, so no invalidation. |
+| `favro_create_comment` | Mutating. Adds a new comment (markdown body) to the card identified by `card_common_id`. `thread_id` replies in that thread; the result's `threadId` is checked against it, and `notes` says when Favro filed the reply elsewhere. Pass `dry_run: true` to preview. Comments are not cached at the resolver layer, so no invalidation. |
 | `favro_update_comment` | Mutating. Replaces the body of an existing comment by `comment_id`. Whole-body replace. `remove_attachments` detaches files by their `fileURL`. Pass `dry_run: true` to preview. |
 | `favro_delete_comment` | **Destructive.** Deletes a comment by `comment_id`. Pass `dry_run: true` to preview. |
 | `favro_create_card` | Mutating. Creates a new card. Required: `name`. Optional: `widget_common_id` (omit to land on the authenticated user's todo list), `column_id`, `lane_id`, `parent_card_id`, `detailed_description` (markdown), `list_position` / `sheet_position` (`top` / `bottom` / `above:cardId` / `below:cardId` / numeric string), `assignment_ids`, `tag_ids` (raw IDs only; `favro_add_tag_to_card` adds a tag by name and refuses an unknown one), `start_date`, `due_date`. The returned card carries the description as Favro stored it (`descriptionFormat=markdown`), which is normalized from what was sent. Successful live writes invalidate the search-cards cache. Pass `dry_run: true` to preview. |

@@ -1,6 +1,6 @@
 {
   "source": "https://favro.com/developer/",
-  "fetched_at": "2026-11-05",
+  "fetched_at": "2026-11-21",
   "endpoints": [
     {
       "method": "GET",
@@ -540,6 +540,7 @@
         "commentId",
         "organizationId",
         "cardCommonId",
+        "threadId",
         "comment",
         "userId",
         "created",

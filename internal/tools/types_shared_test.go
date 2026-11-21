@@ -24,7 +24,7 @@ func TestFavroPage(t *testing.T) {
 		-1: 0, // nonsense in, the first page out — never a negative page
 	}
 	for in, want := range cases {
-		if got := (listInput{Page: in}.favroPage()); got != want {
+		if got := (listInput{Page: in}.page().Number); got != want {
 			t.Errorf("page %d: got %v, want %v", in, got, want)
 		}
 	}
@@ -116,8 +116,8 @@ func TestNewListOutputCountsFromOne(t *testing.T) {
 	}
 
 	// And passing that next_page back asks Favro for its page 1.
-	if got := (listInput{Page: *out.NextPage}.favroPage()); got != 1 {
-		t.Errorf("listInput{Page: *out.NextPage}.favroPage() = %v, want %v", got, 1)
+	if got := (listInput{Page: *out.NextPage}.page().Number); got != 1 {
+		t.Errorf("listInput{Page: *out.NextPage}.page().Number = %v, want %v", got, 1)
 	}
 
 	// The last page offers nothing to follow.

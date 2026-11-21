@@ -15,6 +15,33 @@ import "github.com/mmedum/favro-mcp/v4/internal/config"
 // validated and never sent.
 func extraSteps() []Step {
 	return []Step{
+		// The second page is read as the reference asks: page with the
+		// first page's requestId, and the backend identifier the client
+		// kept from that page (https://favro.com/developer/#pagination).
+		{
+			Name:         "read a second page",
+			Tool:         "favro_list_tags",
+			Args:         map[string]any{"page": 2, "request_id": FirstPageRequestID},
+			Why:          "a later page of a one-per-page listing, which keeps the first page's size",
+			ExpectFields: map[string]any{"page": 2},
+		},
+		// A comment thread, listed and replied to, by the threadId a
+		// listed comment carries (https://favro.com/developer/#comments).
+		{
+			Name: "list a comment thread",
+			Tool: "favro_list_comments",
+			Args: map[string]any{"card_common_id": AnyCardCommonID, "thread_id": AnyThreadID},
+		},
+		{
+			Name: "reply in a comment thread, dry run",
+			Tool: "favro_create_comment",
+			Args: map[string]any{
+				"card_common_id": AnyCardCommonID,
+				"comment":        "livefavro probe",
+				"thread_id":      AnyThreadID,
+				"dry_run":        true,
+			},
+		},
 		// The three other ways to name a card, each a different code
 		// path: a cross-widget id, the integer people paste from a
 		// reference, and a search over a scoped corpus.

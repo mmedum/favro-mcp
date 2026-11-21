@@ -65,7 +65,7 @@ func registerCards(reg *registry, client *favroapi.Client) {
 		// the server lists every copy and keeps the board copy itself.
 		// Probed by hand; see service.FetchCardForIdentity.
 		collapse := in.Unique && (in.CardCommonID != "" || in.SequentialID > 0)
-		env, err := client.ListCards(ctx, in.favroPage(), in.RequestID, favro.ListCardsFilter{
+		env, err := client.ListCards(ctx, in.page(), favro.ListCardsFilter{
 			WidgetCommonID:    in.WidgetCommonID,
 			CollectionID:      in.CollectionID,
 			CardCommonID:      in.CardCommonID,

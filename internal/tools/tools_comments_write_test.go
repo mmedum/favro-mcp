@@ -2,6 +2,7 @@ package tools
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -243,4 +244,39 @@ func TestMCP_DeleteComment_DryRun(t *testing.T) {
 func TestMCP_DeleteComment_MissingCommentID(t *testing.T) {
 	t.Parallel()
 	assertMissingRequiredFieldFails(t, deleteCommentToolName, "comment_id")
+}
+
+// A reply Favro files in another thread is still a comment it wrote, so
+// it is not an error; the note says where it went (D-24).
+func TestMCP_CreateComment_ReplyFiledElsewhereIsNoted(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, answered string
+		note           string // a substring the note holds, or "" for no note
+	}{
+		{"filed in the thread asked for", "th-1", ""},
+		{"filed in another thread", "th-new", `not the requested "th-1"`},
+		{"an answer naming no thread", "", `is unconfirmed`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"commentId":"cm-2","cardCommonId":"cc-1","threadId":"` + tc.answered + `","comment":"reply"}`))
+			}))
+			res, err := connectInMemoryWith(t, c).CallTool(t.Context(), &mcp.CallToolParams{
+				Name:      createCommentToolName,
+				Arguments: map[string]any{"card_common_id": "cc-1", "comment": "reply", "thread_id": "th-1"},
+			})
+			if err != nil || res.IsError {
+				t.Fatalf("err = %v, IsError = %v", err, res != nil && res.IsError)
+			}
+			out := decodeStructured[writeOutput[favro.Comment]](t, res)
+			noted := tc.note != "" && slices.ContainsFunc(out.Notes, func(n string) bool { return strings.Contains(n, tc.note) })
+			if noted != (tc.note != "") || (tc.note == "" && len(out.Notes) > 0) {
+				t.Errorf("notes = %q, want one holding %q", out.Notes, tc.note)
+			}
+		})
+	}
 }

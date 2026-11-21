@@ -12,9 +12,13 @@ type Comment struct {
 	OrganizationID string `json:"organizationId,omitempty"`
 	CardCommonID   string `json:"cardCommonId"`
 	UserID         string `json:"userId"`
-	Body           string `json:"comment"`
-	Created        string `json:"created,omitempty"`
-	LastUpdated    string `json:"lastUpdated,omitempty"`
+	// ThreadID names the thread the comment is in: set when the comment
+	// is created and never changed, and a reply's is the thread it
+	// answers (https://favro.com/developer/#comment-object).
+	ThreadID    string `json:"threadId,omitempty"`
+	Body        string `json:"comment"`
+	Created     string `json:"created,omitempty"`
+	LastUpdated string `json:"lastUpdated,omitempty"`
 	// Attachments is the list of files on the comment. The shape
 	// matches CardAttachment — Favro reuses one attachment object
 	// shape across cards and comments.
@@ -27,6 +31,9 @@ type Comment struct {
 type CreateCommentRequest struct {
 	CardCommonID string `json:"cardCommonId"`
 	Comment      string `json:"comment"`
+	// ThreadID replies in that thread of the card; without it the
+	// comment starts one (https://favro.com/developer/#create-a-comment).
+	ThreadID string `json:"threadId,omitempty"`
 }
 
 // UpdateCommentRequest is the body for PUT /comments/{commentId}.

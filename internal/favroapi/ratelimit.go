@@ -17,7 +17,7 @@ const (
 	headerRateLimitReset     = "X-RateLimit-Reset"
 	headerRateLimitDelay     = "X-RateLimit-Delay"
 	headerRetryAfter         = "Retry-After"
-	headerRequestID          = "X-Favro-Backend-Identifier"
+	headerBackendID          = "X-Favro-Backend-Identifier"
 )
 
 // RateLimitSnapshot captures the most-recent rate-limit signal Favro

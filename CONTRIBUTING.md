@@ -219,8 +219,11 @@ and leave the tag, then with it. It creates a probe collection, checks
 that a public create is `[blocked]` and created nothing, and opens the
 collection to the organization with `favro_widen_collection_sharing`,
 after that tool refuses a name that is not the collection's. It reads
-the collection back, narrows it with `favro_update_collection`, and
-deletes it the same two ways. The run fails if the server asks the
+the collection back and narrows it with `favro_update_collection`. On a
+probe widget in that collection it creates a probe card, attaches a file
+and removes it by its fileURL, starts a comment thread and replies in
+it, reading each back, and deletes the card and the widget with
+`confirm: true`. It deletes the collection the same two ways as the tag. The run fails if the server asks the
 person anything (D-31). It sends a write only to a probe it created.
 
 **What it leaves behind.** Nothing, when it ends well. `make live`

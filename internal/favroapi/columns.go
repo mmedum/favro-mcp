@@ -23,13 +23,13 @@ var errMissingWidgetCommonID = render.Sentinel(render.ClassInvalid, "favro: widg
 // Callers that paginate must pass widgetCommonID on every page;
 // dropping the filter mid-pagination would silently flip Favro into
 // the same 400 response.
-func (c *Client) ListColumns(ctx context.Context, page int, requestID, widgetCommonID string) (favro.PageEnvelope[favro.Column], error) {
+func (c *Client) ListColumns(ctx context.Context, pg favro.Page, widgetCommonID string) (favro.PageEnvelope[favro.Column], error) {
 	if widgetCommonID == "" {
 		return favro.PageEnvelope[favro.Column]{}, errMissingWidgetCommonID
 	}
 	q := url.Values{}
 	q.Set("widgetCommonId", widgetCommonID)
-	return listPageQ[favro.Column](ctx, c, "/columns", q, page, requestID)
+	return listPageQ[favro.Column](ctx, c, "/columns", q, pg)
 }
 
 // GetColumn returns a single column by its columnId. Returns

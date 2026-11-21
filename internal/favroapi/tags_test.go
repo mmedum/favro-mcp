@@ -32,7 +32,7 @@ func TestListTags_HappyPath(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListTags(context.Background(), 0, "", favro.ListTagsFilter{})
+	env, err := c.ListTags(context.Background(), favro.Page{}, favro.ListTagsFilter{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestListTags_WithPageForwardsRequestID(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListTags(context.Background(), 2, "req-prior", favro.ListTagsFilter{})
+	_, err := c.ListTags(context.Background(), favro.Page{Number: 2, RequestID: "req-prior"}, favro.ListTagsFilter{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -81,8 +81,8 @@ func TestListTags_WithPageForwardsRequestID(t *testing.T) {
 	if got := rec[0].Query.Get("page"); got != "2" {
 		t.Errorf("rec[0].Query.Get(\"page\") = %v, want %v", got, "2")
 	}
-	if got := rec[0].Headers.Get(headerRequestID); got != "req-prior" {
-		t.Errorf("rec[0].Headers.Get(headerRequestID) = %v, want %v", got, "req-prior")
+	if got := rec[0].Query.Get("requestId"); got != "req-prior" {
+		t.Errorf("rec[0].Query.Get(\"requestId\") = %v, want %v", got, "req-prior")
 	}
 }
 
@@ -615,7 +615,7 @@ func TestListTags_NameFilterForwarded(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListTags(context.Background(), 0, "", favro.ListTagsFilter{Name: "blocker"})
+	_, err := c.ListTags(context.Background(), favro.Page{}, favro.ListTagsFilter{Name: "blocker"})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}

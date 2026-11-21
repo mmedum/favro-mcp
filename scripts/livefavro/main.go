@@ -22,15 +22,18 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -192,7 +195,7 @@ func runSteps(srv caller, out *printer, p *pool, steps []livecover.Step, tools m
 			t.skipped++
 			continue
 		}
-		args, missing := p.resolve(step.Args)
+		args, missing := p.resolve(step.Tool, step.Args)
 		if missing != "" {
 			out.line("SKIP %s: no %s seen yet in this organization", label, missing)
 			t.skipped++
@@ -214,7 +217,7 @@ func runSteps(srv caller, out *printer, p *pool, steps []livecover.Step, tools m
 			}
 		}
 		if res != nil {
-			p.absorb(res)
+			p.absorb(step.Tool, res)
 		}
 	}
 	return t
@@ -269,6 +272,19 @@ func judge(step livecover.Step, res *callResult, err error) verdict {
 	if res.IsError {
 		return verdict{detail: firstLine(res.text())}
 	}
+	if len(step.ExpectFields) > 0 {
+		var got map[string]any
+		if err := json.Unmarshal(res.StructuredContent, &got); err != nil {
+			return verdict{detail: "the result is not a JSON object: " + err.Error()}
+		}
+		for _, k := range slices.Sorted(maps.Keys(step.ExpectFields)) {
+			// Compared as JSON, so a step names 2 and not float64(2).
+			want, _ := json.Marshal(step.ExpectFields[k])
+			if have, _ := json.Marshal(got[k]); !bytes.Equal(have, want) {
+				return verdict{detail: fmt.Sprintf("%s is %s, want %s", k, have, want)}
+			}
+		}
+	}
 	return verdict{ok: true}
 }
 
@@ -307,7 +323,10 @@ func (p *printer) result(res *callResult) {
 		p.line("       %s", l)
 	}
 	if len(res.StructuredContent) > 0 {
-		p.line("       structured: %s", clip(string(res.StructuredContent), 300))
+		// Redacted whole before it is clipped: an id cut in half no
+		// longer matches the pattern that finds it, and its first half
+		// would print as it is.
+		p.line("       structured: %s", clip(p.red.String(string(res.StructuredContent)), 300))
 	}
 }
 
@@ -338,10 +357,44 @@ type pool struct {
 	// entry that carries it with a userId is the signed-in account,
 	// whose userId resolves OwnUserID.
 	ownEmail string
+	// firstPage is, by tool, the request_id of a first page that has a
+	// second, which resolves FirstPageRequestID for a step of that tool.
+	firstPage map[string]any
 }
 
 func newPool(ownEmail string) *pool {
-	return &pool{byPlaceholder: map[livecover.Placeholder]any{}, ownEmail: strings.TrimSpace(ownEmail)}
+	return &pool{
+		byPlaceholder: map[livecover.Placeholder]any{},
+		firstPage:     map[string]any{},
+		ownEmail:      strings.TrimSpace(ownEmail),
+	}
+}
+
+// lookup is a placeholder's value for a step of tool, FirstPageRequestID's
+// from that tool's own listing.
+func (p *pool) lookup(tool string, ph livecover.Placeholder) (any, bool) {
+	if ph == livecover.FirstPageRequestID {
+		v, seen := p.firstPage[tool]
+		return v, seen
+	}
+	v, seen := p.byPlaceholder[ph]
+	return v, seen
+}
+
+// absorbFirstPage records a listing's request_id when the result is its
+// first page and a second follows, by the tool that listed it.
+func (p *pool) absorbFirstPage(tool string, res *callResult) {
+	var page struct {
+		Page      int    `json:"page"`
+		NextPage  int    `json:"next_page"`
+		RequestID string `json:"request_id"`
+	}
+	if json.Unmarshal(res.StructuredContent, &page) != nil || page.Page != 1 || page.NextPage != 2 || page.RequestID == "" {
+		return
+	}
+	if _, seen := p.firstPage[tool]; !seen {
+		p.firstPage[tool] = page.RequestID
+	}
 }
 
 // wireKeys maps a placeholder to the JSON keys a Favro response uses
@@ -361,14 +414,16 @@ var wireKeys = map[livecover.Placeholder][]string{
 	livecover.AnyCommentID:      {"commentId"},
 	livecover.AnyTaskID:         {"taskId"},
 	livecover.AnyTaskListID:     {"taskListId"},
+	livecover.AnyThreadID:       {"threadId"},
 	livecover.AnySequentialID:   {"sequentialId"},
 }
 
-// absorb records any id this result carries.
-func (p *pool) absorb(res *callResult) {
+// absorb records any id this result, from a call of tool, carries.
+func (p *pool) absorb(tool string, res *callResult) {
 	if len(res.StructuredContent) == 0 {
 		return
 	}
+	p.absorbFirstPage(tool, res)
 	var decoded any
 	if err := json.Unmarshal(res.StructuredContent, &decoded); err != nil {
 		return
@@ -447,10 +502,10 @@ func normalize(v any) any {
 // resolve substitutes placeholders. The second return names the first
 // placeholder nothing has supplied, so the step can be skipped with a
 // reason rather than sent with a literal "{card_id}".
-func (p *pool) resolve(args map[string]any) (map[string]any, string) {
+func (p *pool) resolve(tool string, args map[string]any) (map[string]any, string) {
 	out := make(map[string]any, len(args))
 	for k, v := range args {
-		resolved, missing := p.value(v)
+		resolved, missing := p.value(tool, v)
 		if missing != "" {
 			return nil, missing
 		}
@@ -467,20 +522,20 @@ func (p *pool) resolve(args map[string]any) (map[string]any, string) {
 // []any, and without the map case its placeholder goes out as the
 // literal "{own_user_id}", which the server rightly refuses as nobody
 // in the organization.
-func (p *pool) value(v any) (any, string) {
+func (p *pool) value(tool string, v any) (any, string) {
 	switch t := v.(type) {
 	case livecover.Placeholder:
-		resolved, seen := p.byPlaceholder[t]
+		resolved, seen := p.lookup(tool, t)
 		if !seen {
 			return nil, string(t)
 		}
 		return resolved, ""
 	case map[string]any:
-		return p.resolve(t)
+		return p.resolve(tool, t)
 	case []map[string]any:
 		out := make([]map[string]any, 0, len(t))
 		for _, entry := range t {
-			resolved, missing := p.resolve(entry)
+			resolved, missing := p.resolve(tool, entry)
 			if missing != "" {
 				return nil, missing
 			}
@@ -490,7 +545,7 @@ func (p *pool) value(v any) (any, string) {
 	case []any:
 		out := make([]any, 0, len(t))
 		for _, entry := range t {
-			resolved, missing := p.value(entry)
+			resolved, missing := p.value(tool, entry)
 			if missing != "" {
 				return nil, missing
 			}

@@ -326,7 +326,7 @@ switch off by default (D-88, D-89, D-90, D-95). Releasing is in
 | D-13 | Search is client-side full text over one widget or one collection, scored name before body, and cached per scope | accepted | TestScoreCard_ScoreScale, TestScoreCard_NameBeatsBodyOnly, TestMCP_SearchCards_ScopeConflict, TestMCP_SearchCards_MissingScope |
 | D-14 | Descriptions are read and returned in Favro's stored markdown, and matching is never loosened to its normalization | accepted | TestMCP_GetCard_DescriptionFormatForwarded, TestSearchCards_ForcesMarkdownDescriptionFormat |
 | D-15 | A read accepts the documented and every observed shape; a write sends the documented one and says when it is unverified | accepted | TestCard_CustomFields_ReconcilesBothWireKeys, TestWebhookColumnIDsAcceptsBothSpellings, review |
-| D-16 | One call is one page: list tools return next_page and request_id, and nothing aggregates | accepted | TestPaginate_MultiplePages_EchoesRequestID, TestMCP_ListOrganizations_ForwardsRequestIDOnPage2, review |
+| D-16 | One call is one page: list tools return next_page and request_id, and nothing aggregates | accepted | TestPaginate_MultiplePages_EchoesRequestID, TestMCP_ListOrganizations_SendsRequestIDFromPage2, TestMCP_ListUsers_SecondPageSendsTheFirstPagesRouting, review |
 | D-17 | Page numbers are 1-indexed on the surface and converted to Favro's 0-indexed pages in the tool layer | accepted | TestListToolPageNumberingIsOneIndexed |
 | D-18 | A description is edited in place by append, prepend or replace-in, each returning the old text, the new and a unified diff | accepted | TestDescriptionEditors_GoldenCorpus, TestMCP_AppendCardDescription_HappyPath, TestMCP_PrependCardDescription_HappyPath |
 | D-19 | replace-in changes one occurrence by default, and sends nothing when find matches nothing | accepted | TestReplaceInDescription_LiteralDefaultCount, TestMCP_ReplaceInCardDescription_NoMatch_RefusesPUT |
@@ -757,17 +757,16 @@ early is the common case. Inside the server, the resolver and search do
 read whole lists, and each is cached so that it is read once (D-08,
 D-13).
 
-`requestId` is a field of the response body. Favro's reference asks for
-it as a query parameter beside `page`, and for the
-`X-Favro-Backend-Identifier` header to carry the value a response
-returned in that header
+`requestId` is a field of the response body. A later page sends it as
+a query parameter beside `page`, and the `X-Favro-Backend-Identifier`
+header the first page's response carried, as Favro's reference asks
 ([pagination](https://favro.com/developer/#pagination),
-[routing](https://favro.com/developer/#routing)). The client sends the
-request id in that header and no `requestId` parameter. Favro serves a
-later page from `page` alone, and the request id in the header is not
-the backend identifier and changes nothing. This is checked by hand
-against a live organization; no live step reads a second page, and
-issue #127 asks for one.
+[routing](https://favro.com/developer/#routing)). The client keeps that
+header by request id for the listings it read most recently, so the
+caller never handles it. Favro has also served a later page from `page`
+alone, so a header the process no longer holds is left out rather than
+refused. `limit`, 1 to 100, sets the page size on the first page, and
+later pages keep it. Checked by the live step "read a second page".
 
 Rejected: a hidden aggregation loop in the list tools, expensive and
 unattributable.
@@ -776,7 +775,7 @@ Cost: a caller passes `next_page` back by hand for every page it wants.
 ### D-17 Page numbers are 1-indexed on the surface and converted to Favro's 0-indexed pages in the tool layer
 
 Page numbers on this surface start at 1, and the tool layer converts
-them to Favro's pages, which start at 0. `favroPage` does it at the
+them to Favro's pages, which start at 0. `listInput.page` does it at the
 boundary, and `internal/favroapi` stays a faithful client of an API
 whose first page is 0
 ([pagination](https://favro.com/developer/#pagination)).
@@ -952,9 +951,9 @@ Rejected: one shared confirm helper, a shape nothing fits;
 `WriteIgnoredError` on a custom field, since only a Text field has been
 seen to take a write; a pre-check on `CustomField.widgetCommonId`, which
 would refuse writes that land.
-Cost: a read-back is one more request. No live step removes an
-attachment, and Favro answers 200 whether or not the URL matched.
-Issue #119 asks for a `-writes` check that removes one.
+Cost: a read-back is one more request. Favro answers an attachment
+removal with 200 whether or not the URL matched; the live step "the
+card reads back with no attachment" reads one back.
 
 ### D-25 No tool states an outcome the response did not carry
 
@@ -2080,18 +2079,22 @@ step by its `Name` (D-73). How to run it is in
 
 Rejected: steps in alphabetical order, which ran writes before the reads
 that supply their ids; a gate that parses the driver's source.
-Cost: a dry-run step never observes a result. No live step reads a
-second page; issue #127 asks for one.
+Cost: a dry-run step never observes a result.
 
 ### D-75 The live driver's write mode writes only to probes it created, and deletes them however the run ends
 
 `go run ./scripts/livefavro -writes` writes only to probes it created: a
-probe tag and a probe collection, named so the sweep can find them. It
-deletes them however the run ends.
+probe tag, a probe collection, and a probe widget with a probe card on
+it, named so the sweep can find them. It deletes them however the run
+ends. A card has no read by name, so a card the run makes must be on a
+probe widget, which the sweep deletes everywhere, and Favro deletes the
+widget's cards and comments with it
+([delete a widget](https://favro.com/developer/#delete-a-widget)).
 
 The real writes the dry-run steps cannot observe are checked here:
 `confirm` and the widening guards on real objects, a real delete, a real
-widening read back (D-30, D-35, D-36). Writing to anything else would
+widening read back (D-30, D-35, D-36), an attachment removed by its
+fileURL and a reply in a comment thread, each read back. Writing to anything else would
 change someone's organization to test a server. Each probe's cleanup is
 registered when it is created, and an interrupt runs every cleanup. The
 sweep then fails on any probe still there. A deleted collection reads

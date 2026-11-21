@@ -16,28 +16,28 @@ import (
 )
 
 // listInput is the shared input shape for every list-tool that maps
-// to a Favro paginated endpoint. Favro's reference asks for the first
-// response's requestId on every later page; the client sends it as the
-// X-Favro-Backend-Identifier header. Favro serves a later page from
-// page alone, so request_id changes nothing (favroapi.Paginate).
+// to a Favro paginated endpoint. A later page carries the first page's
+// requestId, which the client sends as Favro's reference asks
+// (favroapi.fetchOne).
 // https://favro.com/developer/#pagination
 type listInput struct {
 	// Page is the 1-indexed page number. Omit (or 0) for the first
 	// page. Pass values from a prior call's `next_page`.
 	//
-	// 1-indexed here and 0-indexed on the wire: see favroPage.
+	// 1-indexed here and 0-indexed on the wire: see page.
 	Page int `json:"page,omitempty" jsonschema:"1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting."`
-	// RequestID is the previous page's `request_id`, which the reference
-	// asks for from page 2 on. The client sends it whenever it is set, on
-	// page 1 as well, as the X-Favro-Backend-Identifier header
-	// (favroapi.fetchOne).
-	RequestID string `json:"request_id,omitempty" jsonschema:"the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header."`
+	// RequestID is the first page's `request_id`, which every later page
+	// sends.
+	RequestID string `json:"request_id,omitempty" jsonschema:"the request_id from the previous page's response; pass it with every page after the first (page 2 onward)."`
+	// Limit is the page size. Favro reads it on the first page only and
+	// keeps it for the later ones.
+	Limit int `json:"limit,omitempty" jsonschema:"items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap."`
 }
 
-// favroPage converts this tool's 1-indexed page number into the
-// 0-indexed one Favro's `page` parameter takes.
+// page converts this tool's 1-indexed page number into the 0-indexed
+// one Favro's `page` parameter takes, beside the request id and limit.
 //
-// Sent untouched, the value would serve a caller who believed the
+// Sent untouched, the number would serve a caller who believed the
 // schema and asked for page 1 Favro's page 1, the *second* page.
 // Nothing would fail: it is a valid page of real results, and the first
 // page's rows are simply absent.
@@ -47,11 +47,8 @@ type listInput struct {
 // page is 0-indexed. This is the MCP layer keeping the promise its own
 // schema makes.
 // https://favro.com/developer/#pagination
-func (in listInput) favroPage() int {
-	if in.Page <= 0 {
-		return 0 // omitted, or an explicit first page
-	}
-	return in.Page - 1
+func (in listInput) page() favro.Page {
+	return favro.Page{Number: max(in.Page-1, 0), RequestID: in.RequestID, Limit: in.Limit}
 }
 
 // listOutput is the shared output shape for every list-tool. Items
@@ -233,15 +230,15 @@ func runWrite[T any](
 }
 
 // listFn is the shape every Favro list method exposes:
-// (ctx, page, requestID) → typed PageEnvelope.
-type listFn[T any] func(ctx context.Context, page int, requestID string) (favro.PageEnvelope[T], error)
+// (ctx, page) → typed PageEnvelope.
+type listFn[T any] func(ctx context.Context, pg favro.Page) (favro.PageEnvelope[T], error)
 
 // wrapList adapts a Favro list method into the MCP tool handler the
 // SDK expects. Centralizes the err-bridge + envelope projection so
 // every favro_list_<resource> tool reduces to one line.
 func wrapList[T any](fn listFn[T]) func(context.Context, *mcp.CallToolRequest, listInput) (*mcp.CallToolResult, listOutput[T], error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in listInput) (*mcp.CallToolResult, listOutput[T], error) {
-		env, err := fn(ctx, in.favroPage(), in.RequestID)
+		env, err := fn(ctx, in.page())
 		if err != nil {
 			return nil, listOutput[T]{}, err
 		}

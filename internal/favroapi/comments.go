@@ -24,13 +24,20 @@ var errMissingCardCommonID = render.Sentinel(render.ClassInvalid, "favro: card_c
 // Callers that paginate must pass cardCommonID on every page;
 // dropping the filter mid-pagination would silently switch the
 // result set to a 400 from Favro.
-func (c *Client) ListComments(ctx context.Context, page int, requestID, cardCommonID string) (favro.PageEnvelope[favro.Comment], error) {
+//
+// threadID, when set, lists that thread's comments, oldest first.
+// Favro answers 403 for a thread that does not exist or belongs to
+// another card (https://favro.com/developer/#get-all-comments).
+func (c *Client) ListComments(ctx context.Context, pg favro.Page, cardCommonID, threadID string) (favro.PageEnvelope[favro.Comment], error) {
 	if cardCommonID == "" {
 		return favro.PageEnvelope[favro.Comment]{}, errMissingCardCommonID
 	}
 	q := url.Values{}
 	q.Set("cardCommonId", cardCommonID)
-	return listPageQ[favro.Comment](ctx, c, "/comments", q, page, requestID)
+	if threadID != "" {
+		q.Set("threadId", threadID)
+	}
+	return listPageQ[favro.Comment](ctx, c, "/comments", q, pg)
 }
 
 // GetComment returns a single comment by its commentId. Returns

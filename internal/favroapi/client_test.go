@@ -46,7 +46,9 @@ type recordingHandler struct {
 }
 
 type recordedRequest struct {
-	Method  string
+	Method string
+	// Path is as sent, escaped, so an escaped id segment is seen as Favro
+	// sees it.
 	Path    string
 	Query   url.Values
 	Headers http.Header
@@ -57,7 +59,7 @@ func (h *recordingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	rec := recordedRequest{
 		Method:  r.Method,
-		Path:    r.URL.Path,
+		Path:    r.URL.EscapedPath(),
 		Query:   r.URL.Query(),
 		Headers: r.Header.Clone(),
 		Body:    string(body),
@@ -478,6 +480,8 @@ func TestJoinURL(t *testing.T) {
 		{"https://favro.com/api/v1/", "cards", nil, "https://favro.com/api/v1/cards", false},
 		{"https://favro.com/api/v1", "/cards", url.Values{"page": []string{"2"}}, "https://favro.com/api/v1/cards?page=2", false},
 		{"https://favro.com/api/v1", "", nil, "", true},
+		// An escaped id segment reaches Favro escaped once.
+		{"https://favro.com/api/v1", "/cards/" + url.PathEscape("a b/c"), nil, "https://favro.com/api/v1/cards/a%20b%2Fc", false},
 	}
 	for i, tc := range cases {
 		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) {

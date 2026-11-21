@@ -32,6 +32,19 @@ func TestTheReadBackAfterADeleteCountsNotFoundAndForbiddenAsGone(t *testing.T) {
 			},
 			"favro_update_collection": {`{}`},
 			"favro_delete_collection": {"[blocked] confirm: true is required", deleteAnswer},
+			// The probe card on its probe widget, each read back as gone.
+			"favro_create_widget":     {`{"result":{"widgetCommonId":"w-probe"}}`},
+			"favro_create_card":       {`{"result":{"cardId":"card-probe","cardCommonId":"cc-probe"}}`},
+			"favro_upload_attachment": {`{"result":{"name":"livefavro-probe.txt"}}`},
+			"favro_get_card":          {`{"attachments":[{"fileURL":"https://files.example/a"}]}`, `{"attachments":[]}`, notFound},
+			"favro_remove_attachment": {`{}`},
+			"favro_create_comment": {
+				`{"result":{"commentId":"cm-1","threadId":"th-1"}}`, `{"result":{"commentId":"cm-2","threadId":"th-1"}}`,
+			},
+			"favro_list_comments": {`{"items":[{"comment":"livefavro probe"},{"comment":"livefavro probe reply"}]}`},
+			"favro_delete_card":   {`{}`},
+			"favro_delete_widget": {`{}`},
+			"favro_get_widget":    {notFound},
 		}
 	}
 	tag := func(deleteAnswer, readBack string) map[string][]string {
@@ -59,23 +72,23 @@ func TestTheReadBackAfterADeleteCountsNotFoundAndForbiddenAsGone(t *testing.T) {
 		tail    [2]string
 	}{
 		{
-			"a collection read as forbidden", probeCollection, collection(deleted, forbidden), 10, 0,
+			"a collection read as forbidden", probeCollection, collection(deleted, forbidden), 19, 0,
 			[2]string{collectionDeleted, collectionGone},
 		},
 		{
-			"a collection read as not found", probeCollection, collection(deleted, notFound), 10, 0,
+			"a collection read as not found", probeCollection, collection(deleted, notFound), 19, 0,
 			[2]string{collectionDeleted, collectionGone},
 		},
 		{
-			"a collection that still reads", probeCollection, collection(deleted, `{"collectionId":"col-probe"}`), 10, 1,
+			"a collection that still reads", probeCollection, collection(deleted, `{"collectionId":"col-probe"}`), 19, 1,
 			[2]string{collectionDeleted, "FAIL the collection is gone: "},
 		},
 		{
-			"a collection read as unavailable", probeCollection, collection(deleted, "[unavailable] try again"), 10, 1,
+			"a collection read as unavailable", probeCollection, collection(deleted, "[unavailable] try again"), 19, 1,
 			[2]string{collectionDeleted, "FAIL the collection is gone: [unavailable] try again"},
 		},
 		{
-			"a forbidden read after a failed delete", probeCollection, collection(deleteFails, forbidden), 10, 2,
+			"a forbidden read after a failed delete", probeCollection, collection(deleteFails, forbidden), 19, 2,
 			[2]string{"FAIL favro_delete_collection with confirm deletes it: " + deleteFails, "FAIL the collection is gone: " + forbidden},
 		},
 		{
