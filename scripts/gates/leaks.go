@@ -169,6 +169,18 @@ var knownFindings = []knownFinding{{
 	count:  1,
 	reason: "a real collection id, quoted from a live test of favro_list_widgets. The maintainer decided " +
 		"to leave it rather than rewrite a public history with released tags on it",
+}, {
+	commit: "8952f577723286a89fd8a8e89711d5c56d25b1f6",
+	rule:   addressRule,
+	count:  1,
+	reason: "a Co-authored-by trailer GitHub added to the squash of Dependabot's #134, whose branch a maintainer " +
+		"merge had updated. The maintainer decided to leave it rather than rewrite a public history",
+}, {
+	commit: "cd69f4fa1f82b5432b411c7758d9322db129c476",
+	rule:   addressRule,
+	count:  1,
+	reason: "a Co-authored-by trailer GitHub added to the squash of Dependabot's #136, whose branch a maintainer " +
+		"merge had updated. The maintainer decided to leave it rather than rewrite a public history",
 }}
 
 func leaks(w io.Writer, args []string) error {
