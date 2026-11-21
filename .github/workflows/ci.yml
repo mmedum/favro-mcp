@@ -188,10 +188,10 @@ jobs:
         with:
           version: v2.14.0
           args: --timeout=5m
-      # Source mode, which reads the Go 1.27 standard library from
-      # x/vuln v1.8.0. See the Makefile's vuln target.
+      # Source mode, under the Go release go.mod names. See the vuln
+      # gate, scripts/gates/vuln.go.
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+        run: go run ./scripts/gates vuln golang.org/x/vuln/cmd/govulncheck@v1.8.0
       - name: licenses
         # segmentio/asm is ignored by path rather than by license name:
         # it relicensed to MIT-0 in v1.2.1, which go-licenses v1.6.0's

@@ -73,14 +73,8 @@ tidy: ## go.mod and go.sum are what `go mod tidy` would write
 	$(GO) mod verify
 
 .PHONY: vuln
-vuln: ## govulncheck
-# Source mode, which follows call paths rather than a symbol table. It
-# checks the standard library of the go command on PATH, and a
-# distribution-patched version string it cannot read makes it skip the
-# standard library and report clean, which its reference does not say;
-# run it under an official Go release.
-# https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck
-	$(GO) run $(GOVULNCHECK) ./...
+vuln: ## govulncheck under the official Go release go.mod names
+	@$(GO) run ./scripts/gates vuln $(GOVULNCHECK)
 
 .PHONY: licenses
 licenses: ## every dependency's license is one we accept

@@ -391,7 +391,7 @@ switch off by default (D-88, D-89, D-90, D-91). Releasing is in
 | D-78 | The documentation is held to the code: tool names, counts, settings, gates, the package map and paths | accepted | staleness, TestStalenessAgainstThisRepository, TestToolsDocumentedReadsBothDirections, TestDestructiveCountMatchesTheBinary, TestEveryEnvNameReachesBothDocuments, TestTheChangelogRule, TestTheChangelogRuleCountsWhatShips, TestStalenessRunsEveryOtherCheckWithoutARelease |
 | D-79 | The toolchain is the one go.mod names, everywhere; there is no N-1 matrix entry | accepted | review |
 | D-80 | Every action is pinned to a full SHA, every tool to one exact version, and every workflow pins its shell | accepted | pins, TestPinsReadsTheWorkflows, TestExactSemverRejectsWhatCanMoveUnderYou, TestPinsShellReadsDepth, TestUnpinnedTools, TestPinsNamesEachProblem, TestReadersRefuseALineBreakTheyDoNotRead |
-| D-81 | make check scans for vulnerabilities in source mode, licenses against an allowlist and secrets with gitleaks, as CI does | accepted | vuln, licenses, secrets, parity, TestTheHookScansWithTheMakefilesGitleaks |
+| D-81 | make check scans for vulnerabilities in source mode, licenses against an allowlist and secrets with gitleaks, as CI does | accepted | vuln, licenses, secrets, parity, TestTheHookScansWithTheMakefilesGitleaks, TestVulnToolchainReadsGoMod |
 | D-82 | CI runs on Linux, macOS and Windows | accepted | review |
 | D-83 | A tag is the whole release, and its notes are that version's CHANGELOG section | accepted | release-notes, TestChangelogSectionTakesOneVersion, TestASectionEndsOnlyAtTheLinkFooter, TestReleaseNotesReadTheFence, TestReleaseNotesRefusesATagThatIsNotAVersion |
 | D-84 | A release is signed and attested: the checksums cover the archives and both bundles, under keyless cosign and build provenance, with an SBOM per archive and byte-identical rebuilds | accepted | mcpb, TestReleaseWiringIsHeld, TestTheBundlesCarryProvenance |
@@ -2241,10 +2241,12 @@ does.
 Source mode follows call paths rather than a symbol table, so it reports
 a vulnerability the code can reach
 ([govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck)).
-It checks the packages of the Go release on the path, and skips them
-under a version string it cannot read, so it runs under an official Go
-release. The license check accepts Apache-2.0, BSD, MIT and ISC, and
-fails on anything else a dependency carries.
+It checks the packages of the Go release that runs it, and skips them
+under a version string it cannot read, such as a distribution build's.
+The `vuln` gate therefore runs it under the official release go.mod
+names, through `GOTOOLCHAIN`, and refuses any other build. The license
+check accepts Apache-2.0, BSD, MIT and ISC, and fails on anything else a
+dependency carries.
 
 gitleaks scans every commit HEAD reaches for credentials, which the
 `leaks` gate does not look for (D-49). CI runs `make secrets`, so the

@@ -8,6 +8,12 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Fixed
+- For contributors: `make vuln` runs govulncheck under the official Go release `go.mod` names; a distribution build made it skip the standard library and pass.
+
+### Security
+- Built with Go 1.27.4, which fixes [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859) (CVE-2026-97054) in `net/http`, which `govulncheck` found reachable.
+
 ## [4.4.2] - 2026-11-06
 
 ### Fixed
