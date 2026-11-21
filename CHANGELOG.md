@@ -10,11 +10,15 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ### Added
 - `favro-mcp.plugin` carries a native windows-arm64 binary, which its `.cmd` shim runs on Windows on Arm, Windows 10 included.
+- Every paging list tool takes `limit`, 1 to 100 items per page.
+- `favro_list_comments` takes `thread_id` to list one thread; `favro_create_comment` takes `thread_id` to reply in it. Comments carry `threadId`.
 
 ### Changed
 - A card move Favro accepts and ignores is `[unsupported]`, not `[unavailable]`: the same call is ignored again, so retrying never helps.
 
 ### Fixed
+- A list tool's later page sends `requestId` and the first page's `X-Favro-Backend-Identifier`, as Favro's reference asks; the request id went in that header instead.
+- `favro-mcp doctor` reads the first page of organizations; it asked Favro for the second.
 - For contributors: `make vuln` runs govulncheck under the official Go release `go.mod` names; a distribution build made it skip the standard library and pass.
 
 ### Security

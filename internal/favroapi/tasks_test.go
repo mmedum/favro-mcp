@@ -37,7 +37,7 @@ func TestListTasks_ForwardsFilters(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListTasks(context.Background(), 0, "", favro.ListTasksFilter{
+	env, err := c.ListTasks(context.Background(), favro.Page{}, favro.ListTasksFilter{
 		CardCommonID: "cc-1",
 		TaskListID:   "tl-1",
 	})
@@ -65,7 +65,7 @@ func TestListTasks_RequiresCardCommonID_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListTasks(context.Background(), 0, "", favro.ListTasksFilter{})
+	_, err := c.ListTasks(context.Background(), favro.Page{}, favro.ListTasksFilter{})
 	if err == nil || !strings.Contains(err.Error(), "card_common_id is required") {
 		t.Fatalf("got %v, want it to mention %q", err, "card_common_id is required")
 	}
@@ -89,7 +89,7 @@ func TestListTasks_FractionalPositionDecodes(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListTasks(context.Background(), 0, "", favro.ListTasksFilter{CardCommonID: "cc-1"})
+	env, err := c.ListTasks(context.Background(), favro.Page{}, favro.ListTasksFilter{CardCommonID: "cc-1"})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}

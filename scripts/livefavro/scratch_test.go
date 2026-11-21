@@ -51,6 +51,15 @@ var scratchTools = map[string]tool{
 	"favro_delete_tag":               {},
 	"favro_create_card":              {},
 	"favro_update_card":              {},
+	"favro_create_widget":            {},
+	"favro_delete_widget":            {},
+	"favro_get_widget":               {readOnly: true},
+	"favro_get_card":                 {readOnly: true},
+	"favro_delete_card":              {},
+	"favro_upload_attachment":        {},
+	"favro_remove_attachment":        {},
+	"favro_create_comment":           {},
+	"favro_list_comments":            {readOnly: true},
 	"favro_resolve_tag":              {readOnly: true},
 	"favro_resolve_collection":       {readOnly: true},
 	"favro_get_collection":           {readOnly: true},
@@ -79,7 +88,13 @@ func TestScratchWritesOnlyToObjectsTheRunCreated(t *testing.T) {
 			return sc.call("favro_create_tag", map[string]any{"name": "livefavro-tag-0"})
 		}},
 		{"a create the run cannot clean up after", func() (*callResult, error) {
+			return sc.create("favro_create_column", map[string]any{"name": "livefavro-column-0"})
+		}},
+		{"a card on no probe widget, which nothing would sweep", func() (*callResult, error) {
 			return sc.create("favro_create_card", map[string]any{"name": "livefavro-card-0"})
+		}},
+		{"a card on a widget the run did not create", func() (*callResult, error) {
+			return sc.create("favro_create_card", map[string]any{"name": "livefavro-card-0", "widget_common_id": "w-already-there"})
 		}},
 		{"a probe without the probe prefix", func() (*callResult, error) {
 			return sc.create("favro_create_tag", map[string]any{"name": "a tag"})

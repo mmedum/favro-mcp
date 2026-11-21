@@ -17,8 +17,8 @@ import (
 // Callers that paginate must pass the same filter on every page;
 // dropping a filter mid-pagination would silently switch the result
 // set to an org-wide listing.
-func (c *Client) ListCards(ctx context.Context, page int, requestID string, filter favro.ListCardsFilter) (favro.PageEnvelope[favro.Card], error) {
-	return listPageQ[favro.Card](ctx, c, "/cards", filter.Values(), page, requestID)
+func (c *Client) ListCards(ctx context.Context, pg favro.Page, filter favro.ListCardsFilter) (favro.PageEnvelope[favro.Card], error) {
+	return listPageQ[favro.Card](ctx, c, "/cards", filter.Values(), pg)
 }
 
 // GetCard returns a single card by its per-widget CardID. Note this

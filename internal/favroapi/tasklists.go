@@ -12,12 +12,12 @@ import (
 // cardCommonID is required — Favro rejects an unscoped listing, so
 // the check happens client-side to give a clearer message than the
 // API's 400.
-func (c *Client) ListTasklists(ctx context.Context, page int, requestID, cardCommonID string) (favro.PageEnvelope[favro.Tasklist], error) {
+func (c *Client) ListTasklists(ctx context.Context, pg favro.Page, cardCommonID string) (favro.PageEnvelope[favro.Tasklist], error) {
 	if cardCommonID == "" {
 		return favro.PageEnvelope[favro.Tasklist]{}, fmt.Errorf("favro: card_common_id is required to list tasklists")
 	}
 	q := url.Values{"cardCommonId": []string{cardCommonID}}
-	return listPageQ[favro.Tasklist](ctx, c, "/tasklists", q, page, requestID)
+	return listPageQ[favro.Tasklist](ctx, c, "/tasklists", q, pg)
 }
 
 // GetTasklist returns a single checklist by its taskListId.

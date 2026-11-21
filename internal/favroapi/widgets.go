@@ -23,8 +23,8 @@ var errMissingWidgetType = render.Sentinel(render.ClassInvalid,
 //
 // Callers that paginate must pass the same filter on every page —
 // dropping a filter mid-pagination silently switches the result set.
-func (c *Client) ListWidgets(ctx context.Context, page int, requestID string, filter favro.ListWidgetsFilter) (favro.PageEnvelope[favro.Widget], error) {
-	return listPageQ[favro.Widget](ctx, c, "/widgets", filter.Values(), page, requestID)
+func (c *Client) ListWidgets(ctx context.Context, pg favro.Page, filter favro.ListWidgetsFilter) (favro.PageEnvelope[favro.Widget], error) {
+	return listPageQ[favro.Widget](ctx, c, "/widgets", filter.Values(), pg)
 }
 
 // GetWidget returns a single widget by its widgetCommonId. Returns

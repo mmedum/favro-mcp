@@ -31,7 +31,7 @@ func TestListCollections_DefaultPage(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListCollections(context.Background(), 0, "", favro.ListCollectionsFilter{})
+	env, err := c.ListCollections(context.Background(), favro.Page{}, favro.ListCollectionsFilter{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestListCollections_WithPageForwardsRequestID(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListCollections(context.Background(), 2, "req-prior", favro.ListCollectionsFilter{})
+	_, err := c.ListCollections(context.Background(), favro.Page{Number: 2, RequestID: "req-prior"}, favro.ListCollectionsFilter{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -89,8 +89,8 @@ func TestListCollections_WithPageForwardsRequestID(t *testing.T) {
 	if got := rec[0].Query.Get("page"); got != "2" {
 		t.Errorf("rec[0].Query.Get(\"page\") = %v, want %v", got, "2")
 	}
-	if got := rec[0].Headers.Get(headerRequestID); got != "req-prior" {
-		t.Errorf("rec[0].Headers.Get(headerRequestID) = %v, want %v", got, "req-prior")
+	if got := rec[0].Query.Get("requestId"); got != "req-prior" {
+		t.Errorf("rec[0].Query.Get(\"requestId\") = %v, want %v", got, "req-prior")
 	}
 }
 
@@ -169,7 +169,7 @@ func TestListCollections_ArchivedAndNewFields(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListCollections(context.Background(), 0, "", favro.ListCollectionsFilter{Archived: true})
+	env, err := c.ListCollections(context.Background(), favro.Page{}, favro.ListCollectionsFilter{Archived: true})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}

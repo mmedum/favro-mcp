@@ -30,7 +30,7 @@ func TestListTasklists_ForwardsCardCommonID(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListTasklists(context.Background(), 0, "", "cc-1")
+	env, err := c.ListTasklists(context.Background(), favro.Page{}, "cc-1")
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestTasklist_Title_FallsBackToDescription(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListTasklists(context.Background(), 0, "", "cc-1")
+	env, err := c.ListTasklists(context.Background(), favro.Page{}, "cc-1")
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestListTasklists_RequiresCardCommonID_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListTasklists(context.Background(), 0, "", "")
+	_, err := c.ListTasklists(context.Background(), favro.Page{}, "")
 	if err == nil || !strings.Contains(err.Error(), "card_common_id is required") {
 		t.Fatalf("got %v, want it to mention %q", err, "card_common_id is required")
 	}

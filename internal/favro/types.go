@@ -14,6 +14,17 @@
 // documented shape only.
 package favro
 
+// Page names one page of a paginated listing. Number is Favro's
+// 0-indexed page. RequestID is the requestId the first page returned,
+// which every later page sends. Limit is the page size, 1 to 100, which
+// only the first page sets: later pages keep it and ignore their own.
+// https://favro.com/developer/#pagination
+type Page struct {
+	Number    int
+	RequestID string
+	Limit     int
+}
+
 // PageEnvelope is the response wrapper Favro returns around every
 // paginated endpoint. Pagination state lives on the envelope; entities
 // live in the typed Entities slice.

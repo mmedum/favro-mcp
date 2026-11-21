@@ -80,6 +80,9 @@ type Client struct {
 	ForceDryRun bool
 
 	rl *rateLimitTracker
+	// backends remembers the X-Favro-Backend-Identifier each listing's
+	// first page came back with, by its requestId.
+	backends backendIDs
 }
 
 // NewClient constructs a Client with sensible defaults.
@@ -147,6 +150,15 @@ type RequestOption func(*requestConfig)
 
 type requestConfig struct {
 	headers http.Header
+	// responseHeaders, when set, receives the headers of the response
+	// Do returns.
+	responseHeaders *http.Header
+}
+
+// withResponseHeaders keeps the headers of the response into h, for a
+// caller that reads one beside the decoded body.
+func withResponseHeaders(h *http.Header) RequestOption {
+	return func(cfg *requestConfig) { cfg.responseHeaders = h }
 }
 
 // WithHeader adds a single request header. Repeating the same name
@@ -353,6 +365,9 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 	resp, err := c.execute(ctx, httpClient, method, fullURL, encodedBody, cfg.headers)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.responseHeaders != nil {
+		*cfg.responseHeaders = resp.Header
 	}
 	return resp, nil
 }
@@ -583,7 +598,9 @@ func (c *Client) buildDryRunRecord(ctx context.Context, method, fullURL string, 
 	}
 }
 
-// joinURL composes the request URL from base + path + query.
+// joinURL composes the request URL from base + path + query. path is
+// already escaped, an id segment by url.PathEscape, so it is kept as the
+// raw path: set as Path, its "%" would be escaped a second time.
 func joinURL(base, path string, query url.Values) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {
@@ -592,7 +609,11 @@ func joinURL(base, path string, query url.Values) (string, error) {
 	if path == "" {
 		return "", errors.New("favro: empty path")
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/" + strings.TrimLeft(path, "/")
+	raw := strings.TrimRight(u.EscapedPath(), "/") + "/" + strings.TrimLeft(path, "/")
+	if u.Path, err = url.PathUnescape(raw); err != nil {
+		return "", fmt.Errorf("favro: path %q: %w", path, err)
+	}
+	u.RawPath = raw
 	if len(query) > 0 {
 		u.RawQuery = query.Encode()
 	}
@@ -666,7 +687,9 @@ func (c *Client) logRequest(req *http.Request, attempt int) {
 	// the Authorization header is redacted by redactHeaders.
 	slog.Debug("favro request", //nolint:gosec
 		"method", req.Method,
-		"path", redactPathIDs(req.URL.Path),
+		// Escaped, so an id segment holding an escaped "/" stays one
+		// segment, and its "%" marks it an id.
+		"path", redactPathIDs(req.URL.EscapedPath()),
 		"query_keys", queryKeys(req.URL.RawQuery),
 		"attempt", attempt,
 		"headers", redactHeaders(req.Header),

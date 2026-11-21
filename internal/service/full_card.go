@@ -311,7 +311,7 @@ func (r *Resolver) fetchCardAndCopies(ctx context.Context, id FullCardIdentity, 
 	if id.SequentialID > 0 {
 		filter.SequentialID = id.SequentialID
 	}
-	env, err := r.client.ListCards(ctx, 0, "", filter)
+	env, err := r.client.ListCards(ctx, favro.Page{}, filter)
 	if err != nil {
 		return favro.Card{}, nil, err
 	}
@@ -362,7 +362,7 @@ func (r *Resolver) dereferencePlacements(ctx context.Context, full *FullCard, co
 			return nil
 		}
 		// Archived: every copy is a placement, an archived one included.
-		env, err := r.client.ListCards(ctx, 0, "", favro.ListCardsFilter{CardCommonID: full.CardCommonID, Archived: true})
+		env, err := r.client.ListCards(ctx, favro.Page{}, favro.ListCardsFilter{CardCommonID: full.CardCommonID, Archived: true})
 		if err != nil {
 			return err
 		}
@@ -454,7 +454,7 @@ func (r *Resolver) columnName(ctx context.Context, w *favro.Widget, columnID str
 // follows the next, as nothing here aggregates pages; include_comments
 // is the caller asking for it.
 func (r *Resolver) listFirstComments(ctx context.Context, cardCommonID string, limit int) ([]favro.Comment, error) {
-	env, err := r.client.ListComments(ctx, 0, "", cardCommonID)
+	env, err := r.client.ListComments(ctx, favro.Page{}, cardCommonID, "")
 	if err != nil {
 		return nil, err
 	}

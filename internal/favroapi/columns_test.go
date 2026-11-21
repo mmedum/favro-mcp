@@ -31,7 +31,7 @@ func TestListColumns_DefaultPage(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListColumns(context.Background(), 0, "", "w-1")
+	env, err := c.ListColumns(context.Background(), favro.Page{}, "w-1")
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestListColumns_FiltersByWidget(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListColumns(context.Background(), 0, "", "w-xyz")
+	_, err := c.ListColumns(context.Background(), favro.Page{}, "w-xyz")
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestListColumns_EmptyWidget_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListColumns(context.Background(), 0, "", "")
+	_, err := c.ListColumns(context.Background(), favro.Page{}, "")
 	if !errors.Is(err, errMissingWidgetCommonID) {
 		t.Fatalf("got %v, want errMissingWidgetCommonID", err)
 	}
@@ -118,7 +118,7 @@ func TestListColumns_WithPageForwardsRequestID(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListColumns(context.Background(), 2, "req-prior", "w-1")
+	_, err := c.ListColumns(context.Background(), favro.Page{Number: 2, RequestID: "req-prior"}, "w-1")
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -130,8 +130,8 @@ func TestListColumns_WithPageForwardsRequestID(t *testing.T) {
 	if got := rec[0].Query.Get("widgetCommonId"); got != "w-1" {
 		t.Errorf("widgetCommonID must be re-sent on every paginated page (Favro does not carry filter state): got %v, want %v", got, "w-1")
 	}
-	if got := rec[0].Headers.Get(headerRequestID); got != "req-prior" {
-		t.Errorf("rec[0].Headers.Get(headerRequestID) = %v, want %v", got, "req-prior")
+	if got := rec[0].Query.Get("requestId"); got != "req-prior" {
+		t.Errorf("rec[0].Query.Get(\"requestId\") = %v, want %v", got, "req-prior")
 	}
 }
 

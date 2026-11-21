@@ -34,7 +34,7 @@ func registerActivities(reg *registry, client *favroapi.Client) {
 			"`request_id` (and `card_id` again) for later pages. Read-only.",
 		Annotations: readOnly("List Favro card activities"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listCardActivitiesInput) (*mcp.CallToolResult, listOutput[favro.Activity], error) {
-		env, err := client.ListCardActivities(ctx, in.favroPage(), in.RequestID, in.CardID, favro.ListActivitiesFilter{
+		env, err := client.ListCardActivities(ctx, in.page(), in.CardID, favro.ListActivitiesFilter{
 			Since: in.Since,
 			Until: in.Until,
 		})

@@ -10,8 +10,8 @@ import (
 
 // ListGroups returns one page of groups in the active organization.
 // Groups are org-global; there is no widget or card filter.
-func (c *Client) ListGroups(ctx context.Context, page int, requestID string) (favro.PageEnvelope[favro.Group], error) {
-	return listPage[favro.Group](ctx, c, "/groups", page, requestID)
+func (c *Client) ListGroups(ctx context.Context, pg favro.Page) (favro.PageEnvelope[favro.Group], error) {
+	return listPage[favro.Group](ctx, c, "/groups", pg)
 }
 
 // GetGroup returns a single group by its groupId. Returns

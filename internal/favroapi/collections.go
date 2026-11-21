@@ -11,8 +11,8 @@ import (
 // ListCollections returns one page of collections in the active
 // organization. Pass favro.ListCollectionsFilter{Archived: true} to
 // include archived collections.
-func (c *Client) ListCollections(ctx context.Context, page int, requestID string, filter favro.ListCollectionsFilter) (favro.PageEnvelope[favro.Collection], error) {
-	return listPageQ[favro.Collection](ctx, c, "/collections", filter.Values(), page, requestID)
+func (c *Client) ListCollections(ctx context.Context, pg favro.Page, filter favro.ListCollectionsFilter) (favro.PageEnvelope[favro.Collection], error) {
+	return listPageQ[favro.Collection](ctx, c, "/collections", filter.Values(), pg)
 }
 
 // GetCollection returns a single collection by id. Returns

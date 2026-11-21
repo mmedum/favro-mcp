@@ -113,7 +113,7 @@ func TestThePoolFindsTheSignedInAccountByItsEmail(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newPool(tc.email)
-			p.absorb(&callResult{StructuredContent: json.RawMessage(users)})
+			p.absorb("favro_list_users", &callResult{StructuredContent: json.RawMessage(users)})
 
 			own, seen := p.byPlaceholder[livecover.OwnUserID]
 			if (tc.want == nil && seen) || (tc.want != nil && own != tc.want) {
@@ -138,6 +138,7 @@ func TestEveryPlaceholderAStepNamesIsResolvedOrSkipsTheStep(t *testing.T) {
 	}
 	named := map[livecover.Placeholder]int{}
 	for _, step := range livecover.Steps() {
+		full.firstPage[step.Tool] = "resolved-first_page_request_id"
 		sent, err := json.Marshal(step.Args)
 		if err != nil {
 			t.Fatal(err)
@@ -149,7 +150,7 @@ func TestEveryPlaceholderAStepNamesIsResolvedOrSkipsTheStep(t *testing.T) {
 			namesOne = namesOne || n > 0
 		}
 
-		args, missing := full.resolve(step.Args)
+		args, missing := full.resolve(step.Tool, step.Args)
 		if missing != "" {
 			t.Errorf("%s (%q): %s unresolved with every placeholder supplied", step.Tool, step.Name, missing)
 			continue
@@ -164,7 +165,7 @@ func TestEveryPlaceholderAStepNamesIsResolvedOrSkipsTheStep(t *testing.T) {
 			}
 		}
 
-		if _, missing := newPool("").resolve(step.Args); namesOne && missing == "" {
+		if _, missing := newPool("").resolve(step.Tool, step.Args); namesOne && missing == "" {
 			t.Errorf("%s (%q) names a placeholder and was not skipped with none supplied", step.Tool, step.Name)
 		}
 	}
@@ -289,4 +290,52 @@ func helperServer() int {
 		out.line(`{"jsonrpc":"2.0","id":%s,"result":%s}`, req.ID, result)
 	}
 	return 0
+}
+
+// A later page sends the request_id of its own tool's first page: one
+// that has a second page, and never one another listing issued.
+func TestFirstPageRequestIDComesFromTheStepsOwnTool(t *testing.T) {
+	p := newPool("")
+	for _, r := range []struct{ tool, body string }{
+		{"favro_list_cards", `{"items":[],"page":1,"total_pages":3,"next_page":2,"request_id":"req-cards"}`},
+		{"favro_list_tags", `{"items":[],"page":1,"total_pages":1,"request_id":"req-one-page"}`},
+		{"favro_list_tags", `{"items":[],"page":2,"total_pages":3,"next_page":3,"request_id":"req-later"}`},
+		{"favro_list_tags", `{"items":[],"page":1,"total_pages":2,"next_page":2,"request_id":"req-tags"}`},
+	} {
+		p.absorbFirstPage(r.tool, &callResult{StructuredContent: json.RawMessage(r.body)})
+	}
+	args := map[string]any{"request_id": livecover.FirstPageRequestID}
+	for tool, want := range map[string]any{"favro_list_tags": "req-tags", "favro_list_cards": "req-cards"} {
+		got, missing := p.resolve(tool, args)
+		if missing != "" || got["request_id"] != want {
+			t.Errorf("%s: request_id = %v (missing %q), want %v", tool, got["request_id"], missing, want)
+		}
+	}
+	if _, missing := p.resolve("favro_list_users", args); missing != string(livecover.FirstPageRequestID) {
+		t.Errorf("a tool with no first page resolved it; missing = %q", missing)
+	}
+}
+
+// A step that names result fields fails when one differs, so a later
+// page that came back as the first is a failure rather than a pass.
+func TestJudgeHoldsTheExpectedFields(t *testing.T) {
+	step := livecover.Step{ExpectFields: map[string]any{"page": 2}}
+	for body, ok := range map[string]bool{`{"page":2}`: true, `{"page":1}`: false, `{}`: false} {
+		if got := judge(step, &callResult{StructuredContent: json.RawMessage(body)}, nil).ok; got != ok {
+			t.Errorf("judge(%s).ok = %v, want %v", body, got, ok)
+		}
+	}
+}
+
+// A structured result is redacted before it is clipped. An id the clip
+// cut in half matched no pattern and printed its first half as it was.
+func TestAClippedResultPrintsNoPartOfAnID(t *testing.T) {
+	const id = "aaaaaaaa0123456789abcdef" // synthetic, of the 24-hex shape Favro mints
+	pad := strings.Repeat("x", 274)       // puts the id across the clip at 300
+	var buf bytes.Buffer
+	p := &printer{red: redact.New(), w: bufio.NewWriter(&buf)}
+	p.result(&callResult{StructuredContent: json.RawMessage(`{"a":"` + pad + `","cardId":"` + id + `"}`)})
+	if out := buf.String(); strings.Contains(out, id[:8]) {
+		t.Errorf("the transcript carries part of the id:\n%s", out)
+	}
 }

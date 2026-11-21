@@ -179,6 +179,9 @@
                   "organizationId": {
                     "type": "string"
                   },
+                  "threadId": {
+                    "type": "string"
+                  },
                   "userId": {
                     "type": "string"
                   }
@@ -1999,7 +2002,7 @@
         "readOnlyHint": false,
         "title": "Create Favro comment"
       },
-      "description": "Add a new comment to a Favro card identified by `card_common_id`. `comment` is the markdown body. Pass `dry_run: true` to preview the request without contacting Favro. Comments are not cached at the resolver layer, so no invalidation is needed on success.",
+      "description": "Add a new comment to a Favro card identified by `card_common_id`. `comment` is the markdown body. `thread_id` replies in that thread; without it the comment starts a new one. Pass `dry_run: true` to preview the request without contacting Favro. Comments are not cached at the resolver layer, so no invalidation is needed on success.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2014,6 +2017,10 @@
           "dry_run": {
             "description": "if true, return a description of the request that would be sent (method + URL + body + predicted state change) without writing anything. A tool may still read in order to build an accurate preview; nothing is ever written under dry_run.",
             "type": "boolean"
+          },
+          "thread_id": {
+            "description": "reply in this thread of the card: a comment's threadId from favro_list_comments. Omit to start a new thread.",
+            "type": "string"
           }
         },
         "required": [
@@ -2091,6 +2098,9 @@
                 "type": "string"
               },
               "organizationId": {
+                "type": "string"
+              },
+              "threadId": {
                 "type": "string"
               },
               "userId": {
@@ -4443,6 +4453,9 @@
                 "organizationId": {
                   "type": "string"
                 },
+                "threadId": {
+                  "type": "string"
+                },
                 "userId": {
                   "type": "string"
                 }
@@ -5022,6 +5035,9 @@
           "organizationId": {
             "type": "string"
           },
+          "threadId": {
+            "type": "string"
+          },
           "userId": {
             "type": "string"
           }
@@ -5574,12 +5590,16 @@
             "description": "the per-widget cardId whose history to read (not the cardCommonId); required on every page",
             "type": "string"
           },
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           },
           "since": {
@@ -5722,12 +5742,16 @@
             "description": "'plaintext' (default) or 'markdown' for the detailedDescription body. 'markdown' returns the body as Favro stored it, which is what favro_replace_in_card_description matches against.",
             "type": "string"
           },
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           },
           "sequential_id": {
@@ -6085,12 +6109,16 @@
             "description": "if true, include archived collections in the result; default (false) hides them server-side",
             "type": "boolean"
           },
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           }
         },
@@ -6215,12 +6243,16 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           },
           "widget_common_id": {
@@ -6317,7 +6349,7 @@
         "readOnlyHint": true,
         "title": "List Favro comments"
       },
-      "description": "List comments on a single Favro card. `card_common_id` is REQUIRED (the cross-widget card identity, not the per-widget cardId). Returns one page; pass `page` (1-indexed) plus the `request_id` from the prior response (and `card_common_id` again) to retrieve subsequent pages. Read-only.",
+      "description": "List comments on a single Favro card. `card_common_id` is REQUIRED (the cross-widget card identity, not the per-widget cardId). Returns one page; pass `page` (1-indexed) plus the `request_id` from the prior response (and `card_common_id` again) to retrieve subsequent pages. Each comment carries its `threadId`; pass it as `thread_id` to list one thread. Read-only.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6325,12 +6357,20 @@
             "description": "the cross-widget cardCommonId whose comments to list; required by Favro on every page (must be passed on follow-up pages too, not just the first)",
             "type": "string"
           },
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
+            "type": "string"
+          },
+          "thread_id": {
+            "description": "list only this thread's comments, oldest first: a comment's threadId. Favro answers [forbidden] for a thread that is not on this card.",
             "type": "string"
           }
         },
@@ -6390,6 +6430,9 @@
                 "organizationId": {
                   "type": "string"
                 },
+                "threadId": {
+                  "type": "string"
+                },
                 "userId": {
                   "type": "string"
                 }
@@ -6445,12 +6488,16 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           }
         },
@@ -6623,12 +6670,16 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           }
         },
@@ -6735,12 +6786,16 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           }
         },
@@ -6850,6 +6905,10 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "name": {
             "description": "optional exact-match tag name filter applied server-side; useful when you already know the tag name and just need its id",
             "type": "string"
@@ -6859,7 +6918,7 @@
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           }
         },
@@ -6940,12 +6999,16 @@
             "description": "the cross-widget cardCommonId whose checklists to list; required by Favro on every page (must be passed on follow-up pages too)",
             "type": "string"
           },
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           }
         },
@@ -7034,12 +7097,16 @@
             "description": "the cross-widget cardCommonId whose tasks to list; required by Favro on every page (must be passed on follow-up pages too)",
             "type": "string"
           },
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           },
           "task_list_id": {
@@ -7132,12 +7199,16 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           }
         },
@@ -7301,12 +7372,16 @@
             "description": "optional Favro collection id to scope the listing to widgets in that collection; pass it on EVERY page when paginating, not just the first",
             "type": "string"
           },
+          "limit": {
+            "description": "items per page, 1 to 100, on the first page; later pages keep the first page's size. Omit for 100, Favro's default and its cap.",
+            "type": "integer"
+          },
           "page": {
             "description": "1-indexed page; omit for the first page. Pass the next_page value from a prior response rather than counting.",
             "type": "integer"
           },
           "request_id": {
-            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward). The server sends it to Favro as the X-Favro-Backend-Identifier header.",
+            "description": "the request_id from the previous page's response; pass it with every page after the first (page 2 onward).",
             "type": "string"
           }
         },
@@ -11586,6 +11661,9 @@
                 "type": "string"
               },
               "organizationId": {
+                "type": "string"
+              },
+              "threadId": {
                 "type": "string"
               },
               "userId": {

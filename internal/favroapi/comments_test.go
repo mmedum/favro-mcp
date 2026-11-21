@@ -45,7 +45,7 @@ func TestListComments_HappyPath(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListComments(context.Background(), 0, "", "card-c-1")
+	env, err := c.ListComments(context.Background(), favro.Page{}, "card-c-1", "")
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestListComments_EmptyCardCommonID_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListComments(context.Background(), 0, "", "")
+	_, err := c.ListComments(context.Background(), favro.Page{}, "", "")
 	if !errors.Is(err, errMissingCardCommonID) {
 		t.Fatalf("got %v, want errMissingCardCommonID", err)
 	}
@@ -110,7 +110,7 @@ func TestListComments_WithPageForwardsRequestIDAndFilter(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListComments(context.Background(), 2, "req-prior", "card-c-1")
+	_, err := c.ListComments(context.Background(), favro.Page{Number: 2, RequestID: "req-prior"}, "card-c-1", "")
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -122,8 +122,8 @@ func TestListComments_WithPageForwardsRequestIDAndFilter(t *testing.T) {
 	if got := rec[0].Query.Get("cardCommonId"); got != "card-c-1" {
 		t.Errorf("cardCommonID must be re-sent on every paginated page: got %v, want %v", got, "card-c-1")
 	}
-	if got := rec[0].Headers.Get(headerRequestID); got != "req-prior" {
-		t.Errorf("rec[0].Headers.Get(headerRequestID) = %v, want %v", got, "req-prior")
+	if got := rec[0].Query.Get("requestId"); got != "req-prior" {
+		t.Errorf("rec[0].Query.Get(\"requestId\") = %v, want %v", got, "req-prior")
 	}
 }
 
@@ -214,7 +214,7 @@ func TestListComments_AttachmentsDecoding(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListComments(context.Background(), 0, "", "cc-1")
+	env, err := c.ListComments(context.Background(), favro.Page{}, "cc-1", "")
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -426,5 +426,37 @@ func TestUpdateComment_StripsPresignedAttachmentQuery(t *testing.T) {
 	})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
+	}
+}
+
+// A thread filter rides beside the card filter, and a reply carries its
+// thread in the body as the reference documents; a new thread sends none.
+// https://favro.com/developer/#get-all-comments
+// https://favro.com/developer/#create-a-comment
+func TestComments_Threads(t *testing.T) {
+	t.Parallel()
+
+	h := &recordingHandler{respond: func(_ recordedRequest, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"entities":[],"page":0,"pages":1}`))
+	}}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	c := newTestClient(srv)
+
+	if _, err := c.ListComments(context.Background(), favro.Page{}, "cc-1", "th-1"); err != nil {
+		t.Fatalf("ListComments: %v", err)
+	}
+	if got := h.seen()[0].Query.Get("threadId"); got != "th-1" {
+		t.Errorf("threadId = %q, want th-1", got)
+	}
+
+	for _, tc := range []struct{ thread, body string }{
+		{"th-1", `{"cardCommonId":"cc-1","comment":"reply","threadId":"th-1"}`},
+		{"", `{"cardCommonId":"cc-1","comment":"reply"}`},
+	} {
+		_, _ = c.CreateComment(context.Background(), favro.CreateCommentRequest{CardCommonID: "cc-1", Comment: "reply", ThreadID: tc.thread})
+		seen := h.seen()
+		requireJSONEq(t, tc.body, seen[len(seen)-1].Body)
 	}
 }

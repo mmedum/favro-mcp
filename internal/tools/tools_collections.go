@@ -35,7 +35,7 @@ func registerCollections(reg *registry, client *favroapi.Client) {
 			"retrieve subsequent pages. Read-only.",
 		Annotations: readOnly("List Favro collections"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listCollectionsInput) (*mcp.CallToolResult, listOutput[favro.Collection], error) {
-		env, err := client.ListCollections(ctx, in.favroPage(), in.RequestID, favro.ListCollectionsFilter{
+		env, err := client.ListCollections(ctx, in.page(), favro.ListCollectionsFilter{
 			Archived: in.Archived,
 		})
 		if err != nil {

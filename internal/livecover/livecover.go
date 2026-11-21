@@ -37,6 +37,10 @@ type Step struct {
 	// coverage too: the error vocabulary is only worth something if its
 	// classes come back from a real API.
 	ExpectError string
+	// ExpectFields are top-level fields of the structured result and the
+	// values they must hold, for a step whose success alone shows
+	// nothing: a later page that came back as the first would pass.
+	ExpectFields map[string]any
 }
 
 // Placeholder is an argument value the driver fills in from earlier
@@ -59,6 +63,7 @@ const (
 	AnyCommentID      Placeholder = "{comment_id}"
 	AnyTaskID         Placeholder = "{task_id}"
 	AnyTaskListID     Placeholder = "{task_list_id}"
+	AnyThreadID       Placeholder = "{thread_id}"
 	// AnySequentialID is a number rather than an id string — the
 	// integer inside a reference like the ones people paste from the
 	// UI. The driver keeps a placeholder's value at its original type,
@@ -71,6 +76,11 @@ const (
 	// account is the one person certain to be there. AnyUserID is the
 	// first userId any result carried, which need not be a member.
 	OwnUserID Placeholder = "{own_user_id}"
+	// FirstPageRequestID is the request_id of a first page that has a
+	// second, from a listing by the same tool as the step naming it. A
+	// later page sends it, and a request_id from another listing is not
+	// one Favro issued for this one.
+	FirstPageRequestID Placeholder = "{first_page_request_id}"
 )
 
 // The file and folder the driver puts in the FAVRO_UPLOAD_DIR it starts
@@ -89,8 +99,8 @@ const OutsideUserID = "livefavro-no-such-user"
 var Placeholders = []Placeholder{
 	AnyCollectionID, AnyWidgetCommonID, AnyColumnID, AnyCardID,
 	AnyCardCommonID, AnyUserID, OwnUserID, AnyTagID, AnyCustomFieldID,
-	AnyGroupID, AnyCommentID,
-	AnyTaskID, AnyTaskListID, AnySequentialID,
+	AnyGroupID, AnyCommentID, AnyThreadID,
+	AnyTaskID, AnyTaskListID, AnySequentialID, FirstPageRequestID,
 }
 
 // Coverage is what the gate reports.

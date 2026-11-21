@@ -5,7 +5,7 @@
 # exactly like a decision.
 #
 # Columns, tab-separated: KEY\tREASON
-favro_list_card_activities.request_id	Pagination needs a cursor from the response before it, and the driver makes one call per step. Covering it would mean a step that depends on another step's result, which is a different shape of driver.
+favro_list_card_activities.request_id	Its value is a first page's request_id when a second page follows, and a card's activity rarely runs to two pages, so a step would skip. A later page is the same client code for every tool, read live by the step "read a second page".
 favro_set_card_custom_field.add_member_user_ids	One of the per-type value inputs. The tool takes exactly one, chosen by the custom field's own type, and the driver picks a field from whatever the organization has — so it cannot know which of these is the legal one. The refusal that names them all is exercised instead, live, by the step that passes none.
 favro_set_card_custom_field.add_tag_ids	One of the per-type value inputs. The tool takes exactly one, chosen by the custom field's own type, and the driver picks a field from whatever the organization has — so it cannot know which of these is the legal one. The refusal that names them all is exercised instead, live, by the step that passes none.
 favro_set_card_custom_field.checkbox	One of the per-type value inputs. The tool takes exactly one, chosen by the custom field's own type, and the driver picks a field from whatever the organization has — so it cannot know which of these is the legal one. The refusal that names them all is exercised instead, live, by the step that passes none.

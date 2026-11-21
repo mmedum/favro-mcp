@@ -61,7 +61,7 @@ func registerTasklists(reg *registry, client *favroapi.Client) {
 			"pages. Read-only.",
 		Annotations: readOnly("List Favro tasklists"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listTasklistsInput) (*mcp.CallToolResult, listOutput[favro.Tasklist], error) {
-		env, err := client.ListTasklists(ctx, in.favroPage(), in.RequestID, in.CardCommonID)
+		env, err := client.ListTasklists(ctx, in.page(), in.CardCommonID)
 		if err != nil {
 			return nil, listOutput[favro.Tasklist]{}, err
 		}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/mmedum/favro-mcp/v4/internal/auth"
 	"github.com/mmedum/favro-mcp/v4/internal/config"
+	"github.com/mmedum/favro-mcp/v4/internal/favro"
 	"github.com/mmedum/favro-mcp/v4/internal/favroapi"
 	"github.com/mmedum/favro-mcp/v4/internal/redact"
 	"github.com/mmedum/favro-mcp/v4/internal/version"
@@ -255,7 +256,7 @@ func apiChecks(ctx context.Context, rt auth.ResolvedToken, resolveErr error, bas
 		client.BaseURL = baseURL
 	}
 	start := time.Now()
-	page, err := client.ListOrganizations(ctx, 1, "")
+	page, err := client.ListOrganizations(ctx, favro.Page{})
 	elapsed := time.Since(start).Round(time.Millisecond)
 
 	if err != nil {

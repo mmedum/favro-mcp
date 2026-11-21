@@ -44,7 +44,7 @@ func TestListCards_NoFilters(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListCards(context.Background(), 0, "", favro.ListCardsFilter{})
+	env, err := c.ListCards(context.Background(), favro.Page{}, favro.ListCardsFilter{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestListCards_FractionalPosition(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListCards(context.Background(), 0, "", favro.ListCardsFilter{})
+	env, err := c.ListCards(context.Background(), favro.Page{}, favro.ListCardsFilter{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestListCards_CustomFieldsValuesDecoding(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListCards(context.Background(), 0, "", favro.ListCardsFilter{})
+	env, err := c.ListCards(context.Background(), favro.Page{}, favro.ListCardsFilter{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestListCards_AllFiltersForwarded(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListCards(context.Background(), 0, "", favro.ListCardsFilter{
+	_, err := c.ListCards(context.Background(), favro.Page{}, favro.ListCardsFilter{
 		WidgetCommonID:    "w-1",
 		CollectionID:      "col-1",
 		CardCommonID:      "card-c-7",
@@ -311,7 +311,7 @@ func TestListCards_NewResponseFieldsDecoding(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListCards(context.Background(), 0, "", favro.ListCardsFilter{})
+	env, err := c.ListCards(context.Background(), favro.Page{}, favro.ListCardsFilter{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestListCards_SequentialIDZero_OmitsParam(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListCards(context.Background(), 0, "", favro.ListCardsFilter{
+	_, err := c.ListCards(context.Background(), favro.Page{}, favro.ListCardsFilter{
 		WidgetCommonID: "w-1",
 		SequentialID:   0,
 	})
@@ -400,7 +400,7 @@ func TestListCards_WithPageForwardsRequestIDAndFilter(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListCards(context.Background(), 2, "req-prior", favro.ListCardsFilter{
+	_, err := c.ListCards(context.Background(), favro.Page{Number: 2, RequestID: "req-prior"}, favro.ListCardsFilter{
 		WidgetCommonID: "w-1",
 	})
 	if err := err; err != nil {
@@ -414,8 +414,8 @@ func TestListCards_WithPageForwardsRequestIDAndFilter(t *testing.T) {
 	if got := rec[0].Query.Get("widgetCommonId"); got != "w-1" {
 		t.Errorf("filter must ride along on every paginated page (Favro doesn't carry filter state): got %v, want %v", got, "w-1")
 	}
-	if got := rec[0].Headers.Get(headerRequestID); got != "req-prior" {
-		t.Errorf("rec[0].Headers.Get(headerRequestID) = %v, want %v", got, "req-prior")
+	if got := rec[0].Query.Get("requestId"); got != "req-prior" {
+		t.Errorf("rec[0].Query.Get(\"requestId\") = %v, want %v", got, "req-prior")
 	}
 }
 

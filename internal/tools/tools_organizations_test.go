@@ -91,29 +91,31 @@ func TestMCP_ListOrganizations_LastPage_NoNextPage(t *testing.T) {
 	}
 }
 
-func TestMCP_ListOrganizations_ForwardsRequestIDOnPage2(t *testing.T) {
+// The request_id goes with page 2 onward, as Favro's requestId, and not
+// with the first page, where one carried over from another listing
+// would name the wrong one.
+func TestMCP_ListOrganizations_SendsRequestIDFromPage2(t *testing.T) {
 	t.Parallel()
 
-	var sawRequestID string
-	c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawRequestID = r.Header.Get("X-Favro-Backend-Identifier")
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(favro.PageEnvelope[favro.Organization]{Page: 1, Pages: 2})
-	}))
+	for page, want := range map[int]string{1: "", 2: "req-from-prior-page"} {
+		var sawRequestID string
+		c := favroFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sawRequestID = r.URL.Query().Get("requestId")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(favro.PageEnvelope[favro.Organization]{Page: page - 1, Pages: 2})
+		}))
 
-	cs := connectInMemoryWith(t, c)
-	_, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: listOrgsToolName,
-		Arguments: map[string]any{
-			"page":       1,
-			"request_id": "req-from-prior-page",
-		},
-	})
-	if err := err; err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if got := sawRequestID; got != "req-from-prior-page" {
-		t.Errorf("page > 0 must thread request_id back as X-Favro-Backend-Identifier: got %v, want %v", got, "req-from-prior-page")
+		cs := connectInMemoryWith(t, c)
+		_, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+			Name:      listOrgsToolName,
+			Arguments: map[string]any{"page": page, "request_id": "req-from-prior-page"},
+		})
+		if err != nil {
+			t.Fatalf("page %d: %v", page, err)
+		}
+		if sawRequestID != want {
+			t.Errorf("page %d sent requestId %q, want %q", page, sawRequestID, want)
+		}
 	}
 }
 

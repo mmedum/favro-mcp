@@ -37,7 +37,7 @@ func TestListCardActivities_ForwardsWindow(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListCardActivities(context.Background(), 0, "", "ci-1", favro.ListActivitiesFilter{
+	env, err := c.ListCardActivities(context.Background(), favro.Page{}, "ci-1", favro.ListActivitiesFilter{
 		Since: "2026-01-01T00:00:00Z",
 		Until: "2026-02-01T00:00:00Z",
 	})
@@ -74,7 +74,7 @@ func TestListCardActivities_OmitsEmptyWindow(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListCardActivities(context.Background(), 0, "", "ci-1", favro.ListActivitiesFilter{})
+	_, err := c.ListCardActivities(context.Background(), favro.Page{}, "ci-1", favro.ListActivitiesFilter{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestActivity_CommonID_ReconcilesBothWireKeys(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	env, err := c.ListCardActivities(context.Background(), 0, "", "ci-1", favro.ListActivitiesFilter{})
+	env, err := c.ListCardActivities(context.Background(), favro.Page{}, "ci-1", favro.ListActivitiesFilter{})
 	if err := err; err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestListCardActivities_EmptyID_NoNetworkCall(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(srv)
 
-	_, err := c.ListCardActivities(context.Background(), 0, "", "", favro.ListActivitiesFilter{})
+	_, err := c.ListCardActivities(context.Background(), favro.Page{}, "", favro.ListActivitiesFilter{})
 	if !errors.Is(err, errMissingID) {
 		t.Fatalf("got %v, want errMissingID", err)
 	}

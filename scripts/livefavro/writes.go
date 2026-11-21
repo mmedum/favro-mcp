@@ -172,7 +172,7 @@ func probeTag(sc *scratch, c *checks) error {
 // and so does either refusal after a delete that failed.
 // https://favro.com/developer/#get-a-collection
 func deleteAndReadBack(sc *scratch, c *checks, kind probeKind, id string) {
-	res, err := sc.call(kind.delete, map[string]any{kind.idArg: id, "confirm": true})
+	res, err := sc.call(kind.delete, kind.deleteCall(id))
 	deleted := succeeded(res, err)
 	c.check(deleted, kind.deleted, detail(res, err))
 
@@ -229,8 +229,108 @@ func probeCollection(sc *scratch, c *checks) error {
 	res, err = sc.call("favro_update_collection", map[string]any{"collection_id": id, "public_sharing": "users"})
 	c.check(succeeded(res, err) && sharing("users"), livecover.CheckUpdateNarrowsToUsers, detail(res, err))
 
+	if err := probeCard(sc, c, id); err != nil {
+		return err
+	}
+
 	res, err = sc.call("favro_delete_collection", col)
 	c.check(refused(res, err, "blocked"), livecover.CheckCollectionDeleteWithoutConfirm, detail(res, err))
 	deleteAndReadBack(sc, c, probeKinds["favro_create_collection"], id)
 	return nil
+}
+
+// probeCard runs a probe card, on a probe widget in the probe collection,
+// through the writes a dry run cannot show: an attachment uploaded and
+// removed by its fileURL, which Favro answers 200 for whether or not the
+// URL matched, and a reply in a comment thread. Both are read back.
+// https://favro.com/developer/#update-a-card
+// https://favro.com/developer/#create-a-comment
+func probeCard(sc *scratch, c *checks, collectionID string) error {
+	res, err := sc.create("favro_create_widget", map[string]any{
+		"collection_id": collectionID, "name": probeName("widget"), "type": "backlog",
+	})
+	widgetID, err := createdID(res, err, "widgetCommonId")
+	if err != nil {
+		return fmt.Errorf("creating the probe widget: %w", err)
+	}
+	res, err = sc.create("favro_create_card", map[string]any{"name": probeName("card"), "widget_common_id": widgetID})
+	cardID, err := createdID(res, err, "cardId")
+	if err != nil {
+		return fmt.Errorf("creating the probe card: %w", err)
+	}
+	cardCommonID, err := createdID(res, err, "cardCommonId")
+	if err != nil {
+		return fmt.Errorf("creating the probe card: %w", err)
+	}
+
+	probeAttachment(sc, c, cardID)
+	probeThread(sc, c, cardCommonID)
+
+	deleteAndReadBack(sc, c, probeKinds["favro_create_card"], cardID)
+	deleteAndReadBack(sc, c, probeKinds["favro_create_widget"], widgetID)
+	return nil
+}
+
+// probeAttachment uploads a file to the card, removes it by the fileURL
+// the card reads back with, and reads the card again.
+func probeAttachment(sc *scratch, c *checks, cardID string) {
+	card := map[string]any{"card_id": cardID}
+	res, err := sc.call("favro_upload_attachment", map[string]any{"card_id": cardID, "file_path": livecover.UploadFile})
+	urls := attachmentURLs(sc, card)
+	c.check(succeeded(res, err) && len(urls) == 1, livecover.CheckAttachmentUploaded, detail(res, err))
+	if len(urls) == 0 {
+		return
+	}
+	res, err = sc.call("favro_remove_attachment", map[string]any{"card_id": cardID, "file_urls": urls, "confirm": true})
+	c.check(succeeded(res, err), livecover.CheckAttachmentRemoved, detail(res, err))
+	left := attachmentURLs(sc, card)
+	c.check(len(left) == 0, livecover.CheckAttachmentGone, fmt.Sprintf("%d attachment(s) left", len(left)))
+}
+
+// attachmentURLs reads the card and returns each attachment's fileURL.
+func attachmentURLs(sc *scratch, card map[string]any) []any {
+	res, err := sc.call("favro_get_card", card)
+	if !succeeded(res, err) {
+		return nil
+	}
+	var out struct {
+		Attachments []struct {
+			FileURL string `json:"fileURL"`
+		} `json:"attachments"`
+	}
+	if json.Unmarshal(res.StructuredContent, &out) != nil {
+		return nil
+	}
+	var urls []any
+	for _, a := range out.Attachments {
+		urls = append(urls, a.FileURL)
+	}
+	return urls
+}
+
+// probeThread starts a thread on the card, replies in it by thread_id,
+// and lists the thread.
+func probeThread(sc *scratch, c *checks, cardCommonID string) {
+	first, err := sc.call("favro_create_comment", map[string]any{"card_common_id": cardCommonID, "comment": "livefavro probe"})
+	thread, err := createdID(first, err, "threadId")
+	if err != nil {
+		c.check(false, livecover.CheckReplyInThread, "the first comment came back with no thread: "+err.Error())
+		return
+	}
+	sc.adopt(thread)
+	res, err := sc.call("favro_create_comment", map[string]any{
+		"card_common_id": cardCommonID, "comment": "livefavro probe reply", "thread_id": thread,
+	})
+	replyThread, replyErr := createdID(res, err, "threadId")
+	c.check(replyErr == nil && replyThread == thread, livecover.CheckReplyInThread, detail(res, err))
+
+	res, err = sc.call("favro_list_comments", map[string]any{"card_common_id": cardCommonID, "thread_id": thread})
+	var listed struct {
+		Items []struct {
+			Comment string `json:"comment"`
+		} `json:"items"`
+	}
+	ok := succeeded(res, err) && json.Unmarshal(res.StructuredContent, &listed) == nil &&
+		len(listed.Items) == 2 && listed.Items[0].Comment == "livefavro probe"
+	c.check(ok, livecover.CheckThreadListed, detail(res, err))
 }

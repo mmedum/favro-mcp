@@ -11,11 +11,11 @@ import (
 // ListTasks returns one page of tasks. filter.CardCommonID is
 // required — Favro rejects an unscoped listing, so the check happens
 // client-side to give a clearer message than the API's 400.
-func (c *Client) ListTasks(ctx context.Context, page int, requestID string, filter favro.ListTasksFilter) (favro.PageEnvelope[favro.Task], error) {
+func (c *Client) ListTasks(ctx context.Context, pg favro.Page, filter favro.ListTasksFilter) (favro.PageEnvelope[favro.Task], error) {
 	if filter.CardCommonID == "" {
 		return favro.PageEnvelope[favro.Task]{}, fmt.Errorf("favro: card_common_id is required to list tasks")
 	}
-	return listPageQ[favro.Task](ctx, c, "/tasks", filter.Values(), page, requestID)
+	return listPageQ[favro.Task](ctx, c, "/tasks", filter.Values(), pg)
 }
 
 // GetTask returns a single task by its taskId.

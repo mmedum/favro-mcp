@@ -3,7 +3,6 @@ package favroapi
 import (
 	"context"
 	"net/url"
-	"strconv"
 
 	"github.com/mmedum/favro-mcp/v4/internal/favro"
 	"github.com/mmedum/favro-mcp/v4/internal/render"
@@ -15,31 +14,22 @@ import (
 // this sentinel mainly catches direct in-process callers.
 var errMissingID = render.Sentinel(render.ClassInvalid, "favro: id is required")
 
-// listPage requests one paginated page of T from path. page is Favro's
-// 0-indexed page; 0 sends no page parameter, which is the first page.
-// requestID, when non-empty, is sent as the X-Favro-Backend-Identifier
-// header. Favro serves the page from page alone, so the header changes
-// nothing; see Paginate.
+// listPage requests one paginated page of T from path; see fetchOne for
+// how pg reaches Favro.
 //
 // Pagination is intentionally not auto-aggregated; per-resource list
 // methods expose pages explicitly because silent multi-page reads
 // burn the hourly rate limit.
-func listPage[T any](ctx context.Context, c *Client, path string, page int, requestID string) (favro.PageEnvelope[T], error) {
-	return listPageQ[T](ctx, c, path, nil, page, requestID)
+func listPage[T any](ctx context.Context, c *Client, path string, pg favro.Page) (favro.PageEnvelope[T], error) {
+	return listPageQ[T](ctx, c, path, nil, pg)
 }
 
 // listPageQ is listPage with a caller-supplied query. Use this when
 // the endpoint accepts filters (e.g. /widgets?collectionId=…). q may
-// be nil or empty; the helper will add ?page=N when page > 0. The
-// caller must NOT pre-set "page" — listPageQ owns that key.
-func listPageQ[T any](ctx context.Context, c *Client, path string, q url.Values, page int, requestID string) (favro.PageEnvelope[T], error) {
-	if q == nil {
-		q = url.Values{}
-	}
-	if page > 0 {
-		q.Set("page", strconv.Itoa(page))
-	}
-	return fetchOne[T](ctx, c, path, q, requestID)
+// be nil or empty. The caller must NOT pre-set "page", "requestId" or
+// "limit" — fetchOne owns those keys.
+func listPageQ[T any](ctx context.Context, c *Client, path string, q url.Values, pg favro.Page) (favro.PageEnvelope[T], error) {
+	return fetchOne[T](ctx, c, path, cloneQuery(q), pg)
 }
 
 // getByID fetches a single resource by id from basePath/{id}. id is

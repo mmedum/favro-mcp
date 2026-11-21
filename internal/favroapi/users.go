@@ -8,8 +8,8 @@ import (
 
 // ListUsers returns one page of users (members of the active
 // organization). See listPage for the pagination contract.
-func (c *Client) ListUsers(ctx context.Context, page int, requestID string) (favro.PageEnvelope[favro.User], error) {
-	return listPage[favro.User](ctx, c, "/users", page, requestID)
+func (c *Client) ListUsers(ctx context.Context, pg favro.Page) (favro.PageEnvelope[favro.User], error) {
+	return listPage[favro.User](ctx, c, "/users", pg)
 }
 
 // GetUser returns a single user by id. Returns *NotFoundError if no

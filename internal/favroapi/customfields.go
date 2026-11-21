@@ -9,8 +9,8 @@ import (
 // ListCustomFields returns one page of custom fields in the active
 // organization. Custom fields are org-global; there is no widget
 // or card filter.
-func (c *Client) ListCustomFields(ctx context.Context, page int, requestID string) (favro.PageEnvelope[favro.CustomField], error) {
-	return listPage[favro.CustomField](ctx, c, "/customfields", page, requestID)
+func (c *Client) ListCustomFields(ctx context.Context, pg favro.Page) (favro.PageEnvelope[favro.CustomField], error) {
+	return listPage[favro.CustomField](ctx, c, "/customfields", pg)
 }
 
 // GetCustomField returns a single custom field by its
