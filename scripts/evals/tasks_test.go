@@ -96,12 +96,19 @@ func TestMentionsFailure(t *testing.T) {
 		"That tag does not exist, so I did not add it.",
 		"I couldn't add it — no such tag.",
 		"Unable to complete: the tag was not found.",
+		`No tag named "no-such-tag-please-refuse" exists in the org, so I'm not going to create one.`,
+		"There is no tag by that name. It doesn't exist yet.",
 	} {
 		if !mentionsFailure(s) {
 			t.Errorf("did not read as a reported failure: %q", s)
 		}
 	}
-	for _, s := range []string{"done", "Added the tag to the card.", ""} {
+	for _, s := range []string{
+		"done", "Added the tag to the card.", "",
+		"The tag exists, so I added it; no other change.",
+		"No problem, the tag exists and is on the card now.",
+		"Added the tag. It's not going to show until the board refreshes.",
+	} {
 		if mentionsFailure(s) {
 			t.Errorf("read as a failure and is not: %q", s)
 		}

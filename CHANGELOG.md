@@ -8,6 +8,8 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-11-21
+
 ### Added
 - `favro-mcp.plugin` carries a native windows-arm64 binary, which its `.cmd` shim runs on Windows on Arm, Windows 10 included.
 - Every paging list tool takes `limit`, 1 to 100 items per page.
@@ -473,7 +475,8 @@ First stable release. Full CRUD over every Favro REST resource, workflow tools f
 - GitHub Actions: `ci.yml` (lint, multi-OS tests, vulncheck, build) and `release.yml`.
 - Dependabot for Go modules and Actions. PR template.
 
-[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.4.2...HEAD
+[Unreleased]: https://github.com/mmedum/favro-mcp/compare/v4.5.0...HEAD
+[4.5.0]: https://github.com/mmedum/favro-mcp/compare/v4.4.2...v4.5.0
 [4.4.2]: https://github.com/mmedum/favro-mcp/compare/v4.4.1...v4.4.2
 [4.4.1]: https://github.com/mmedum/favro-mcp/compare/v4.4.0...v4.4.1
 [4.4.0]: https://github.com/mmedum/favro-mcp/compare/v4.3.0...v4.4.0
