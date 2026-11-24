@@ -133,6 +133,10 @@ func init() {
 			run: schemaDiffCmd, args: "[BIN]", runs: inCheck,
 			doc: "diff the tool schemas against the last tag",
 		},
+		"changelog": {
+			run: changelogGate, args: "BASE HEAD", runs: inPR,
+			doc: "a change to what users get adds an entry under [Unreleased]; a release cut, a bump of required modules other than the MCP SDK, and a Changelog: none footer need none",
+		},
 		"schema-ack": {
 			run: schemaAck, args: "BASE HEAD", runs: inPR,
 			doc: "a pull request's commits name each item of the tool surface it changes",

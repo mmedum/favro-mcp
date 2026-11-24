@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -77,16 +76,11 @@ func TestPermissionRulesNameRegisteredTools(t *testing.T) {
 }
 
 // The gate against the repository, from its root as main runs it, over
-// the surface made in process. A shallow clone, as CI's test job checks
-// out, holds no tag for the CHANGELOG rule to measure from; every other
-// check still runs, and passes.
+// the surface made in process, passes.
 func TestStalenessAgainstThisRepository(t *testing.T) {
 	t.Chdir(parityRepoRoot)
 	var out sink
 	err := stalenessOf(&out, stalenessDump(t))
-	if shallow, _ := git("rev-parse", "--is-shallow-repository"); errors.As(err, new(couldNotRun)) && strings.TrimSpace(shallow) == "true" {
-		t.Skipf("a shallow clone: %v", err)
-	}
 	if err != nil {
 		t.Fatalf("the documentation should match the code: %v", err)
 	}
@@ -335,65 +329,6 @@ const (
 		"write one under [Unreleased], or under the version heading this release tags"
 )
 
-// The CHANGELOG rule: a change to what users get is written up under
-// [Unreleased], or, on the release commit before its tag, under the
-// version that commit releases, a prerelease's included. A heading in a
-// fence is an example and cuts no release.
-func TestTheChangelogRule(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name          string
-		changelog     string
-		sourceChanged bool
-		// tagged are the versions that have a tag.
-		tagged []string
-		want   []string
-	}{
-		{"an undocumented source change", clUnreleased + clReleased, true, []string{"0.9.0"}, []string{clEmpty}},
-		{"a documented source change", clWritten + clReleased, true, []string{"0.9.0"}, nil},
-		{"the release commit before its tag", clUnreleased + clNext + clReleased, true, []string{"0.9.0"}, nil},
-		{
-			"a prerelease's commit before its tag", clUnreleased + strings.Replace(clNext, "0.9.1", "1.0.0-rc.1", 1) + clReleased,
-			true,
-			[]string{"0.9.0"},
-			nil,
-		},
-		{
-			"a release commit with nothing under its version", clUnreleased + clNextEmpty + clReleased, true,
-			[]string{"0.9.0"},
-			[]string{"what users get changed and CHANGELOG.md [0.9.1], the untagged version this commit " +
-				"releases, has no entry; write one under [Unreleased], or under the version heading this release tags"},
-		},
-		{
-			"an undocumented source change after the release is tagged", clUnreleased + clNext + clReleased, true,
-			[]string{"0.9.0", "0.9.1"},
-			[]string{clEmpty},
-		},
-		{
-			"prose and an indented bullet, which are no entry", clUnreleased + "Some prose.\n  - an aside\n\n" + clReleased, true,
-			[]string{"0.9.0"},
-			[]string{clEmpty},
-		},
-		{"an [Unreleased] section followed only by the link footer", clUnreleased +
-			"[Unreleased]: https://example.com/compare/v0.9.0...HEAD\n- not an entry\n", true, nil, []string{clEmpty}},
-		{
-			"a release cut only in a fence", clUnreleased + "```\n" + clNext + "```\n\n" + clReleased, true,
-			[]string{"0.9.0"},
-			[]string{clEmpty},
-		},
-		{"no [Unreleased] section", "# Changelog\n\n" + clReleased, true, []string{"0.9.0"}, []string{clEmpty}},
-		{"no change to what users get", clUnreleased + clReleased, false, []string{"0.9.0"}, nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := changelogRule(tc.changelog, tc.sourceChanged, func(v string) bool { return slices.Contains(tc.tagged, v) })
-			if !slices.Equal(got, tc.want) {
-				t.Errorf("changelogRule() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 // stalenessRepo is a git checkout of a module whose binary, cmd/fixture,
 // imports internal/a, which embeds a file, and not internal/unused, with a
 // release tag v0.9.0 on its one commit. A case changes a stalenessCopy of
@@ -467,23 +402,12 @@ func stalenessChange(t *testing.T, dir string, files map[string]string) {
 	stalenessGit(t, dir, "commit", "-q", "-m", "change")
 }
 
-// stalenessChangelog runs the CHANGELOG rule over the checkout at dir, its
-// CHANGELOG as committed.
-func stalenessChangelog(t *testing.T, dir string) ([]string, error) {
-	t.Helper()
-	text, err := os.ReadFile(filepath.Join(dir, changelogPath))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return checkChangelog(dir, string(text))
-}
-
 // A committed change to what users get needs an entry: a package the
 // binary imports, a file one embeds, a bundle's manifest, and go.mod but
 // its require and tool lines. A test, a fixture, a package it does not
 // import and a dependency bump do not, and nor does what is not
 // committed, which CI never sees.
-func TestTheChangelogRuleCountsWhatShips(t *testing.T) { //nolint:tparallel // its fixture sets the git isolation env, which a parallel test may not
+func TestTheChangelogGateCountsWhatShips(t *testing.T) {
 	const goMod = "go.mod"
 	base := stalenessRepo(t)
 	raw, err := os.ReadFile(filepath.Join(base, goMod))
@@ -543,182 +467,38 @@ func TestTheChangelogRuleCountsWhatShips(t *testing.T) { //nolint:tparallel // i
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			dir := stalenessCopy(t, base)
+			t.Chdir(dir)
+			var watched []string
 			if tc.files != nil {
 				stalenessChange(t, dir, tc.files)
+				out, err := git("diff", "--name-only", "--no-renames", "-z", "HEAD~1", "HEAD")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if watched, _, err = changelogWatched("HEAD~1", "HEAD", strings.FieldsFunc(out, func(r rune) bool { return r == 0 })); err != nil {
+					t.Fatal(err)
+				}
 			}
 			stalenessWrite(t, dir, tc.after)
-			got, err := stalenessChangelog(t, dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var want []string
-			if tc.ships {
-				want = []string{clEmpty}
-			}
-			if !slices.Equal(got, want) {
-				t.Errorf("checkChangelog() = %q, want %q", got, want)
+			if ships := len(watched) > 0; ships != tc.ships {
+				t.Errorf("changelogWatched() = %q, ships = %t; want %t", watched, ships, tc.ships)
 			}
 		})
 	}
 }
 
-// The base is the newest release tag by semver, a prerelease included: a
-// change two commits after it still counts, and a release tagged after
-// the change takes it out of the next release's notes.
-func TestTheChangelogRuleMeasuresFromTheNewestRelease(t *testing.T) { //nolint:tparallel // its fixture sets the git isolation env, which a parallel test may not
-	base := stalenessRepo(t)
-	for _, tc := range []struct {
-		name string
-		// then runs in the checkout after the shipped change is committed.
-		then func(t *testing.T, dir string)
-		want []string
-	}{
-		{"a change two commits after the tag", func(t *testing.T, dir string) {
-			stalenessChange(t, dir, map[string]string{"docs/x.md": "later\n"})
-		}, []string{clEmpty}},
-		{"a change a release then tags", func(t *testing.T, dir string) { stalenessGit(t, dir, "tag", "v0.9.1") }, nil},
-		{"a change a prerelease then tags", func(t *testing.T, dir string) { stalenessGit(t, dir, "tag", "v1.0.0-rc.1") }, nil},
-		{"a change older than the newest tag by date, not by version", func(t *testing.T, dir string) {
-			stalenessGit(t, dir, "tag", "v0.8.9")
-		}, []string{clEmpty}},
-		// A tag that names no release is no base: git describe would take it.
-		{"a change a tag that is not a release then tags", func(t *testing.T, dir string) {
-			stalenessGit(t, dir, "tag", "-a", "nightly", "-m", "nightly")
-		}, []string{clEmpty}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			dir := stalenessCopy(t, base)
-			stalenessChange(t, dir, map[string]string{"internal/a/b.go": "package a\n\n// changed\n"})
-			tc.then(t, dir)
-			got, err := stalenessChangelog(t, dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !slices.Equal(got, tc.want) {
-				t.Errorf("checkChangelog() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-// A maintenance branch measures from its own release, not from a newer
-// one on another line of history: what only the newer release changed is
-// no change of the branch's, and a fix the branch picks up from it is.
-func TestTheChangelogRuleMeasuresFromTheReleaseHEADReaches(t *testing.T) { //nolint:tparallel // its fixture sets the git isolation env, which a parallel test may not
-	const fix = "package a\n\n// fixed in 1.0.0\n"
-	base := stalenessRepo(t)
-	stalenessChange(t, base, map[string]string{"internal/a/b.go": fix})
-	stalenessGit(t, base, "tag", "v1.0.0")
-	for _, tc := range []struct {
-		name string
-		// change is what the maintenance branch commits after v0.9.0.
-		change map[string]string
-		want   []string
-	}{
-		{"a maintenance branch that changes only the docs", map[string]string{"docs/x.md": "later\n"}, nil},
-		// With the docs beside it, the commit is not v1.0.0's own.
-		{
-			"a maintenance branch that picks up the newer release's fix",
-			map[string]string{"internal/a/b.go": fix, "docs/x.md": "back-ported\n"},
-			[]string{clEmpty},
-		},
-		// A version a tag names on any line is released, so its notes are no
-		// release commit's.
-		{"the newer release's fix and notes, squashed onto the branch", map[string]string{
-			"internal/a/b.go": fix,
-			changelogPath:     clUnreleased + strings.Replace(clNext, "0.9.1", "1.0.0", 1) + clReleased,
-		}, []string{clEmpty}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			dir := stalenessCopy(t, base)
-			stalenessGit(t, dir, "switch", "-q", "-c", "release-0.9", "v0.9.0")
-			stalenessChange(t, dir, tc.change)
-			got, err := stalenessChangelog(t, dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !slices.Equal(got, tc.want) {
-				t.Errorf("checkChangelog() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-// A listing that names no command is not reading the binary.
-func TestTheChangelogRuleNeedsTheBinary(t *testing.T) {
-	dir := stalenessRepo(t)
-	stalenessChange(t, dir, map[string]string{"cmd/fixture/main.go": "", "cmd/README.md": "moved\n"})
-	_, err := stalenessChangelog(t, dir)
-	want := "could not run: the CHANGELOG rule: go list -deps ./cmd/... named no package of this module, so it is not reading the binary"
-	if !errors.As(err, new(couldNotRun)) || err == nil || err.Error() != want {
-		t.Errorf("checkChangelog() = %v, want %q", err, want)
-	}
-}
-
-// Outside a git checkout the CHANGELOG rule has no tag to measure from.
-// It reached no verdict, so it says so and exits 2, as the docs gate does,
-// and a git that cannot answer is never "what users get changed".
-func TestTheChangelogRuleNeedsAGitCheckout(t *testing.T) {
-	isolateGit(t)
-	dir := t.TempDir()
-	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
-	_, err := checkChangelog(dir, clUnreleased+clReleased)
-	if !errors.As(err, new(couldNotRun)) || exitCode(err) != 2 ||
-		!strings.HasPrefix(err.Error(), "could not run: the CHANGELOG rule: git -C "+dir+" tag") {
-		t.Errorf("outside git: %v; want a git tag failure that could not run", err)
-	}
-	// A configuration git diff cannot read, and git tag does not.
-	dir = stalenessRepo(t)
-	stalenessGit(t, dir, "config", "diff.renames", "bogus")
-	_, err = stalenessChangelog(t, dir)
-	if !errors.As(err, new(couldNotRun)) || err == nil ||
-		!strings.HasPrefix(err.Error(), "could not run: the CHANGELOG rule: git -C "+dir+" diff v0.9.0..HEAD") {
-		t.Errorf("a diff git cannot make: %v; want a git diff failure that could not run", err)
-	}
-}
-
-// With no release tag there is nothing to measure from, so the rule says
-// why rather than measure from some other commit. A shallow clone fetches
-// no tag, and the rule names it.
-func TestTheChangelogRuleNeedsARelease(t *testing.T) {
-	const noTag = "could not run: the CHANGELOG rule: HEAD reaches no release tag (vX.Y.Z) to measure from"
-	base := stalenessRepo(t)
-	stalenessChange(t, base, map[string]string{"internal/a/b.go": "package a\n\n// changed\n"})
-	untagged := stalenessCopy(t, base)
-	stalenessGit(t, untagged, "tag", "-d", "v0.9.0")
-	shallow := t.TempDir()
-	from := filepath.ToSlash(base)
-	if !strings.HasPrefix(from, "/") {
-		from = "/" + from
-	}
-	stalenessGit(t, shallow, "clone", "-q", "--depth=1", "--no-tags", "file://"+from, ".")
-	for dir, want := range map[string]string{
-		untagged: noTag,
-		shallow:  noTag + "; the checkout is a shallow clone: check it out with fetch-depth: 0",
-	} {
-		_, err := stalenessChangelog(t, dir)
-		if !errors.As(err, new(couldNotRun)) || err == nil || err.Error() != want {
-			t.Errorf("checkChangelog() = %v, want %q", err, want)
-		}
-	}
-}
-
-// The CHANGELOG rule not running holds back no other check: the gate
+// The gate holds the documents in a checkout with no release: the gate
 // still holds the README, docs/TOOLS.md and the configuration page, a real
 // finding still fails it, and with none it reports only that the rule
 // could not run. A fence holds an example, which documents nothing.
-func TestStalenessRunsEveryOtherCheckWithoutARelease(t *testing.T) {
+func TestStalenessRunsWithoutARelease(t *testing.T) {
 	isolateGit(t)
 	dump := stalenessDump(t)
 	files := map[string]string{}
 	for _, name := range []string{readmePath, toolsDocPath, configDocPath, changelogPath} {
 		files[name] = strings.ReplaceAll(string(repoFile(t, name)), "\r\n", "\n")
 	}
-	const unrun = "could not run: the CHANGELOG rule: HEAD reaches no release tag (vX.Y.Z) to measure from"
 	const ping = "`favro_ping`"
 	for _, tc := range []struct {
 		name string
@@ -726,14 +506,14 @@ func TestStalenessRunsEveryOtherCheckWithoutARelease(t *testing.T) {
 		err  string
 		code int
 	}{
-		{"nothing else wrong", func(*testing.T, map[string]string) {}, unrun, 2},
+		{"nothing wrong", func(*testing.T, map[string]string) {}, "", 0},
 		{"a table row for a tool the binary does not register", func(t *testing.T, files map[string]string) {
 			row := "| " + ping + " |"
 			if !strings.Contains(files[toolsDocPath], row) {
 				t.Fatalf("%s has no row starting %q", toolsDocPath, row)
 			}
 			files[toolsDocPath] = strings.Replace(files[toolsDocPath], row, "| `favro_ghost` | x |\n"+row, 1)
-		}, "docs/TOOLS.md names a tool that is not registered: favro_ghost\n" + unrun, 1},
+		}, "docs/TOOLS.md names a tool that is not registered: favro_ghost", 1},
 		{"a tool and a setting named only in a fenced example", func(t *testing.T, files map[string]string) {
 			for _, f := range []string{readmePath, toolsDocPath} {
 				if !strings.Contains(files[f], ping) {
@@ -747,10 +527,10 @@ func TestStalenessRunsEveryOtherCheckWithoutARelease(t *testing.T) {
 			files[readmePath] = strings.ReplaceAll(files[readmePath], "FAVRO_LOG_LEVEL", "the log level") +
 				"\n```text\n" + ping + " FAVRO_LOG_LEVEL\n```\n"
 		}, "docs/TOOLS.md and README.md document neither of: favro_ping\n" +
-			"README.md does not document FAVRO_LOG_LEVEL\n" + unrun, 1},
+			"README.md does not document FAVRO_LOG_LEVEL", 1},
 		{"a table row in a fenced example", func(_ *testing.T, files map[string]string) {
 			files[toolsDocPath] += "\n```text\n| `favro_ghost` | x |\n```\n"
-		}, unrun, 2},
+		}, "", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			edited := maps.Clone(files)
@@ -762,7 +542,9 @@ func TestStalenessRunsEveryOtherCheckWithoutARelease(t *testing.T) {
 			stalenessGit(t, dir, "commit", "-q", "-m", "first")
 			t.Chdir(dir)
 			err := stalenessOf(&sink{}, dump)
-			if err == nil || err.Error() != tc.err || exitCode(err) != tc.code {
+			passed := tc.err == "" && err == nil
+			refused := tc.err != "" && err != nil && err.Error() == tc.err && exitCode(err) == tc.code
+			if !passed && !refused {
 				t.Errorf("staleness() = %v (exit %d); want %q (exit %d)", err, exitCode(err), tc.err, tc.code)
 			}
 		})

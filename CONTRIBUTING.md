@@ -112,9 +112,7 @@ These are worth knowing before they fail on you:
   [`docs/TOOLS.md`](docs/TOOLS.md#error-classes) (D-40).
 - **`make staleness`** holds `docs/TOOLS.md`'s tool table to the binary
   both ways, the README's permission rules and plugin section, and
-  `docs/configuration.md` to every setting the code reads (D-78). A
-  commit since the newest release tag HEAD reaches that changes what
-  users get, as D-78 lists it, needs a CHANGELOG entry.
+  `docs/configuration.md` to every setting the code reads (D-78).
 - **`make live-cover`** fails when a tool or option has no live step, or
   no waiver in `testdata/live-cover-waived.tsv` (D-74).
 
@@ -292,6 +290,16 @@ Every user-visible change gets an entry under `## [Unreleased]` in
 `CHANGELOG.md`, in the same pull request that makes the change. Leave
 out changes only contributors see, unless they must act on them; such a
 line starts `For contributors:`.
+
+On a pull request, the `changelog` gate wants at least one entry more
+under `[Unreleased]` than the merge-base holds when the pull request
+changes what users get (D-96). A test, a script or a bump of a module
+other than the MCP SDK needs none. A change nobody using the server can
+see, such as a refactor, leaves the CHANGELOG as it is and ends its
+newest commit's message with a footer that says why:
+`Changelog: none, the text is unchanged line for line`. Only the newest
+commit's footer counts, since it ends the squashed commit's message, so
+split a user-visible change into its own pull request.
 
 - **Sections** are the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   set and nothing else: Added, Changed, Deprecated, Removed, Fixed and
