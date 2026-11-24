@@ -388,7 +388,7 @@ switch off by default (D-88, D-89, D-90, D-95). Releasing is in
 | D-75 | The live driver's write mode writes only to probes it created, and deletes them however the run ends | accepted | TestScratchWritesOnlyToObjectsTheRunCreated, TestSweepFailsOnAProbeThatIsStillThere, TestEachInterruptRunsTheCleanups, live |
 | D-76 | Agent evals score each task by the end state read back and by the trace, in a sandbox the run makes and removes | accepted | TestEveryTaskIsScorableAndExplained, live |
 | D-77 | The eval session reaches this server's tools and nothing else, and none that deletes | accepted | review |
-| D-78 | The documentation is held to the code: tool names, counts, settings, gates, the package map and paths | accepted | staleness, TestStalenessAgainstThisRepository, TestToolsDocumentedReadsBothDirections, TestDestructiveCountMatchesTheBinary, TestEveryEnvNameReachesBothDocuments, TestTheChangelogRule, TestTheChangelogRuleCountsWhatShips, TestStalenessRunsEveryOtherCheckWithoutARelease |
+| D-78 | The documentation is held to the code: tool names, counts, settings, gates, the package map and paths | accepted | staleness, TestStalenessAgainstThisRepository, TestToolsDocumentedReadsBothDirections, TestDestructiveCountMatchesTheBinary, TestEveryEnvNameReachesBothDocuments, TestStalenessRunsWithoutARelease |
 | D-79 | The toolchain is the one go.mod names, everywhere; there is no N-1 matrix entry | accepted | review |
 | D-80 | Every action is pinned to a full SHA, every tool to one exact version, and every workflow pins its shell | accepted | pins, TestPinsReadsTheWorkflows, TestExactSemverRejectsWhatCanMoveUnderYou, TestPinsShellReadsDepth, TestUnpinnedTools, TestPinsNamesEachProblem, TestReadersRefuseALineBreakTheyDoNotRead |
 | D-81 | make check scans for vulnerabilities in source mode, licenses against an allowlist and secrets with gitleaks, as CI does | accepted | vuln, licenses, secrets, parity, TestTheHookScansWithTheMakefilesGitleaks, TestVulnToolchainReadsGoMod |
@@ -406,6 +406,7 @@ switch off by default (D-88, D-89, D-90, D-95). Releasing is in
 | D-93 | A write whose 200 is not trusted carries an `unverified` error class | rejected | — |
 | D-94 | The server confirms its riskiest writes with the person, through MCP form elicitation | superseded by D-31 | — |
 | D-95 | One release matrix names the six archives; the plugin runs a native Windows arm64 binary, and the Desktop bundle runs the amd64 one there | accepted | TestTheReleaseMatrixIsTheFamilysSix, TestGoreleaserMatrixIsTheOneTheBundleClaims, TestReleaseArchivesAreTheFamilys, TestCmdShimPicksTheBinaryByArchitecture, TestPluginMatrixProblems |
+| D-96 | A pull request that changes what ships adds a CHANGELOG entry, checked from its merge-base | accepted | changelog, TestTheChangelogGateWantsAnEntryPerPullRequest, TestTheChangelogGateCountsWhatShips |
 
 ### D-01 One Go binary serves one person's Favro account over stdio; nothing is hosted
 
@@ -2157,14 +2158,8 @@ The documentation is held to the code. The `staleness` gate holds the
 tool rows in [TOOLS.md](TOOLS.md) and the README to the registry both
 ways, and any prose count of the destructive tools to the binary. It
 holds every `FAVRO_*` variable the source reads to
-[configuration.md](configuration.md) and the README, and the CHANGELOG
-to its rules. A commit since the newest release tag HEAD reaches that
-changes what users get needs an entry. That is a file other than a
-test in a package the binary imports, a file one embeds, a bundle's
-manifest, or `go.mod` outside its require and tool lines. The README,
-LICENSE and NOTICE the bundles carry are docs, and the release writes
-the registry entry, so none of them counts. With no such tag the rule
-says it could not run, and the other checks still run.
+[configuration.md](configuration.md) and the README. Each pull
+request's CHANGELOG entry is the `changelog` gate's (D-96).
 
 A document a person copies into a client's configuration is an input,
 and a number in prose is a claim about a list beside it. Correcting a
@@ -2581,4 +2576,34 @@ program, since whether Claude Desktop spawns a `.cmd` is unprobed (issue
 Cost: the plugin carries one more binary, and a `.mcpb` install on
 Windows 10 on Arm still fails (issue #125).
 
-Next ID: D-96
+### D-96 A pull request that changes what ships adds a CHANGELOG entry, checked from its merge-base
+
+A pull request that changes what users get adds an entry under
+`[Unreleased]`: a file other than a test in a package the binary
+imports, a file one embeds, a bundle's manifest, `.goreleaser.yaml`,
+`go.mod` outside its `require` and `tool` lines, or the MCP SDK's
+version. The README, LICENSE and NOTICE the bundles carry are docs, and
+the release writes the registry entry, so none of them counts. The
+`changelog` gate measures from the merge-base, so a base branch that
+moved on is not the pull request's change, and wants more entries under
+`[Unreleased]` than the merge-base holds. A release cut, which moves
+those entries under a new version heading, passes.
+
+A change nobody using the server can see ends its newest commit's
+message with `Changelog: none, <why>`, which keeps contributor detail out
+of the release notes. The footer is read only while the CHANGELOG is
+untouched, and never for a `go.mod` change outside the `require` lines
+or an MCP SDK bump. Only the newest commit's footer counts, since it ends
+the squashed commit's message. An advisory a bump fixed is found at
+release time (`docs/release.md`).
+
+Rejected: D-78's staleness rule, which wanted one entry since the newest
+release and so passed every later pull request once one existed;
+reading the footer per commit after the merge, which broke on a
+multi-commit pull request, on GitHub's squash of several authors'
+commits, and on merge commits.
+Cost: a commit that skips the pull request gate, such as an admin merge,
+is not checked; `release-notes` still refuses an empty section at
+release.
+
+Next ID: D-97

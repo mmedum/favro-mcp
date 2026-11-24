@@ -189,14 +189,14 @@ func TestParityCatchesEachDivergence(t *testing.T) {
 		{name: "make check does not vet the build-tagged code", edits: []docsEdit{
 			replace(fxMakefile, "\t$(GO) vet -tags=evals ./...\n", ""),
 		}, want: []string{
-			".github/workflows/ci.yml:180 runs `go vet -tags=evals ./...` and `make check` does not",
+			".github/workflows/ci.yml:182 runs `go vet -tags=evals ./...` and `make check` does not",
 			evalsTagged + "`make check` vets no pass that builds it; a contributor cannot see it break",
 		}},
 		{name: "make check does not scan for vulnerabilities", remove: "vuln", want: []string{
 			"the vuln gate runs in make check by the dispatch, and no target `make check` runs calls it",
 		}},
 		{name: "make check does not check the licenses", remove: "licenses", want: []string{
-			".github/workflows/ci.yml:200 runs `go run github.com/google/go-licenses@v1.6.0 check ./... " +
+			".github/workflows/ci.yml:202 runs `go run github.com/google/go-licenses@v1.6.0 check ./... " +
 				"--allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC --ignore github.com/segmentio/asm` and `make check` does not",
 		}},
 		{name: "a gate runs in CI and not in make check", remove: "staleness", want: []string{
@@ -221,11 +221,11 @@ func TestParityCatchesEachDivergence(t *testing.T) {
 		}},
 		{name: "a check only CI runs", edits: []docsEdit{
 			replace(fxCI, "      - name: licenses\n", "      - run: go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...\n      - name: licenses\n"),
-		}, want: []string{".github/workflows/ci.yml:195 runs `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` and `make check` does not"}},
+		}, want: []string{".github/workflows/ci.yml:197 runs `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` and `make check` does not"}},
 		{name: "CI runs a tool at another version", edits: []docsEdit{
 			replace(fxCI, "go-licenses@v1.6.0", "go-licenses@v1.6.1"),
 		}, want: []string{
-			".github/workflows/ci.yml:200 runs `go run github.com/google/go-licenses@v1.6.1 check ./... " +
+			".github/workflows/ci.yml:202 runs `go run github.com/google/go-licenses@v1.6.1 check ./... " +
 				"--allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC --ignore github.com/segmentio/asm` and `make check` does not",
 			"`make licenses` runs \"go run github.com/google/go-licenses@v1.6.0 check ./... " +
 				"--allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC --ignore github.com/segmentio/asm\" and ci.yml never does",
@@ -233,7 +233,7 @@ func TestParityCatchesEachDivergence(t *testing.T) {
 		{name: "make check tidies with other flags", edits: []docsEdit{
 			replace(fxMakefile, "\t$(GO) mod tidy -diff\n", "\t$(GO) mod tidy\n"),
 		}, want: []string{
-			".github/workflows/ci.yml:182 runs `go mod tidy -diff` and `make check` does not",
+			".github/workflows/ci.yml:184 runs `go mod tidy -diff` and `make check` does not",
 			"`make tidy` runs \"go mod tidy\" and ci.yml never does",
 		}},
 		// A release gate runs where the release runs: release.yml and the
@@ -337,7 +337,7 @@ func TestParityCatchesEachDivergence(t *testing.T) {
 			want: []string{secrets + " and ci.yml never does"},
 		},
 		{name: "the secret scan gone from make check", remove: "secrets", want: []string{
-			".github/workflows/ci.yml:225 runs `go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD " +
+			".github/workflows/ci.yml:227 runs `go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --log-opts=HEAD " +
 				"--config .gitleaks.toml --redact --no-banner .` and `make check` does not",
 		}},
 		// A variable set on the line, or a flag, changes what the recipe runs.
@@ -352,7 +352,7 @@ func TestParityCatchesEachDivergence(t *testing.T) {
 		{name: "CI makes a target whose prerequisite runs a check make check does not", edits: []docsEdit{
 			replace(fxMakefile, ".PHONY: check\n", "extra: static\nstatic:\n\t$(GO) run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...\n\n.PHONY: check\n"),
 			replace(fxCI, "run: make secrets\n", "run: make secrets extra\n"),
-		}, want: []string{".github/workflows/ci.yml:225 runs `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` and `make check` does not"}},
+		}, want: []string{".github/workflows/ci.yml:227 runs `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` and `make check` does not"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -506,7 +506,7 @@ func TestParityReadsWhatRuns(t *testing.T) {
 		{"a step the workflow reader does not read", []docsEdit{
 			replace(fxCI, stale, "      - {name: staleness, run: go run ./scripts/gates staleness bin/favro-mcp}\n"),
 		}, nil, []string{
-			".github/workflows/ci.yml:137: an item of steps: is not a block mapping; write it one key a line",
+			".github/workflows/ci.yml:139: an item of steps: is not a block mapping; write it one key a line",
 			notInCI,
 		}},
 		{"a gate named only in a recipe's comment", []docsEdit{
@@ -530,20 +530,20 @@ func TestParityHoldsAGateCallsArguments(t *testing.T) {
 		{"a coverage floor the Makefile sets apart from CI's", []docsEdit{
 			replace(fxMakefile, "COVER_MIN ?= 80", "COVER_MIN ?= 85"),
 		}, nil, []string{
-			".github/workflows/ci.yml:163 calls the coverage gate with `coverage.out 80` and `make check` never does",
+			".github/workflows/ci.yml:165 calls the coverage gate with `coverage.out 80` and `make check` never does",
 			"`make cover` calls the coverage gate with `coverage.out 85` and ci.yml never does",
 		}},
 		// Only the binary compares as a path; every other argument is a word.
 		{"a profile written another way", []docsEdit{
 			replace(fxMakefile, "coverage coverage.out $(COVER_MIN)", "coverage ./coverage.out $(COVER_MIN)"),
 		}, nil, []string{
-			".github/workflows/ci.yml:163 calls the coverage gate with `coverage.out 80` and `make check` never does",
+			".github/workflows/ci.yml:165 calls the coverage gate with `coverage.out 80` and `make check` never does",
 			"`make cover` calls the coverage gate with `./coverage.out 80` and ci.yml never does",
 		}},
 		{"a binary other than the one the gate defaults to", []docsEdit{
 			replace(fxMakefile, "\t@$(GO) run ./scripts/gates smoke $(BIN)\n", "\t@$(GO) run ./scripts/gates smoke ./old/favro-mcp\n"),
 		}, nil, []string{
-			".github/workflows/ci.yml:136 calls the smoke gate with `bin/favro-mcp` and `make check` never does",
+			".github/workflows/ci.yml:138 calls the smoke gate with `bin/favro-mcp` and `make check` never does",
 			"`make smoke` calls the smoke gate with `./old/favro-mcp` and ci.yml never does",
 		}},
 		{"a gate call whose output is redirected", []docsEdit{
@@ -558,10 +558,10 @@ func TestParityHoldsAGateCallsArguments(t *testing.T) {
 			replace(fxMakefile, "BIN       ?= $(BIN_DIR)/favro-mcp$(EXE)", "BIN       ?= $(BIN_DIR)/other$(EXE)"),
 			replace(fxCI, "run: go run ./scripts/gates smoke bin/favro-mcp\n", "run: go run ./scripts/gates smoke\n"),
 		}, nil, []string{
-			".github/workflows/ci.yml:132 calls the one-organization gate with `bin/favro-mcp` and `make check` never does",
-			".github/workflows/ci.yml:134 calls the schema-diff gate with `bin/favro-mcp` and `make check` never does",
-			".github/workflows/ci.yml:136 calls the smoke gate with no arguments and `make check` never does",
-			".github/workflows/ci.yml:138 calls the staleness gate with `bin/favro-mcp` and `make check` never does",
+			".github/workflows/ci.yml:134 calls the one-organization gate with `bin/favro-mcp` and `make check` never does",
+			".github/workflows/ci.yml:136 calls the schema-diff gate with `bin/favro-mcp` and `make check` never does",
+			".github/workflows/ci.yml:138 calls the smoke gate with no arguments and `make check` never does",
+			".github/workflows/ci.yml:140 calls the staleness gate with `bin/favro-mcp` and `make check` never does",
 			"`make one-organization` calls the one-organization gate with `bin/other` and ci.yml never does",
 			"`make schema-diff` calls the schema-diff gate with `bin/other` and ci.yml never does",
 			"`make smoke` calls the smoke gate with `bin/other` and ci.yml never does",
@@ -570,7 +570,7 @@ func TestParityHoldsAGateCallsArguments(t *testing.T) {
 		{"an argument CI gives a gate that make check does not", []docsEdit{
 			replace(fxCI, "run: go run ./scripts/gates leaks\n", "run: go run ./scripts/gates leaks history\n"),
 		}, nil, []string{
-			".github/workflows/ci.yml:108 calls the leaks gate with `history` and `make check` never does",
+			".github/workflows/ci.yml:110 calls the leaks gate with `history` and `make check` never does",
 			"`make leaks` calls the leaks gate with no arguments and ci.yml never does",
 		}},
 	})
@@ -608,7 +608,7 @@ func TestParityHoldsEachExcuse(t *testing.T) {
 		want               []string
 	}{
 		{"a CI-only command, unexcused", nil, nil, generate, []string{
-			".github/workflows/ci.yml:179 runs `go generate ./...` and `make check` does not",
+			".github/workflows/ci.yml:181 runs `go generate ./...` and `make check` does not",
 		}},
 		{"a CI-only command, excused", nil, map[string]string{"generate": "CI regenerates the code"}, generate, nil},
 		{"a CI-only excuse with no reason", nil, map[string]string{"generate": " "}, generate, []string{
@@ -672,7 +672,7 @@ func TestParityHoldsTheTreesTagsToAVetPass(t *testing.T) {
 		{"a test that turns vet off, which is not a vet pass", []docsEdit{
 			replace(fxMakefile, vet, "\t$(GO) test -vet=off -tags=evals ./...\n"),
 		}, nil, []string{
-			".github/workflows/ci.yml:180 runs `go vet -tags=evals ./...` and `make check` does not",
+			".github/workflows/ci.yml:182 runs `go vet -tags=evals ./...` and `make check` does not",
 			"`make vet` runs \"go test -vet=off -tags=evals ./...\" and ci.yml never does",
 			"scripts/evals/main.go builds only with -tags=evals (//go:build evals) and `make check` vets no pass that builds it; a contributor cannot see it break",
 		}},
@@ -681,7 +681,7 @@ func TestParityHoldsTheTreesTagsToAVetPass(t *testing.T) {
 		{"a file another tag keeps out, vetted only by a pass with that tag", []docsEdit{
 			replace(fxMakefile, vet, "\t$(GO) vet -tags=evals,live ./...\n"),
 		}, map[string]string{"internal/probe/probe.go": "//go:build evals && !live\n\npackage probe\n"}, []string{
-			".github/workflows/ci.yml:180 runs `go vet -tags=evals ./...` and `make check` does not",
+			".github/workflows/ci.yml:182 runs `go vet -tags=evals ./...` and `make check` does not",
 			"`make vet` runs \"go vet -tags=evals,live ./...\" and ci.yml never does",
 			"internal/probe/probe.go builds only with -tags=evals (//go:build evals && !live) and `make check` vets no pass that builds it; a contributor cannot see it break",
 		}},

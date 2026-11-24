@@ -8,6 +8,10 @@ Versions below 1.0.0 were never tagged — pre-1.0 development shipped straight 
 
 ## [Unreleased]
 
+### Changed
+
+- For contributors: a pull request that changes what ships adds a CHANGELOG entry, or a `Changelog: none` footer; the `changelog` gate checks it.
+
 ## [4.5.0] - 2026-11-21
 
 ### Added

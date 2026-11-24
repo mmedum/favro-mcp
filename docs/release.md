@@ -21,6 +21,17 @@ The tag waits for the owner's explicit go.
   release changes what a model reads (D-76).
 - `/simplify`, `/code-review medium` and `/security-review` have run
   since the previous tag.
+- Run `govulncheck` on the previous release tag. A dependency bump
+  other than the MCP SDK carries no CHANGELOG entry of its own (D-96).
+  For each advisory reported there and not at `HEAD`, find the change
+  that cleared it. When that change is such a bump, the advisory gets
+  its entry under Security.
+
+  ```bash
+  git worktree add ../favro-mcp-prev "$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*')"
+  make -C ../favro-mcp-prev vuln
+  git worktree remove ../favro-mcp-prev
+  ```
 - `make api-diff` refetches Favro's reference into
   `testdata/api-surface.json`; it reaches the network, so `make check`
   does not run it. Anything Favro added then fails `make api-coverage`

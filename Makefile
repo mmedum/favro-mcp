@@ -174,6 +174,10 @@ schema-diff: build ## diff the tool schemas against the last tag
 PR_BASE_REF ?= origin/main
 PR_HEAD     ?= HEAD
 
+.PHONY: changelog
+changelog: ## a change to what users get adds an entry under [Unreleased] since the merge-base with PR_BASE_REF
+	@$(GO) run ./scripts/gates changelog $(PR_BASE_REF) $(PR_HEAD)
+
 .PHONY: schema-ack
 schema-ack: ## commit footers name each tool-surface change since the merge-base with PR_BASE_REF
 	@$(GO) run ./scripts/gates schema-ack $(PR_BASE_REF) $(PR_HEAD)
